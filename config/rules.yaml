@@ -1,0 +1,70 @@
+# Sentinel detection thresholds. Hot-reloaded on file mtime change - no deploy needed to tune.
+# All thresholds are strings so they load as Decimal, never float (see sentinel/config.py).
+
+polling:
+  fast_loop_seconds: "45"      # withdrawals / deposits / transfers - no WS coverage exists, REST only
+  slow_loop_seconds: "600"     # balance snapshot + permission snapshot
+  jitter_seconds: "10"
+
+workers:
+  pool_size: 8                 # worker threads consuming the per-account task queue
+
+# Verified numbers from docs/phase0-capability-audit.md section 4. Buckets are
+# set below the documented ceilings to leave burst/retry headroom.
+rate_limits:
+  per_account_rps: "5"         # Bitget per-UID budget is 10 rps on the endpoints we poll
+  per_account_burst: "10"
+  egress_ip_rps: "60"          # Bitget global ceiling is 100 rps/IP (6000/min); 60% leaves headroom
+  egress_ip_burst: "100"
+
+circuit_breaker:
+  failure_threshold: 3         # consecutive failures before the breaker opens
+  base_backoff_seconds: "60"   # open duration doubles each consecutive trip
+  max_backoff_seconds: "3600"
+
+detectors:
+  quantity_drop:
+    tolerance_pct: "0.5"
+    tolerance_absolute: "0.00000001"
+
+  tamper:
+    consecutive_auth_failures_threshold: 2
+
+  heartbeat:
+    consecutive_failures_threshold: 5
+
+  withdrawal_burst:
+    window_minutes: 60
+    min_count: 3
+
+  off_market:
+    max_deviation_pct: "10"
+
+  fee_anomaly:
+    multiplier: "5"
+    min_fee_floor: "1"         # in fee-coin units; suppresses noise on near-zero baselines
+    ema_alpha: "0.2"
+
+  transfers:
+    max_coins_per_cycle: 5     # fetch_transfers is per-coin on Bitget; cap calls per cycle
+
+alerting:
+  # Which channels each severity routes to. Channels not configured via env
+  # are skipped with a warning at startup.
+  routing:
+    CRITICAL: [telegram, sms, email]
+    HIGH: [telegram, email]
+    MEDIUM: [digest]
+    LOW: [digest]
+  cooldown_minutes:
+    CRITICAL: "15"
+    HIGH: "30"
+    MEDIUM: "720"
+    LOW: "1440"
+  escalation_unacknowledged_minutes: "15"
+
+triage:
+  enabled: false               # AI triage narrative on incidents; additive only,
+                               # deterministic rules remain authoritative
+  model: claude-opus-4-8
+  max_events: 50
