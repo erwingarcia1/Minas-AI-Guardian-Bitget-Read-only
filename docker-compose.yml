@@ -3,34 +3,69 @@ services:
     build: .
     restart: unless-stopped
     env_file: .env
+    # Explicit overrides beat env_file: a host .env carrying the local-dev
+    # SENTINEL_DB_PATH (./sentinel_data/...) must never leak into the
+    # container, or the credentials DB silently lands inside the container
+    # filesystem and is destroyed on recreate. The volume is the truth.
+    environment:
+      SENTINEL_DB_PATH: /data/sentinel.db
+      SENTINEL_RULES_PATH: /app/config/rules.yaml
     volumes:
       - sentinel-data:/data
       - ./config:/app/config:ro   # rules.yaml stays hot-reloadable from the host
     ports:
       - "127.0.0.1:8390:8390"     # status dashboard - keep behind VPN/SSH tunnel, it has no auth
       - "127.0.0.1:9109:9109"     # prometheus metrics
-    depends_on:
-      - redis
+    healthcheck:
+      # python-slim has no curl; stdlib does the job
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8390', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
-  # Phase 2 scale-out targets. The MVP engine runs in-process (SQLite +
-  # in-memory queue); these services are provisioned here so moving to
-  # Postgres (SENTINEL_DB_DSN) and a Redis-backed distributed queue is a
-  # config change on this same compose file, not a new deployment.
+  # Phase 2 scale-out targets, opt-in via: docker compose --profile scale up -d
+  # The MVP engine runs in-process (SQLite + in-memory queue); these are
+  # provisioned here so moving to Postgres (SENTINEL_DB_DSN) and a
+  # Redis-backed distributed queue is a config change on this same compose
+  # file, not a new deployment. Keeping them off by default keeps the pilot
+  # VM footprint to one container.
   postgres:
     image: postgres:16-alpine
+    profiles: ["scale"]
     restart: unless-stopped
     environment:
       POSTGRES_DB: sentinel
       POSTGRES_USER: sentinel
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
+      # Empty default on purpose: `:?` would break compose parsing even for
+      # pilot deploys that never start this profile. With an empty value the
+      # postgres image itself refuses to boot (clear error at `--profile
+      # scale up` time), which is the right failure moment.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
     volumes:
       - pg-data:/var/lib/postgresql/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
   redis:
     image: redis:7-alpine
+    profiles: ["scale"]
     restart: unless-stopped
     volumes:
       - redis-data:/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
 
 volumes:
   sentinel-data:
