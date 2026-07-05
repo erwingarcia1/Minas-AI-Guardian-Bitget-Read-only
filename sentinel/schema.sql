@@ -3,7 +3,7 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     label TEXT NOT NULL UNIQUE,
-    exchange TEXT NOT NULL DEFAULT 'bitget' CHECK (exchange IN ('bitget', 'bybit')),
+    exchange TEXT NOT NULL DEFAULT 'bitget' CHECK (exchange IN ('bitget', 'bybit', 'okx', 'binance')),
     topology TEXT NOT NULL CHECK (topology IN ('independent', 'sub_account')),
     encrypted_api_key TEXT NOT NULL,
     encrypted_secret TEXT NOT NULL,

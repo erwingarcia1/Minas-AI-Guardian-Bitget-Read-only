@@ -100,6 +100,52 @@ def _bybit_read_only(data: object) -> tuple[bool, str]:
     return True, "Bybit readOnly flag is 1 and no write permissions are granted"
 
 
+# OKX perm tokens (comma-joined string on account-config). Only 'read_only'
+# is acceptable; 'trade'/'withdraw' are write. Confirmed against CCXT-embedded
+# example (docs/phase0-capability-audit.md, OKX addendum).
+_OKX_WRITE_TOKENS = ("trade", "withdraw")
+
+# Binance apiRestrictions: enableReading must be true; every one of these
+# write-implying flags must be present AND false. A missing flag fails CLOSED.
+# Confirmed against Binance apikey-permission docs (Binance addendum).
+_BINANCE_WRITE_FLAGS = (
+    "enableWithdrawals", "enableInternalTransfer", "enableMargin", "enableFutures",
+    "permitsUniversalTransfer", "enableVanillaOptions", "enableFixApiTrade",
+    "enableSpotAndMarginTrading", "enablePortfolioMarginTrading",
+)
+
+
+def _okx_read_only(data: object) -> tuple[bool, str]:
+    if not isinstance(data, dict):
+        return False, f"account-config response had unexpected type: {type(data).__name__}"
+    perm = data.get("perm")
+    if not isinstance(perm, str) or not perm.strip():
+        return False, f"OKX perm field missing or empty ({perm!r}) - failing closed"
+    tokens = [t.strip().lower() for t in perm.split(",") if t.strip()]
+    for token in tokens:
+        if token in _OKX_WRITE_TOKENS:
+            return False, f"OKX key has '{token}' permission - not read-only"
+        if token != "read_only":
+            return False, f"OKX key has unrecognized permission token '{token}' - failing closed"
+    if "read_only" not in tokens:
+        return False, "OKX perm did not include 'read_only' - failing closed"
+    return True, "OKX perm is read_only with no trade/withdraw tokens"
+
+
+def _binance_read_only(data: object) -> tuple[bool, str]:
+    if not isinstance(data, dict):
+        return False, f"apiRestrictions response had unexpected type: {type(data).__name__}"
+    if data.get("enableReading") is not True:
+        return False, f"Binance enableReading is {data.get('enableReading')!r} (expected true) - not a read key"
+    for flag in _BINANCE_WRITE_FLAGS:
+        value = data.get(flag)
+        if value is None:
+            return False, f"Binance flag '{flag}' missing from response - failing closed"
+        if value is not False:
+            return False, f"Binance key grants '{flag}' ({value!r}) - not read-only"
+    return True, "Binance enableReading=true and all write flags are false"
+
+
 def verify_read_only(client: ExchangeClient, exchange: str = "bitget") -> tuple[bool, str]:
     """Programmatic, fail-closed check that a candidate key is read-only.
     Two independent checks must both pass:
@@ -125,6 +171,10 @@ def verify_read_only(client: ExchangeClient, exchange: str = "bitget") -> tuple[
     payload = info.get("data", info) if isinstance(info, dict) else info
     if exchange == "bybit":
         return _bybit_read_only(payload)
+    if exchange == "okx":
+        return _okx_read_only(payload)
+    if exchange == "binance":
+        return _binance_read_only(payload)
     authorities = payload.get("authorities") if isinstance(payload, dict) else None
     return _bitget_read_only(authorities)
 

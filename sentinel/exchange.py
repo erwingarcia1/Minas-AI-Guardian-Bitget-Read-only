@@ -24,7 +24,18 @@ ACCOUNT_INFO_METHOD = "private_spot_get_v2_spot_account_info"
 # read-only signal for the onboarding gate (see onboarding.py).
 BYBIT_QUERY_API_METHOD = "private_get_v5_user_query_api"
 
-SUPPORTED_EXCHANGES = ("bitget", "bybit")
+# OKX: GET /api/v5/account/config -> private_get_account_config (okx.py line 393).
+# Response data[0].perm is a comma-joined permission string (read_only/trade/
+# withdraw) for the CALLING key. Confirmed against CCXT-embedded example
+# (okx.py line 1656). Passphrase required.
+OKX_ACCOUNT_CONFIG_METHOD = "private_get_account_config"
+
+# Binance: GET /sapi/v1/account/apiRestrictions -> sapi_get_account_apirestrictions
+# (binance.py sapi.get map). Returns per-key boolean permission flags for the
+# CALLING key. No passphrase. Confirmed against live source + Binance docs.
+BINANCE_API_RESTRICTIONS_METHOD = "sapi_get_account_apirestrictions"
+
+SUPPORTED_EXCHANGES = ("bitget", "bybit", "okx", "binance")
 
 
 class TamperSignal(Exception):
@@ -191,10 +202,127 @@ class BybitClient(ExchangeClient):
         return {"data": data}
 
 
+class OKXClient(ExchangeClient):
+    """Read-only wrapper around ccxt.okx. OKX requires an API passphrase (in
+    `password`, like Bitget). Read-only status is authoritative via the
+    account-config `perm` field. See docs/phase0-capability-audit.md (OKX
+    addendum)."""
+
+    exchange_id = "okx"
+    # fetch_closed_orders is instType-scoped; a naive call covers only the
+    # default (spot). Iterate the product types for account-wide coverage.
+    _ORDER_INST_TYPES = ("SPOT", "SWAP", "FUTURES", "OPTION", "MARGIN")
+
+    def __init__(self, api_key: str, secret: str, password: str):
+        super().__init__(
+            ccxt.okx(
+                {"apiKey": api_key, "secret": secret, "password": password, "enableRateLimit": True}
+            ),
+            api_key,
+            secret,
+            password,
+        )
+
+    def fetch_closed_orders(self, since: int | None = None) -> list[dict]:
+        orders: list[dict] = []
+        for inst_type in self._ORDER_INST_TYPES:
+            try:
+                orders.extend(
+                    self._call(self._exchange.fetch_closed_orders, symbol=None, since=since,
+                               params={"instType": inst_type})
+                )
+            except TamperSignal:
+                raise
+            except Exception as exc:  # noqa: BLE001 - a disabled instType must not kill the pull
+                logger.debug("okx closed-orders %s unavailable: %s", inst_type, self._redact(str(exc)))
+        return orders
+
+    def fetch_account_info(self) -> dict:
+        method = getattr(self._exchange, OKX_ACCOUNT_CONFIG_METHOD, None)
+        if method is None:
+            raise RuntimeError(
+                f"ccxt.okx has no implicit method '{OKX_ACCOUNT_CONFIG_METHOD}' - "
+                "CCXT's OKX endpoint map may have changed since this was verified on 2026-07-05."
+            )
+        raw = self._call(method)
+        rows = raw.get("data") if isinstance(raw, dict) else None
+        row = rows[0] if isinstance(rows, list) and rows else {}
+        data = dict(row) if isinstance(row, dict) else {}
+        data.setdefault("authorities", data.get("perm"))
+        return {"data": data}
+
+
+class BinanceClient(ExchangeClient):
+    """Read-only wrapper around ccxt.binance (global). No API passphrase.
+    Read-only status is authoritative via the apiRestrictions permission
+    flags. See docs/phase0-capability-audit.md (Binance addendum)."""
+
+    exchange_id = "binance"
+    # Binance order history is per-symbol (fetch_closed_orders requires a
+    # symbol). Cover the assets actually held by deriving base/quote symbols
+    # from the current balance, bounded, so trade-reconciliation (quantity-drop)
+    # has data for held coins. Fully sold-out assets won't be covered - a known
+    # limitation to validate against a live key before trusting quantity-drop
+    # on Binance (see docs).
+    _QUOTES = ("USDT", "FDUSD", "BTC")
+    _MAX_SYMBOLS = 12
+
+    def __init__(self, api_key: str, secret: str, password: str = ""):
+        super().__init__(
+            ccxt.binance({"apiKey": api_key, "secret": secret, "enableRateLimit": True}),
+            api_key,
+            secret,
+            "",  # no passphrase on Binance
+        )
+
+    def fetch_closed_orders(self, since: int | None = None) -> list[dict]:
+        # Derive candidate symbols from non-zero balances (base coins) x quotes.
+        try:
+            totals = self.fetch_balance().get("total", {})
+        except TamperSignal:
+            raise
+        except Exception:  # noqa: BLE001
+            return []
+        bases = [c for c, v in totals.items() if v and c not in self._QUOTES]
+        orders: list[dict] = []
+        pulled = 0
+        for base in bases:
+            for quote in self._QUOTES:
+                if pulled >= self._MAX_SYMBOLS:
+                    return orders
+                symbol = f"{base}/{quote}"
+                try:
+                    orders.extend(self._call(self._exchange.fetch_closed_orders, symbol=symbol, since=since))
+                    pulled += 1
+                except TamperSignal:
+                    raise
+                except Exception as exc:  # noqa: BLE001 - a non-existent market must not kill the pull
+                    logger.debug("binance closed-orders %s unavailable: %s", symbol, self._redact(str(exc)))
+        return orders
+
+    def fetch_account_info(self) -> dict:
+        method = getattr(self._exchange, BINANCE_API_RESTRICTIONS_METHOD, None)
+        if method is None:
+            raise RuntimeError(
+                f"ccxt.binance has no implicit method '{BINANCE_API_RESTRICTIONS_METHOD}' - "
+                "CCXT's Binance endpoint map may have changed since this was verified on 2026-07-05."
+            )
+        raw = self._call(method)
+        data = dict(raw) if isinstance(raw, dict) else {}
+        # authorities = the set of enabled flags, for the permission-drift detector.
+        enabled = sorted(k for k, v in data.items() if isinstance(v, bool) and v)
+        data.setdefault("authorities", enabled)
+        return {"data": data}
+
+
 def make_client(exchange: str, api_key: str, secret: str, passphrase: str = "") -> ExchangeClient:
     """Factory: builds the read-only client for a given exchange id."""
     if exchange == "bitget":
         return BitgetClient(api_key, secret, passphrase)
     if exchange == "bybit":
         return BybitClient(api_key, secret)
+    if exchange == "okx":
+        return OKXClient(api_key, secret, passphrase)
+    if exchange == "binance":
+        return BinanceClient(api_key, secret)
     raise ValueError(f"unsupported exchange '{exchange}' (supported: {', '.join(SUPPORTED_EXCHANGES)})")

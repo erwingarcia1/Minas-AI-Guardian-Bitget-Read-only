@@ -180,6 +180,27 @@ def cmd_ack(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_set_contact(args: argparse.Namespace) -> int:
+    """Set/clear an existing account's per-account alert destination. Pass
+    --alert-email/--alert-phone to set; pass --clear to remove both."""
+    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    with db.cursor() as cur:
+        cur.execute("SELECT id FROM accounts WHERE label = ?", (args.label,))
+        if cur.fetchone() is None:
+            print(f"no account labeled '{args.label}'", file=sys.stderr)
+            return 1
+        if args.clear:
+            email, phone = None, None
+        else:
+            email, phone = args.alert_email, args.alert_phone
+        cur.execute(
+            "UPDATE accounts SET alert_email = ?, alert_phone = ?, updated_at = ? WHERE label = ?",
+            (email, phone, datetime.now(timezone.utc).isoformat(), args.label),
+        )
+    print(f"contact for '{args.label}': email={email or '-'} phone={phone or '-'}")
+    return 0
+
+
 def cmd_triage(args: argparse.Namespace) -> int:
     from sentinel.triage import TriageEngine
 
@@ -207,7 +228,7 @@ def main() -> None:
 
     onboard_parser = sub.add_parser("onboard", help="Verify and register a read-only exchange key")
     onboard_parser.add_argument("--label", required=True)
-    onboard_parser.add_argument("--exchange", choices=["bitget", "bybit"], default="bitget")
+    onboard_parser.add_argument("--exchange", choices=["bitget", "bybit", "okx", "binance"], default="bitget")
     onboard_parser.add_argument("--topology", choices=["independent", "sub_account"], default="independent")
     onboard_parser.add_argument("--api-key")
     onboard_parser.add_argument("--secret")
@@ -230,6 +251,13 @@ def main() -> None:
     triage_parser = sub.add_parser("triage", help="Print an AI incident narrative for an account's recent events")
     triage_parser.add_argument("--label", required=True)
     triage_parser.set_defaults(func=cmd_triage)
+
+    contact_parser = sub.add_parser("set-contact", help="Set/clear an account's per-account alert destination")
+    contact_parser.add_argument("--label", required=True)
+    contact_parser.add_argument("--alert-email")
+    contact_parser.add_argument("--alert-phone")
+    contact_parser.add_argument("--clear", action="store_true", help="remove both email and phone")
+    contact_parser.set_defaults(func=cmd_set_contact)
 
     args = parser.parse_args()
     sys.exit(args.func(args))
