@@ -16,7 +16,7 @@ class CredentialCipher:
         if not key:
             raise RuntimeError(
                 "SENTINEL_MASTER_KEY is not set. Generate one with:\n"
-                '  python -c "from cryptography.fernet import Fernet; '
+                '  python3 -c "from cryptography.fernet import Fernet; '
                 'print(Fernet.generate_key().decode())"'
             )
         self._fernet = Fernet(key.encode())

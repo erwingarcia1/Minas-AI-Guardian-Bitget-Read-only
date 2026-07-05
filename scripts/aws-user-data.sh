@@ -46,15 +46,17 @@ cat > /etc/motd <<'MOTD'
 
    1. cd /opt/minas-guardian
    2. sudo cp .env.example .env && sudo nano .env
-        - SENTINEL_MASTER_KEY  (generate fresh, or copy from the old
-          machine if migrating its database)
+        - SENTINEL_MASTER_KEY  (generate fresh, or - if migrating the old
+          machine's database - copy the OLD key here BEFORE step 4)
         - TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID
-   3. sudo docker compose up -d --build
-   4. sudo docker compose exec -it sentinel sentinel onboard --label <name>
-   5. Whitelist this instance's Elastic IP on the Bitget API key.
+   3. sudo chmod 600 .env
+   4. sudo docker compose up -d --build
+   5. sudo docker compose exec -it sentinel sentinel onboard --label <name>
+   6. Whitelist this instance's Elastic IP on the Bitget API key.
 
- Dashboard (from your laptop, never exposed publicly):
-   ssh -L 8390:127.0.0.1:8390 ubuntu@<elastic-ip>   ->  http://localhost:8390
+ Dashboard + metrics (from your laptop, never exposed publicly):
+   ssh -i your-key.pem -L 8390:127.0.0.1:8390 -L 9109:127.0.0.1:9109 \
+       ubuntu@<elastic-ip>          ->  http://localhost:8390
 =====================================================================
 MOTD
 

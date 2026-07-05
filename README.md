@@ -1,4 +1,7 @@
-# Sentinel — Bitget account-compromise monitoring
+# Minas AI Guardian — Bitget account-compromise monitoring
+
+> Product name: **Minas AI Guardian**. `sentinel` remains the internal
+> package/CLI codename throughout the code.
 
 Read-only, 24/7 monitoring for Bitget accounts: detects funds-drain and
 account-takeover patterns and alerts within minutes. Never holds trade or

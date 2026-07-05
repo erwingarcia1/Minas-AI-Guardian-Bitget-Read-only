@@ -30,6 +30,9 @@ managed-service names differ.
    (user-data is readable from instance metadata).
 6. Launch, then: Elastic IPs → **Allocate** → **Associate** with the
    instance. This is the permanent egress IP you whitelist on Bitget keys.
+7. Instance settings → Metadata options: require **IMDSv2** with hop limit
+   1 (new launches default to this; verify) — blocks SSRF-style metadata
+   theft from anything running on the box.
 
 **First SSH login** (the message of the day repeats these steps):
 
@@ -37,9 +40,18 @@ managed-service names differ.
 ssh -i your-key.pem ubuntu@<elastic-ip>
 cd /opt/minas-guardian
 sudo cp .env.example .env && sudo nano .env   # master key + Telegram creds
+sudo chmod 600 .env                           # secrets: root-only, always
 sudo docker compose up -d --build
 sudo docker compose exec -it sentinel sentinel onboard --label customer-1
 ```
+
+> **Migrating an existing DB instead of onboarding fresh?** Put the OLD
+> machine's `SENTINEL_MASTER_KEY` into `.env` *before* this first
+> `up -d --build`. Container environments are frozen at creation: editing
+> `.env` later and doing `stop`/`start` does NOT apply the new key — the
+> engine would keep the old one and fail to decrypt the migrated DB. (If
+> you already booted with a fresh key, the migration recipe below uses
+> `up -d`, which recreates the container and picks up the edited `.env`.)
 
 **Reaching the dashboard** (from your laptop):
 
@@ -48,18 +60,30 @@ ssh -i your-key.pem -L 8390:127.0.0.1:8390 -L 9109:127.0.0.1:9109 ubuntu@<elasti
 # then open http://localhost:8390
 ```
 
-**Migrating an existing pilot DB instead of re-onboarding:** copy the old
-machine's `SENTINEL_MASTER_KEY` into the new `.env` (the DB's credentials
-are encrypted with it — a fresh key cannot read them), then:
+**Migrating an existing pilot DB instead of re-onboarding:**
+
+1. Stop the OLD machine's monitor first (`docker compose down` there) — a
+   copy taken mid-write can be inconsistent, and two monitors on one DB
+   double-alert.
+2. Copy the old machine's `SENTINEL_MASTER_KEY` into the new `.env` (the
+   DB's credentials are encrypted with it — a fresh key cannot read them).
+3. Ship the DB and recreate the container:
 
 ```bash
 scp -i your-key.pem sentinel.db ubuntu@<elastic-ip>:/tmp/
 ssh -i your-key.pem ubuntu@<elastic-ip> \
-  "sudo docker compose -f /opt/minas-guardian/docker-compose.yml stop sentinel && \
+  "cd /opt/minas-guardian && \
+   sudo docker compose stop sentinel && \
    sudo docker run --rm -v minas-guardian_sentinel-data:/data -v /tmp:/src alpine \
-     cp /src/sentinel.db /data/sentinel.db && \
-   sudo docker compose -f /opt/minas-guardian/docker-compose.yml start sentinel"
+     sh -c 'cp /src/sentinel.db /data/sentinel.db && chown 1000:1000 /data/sentinel.db' && \
+   rm /tmp/sentinel.db && \
+   sudo docker compose up -d"
 ```
+
+The `chown 1000:1000` matters: the container runs as the non-root
+`sentinel` user, and a root-owned DB file makes every SQLite write fail.
+The final `up -d` (not `start`) recreates the container so any `.env`
+changes actually apply.
 
 **After the instance is live:** add the Elastic IP to each Bitget API key's
 IP whitelist (Bitget → API management → edit key). From that moment the key
@@ -74,10 +98,16 @@ the stack comes back on its own after a reboot or crash; no operator action.
 git clone https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only.git minas-guardian
 cd minas-guardian
 cp .env.example .env
-# 1. Generate SENTINEL_MASTER_KEY (command in .env.example)
+# 1. Generate SENTINEL_MASTER_KEY (python3 command in .env.example)
 # 2. Fill in alert-channel credentials
+chmod 600 .env
 docker compose up -d --build
 ```
+
+Note: the repo is currently **private**, so `git clone`/`curl` from the VM
+fail unauthenticated (404). Either deploy a read-only GitHub deploy key on
+the VM, or ship the code from a machine that has it:
+`git archive --format=tar.gz -o /tmp/deploy.tar.gz HEAD && scp ...`.
 
 Onboard accounts from inside the container so credentials never touch the
 host shell history:
@@ -87,7 +117,9 @@ docker compose exec -it sentinel sentinel onboard --label customer-1
 ```
 
 Daily digest via cron on the host (MEDIUM/LOW alerts route here, per
-`alerting.routing` in rules.yaml):
+`alerting.routing` in rules.yaml). **Use root's crontab** (`sudo crontab -e`)
+— the default `ubuntu` user is not in the docker group, so an unprivileged
+crontab fails silently every day and the digest never sends:
 
 ```bash
 0 8 * * * cd /opt/minas-guardian && docker compose exec -T sentinel sentinel digest
@@ -146,12 +178,14 @@ rotation procedure before enforcing it.
 
 ## Scaling path (Phase 2 → beyond)
 
-1. **One box, more workers**: raise `workers.pool_size` in rules.yaml
-   (hot-reloads; no restart).
+1. **One box, more workers**: raise `workers.pool_size` in rules.yaml,
+   then `docker compose restart sentinel` — the pool is sized once at
+   startup (detection thresholds hot-reload; the worker count does not).
 2. **Postgres**: move storage off SQLite when either (a) more than one
    process needs the DB or (b) the event log outgrows instance disk. Schema
-   is deliberately plain SQL. On AWS this is RDS + `SENTINEL_DB_DSN`, and
-   the compose postgres service goes away.
+   is deliberately plain SQL. On AWS this becomes RDS; the migration will
+   introduce a `SENTINEL_DB_DSN` setting (not implemented yet — today the
+   engine is SQLite-only), and the compose postgres service goes away.
 3. **Multiple egress IPs**: shard accounts across compose stacks/VMs. The
    engine's Task/queue shape is designed so a Redis-backed distributed queue
    (already provisioned behind the `scale` profile) replaces the in-process
@@ -159,12 +193,16 @@ rotation procedure before enforcing it.
 
 ## Operations quick reference
 
+All commands below assume the default EC2 posture (the `ubuntu` user is
+deliberately NOT in the docker group — membership is root-equivalent), so
+every docker command takes `sudo`:
+
 | Task | Command |
 |---|---|
-| Tail logs (JSON) | `docker compose logs -f sentinel` |
-| Container health | `docker compose ps` (healthcheck hits the dashboard every 30s) |
-| Acknowledge a CRITICAL alert | `docker compose exec sentinel sentinel ack <alert_id>` |
-| Send digest now | `docker compose exec -T sentinel sentinel digest` |
+| Tail logs (JSON) | `sudo docker compose logs -f sentinel` |
+| Container health | `sudo docker compose ps` (healthcheck hits the dashboard every 30s) |
+| Acknowledge a CRITICAL alert | `sudo docker compose exec sentinel sentinel ack <alert_id>` |
+| Send digest now | `sudo docker compose exec -T sentinel sentinel digest` |
 | Tune thresholds | edit `config/rules.yaml` on the host — hot-reloads, no restart |
-| AI triage narrative for an account | `docker compose exec sentinel sentinel triage --label <label>` |
-| Update to latest code | `cd /opt/minas-guardian && sudo git pull && sudo docker compose up -d --build` |
+| AI triage narrative for an account | `sudo docker compose exec sentinel sentinel triage --label <label>` |
+| Update to latest code | re-ship via `git archive` + scp (private repo), then `sudo docker compose up -d --build` |

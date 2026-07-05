@@ -10,12 +10,24 @@ services:
     environment:
       SENTINEL_DB_PATH: /data/sentinel.db
       SENTINEL_RULES_PATH: /app/config/rules.yaml
+      # Pinned so a host .env can't shift the listen ports out from under
+      # the port mappings and healthcheck below.
+      SENTINEL_DASHBOARD_PORT: "8390"
+      SENTINEL_METRICS_PORT: "9109"
     volumes:
       - sentinel-data:/data
       - ./config:/app/config:ro   # rules.yaml stays hot-reloadable from the host
     ports:
       - "127.0.0.1:8390:8390"     # status dashboard - keep behind VPN/SSH tunnel, it has no auth
       - "127.0.0.1:9109:9109"     # prometheus metrics
+    # The process needs no Linux capabilities and must never gain any: it
+    # parses attacker-influenceable exchange API responses while holding
+    # decrypted credentials in memory.
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 1g
     healthcheck:
       # python-slim has no curl; stdlib does the job
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8390', timeout=5)"]

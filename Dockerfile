@@ -6,7 +6,9 @@ COPY pyproject.toml ./
 COPY sentinel/ sentinel/
 COPY config/ config/
 
-RUN pip install --no-cache-dir .
+# [triage] pulls the anthropic SDK so the documented `sentinel triage`
+# command works when an API key is configured; harmless when it isn't.
+RUN pip install --no-cache-dir ".[triage]"
 
 # Non-root: the service holds customer credentials; least privilege applies
 # to our own containers too.
