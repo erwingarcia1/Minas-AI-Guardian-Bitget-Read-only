@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
-from sentinel.exchange import BitgetClient, TamperSignal
+from sentinel.exchange import SUPPORTED_EXCHANGES, ExchangeClient, TamperSignal, make_client
 
 # Bitget's Get-Account-Info response includes an `authorities` field, confirmed
 # (Phase 0 audit, docs/phase0-capability-audit.md) to carry per-module
@@ -14,9 +14,18 @@ from sentinel.exchange import BitgetClient, TamperSignal
 # prefixes was NOT verified against a live key. Because of that, this check is
 # deliberately conservative and fails CLOSED: any authority token that isn't
 # unambiguously read-only, or a response we can't parse at all, is rejected
-# rather than assumed safe. Re-validate this logic against a real key in
-# Phase 1 (see docs/phase0-capability-audit.md section 7, item 8-adjacent).
+# rather than assumed safe.
 _WRITE_KEYWORDS = ("trade", "withdraw", "transfer", "write")
+
+# Bybit v5: any of these sub-permission tokens (case-insensitive substring)
+# implies write/trade/withdraw access. Confirmed against Bybit's apikey-info
+# docs (docs/phase0-capability-audit.md, Bybit addendum). Defense-in-depth on
+# top of the authoritative readOnly==1 flag: if the flag says read-only but a
+# write action is present, that contradiction fails CLOSED.
+_BYBIT_WRITE_TOKENS = (
+    "spottrade", "order", "position", "optionstrade", "derivativestrade",
+    "copytrading", "withdraw", "transfer", "blocktrade", "earn", "nfttransfer",
+)
 
 
 class OnboardingRejected(Exception):
@@ -29,7 +38,7 @@ class OnboardingResult:
     label: str
 
 
-def _looks_read_only(authorities: object) -> tuple[bool, str]:
+def _bitget_read_only(authorities: object) -> tuple[bool, str]:
     if authorities is None:
         return False, "account-info response had no 'authorities' field - cannot verify scope"
 
@@ -56,11 +65,46 @@ def _looks_read_only(authorities: object) -> tuple[bool, str]:
     return True, "all authority tokens matched a read-only ('...r' suffix) pattern"
 
 
-def verify_read_only(client: BitgetClient) -> tuple[bool, str]:
+# Kept as a backwards-compatible alias (existing tests import this name).
+_looks_read_only = _bitget_read_only
+
+
+def _bybit_read_only(data: object) -> tuple[bool, str]:
+    """Bybit v5 query-api gate. readOnly==1 is the authoritative, documented
+    read-only signal; the permissions scan is defense-in-depth. Any ambiguity
+    fails CLOSED."""
+    if not isinstance(data, dict):
+        return False, f"query-api response had unexpected type: {type(data).__name__}"
+
+    read_only = data.get("readOnly")
+    try:
+        if int(read_only) != 1:
+            return False, f"Bybit readOnly flag is {read_only!r} (expected 1 = read-only) - key has write access"
+    except (TypeError, ValueError):
+        return False, f"Bybit readOnly flag missing or unparseable ({read_only!r}) - failing closed"
+
+    # Defense-in-depth: contradict the flag if any write action is granted.
+    permissions = data.get("permissions")
+    if isinstance(permissions, dict):
+        for category, actions in permissions.items():
+            if not isinstance(actions, (list, tuple)):
+                continue
+            for action in actions:
+                lowered = str(action).lower()
+                if any(tok in lowered for tok in _BYBIT_WRITE_TOKENS):
+                    return False, (
+                        f"Bybit key grants write action '{action}' under '{category}' "
+                        f"despite readOnly flag - failing closed"
+                    )
+
+    return True, "Bybit readOnly flag is 1 and no write permissions are granted"
+
+
+def verify_read_only(client: ExchangeClient, exchange: str = "bitget") -> tuple[bool, str]:
     """Programmatic, fail-closed check that a candidate key is read-only.
     Two independent checks must both pass:
       1. fetch_balance() succeeds (proves the key has working read access).
-      2. account-info 'authorities' contains no write/trade/withdraw indicator.
+      2. the exchange's own key-metadata endpoint reports no write scope.
     Any unexpected error during either check is treated as a rejection, not
     a pass - this is a security gate, not a best-effort probe.
     """
@@ -74,13 +118,15 @@ def verify_read_only(client: BitgetClient) -> tuple[bool, str]:
     try:
         info = client.fetch_account_info()
     except TamperSignal as exc:
-        return False, f"account-info call failed: {exc}"
+        return False, f"key-metadata call failed: {exc}"
     except Exception as exc:  # fail closed
-        return False, f"account-info call raised an unexpected error: {exc}"
+        return False, f"key-metadata call raised an unexpected error: {exc}"
 
     payload = info.get("data", info) if isinstance(info, dict) else info
+    if exchange == "bybit":
+        return _bybit_read_only(payload)
     authorities = payload.get("authorities") if isinstance(payload, dict) else None
-    return _looks_read_only(authorities)
+    return _bitget_read_only(authorities)
 
 
 def onboard_account(
@@ -92,15 +138,20 @@ def onboard_account(
     api_key: str,
     secret: str,
     passphrase: str,
+    exchange: str = "bitget",
+    alert_email: str | None = None,
+    alert_phone: str | None = None,
 ) -> OnboardingResult:
     if topology not in ("independent", "sub_account"):
         raise ValueError(f"unknown topology '{topology}'")
+    if exchange not in SUPPORTED_EXCHANGES:
+        raise ValueError(f"unsupported exchange '{exchange}' (supported: {', '.join(SUPPORTED_EXCHANGES)})")
 
-    client = BitgetClient(api_key, secret, passphrase)
-    ok, reason = verify_read_only(client)
+    client = make_client(exchange, api_key, secret, passphrase)
+    ok, reason = verify_read_only(client, exchange)
     if not ok:
         raise OnboardingRejected(
-            f"rejected key for '{label}': {reason}. Sentinel only accepts read-only keys."
+            f"rejected {exchange} key for '{label}': {reason}. Sentinel only accepts read-only keys."
         )
 
     now = datetime.now(timezone.utc).isoformat()
@@ -108,16 +159,19 @@ def onboard_account(
         cur.execute(
             """
             INSERT INTO accounts
-                (label, topology, encrypted_api_key, encrypted_secret, encrypted_passphrase,
-                 status, onboarded_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, 'active', ?, ?)
+                (label, exchange, topology, encrypted_api_key, encrypted_secret, encrypted_passphrase,
+                 alert_email, alert_phone, status, onboarded_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
             """,
             (
                 label,
+                exchange,
                 topology,
                 cipher.encrypt(api_key),
                 cipher.encrypt(secret),
-                cipher.encrypt(passphrase),
+                cipher.encrypt(passphrase or ""),
+                alert_email,
+                alert_phone,
                 now,
                 now,
             ),

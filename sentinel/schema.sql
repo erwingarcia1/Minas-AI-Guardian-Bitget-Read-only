@@ -3,10 +3,15 @@ PRAGMA foreign_keys = ON;
 CREATE TABLE IF NOT EXISTS accounts (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     label TEXT NOT NULL UNIQUE,
+    exchange TEXT NOT NULL DEFAULT 'bitget' CHECK (exchange IN ('bitget', 'bybit')),
     topology TEXT NOT NULL CHECK (topology IN ('independent', 'sub_account')),
     encrypted_api_key TEXT NOT NULL,
     encrypted_secret TEXT NOT NULL,
+    -- Empty (encrypted) for exchanges without an API passphrase, e.g. Bybit.
     encrypted_passphrase TEXT NOT NULL,
+    -- Optional per-account alert destination (in addition to severity routing).
+    alert_email TEXT,
+    alert_phone TEXT,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'tamper_suspected', 'disabled')),
     onboarded_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

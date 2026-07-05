@@ -142,7 +142,7 @@ _PAGE = """<!doctype html><html lang="en"><head>
     <div class="card">
       <div class="card-head"><h2>Accounts</h2><span class="count">{total_accounts} total</span></div>
       <table>
-        <thead><tr><th>Account</th><th>Topology</th><th>Status</th><th>Last success</th><th>Failures</th><th>Auth</th></tr></thead>
+        <thead><tr><th>Account</th><th>Exchange</th><th>Topology</th><th>Status</th><th>Last success</th><th>Failures</th><th>Auth</th></tr></thead>
         <tbody>{accounts}</tbody>
       </table>
     </div>
@@ -180,7 +180,7 @@ def _render(db: Database) -> str:
     with db.cursor() as cur:
         cur.execute(
             "SELECT a.label, a.topology, a.status, p.last_success_at, p.consecutive_failures, "
-            "p.consecutive_auth_failures FROM accounts a LEFT JOIN poll_state p ON p.account_id = a.id "
+            "p.consecutive_auth_failures, a.exchange FROM accounts a LEFT JOIN poll_state p ON p.account_id = a.id "
             "ORDER BY a.status = 'active' DESC, a.label"
         )
         accounts = cur.fetchall()
@@ -212,13 +212,14 @@ def _render(db: Database) -> str:
 
     account_rows = "".join(
         f"<tr><td class='lbl'>{html.escape(r['label'])}</td>"
+        f"<td class='mono'>{html.escape((r['exchange'] if 'exchange' in r.keys() else 'bitget') or 'bitget')}</td>"
         f"<td class='mono'>{r['topology']}</td>"
         f"<td>{_status_pill(r['status'])}</td>"
         f"<td class='mono'>{(r['last_success_at'] or '—')[:19].replace('T', ' ')}</td>"
         f"<td>{_fail_cell(r['consecutive_failures'] or 0)}</td>"
         f"<td>{_fail_cell(r['consecutive_auth_failures'] or 0)}</td></tr>"
         for r in accounts
-    ) or "<tr><td colspan=6 class='empty'>No accounts onboarded yet</td></tr>"
+    ) or "<tr><td colspan=7 class='empty'>No accounts onboarded yet</td></tr>"
 
     alert_rows = "".join(
         f"<tr><td class='mono'>{r['sent_at'][:19].replace('T', ' ')}</td>"

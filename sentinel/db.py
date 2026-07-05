@@ -28,8 +28,16 @@ class Database:
         with open(SCHEMA_PATH, "r") as f:
             self._conn.executescript(f.read())
         # Columns added after the MVP schema shipped; ALTER is a no-op error
-        # on databases that already have them.
-        for ddl in ("ALTER TABLE alerts ADD COLUMN escalated_at TEXT",):
+        # on databases that already have them. (CREATE TABLE IF NOT EXISTS never
+        # alters an existing table, so multi-exchange support needs these on any
+        # DB onboarded before the columns existed - e.g. the deployed Bitget one.)
+        migrations = (
+            "ALTER TABLE alerts ADD COLUMN escalated_at TEXT",
+            "ALTER TABLE accounts ADD COLUMN exchange TEXT NOT NULL DEFAULT 'bitget'",
+            "ALTER TABLE accounts ADD COLUMN alert_email TEXT",
+            "ALTER TABLE accounts ADD COLUMN alert_phone TEXT",
+        )
+        for ddl in migrations:
             try:
                 self._conn.execute(ddl)
             except sqlite3.OperationalError:

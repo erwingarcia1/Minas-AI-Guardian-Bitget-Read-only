@@ -71,10 +71,10 @@ def test_balance_call_failure_rejects():
 
 
 def test_onboard_account_persists_encrypted_on_success(db, cipher, monkeypatch):
-    def fake_client_ctor(api_key, secret, password):
+    def fake_client_ctor(exchange, api_key, secret, passphrase=""):
         return _client_with(account_info_result=account_info_response(authorities="spot_account_r"))
 
-    monkeypatch.setattr("sentinel.onboarding.BitgetClient", fake_client_ctor)
+    monkeypatch.setattr("sentinel.onboarding.make_client", fake_client_ctor)
 
     result = onboard_account(
         db, cipher, label="acct-1", topology="independent", api_key="k", secret="s", passphrase="p"
@@ -89,10 +89,10 @@ def test_onboard_account_persists_encrypted_on_success(db, cipher, monkeypatch):
 
 
 def test_onboard_account_rejects_write_scope_and_persists_nothing(db, cipher, monkeypatch):
-    def fake_client_ctor(api_key, secret, password):
+    def fake_client_ctor(exchange, api_key, secret, passphrase=""):
         return _client_with(account_info_result=account_info_response(authorities="spot_trade_w"))
 
-    monkeypatch.setattr("sentinel.onboarding.BitgetClient", fake_client_ctor)
+    monkeypatch.setattr("sentinel.onboarding.make_client", fake_client_ctor)
 
     with pytest.raises(OnboardingRejected):
         onboard_account(

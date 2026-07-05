@@ -32,7 +32,7 @@ def test_end_to_end_new_withdrawal_to_unseen_address_fires_critical(db, cipher, 
     withdrawal-created and unseen-address detectors should fire, get
     logged to the append-only event log, and reach the alert channel."""
     onboarding_client = _mock_client(balance_total={"BTC": 1.0})
-    monkeypatch.setattr("sentinel.onboarding.BitgetClient", lambda *a, **k: onboarding_client)
+    monkeypatch.setattr("sentinel.onboarding.make_client", lambda *a, **k: onboarding_client)
     result = onboard_account(
         db, cipher, label="acct-1", topology="independent", api_key="k", secret="s", passphrase="p"
     )
@@ -41,7 +41,7 @@ def test_end_to_end_new_withdrawal_to_unseen_address_fires_critical(db, cipher, 
         balance_total={"BTC": 1.0},
         withdrawals=[withdrawal_record(order_id="wd-new", address="bc1qneveraddress", amount="0.1")],
     )
-    monkeypatch.setattr("sentinel.poller.BitgetClient", lambda *a, **k: poll_client)
+    monkeypatch.setattr("sentinel.poller.make_client", lambda *a, **k: poll_client)
 
     channel = RecordingChannel()
     rules = RulesConfig("config/rules.yaml")
@@ -69,14 +69,14 @@ def test_end_to_end_new_withdrawal_to_unseen_address_fires_critical(db, cipher, 
 def test_end_to_end_repeat_withdrawal_does_not_refire(db, cipher, monkeypatch):
     """A withdrawal already seen in a prior cycle must not fire again."""
     onboarding_client = _mock_client(balance_total={"BTC": 1.0})
-    monkeypatch.setattr("sentinel.onboarding.BitgetClient", lambda *a, **k: onboarding_client)
+    monkeypatch.setattr("sentinel.onboarding.make_client", lambda *a, **k: onboarding_client)
     result = onboard_account(
         db, cipher, label="acct-2", topology="independent", api_key="k", secret="s", passphrase="p"
     )
 
     existing_withdrawal = withdrawal_record(order_id="wd-existing", address="bc1qexistingaddress", amount="0.1")
     poll_client = _mock_client(balance_total={"BTC": 1.0}, withdrawals=[existing_withdrawal])
-    monkeypatch.setattr("sentinel.poller.BitgetClient", lambda *a, **k: poll_client)
+    monkeypatch.setattr("sentinel.poller.make_client", lambda *a, **k: poll_client)
 
     channel = RecordingChannel()
     rules = RulesConfig("config/rules.yaml")

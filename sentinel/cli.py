@@ -100,20 +100,26 @@ def cmd_onboard(args: argparse.Namespace) -> int:
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     cipher = CredentialCipher()
 
-    api_key = args.api_key or input("Bitget API key: ").strip()
-    secret = args.secret or getpass.getpass("Bitget API secret: ").strip()
-    passphrase = args.passphrase or getpass.getpass("Bitget API passphrase: ").strip()
+    exchange = args.exchange
+    api_key = args.api_key or input(f"{exchange} API key: ").strip()
+    secret = args.secret or getpass.getpass(f"{exchange} API secret: ").strip()
+    # Bybit v5 keys have no passphrase; only prompt where the exchange uses one.
+    if exchange == "bybit":
+        passphrase = ""
+    else:
+        passphrase = args.passphrase or getpass.getpass(f"{exchange} API passphrase: ").strip()
 
     try:
         result = onboard_account(
             db, cipher, label=args.label, topology=args.topology,
             api_key=api_key, secret=secret, passphrase=passphrase,
+            exchange=exchange, alert_email=args.alert_email, alert_phone=args.alert_phone,
         )
     except OnboardingRejected as exc:
         print(f"REJECTED: {exc}", file=sys.stderr)
         return 1
 
-    print(f"Onboarded '{result.label}' as account id {result.account_id}")
+    print(f"Onboarded '{result.label}' ({exchange}) as account id {result.account_id}")
     return 0
 
 
@@ -199,12 +205,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(prog="sentinel")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    onboard_parser = sub.add_parser("onboard", help="Verify and register a read-only Bitget key")
+    onboard_parser = sub.add_parser("onboard", help="Verify and register a read-only exchange key")
     onboard_parser.add_argument("--label", required=True)
+    onboard_parser.add_argument("--exchange", choices=["bitget", "bybit"], default="bitget")
     onboard_parser.add_argument("--topology", choices=["independent", "sub_account"], default="independent")
     onboard_parser.add_argument("--api-key")
     onboard_parser.add_argument("--secret")
     onboard_parser.add_argument("--passphrase")
+    onboard_parser.add_argument("--alert-email", help="per-account alert destination (email)")
+    onboard_parser.add_argument("--alert-phone", help="per-account alert destination (E.164 phone)")
     onboard_parser.set_defaults(func=cmd_onboard)
 
     run_parser = sub.add_parser("run", help="Run the monitoring engine (workers, rate limits, breakers)")

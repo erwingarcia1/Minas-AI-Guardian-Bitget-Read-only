@@ -37,7 +37,7 @@ from sentinel.detectors.transfer_pattern import detect_new_transfer_route
 from sentinel.detectors.unseen_address import detect_unseen_address
 from sentinel.detectors.withdrawal import detect_new_withdrawals
 from sentinel.events import append_event
-from sentinel.exchange import BitgetClient, TamperSignal
+from sentinel.exchange import ExchangeClient, TamperSignal, make_client
 from sentinel.numeric import to_decimal
 
 logger = logging.getLogger("sentinel.poller")
@@ -51,8 +51,12 @@ def _now_iso() -> str:
     return _now().isoformat()
 
 
-def _load_client(cipher: CredentialCipher, row) -> BitgetClient:
-    return BitgetClient(
+def _load_client(cipher: CredentialCipher, row) -> ExchangeClient:
+    # `exchange` may be absent on rows read from a pre-migration DB snapshot;
+    # default to bitget to match the historical single-exchange behavior.
+    exchange = row["exchange"] if "exchange" in row.keys() else "bitget"
+    return make_client(
+        exchange,
         cipher.decrypt(row["encrypted_api_key"]),
         cipher.decrypt(row["encrypted_secret"]),
         cipher.decrypt(row["encrypted_passphrase"]),
@@ -84,13 +88,25 @@ class AccountPoller:
     sentinel/engine.py; per-call rate limiting is handled by the engine via
     the optional `limiter`."""
 
-    def __init__(self, db: Database, cipher: CredentialCipher, rules: RulesConfig, channels: dict, limiter=None, metrics=None):
+    def __init__(self, db: Database, cipher: CredentialCipher, rules: RulesConfig, channels: dict, limiter=None, metrics=None, contact_router=None):
         self._db = db
         self._cipher = cipher
         self._rules = rules
         self._channels = channels
         self._limiter = limiter
         self._metrics = metrics
+        self._contact_router = contact_router
+
+    def _account_contact(self, account_id: int) -> tuple[str | None, str | None]:
+        with self._db.cursor() as cur:
+            cur.execute("SELECT alert_email, alert_phone FROM accounts WHERE id = ?", (account_id,))
+            row = cur.fetchone()
+        if row is None:
+            return None, None
+        keys = row.keys()
+        email = row["alert_email"] if "alert_email" in keys else None
+        phone = row["alert_phone"] if "alert_phone" in keys else None
+        return email, phone
 
     def _emit(self, account_id: int, label: str, detection) -> None:
         append_event(self._db, account_id, detection.rule, detection.severity, detection.evidence)
@@ -101,8 +117,15 @@ class AccountPoller:
             for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW")
         }
         sent = dispatch(self._db, self._channels, account_id, label, detection, cooldowns)
-        if sent and self._metrics is not None:
-            self._metrics.alert_sent(detection.severity)
+        if sent:
+            if self._metrics is not None:
+                self._metrics.alert_sent(detection.severity)
+            # Per-account destination fires only when the alert actually fired
+            # (dedup/cooldown passed), reusing dispatch's dedup semantics.
+            if self._contact_router is not None:
+                email, phone = self._account_contact(account_id)
+                if email or phone:
+                    self._contact_router.send(detection, label, email, phone)
 
     def _acquire(self, account_id: int, calls: float) -> None:
         if self._limiter is not None:

@@ -66,7 +66,12 @@ class Engine:
             base_backoff_seconds=rules.get_seconds("circuit_breaker", "base_backoff_seconds", default=60),
             max_backoff_seconds=rules.get_seconds("circuit_breaker", "max_backoff_seconds", default=3600),
         )
-        self._poller = AccountPoller(db, cipher, rules, channels, limiter=self.limiters, metrics=metrics)
+        from sentinel.alerts.contact import ContactRouter
+
+        self._poller = AccountPoller(
+            db, cipher, rules, channels, limiter=self.limiters, metrics=metrics,
+            contact_router=ContactRouter(),
+        )
         self._last_slow: dict[int, float] = {}
 
     # --- scheduler -----------------------------------------------------------
