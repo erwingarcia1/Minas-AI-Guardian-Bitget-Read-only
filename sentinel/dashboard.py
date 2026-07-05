@@ -126,7 +126,7 @@ _PAGE = """<!doctype html><html lang="en"><head>
       <div><h1><span class="minas">MINAS</span> AI Guardian</h1><div class="sub">Bitget account-compromise monitoring</div></div>
     </div>
     <div class="nav">
-      <a class="live" id="metrics-link" href="#">Metrics</a>
+      <a class="live" id="metrics-link" href="/metrics">Metrics</a>
       <span class="live"><span class="dot"></span> Live · refreshed {now}</span>
     </div>
   </header>
@@ -160,7 +160,6 @@ _PAGE = """<!doctype html><html lang="en"><head>
 
   <footer>Minas AI Guardian · internal ops view · network-gated · auto-refreshes every 30s</footer>
 </div>
-<script>document.getElementById('metrics-link').href = location.protocol + '//' + location.hostname + ':{metrics_port}';</script>
 </body></html>"""
 
 
@@ -175,11 +174,8 @@ def _fail_cell(n: int) -> str:
 
 
 def _render(db: Database) -> str:
-    import os
-
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=24)).isoformat()
-    metrics_port = int(os.environ.get("SENTINEL_METRICS_PORT", "9109"))
 
     with db.cursor() as cur:
         cur.execute(
@@ -248,7 +244,6 @@ def _render(db: Database) -> str:
         medlow_24h=medlow_24h,
         accounts=account_rows,
         alerts=alert_rows,
-        metrics_port=metrics_port,
     )
 
 
@@ -259,7 +254,20 @@ def serve_dashboard(db: Database, port: int) -> ThreadingHTTPServer:
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
-            body = _render(db).encode()
+            # Serve the styled metrics view on the dashboard's own port too,
+            # so one SSH tunnel (8390) reaches both pages. Port 9109 stays
+            # up separately for Prometheus scrapers, which need the raw
+            # exposition format, not this HTML.
+            if self.path.rstrip("/") == "/metrics":
+                from sentinel.metrics import render_metrics_html
+
+                body = render_metrics_html(dash_port=port).encode()
+            elif self.path == "/favicon.ico":
+                self.send_response(204)
+                self.end_headers()
+                return
+            else:
+                body = _render(db).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
