@@ -1,103 +1,135 @@
-# Minas AI Guardian — Bitget account-compromise monitoring
+# Minas AI Guardian
 
-> Product name: **Minas AI Guardian**. `sentinel` remains the internal
+**24/7 read-only account-compromise monitoring for crypto exchange accounts.**
+Detects funds-drain and account-takeover patterns and alerts within minutes —
+across **Bitget, Bybit, OKX Global, and Binance Global**.
+
+> The product is **Minas AI Guardian**; `sentinel` is the internal
 > package/CLI codename throughout the code.
 
-Read-only, 24/7 monitoring for Bitget accounts: detects funds-drain and
-account-takeover patterns and alerts within minutes. Never holds trade or
-withdraw permissions — onboarding programmatically rejects any key that
-isn't read-only, fail-closed.
+[![CI](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/actions/workflows/ci.yml/badge.svg)](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/actions/workflows/ci.yml)
+&nbsp;·&nbsp; version **1.0.0** ·&nbsp; see [CHANGELOG](CHANGELOG.md)
 
-## Quick start
+## The one non-negotiable
+
+**Read-only only.** Onboarding programmatically verifies every API key is
+read-only on the exchange and **rejects, fail-closed, any key with trade or
+withdraw scope** — verified per-exchange against each exchange's own key-scope
+signal (Bitget `authorities`, Bybit `readOnly`, OKX `perm`, Binance
+`apiRestrictions`). A key that can move money can never be stored. See
+[SECURITY.md](SECURITY.md).
+
+## Quick start (local)
 
 ```bash
 python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
-cp .env.example .env       # fill in SENTINEL_MASTER_KEY + alert channels
-.venv/bin/sentinel onboard --label customer-1
-.venv/bin/sentinel run     # engine: workers + rate limits + breakers + dashboard
+cp .env.example .env       # SENTINEL_MASTER_KEY + alert channels
+.venv/bin/sentinel onboard --exchange bitget --label customer-1
+.venv/bin/sentinel run     # engine + dashboard (:8390) + metrics (:9109)
 ```
 
-Docker deployment: see [docs/deployment.md](docs/deployment.md).
+Production deployment (Docker on AWS): see [docs/deployment.md](docs/deployment.md).
+
+## Onboarding a customer
+
+- **Web form** — the dashboard's **+ Add customer** button captures the full
+  customer profile and API key, verifies read-only, and starts monitoring.
+- **CLI** — `sentinel onboard --exchange {bitget|bybit|okx|binance} --label X
+  [--alert-email … --alert-phone …]`.
 
 ## CLI
 
 | Command | What |
 |---|---|
-| `sentinel onboard --label X` | Verify read-only key (fail-closed) + seed baseline |
-| `sentinel run` | Monitoring engine + status dashboard (:8390) + metrics (:9109) |
+| `sentinel onboard --exchange X --label Y` | Verify read-only key (fail-closed) + seed baseline |
+| `sentinel run` | Monitoring engine + status dashboard + metrics |
+| `sentinel set-contact --label X …` | Set/clear an account's per-account alert destination |
 | `sentinel digest` | Send the MEDIUM/LOW daily digest |
 | `sentinel ack <id>` | Acknowledge an alert (stops CRITICAL escalation) |
 | `sentinel triage --label X` | AI incident narrative (optional; additive only) |
 
 ## Detection catalog
 
-CRITICAL: withdrawal initiated (incl. in-flight `pending`), withdrawal to
+**CRITICAL:** withdrawal initiated (incl. in-flight `pending`), withdrawal to
 never-seen address, unexplained per-asset quantity decrease.
-HIGH: withdrawal burst (structuring), never-seen transfer route,
+**HIGH:** withdrawal burst (structuring), never-seen transfer route,
 never-touched pair activity, off-market execution (counterparty drain),
 monitoring-key tamper, permission-state change (proxy).
-MEDIUM: abnormal fee spend, account unreachable.
-LOW: baseline drift.
+**MEDIUM:** abnormal fee spend, account unreachable. **LOW:** baseline drift.
 
-All thresholds in [config/rules.yaml](config/rules.yaml) — hot-reloaded, no
+Thresholds live in [config/rules.yaml](config/rules.yaml) — hot-reloaded, no
 deploy to tune. Every detector ships with trigger + non-trigger tests.
 
-## Architecture
+## Dashboard
 
-- `sentinel/engine.py` — scheduler → queue → worker pool; per-account
-  idempotent tasks with jitter.
-- `sentinel/ratelimit.py` — token buckets per account credential (Bitget
-  limits are per-UID) + shared egress-IP bucket, seeded from the verified
-  numbers in the Phase 0 audit.
-- `sentinel/circuit.py` — per-account breakers with exponential backoff; one
-  bad key never stalls the fleet (soak-verified).
-- `sentinel/poller.py` — fast loop (money movement; REST-only because Bitget
-  exposes no WS channel for withdrawals) + slow loop (permission snapshots).
-- `sentinel/ws_monitor.py` — ccxt.pro order/fill/balance streams with
-  reconnect + silent-death watchdog; accelerates trading signals, REST stays
-  authoritative.
-- `sentinel/alerts/` — Telegram / Twilio SMS / SMTP email, severity routing
-  from config, dedup + cooldown, unacked-CRITICAL escalation, daily digest.
-- `sentinel/triage.py` — optional Claude-powered incident narrative. Runs
-  *after* alerts dispatch; has no code path to suppress or downgrade a rule.
-- `sentinel/db.py` + `schema.sql` — SQLite (Postgres is the scale-out path);
-  append-only event log; Decimal everywhere; UTC everywhere.
+Served over **Tailscale** (HTTPS, tailnet-only — no public ports, no tunnel):
+fleet KPIs, per-account status, recent alerts, an **Add customer** form, a
+per-account **drill-down** (customer profile + security-posture panel + event
+history), and a styled **Metrics** page. See
+[docs/architecture.md](docs/architecture.md).
+
+## Alerting
+
+Per-severity routing to your personal **Telegram**, a **VA/team Telegram
+group**, **SMS** (ClickSend or Twilio), and **email** (SMTP), plus
+per-customer email/phone destinations. Dedup + cooldown, unacked-CRITICAL
+escalation, and a MEDIUM/LOW daily digest.
 
 ## Verification
 
 ```bash
 .venv/bin/pytest -q                      # unit + integration, mocked CCXT only
-.venv/bin/python scripts/soak_test.py    # 100 synthetic accounts through the real engine
+.venv/bin/python scripts/soak_test.py    # 100 synthetic accounts through the engine
 ```
 
-Latest soak: 100 accounts (5 permanently failing, 3 under scripted attack) —
-9.8s full-fleet cycle vs 45s target, 95/95 healthy accounts polled, rate
-limiter held at the configured IP budget, and exactly the 3 attacked
-accounts fired CRITICALs.
+The suite (126 tests) never touches a live exchange. Latest soak: 100
+accounts (5 permanently failing, 3 under scripted attack) — full-fleet cycle
+well under the target, only the attacked accounts fired CRITICALs.
+
+## Architecture (short)
+
+- `sentinel/exchange.py` — read-only exchange clients (Bitget/Bybit/OKX/
+  Binance) + `make_client` factory; auth errors map to a tamper signal.
+- `sentinel/onboarding.py` — per-exchange fail-closed read-only gate.
+- `sentinel/engine.py` — scheduler → queue → worker pool with jitter.
+- `sentinel/ratelimit.py` / `circuit.py` — per-UID + egress-IP token buckets;
+  per-account breakers (one bad key never stalls the fleet).
+- `sentinel/poller.py` — fast loop (money movement) + slow loop (config drift).
+- `sentinel/detectors/` — the 12 rules, pure functions over unified data.
+- `sentinel/alerts/` — Telegram / ClickSend / Twilio / SMTP, routing, dedup,
+  escalation, digest, per-account contacts.
+- `sentinel/dashboard.py` + `metrics.py` — HTTP UI + Prometheus.
+- `sentinel/db.py` + `schema.sql` — SQLite (Postgres is the scale path);
+  append-only event log; `Decimal` everywhere; UTC everywhere.
+
+Full write-up: [docs/architecture.md](docs/architecture.md).
 
 ## Docs
 
+- [docs/architecture.md](docs/architecture.md) — current system architecture.
 - [docs/phase0-capability-audit.md](docs/phase0-capability-audit.md) — what
-  Bitget/CCXT actually expose, verified against live sources; proxy designs
-  for the gaps; rate-limit math; the topology A/B analysis.
-- [docs/customer-runbook.md](docs/customer-runbook.md) — incident response
-  steps customers take, incl. what Sentinel *cannot* see.
-- [docs/threat-model.md](docs/threat-model.md) — assets, adversaries,
-  controls, and explicitly accepted residual risks.
-- [docs/deployment.md](docs/deployment.md) — Alibaba Cloud / AWS deployment,
-  scaling path, ops reference.
-- [docs/data-retention.md](docs/data-retention.md) — **flagged for legal
-  review**; engineering defaults until then.
+  each exchange/CCXT actually exposes, verified against live sources.
+- [docs/deployment.md](docs/deployment.md) — AWS deployment, scaling, ops.
+- [docs/customer-runbook.md](docs/customer-runbook.md) — customer incident
+  response, incl. what the service *cannot* see.
+- [docs/threat-model.md](docs/threat-model.md) — assets, adversaries, controls.
+- [docs/data-retention.md](docs/data-retention.md) — **flagged for legal review**.
+- [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md)
 
 ## Known limitations (honest list)
 
 - Topology A (sub-account/broker) endpoints are mapped and schema-ready, but
-  its rate-limit cadence questions (Phase 0 audit §7 items 3/4/6) need the
-  broker test account before that pipeline is built.
-- `unexplained_quantity_decrease` doesn't reconcile futures liquidations yet
-  — wire it on for spot/hold accounts only (audit §6).
-- New-API-key detection for independent accounts is a documented proxy, not
-  a direct signal — Bitget exposes no key inventory for own accounts.
+  its rate-limit cadence questions need a broker test account first.
+- `unexplained_quantity_decrease` doesn't reconcile futures liquidations yet —
+  wire it on for spot/hold accounts only.
+- New-API-key detection for independent accounts is a documented proxy — no
+  exchange exposes a key inventory for an account's own keys.
 - Login/device/2FA state is invisible to any API consumer; covered by
   customer-side mitigations in the runbook.
+- Per-customer **Telegram-handle** delivery isn't automated (Bot API can't DM
+  an arbitrary handle without the recipient opting in); handles are stored.
+
+## License
+
+Proprietary — see [LICENSE](LICENSE). © 2026 Minas Tech. All rights reserved.

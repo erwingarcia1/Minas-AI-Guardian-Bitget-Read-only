@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/blob/main/SECURITY.md
+    about: Report security issues privately per SECURITY.md — do NOT open a public issue.
