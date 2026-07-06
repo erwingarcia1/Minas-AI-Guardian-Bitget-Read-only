@@ -137,6 +137,46 @@ _MARK_SVG = (
 )
 
 
+# Timestamps are stored and rendered in UTC (the forensic source of truth);
+# this converts them to the viewer's own timezone in the browser, so Erwin
+# sees Toronto time and a VA sees theirs. Elements opt in via
+# <span class="ts" data-utc="<iso>">. The header clock ticks in local time.
+_LOCAL_TIME_SCRIPT = """<script>
+(function () {
+  var fmt = new Intl.DateTimeFormat('sv-SE', {year:'numeric',month:'2-digit',day:'2-digit',
+    hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  document.querySelectorAll('.ts[data-utc]').forEach(function (el) {
+    var iso = el.dataset.utc;
+    if (!/[+Zz]/.test(iso.slice(10))) iso += 'Z';
+    var d = new Date(iso);
+    if (!isNaN(d)) el.textContent = fmt.format(d);
+  });
+  function tzShort(now) {
+    var p = new Intl.DateTimeFormat(undefined, {timeZoneName:'short'}).formatToParts(now);
+    for (var i = 0; i < p.length; i++) if (p[i].type === 'timeZoneName') return p[i].value;
+    return '';
+  }
+  var clock = document.getElementById('liveclock');
+  if (clock) {
+    var tick = function () {
+      var now = new Date();
+      clock.textContent = fmt.format(now).slice(11) + ' ' + tzShort(now);
+    };
+    tick();
+    setInterval(tick, 1000);
+  }
+})();
+</script>"""
+
+
+def _ts(iso: str | None, fallback: str = "—") -> str:
+    """A timestamp cell: UTC as server-rendered fallback, upgraded to the
+    viewer's local timezone by _LOCAL_TIME_SCRIPT."""
+    if not iso:
+        return fallback
+    return f'<span class="ts" data-utc="{html.escape(iso)}">{html.escape(iso[:19].replace("T", " "))}</span>'
+
+
 def _page(nav_html: str, body_html: str, refresh: bool = True) -> str:
     refresh_meta = '<meta http-equiv="refresh" content="30">' if refresh else ""
     return (
@@ -148,7 +188,8 @@ def _page(nav_html: str, body_html: str, refresh: bool = True) -> str:
         '<div class="sub">Multi-exchange account-compromise monitoring</div></div></div>'
         '<div class="nav">' + nav_html + "</div></header>"
         + body_html
-        + "<footer>Minas AI Guardian · internal ops view · network-gated (Tailscale)</footer></div></body></html>"
+        + "<footer>Minas AI Guardian · internal ops view · network-gated (Tailscale)</footer></div>"
+        + _LOCAL_TIME_SCRIPT + "</body></html>"
     )
 
 
@@ -218,14 +259,14 @@ def _render(db: Database) -> str:
         f"<tr><td><a class='acctlink' href='/account?id={r['id']}'>{html.escape(r['label'])} ›</a></td>"
         f"<td class='mono'>{html.escape((r['exchange'] if 'exchange' in r.keys() else 'bitget') or 'bitget')}</td>"
         f"<td class='mono'>{_account_type_label(r['topology'])}</td><td>{_status_pill(r['status'])}</td>"
-        f"<td class='mono'>{(r['last_success_at'] or '—')[:19].replace('T', ' ')}</td>"
+        f"<td class='mono'>{_ts(r['last_success_at'])}</td>"
         f"<td>{_fail_cell(r['consecutive_failures'] or 0)}</td>"
         f"<td>{_fail_cell(r['consecutive_auth_failures'] or 0)}</td></tr>"
         for r in accounts
     ) or "<tr><td colspan=7 class='empty'>No accounts onboarded yet</td></tr>"
 
     alert_rows = "".join(
-        f"<tr><td class='mono'>{r['sent_at'][:19].replace('T', ' ')}</td>"
+        f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
         f"<td class='lbl'>{html.escape(r['label'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
         f"<td class='rule'>{html.escape(r['rule'])}</td>"
@@ -236,7 +277,7 @@ def _render(db: Database) -> str:
     nav = (
         '<a class="live primary" href="/add">+ Add customer</a>'
         '<a class="live" href="/metrics">Metrics</a>'
-        f'<span class="live"><span class="dot"></span> Live · {now.strftime("%H:%M:%S UTC")}</span>'
+        f'<span class="live"><span class="dot"></span> Live · <span id="liveclock">{now.strftime("%H:%M:%S UTC")}</span></span>'
     )
     body = (
         '<div class="kpis">'
@@ -254,7 +295,7 @@ def _render(db: Database) -> str:
         "<th>Account type</th><th>Status</th><th>Last success</th><th>Failures</th><th>Auth</th></tr></thead>"
         f"<tbody>{account_rows}</tbody></table></div></section>"
         '<section><div class="card"><div class="card-head"><h2>Recent alerts</h2>'
-        '<span class="count">latest 50</span></div><table><thead><tr><th>Time (UTC)</th><th>Account</th>'
+        '<span class="count">latest 50</span></div><table><thead><tr><th>Time</th><th>Account</th>'
         f"<th>Severity</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
     )
     return _page(nav, body)
@@ -264,10 +305,10 @@ def _dd(value) -> str:
     return html.escape(str(value)) if value not in (None, "") else '<span class="dim">—</span>'
 
 
-def _check(ok: str, text: str, meta: str = "") -> str:
+def _check(ok: str, text: str, meta: str = "", meta_is_html: bool = False) -> str:
     icon = {"ok": '<span class="ic ok">✓</span>', "warn": '<span class="ic warn">!</span>',
             "na": '<span class="ic na">•</span>'}[ok]
-    meta_html = f'<span class="meta">{html.escape(meta)}</span>' if meta else ""
+    meta_html = f'<span class="meta">{meta if meta_is_html else html.escape(meta)}</span>' if meta else ""
     return f'<div class="check">{icon}<span class="txt">{text}</span>{meta_html}</div>'
 
 
@@ -325,7 +366,7 @@ def _render_account(db: Database, account_id: int) -> str | None:
         except ValueError:
             age = 9999
         live = "ok" if (status == "active" and age < 300) else "warn"
-        live_meta = f"last poll {last_ok[:19].replace('T', ' ')} UTC"
+        live_meta = f"last poll {_ts(last_ok)}"
 
     seeded = n_addr + n_pairs + n_wd > 0 or has_perm
     dests = []
@@ -343,7 +384,8 @@ def _render_account(db: Database, account_id: int) -> str | None:
         _check("ok", "<b>Read-only key</b> — verified at onboarding; no trade or withdraw scope",
                f("exchange") or "bitget")
         + _check("ok", "<b>Credentials encrypted at rest</b> — decrypted only in worker memory per call")
-        + _check(live, "<b>Monitoring live</b> — polled continuously for fund movement & config drift", live_meta)
+        + _check(live, "<b>Monitoring live</b> — polled continuously for fund movement & config drift", live_meta,
+                 meta_is_html=last_ok is not None)
         + _check("ok" if cons_auth == 0 else "warn",
                  "<b>Tamper detection armed</b> — repeated auth failures on our key raise a HIGH alert",
                  f"{cons_auth} consecutive auth failures")
@@ -362,14 +404,14 @@ def _render_account(db: Database, account_id: int) -> str | None:
     )
 
     event_rows = "".join(
-        f"<tr><td class='mono'>{r['created_at'][:19].replace('T', ' ')}</td>"
+        f"<tr><td class='mono'>{_ts(r['created_at'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
         f"<td class='rule'>{html.escape(r['event_type'])}</td></tr>"
         for r in events
     ) or "<tr><td colspan=3 class='empty'>No events logged yet</td></tr>"
 
     alert_rows = "".join(
-        f"<tr><td class='mono'>{r['sent_at'][:19].replace('T', ' ')}</td>"
+        f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
         f"<td class='rule'>{html.escape(r['rule'])}</td>"
         f"<td class='{'ack-yes' if r['acknowledged_at'] else 'ack-no'}'>{'✓' if r['acknowledged_at'] else '—'}</td></tr>"
@@ -397,7 +439,7 @@ def _render_account(db: Database, account_id: int) -> str | None:
         f"<dt>Exchange</dt><dd>{_dd(f('exchange'))}</dd>"
         f"<dt>Account type</dt><dd>{_dd(_account_type_label(f('topology')))}</dd>"
         f"<dt>Status</dt><dd>{_status_pill(status)}</dd>"
-        f"<dt>Onboarded</dt><dd>{_dd((f('onboarded_at') or '')[:19].replace('T', ' '))}</dd>"
+        f"<dt>Onboarded</dt><dd>{_ts(f('onboarded_at'))}</dd>"
         f"<dt>Last poll</dt><dd>{_dd((last_ok or '')[:19].replace('T', ' '))}</dd>"
         "</dl></div></section>"
         '<section><div class="card"><div class="card-head"><h2>Security posture</h2>'
@@ -407,9 +449,9 @@ def _render_account(db: Database, account_id: int) -> str | None:
         f'<span class="count">{len(_DETECTION_CATALOG)} rules watching this account</span></div>{detections}</div></section>'
         '<section class="cols">'
         '<div class="card"><div class="card-head"><h2>Recent events</h2><span class="count">latest 20</span></div>'
-        f'<table><thead><tr><th>Time (UTC)</th><th>Sev</th><th>Event</th></tr></thead><tbody>{event_rows}</tbody></table></div>'
+        f'<table><thead><tr><th>Time</th><th>Sev</th><th>Event</th></tr></thead><tbody>{event_rows}</tbody></table></div>'
         '<div class="card"><div class="card-head"><h2>Alerts</h2><span class="count">latest 20</span></div>'
-        f'<table><thead><tr><th>Time (UTC)</th><th>Sev</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div>'
+        f'<table><thead><tr><th>Time</th><th>Sev</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div>'
         "</section>"
     )
     return _page(nav, body, refresh=False)
