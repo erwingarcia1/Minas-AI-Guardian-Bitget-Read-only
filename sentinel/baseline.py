@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sentinel.db import Database
 from sentinel.exchange import ExchangeClient
@@ -80,17 +80,34 @@ def record_balance_snapshot(db: Database, account_id: int, balances: dict[str, o
 def latest_balance_snapshot(db: Database, account_id: int) -> dict[str, object]:
     """Most recent quantity per coin, as Decimal."""
     with db.cursor() as cur:
+        # The MAX() subquery must be non-correlated (parameterized, not
+        # b.account_id): correlating it re-evaluates the MAX per row, which is
+        # O(n^2) on a table that grows every fast loop - it wedged the live
+        # dashboard within ~10 hours of polling (2026-07-06 outage).
         cur.execute(
             """
-            SELECT coin, quantity FROM balance_snapshots b
+            SELECT coin, quantity FROM balance_snapshots
             WHERE account_id = ? AND snapshot_at = (
-                SELECT MAX(snapshot_at) FROM balance_snapshots WHERE account_id = b.account_id
+                SELECT MAX(snapshot_at) FROM balance_snapshots WHERE account_id = ?
             )
             """,
-            (account_id,),
+            (account_id, account_id),
         )
         rows = cur.fetchall()
     return {row["coin"]: to_decimal(row["quantity"]) for row in rows}
+
+
+def prune_balance_snapshots(db: Database, account_id: int, keep_days: int = 7) -> int:
+    """Deletes snapshots older than the retention window. Snapshots exist to
+    answer 'what changed since the last poll?' - week-old rows only slow that
+    down. Returns the number of rows deleted."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
+    with db.cursor() as cur:
+        cur.execute(
+            "DELETE FROM balance_snapshots WHERE account_id = ? AND snapshot_at < ?",
+            (account_id, cutoff),
+        )
+        return cur.rowcount
 
 
 def record_permission_snapshot(db: Database, account_id: int, authorities: object, ip_whitelist: object) -> None:

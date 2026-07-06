@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+from datetime import datetime, timedelta, timezone
+from decimal import Decimal
+
 from sentinel.baseline import (
     is_known_address,
     known_transfer_routes,
+    latest_balance_snapshot,
+    prune_balance_snapshots,
+    record_balance_snapshot,
     record_known_address,
     record_seen_withdrawal,
     seed_baseline,
@@ -27,6 +33,24 @@ def test_known_address_roundtrip(db):
     assert is_known_address(db, account_id, "bc1qabc") is False
     record_known_address(db, account_id, "bc1qabc", "BTC", "deposit_history")
     assert is_known_address(db, account_id, "bc1qabc") is True
+
+
+def test_latest_balance_snapshot_returns_newest_and_prune_keeps_it(db):
+    account_id = make_account(db)
+    record_balance_snapshot(db, account_id, {"USDT": 100})
+    record_balance_snapshot(db, account_id, {"USDT": 50, "BTC": 1})
+
+    assert latest_balance_snapshot(db, account_id) == {"USDT": Decimal("50"), "BTC": Decimal("1")}
+
+    # Backdate a stale row past the retention window; prune must remove only it.
+    old = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO balance_snapshots (account_id, coin, quantity, snapshot_at) VALUES (?, 'ETH', '9', ?)",
+            (account_id, old),
+        )
+    assert prune_balance_snapshots(db, account_id, keep_days=7) == 1
+    assert latest_balance_snapshot(db, account_id) == {"USDT": Decimal("50"), "BTC": Decimal("1")}
 
 
 def test_seed_baseline_seeds_pre_existing_transfer_routes(db):

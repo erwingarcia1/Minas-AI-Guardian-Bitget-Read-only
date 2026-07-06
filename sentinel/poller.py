@@ -13,6 +13,7 @@ from sentinel.baseline import (
     latest_balance_snapshot,
     latest_permission_snapshot,
     load_fee_baseline,
+    prune_balance_snapshots,
     record_balance_snapshot,
     record_known_address,
     record_permission_snapshot,
@@ -331,6 +332,9 @@ class AccountPoller:
             self._emit(account_id, label, detection)
 
         record_permission_snapshot(self._db, account_id, current["authorities"], current["ip_whitelist"])
+        # Housekeeping on the slow cadence: balance snapshots older than the
+        # retention window only bloat the table the fast loop queries.
+        prune_balance_snapshots(self._db, account_id)
         _update_poll_state(self._db, account_id, last_slow_loop_at=_now_iso())
 
     def _handle_auth_failure(self, account_id: int, label: str, state: dict, exc: Exception) -> None:

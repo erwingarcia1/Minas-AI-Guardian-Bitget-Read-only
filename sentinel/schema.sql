@@ -67,6 +67,9 @@ CREATE TABLE IF NOT EXISTS balance_snapshots (
     snapshot_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_balance_account_coin ON balance_snapshots(account_id, coin, snapshot_at);
+-- Serves latest_balance_snapshot's MAX(snapshot_at)-per-account lookup; the
+-- coin-first index above can't (snapshot_at is its 3rd column).
+CREATE INDEX IF NOT EXISTS idx_balance_account_time ON balance_snapshots(account_id, snapshot_at);
 
 CREATE TABLE IF NOT EXISTS permission_snapshots (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
