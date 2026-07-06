@@ -114,8 +114,9 @@ def cmd_onboard(args: argparse.Namespace) -> int:
     exchange = args.exchange
     api_key = args.api_key or input(f"{exchange} API key: ").strip()
     secret = args.secret or getpass.getpass(f"{exchange} API secret: ").strip()
-    # Bybit v5 keys have no passphrase; only prompt where the exchange uses one.
-    if exchange == "bybit":
+    # Only Bitget and OKX keys carry a passphrase; don't prompt (or hang a
+    # non-interactive run) for exchanges that have none.
+    if exchange in ("bybit", "binance"):
         passphrase = ""
     else:
         passphrase = args.passphrase or getpass.getpass(f"{exchange} API passphrase: ").strip()

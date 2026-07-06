@@ -13,6 +13,7 @@ from sentinel.baseline import (
     latest_balance_snapshot,
     latest_permission_snapshot,
     load_fee_baseline,
+    prune_balance_snapshots,
     record_balance_snapshot,
     record_known_address,
     record_permission_snapshot,
@@ -141,12 +142,24 @@ class AccountPoller:
         state = _get_poll_state(self._db, account_id)
         last_run_iso = state.get("last_fast_loop_at")
 
+        # Hints for per-symbol exchanges (Binance): pairs this account is known
+        # to have traded, plus coins held on the previous poll - so a coin sold
+        # to zero still gets its sell fills pulled and reconciled.
+        pair_hints = sorted(known_traded_pairs(self._db, account_id))
+        coin_hints = sorted(latest_balance_snapshot(self._db, account_id))
+
+        def charge(calls: float = 1.0) -> None:
+            # Rate-limiter hook for clients that fan one logical pull into
+            # several HTTP calls (Bybit/OKX categories, Binance per-symbol) -
+            # keeps the egress-IP budget honest about real request volume.
+            self._acquire(account_id, calls)
+
         try:
             client = _load_client(self._cipher, account_row)
             self._acquire(account_id, 4)
             deposits = client.fetch_deposits()
             withdrawals = client.fetch_withdrawals()
-            fills = client.fetch_closed_orders()
+            fills = client.fetch_closed_orders(symbol_hints=pair_hints, coin_hints=coin_hints, acquire=charge)
             balance = client.fetch_balance()
         except TamperSignal as exc:
             self._handle_auth_failure(account_id, label, state, exc)
@@ -219,15 +232,25 @@ class AccountPoller:
             symbols = sorted({f.get("symbol") for f in recent_fills if f.get("symbol")})
             reference_prices: dict[str, Decimal] = {}
             if symbols:
+                tickers: dict = {}
                 try:
                     self._acquire(account_id, 1)
                     tickers = client.fetch_tickers(symbols)
-                    for sym, ticker in tickers.items():
-                        last = to_decimal(ticker.get("last") or ticker.get("close"))
-                        if last > 0:
-                            reference_prices[sym] = last
                 except Exception as exc:  # noqa: BLE001 - public data failure must not kill the loop
-                    logger.warning("ticker fetch failed for %s: %s", label, exc)
+                    # Bybit rejects a batch that mixes spot and derivatives
+                    # symbols; fall back per-symbol so off-market detection
+                    # still runs instead of silently skipping the cycle.
+                    logger.warning("batch ticker fetch failed for %s (%s) - falling back to per-symbol", label, exc)
+                    for sym in symbols[:10]:
+                        try:
+                            self._acquire(account_id, 1)
+                            tickers[sym] = client.fetch_ticker(sym)
+                        except Exception as sym_exc:  # noqa: BLE001
+                            logger.warning("ticker fetch failed for %s/%s: %s", label, sym, sym_exc)
+                for sym, ticker in tickers.items():
+                    last = to_decimal(ticker.get("last") or ticker.get("close"))
+                    if last > 0:
+                        reference_prices[sym] = last
 
             max_dev = self._rules.get_decimal("detectors", "off_market", "max_deviation_pct", default=Decimal("10"))
             for detection in detect_off_market_fills(recent_fills, reference_prices, max_dev):
@@ -255,7 +278,7 @@ class AccountPoller:
         for coin in top_coins:
             try:
                 self._acquire(account_id, 1)
-                for transfer in client.fetch_transfers(coin):
+                for transfer in client.fetch_transfers(coin, acquire=charge):
                     if record_seen_transfer(self._db, account_id, transfer):
                         new_transfers.append(transfer)
             except Exception as exc:  # noqa: BLE001 - per-coin; a bad coin must not kill the loop
@@ -309,6 +332,9 @@ class AccountPoller:
             self._emit(account_id, label, detection)
 
         record_permission_snapshot(self._db, account_id, current["authorities"], current["ip_whitelist"])
+        # Housekeeping on the slow cadence: balance snapshots older than the
+        # retention window only bloat the table the fast loop queries.
+        prune_balance_snapshots(self._db, account_id)
         _update_poll_state(self._db, account_id, last_slow_loop_at=_now_iso())
 
     def _handle_auth_failure(self, account_id: int, label: str, state: dict, exc: Exception) -> None:

@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from sentinel.db import Database
-from sentinel.exchange import BitgetClient
+from sentinel.exchange import ExchangeClient
 from sentinel.numeric import to_decimal
 
 
@@ -80,17 +80,34 @@ def record_balance_snapshot(db: Database, account_id: int, balances: dict[str, o
 def latest_balance_snapshot(db: Database, account_id: int) -> dict[str, object]:
     """Most recent quantity per coin, as Decimal."""
     with db.cursor() as cur:
+        # The MAX() subquery must be non-correlated (parameterized, not
+        # b.account_id): correlating it re-evaluates the MAX per row, which is
+        # O(n^2) on a table that grows every fast loop - it wedged the live
+        # dashboard within ~10 hours of polling (2026-07-06 outage).
         cur.execute(
             """
-            SELECT coin, quantity FROM balance_snapshots b
+            SELECT coin, quantity FROM balance_snapshots
             WHERE account_id = ? AND snapshot_at = (
-                SELECT MAX(snapshot_at) FROM balance_snapshots WHERE account_id = b.account_id
+                SELECT MAX(snapshot_at) FROM balance_snapshots WHERE account_id = ?
             )
             """,
-            (account_id,),
+            (account_id, account_id),
         )
         rows = cur.fetchall()
     return {row["coin"]: to_decimal(row["quantity"]) for row in rows}
+
+
+def prune_balance_snapshots(db: Database, account_id: int, keep_days: int = 7) -> int:
+    """Deletes snapshots older than the retention window. Snapshots exist to
+    answer 'what changed since the last poll?' - week-old rows only slow that
+    down. Returns the number of rows deleted."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=keep_days)).isoformat()
+    with db.cursor() as cur:
+        cur.execute(
+            "DELETE FROM balance_snapshots WHERE account_id = ? AND snapshot_at < ?",
+            (account_id, cutoff),
+        )
+        return cur.rowcount
 
 
 def record_permission_snapshot(db: Database, account_id: int, authorities: object, ip_whitelist: object) -> None:
@@ -185,7 +202,7 @@ def save_fee_baseline(db: Database, account_id: int, ema: dict) -> None:
         )
 
 
-def seed_baseline(db: Database, account_id: int, client: BitgetClient) -> None:
+def seed_baseline(db: Database, account_id: int, client: ExchangeClient) -> None:
     """Called once at onboarding. Builds the initial 'known good' picture so
     the first fast-loop poll doesn't fire CRITICAL alerts for history that
     predates monitoring (pre-existing withdrawals/addresses are baseline,
@@ -208,6 +225,22 @@ def seed_baseline(db: Database, account_id: int, client: BitgetClient) -> None:
             record_traded_pair(db, account_id, order.get("symbol"))
     except Exception:  # noqa: BLE001 - order history is a best-effort seed
         pass
+
+    # Seed transfer history the same way: internal routes the customer already
+    # uses (spot->funding, spot->p2p, ...) are baseline, not first-poll HIGH
+    # alerts. Seeds twice the poller's default sweep width (detectors.transfers
+    # .max_coins_per_cycle, default 5) so a modest raise of that knob doesn't
+    # expose unseeded coins whose old transfers would false-alert.
+    nonzero = {k: v for k, v in totals.items() if v}
+    top_coins = sorted(nonzero, key=lambda c: to_decimal(nonzero[c]), reverse=True)[:10]
+    for coin in top_coins:
+        try:
+            for transfer in client.fetch_transfers(coin):
+                record_seen_transfer(db, account_id, transfer)
+                route = f"{transfer.get('fromAccount') or '?'}->{transfer.get('toAccount') or '?'}"
+                record_transfer_route(db, account_id, route)
+        except Exception:  # noqa: BLE001 - transfer history is a best-effort seed
+            continue
 
     info = client.fetch_account_info()
     payload = info.get("data", info) if isinstance(info, dict) else info
