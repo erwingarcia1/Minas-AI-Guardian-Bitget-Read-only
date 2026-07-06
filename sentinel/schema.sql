@@ -9,9 +9,16 @@ CREATE TABLE IF NOT EXISTS accounts (
     encrypted_secret TEXT NOT NULL,
     -- Empty (encrypted) for exchanges without an API passphrase, e.g. Bybit.
     encrypted_passphrase TEXT NOT NULL,
+    -- Customer / contact details captured at onboarding.
+    customer_name TEXT,
     -- Optional per-account alert destination (in addition to severity routing).
     alert_email TEXT,
     alert_phone TEXT,
+    alert_email_secondary TEXT,
+    alert_phone_secondary TEXT,
+    telegram_handle TEXT,
+    telegram_handle_secondary TEXT,
+    license TEXT,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'tamper_suspected', 'disabled')),
     onboarded_at TEXT NOT NULL,
     updated_at TEXT NOT NULL

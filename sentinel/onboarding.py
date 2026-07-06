@@ -1,11 +1,28 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
 from sentinel.exchange import SUPPORTED_EXCHANGES, ExchangeClient, TamperSignal, make_client
+
+
+def generate_unique_label(db: Database, name: str) -> str:
+    """Turn a customer name into a unique account label (slug). The label is
+    the stable identifier used across the system; the full name is stored
+    separately as customer_name."""
+    base = re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-") or "customer"
+    with db.cursor() as cur:
+        cur.execute("SELECT label FROM accounts WHERE label = ? OR label LIKE ?", (base, base + "-%"))
+        taken = {r["label"] for r in cur.fetchall()}
+    if base not in taken:
+        return base
+    i = 2
+    while f"{base}-{i}" in taken:
+        i += 1
+    return f"{base}-{i}"
 
 # Bitget's Get-Account-Info response includes an `authorities` field, confirmed
 # (Phase 0 audit, docs/phase0-capability-audit.md) to carry per-module
@@ -191,6 +208,12 @@ def onboard_account(
     exchange: str = "bitget",
     alert_email: str | None = None,
     alert_phone: str | None = None,
+    customer_name: str | None = None,
+    alert_email_secondary: str | None = None,
+    alert_phone_secondary: str | None = None,
+    telegram_handle: str | None = None,
+    telegram_handle_secondary: str | None = None,
+    license: str | None = None,
 ) -> OnboardingResult:
     if topology not in ("independent", "sub_account"):
         raise ValueError(f"unknown topology '{topology}'")
@@ -210,8 +233,9 @@ def onboard_account(
             """
             INSERT INTO accounts
                 (label, exchange, topology, encrypted_api_key, encrypted_secret, encrypted_passphrase,
-                 alert_email, alert_phone, status, onboarded_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
+                 customer_name, alert_email, alert_phone, alert_email_secondary, alert_phone_secondary,
+                 telegram_handle, telegram_handle_secondary, license, status, onboarded_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)
             """,
             (
                 label,
@@ -220,8 +244,14 @@ def onboard_account(
                 cipher.encrypt(api_key),
                 cipher.encrypt(secret),
                 cipher.encrypt(passphrase or ""),
+                customer_name,
                 alert_email,
                 alert_phone,
+                alert_email_secondary,
+                alert_phone_secondary,
+                telegram_handle,
+                telegram_handle_secondary,
+                license,
                 now,
                 now,
             ),

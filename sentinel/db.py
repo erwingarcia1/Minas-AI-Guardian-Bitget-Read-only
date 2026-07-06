@@ -36,6 +36,12 @@ class Database:
             "ALTER TABLE accounts ADD COLUMN exchange TEXT NOT NULL DEFAULT 'bitget'",
             "ALTER TABLE accounts ADD COLUMN alert_email TEXT",
             "ALTER TABLE accounts ADD COLUMN alert_phone TEXT",
+            "ALTER TABLE accounts ADD COLUMN customer_name TEXT",
+            "ALTER TABLE accounts ADD COLUMN alert_email_secondary TEXT",
+            "ALTER TABLE accounts ADD COLUMN alert_phone_secondary TEXT",
+            "ALTER TABLE accounts ADD COLUMN telegram_handle TEXT",
+            "ALTER TABLE accounts ADD COLUMN telegram_handle_secondary TEXT",
+            "ALTER TABLE accounts ADD COLUMN license TEXT",
         )
         for ddl in migrations:
             try:
