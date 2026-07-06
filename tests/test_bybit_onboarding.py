@@ -8,11 +8,16 @@ from sentinel.onboarding import OnboardingRejected, _bybit_read_only, onboard_ac
 
 
 def query_api(read_only=1, permissions=None):
-    """Bybit /v5/user/query-api shape (result wrapped), as CCXT returns it."""
+    """Bybit /v5/user/query-api shape (result wrapped), as CCXT returns it.
+    The default permissions mirror the populated-scopes example in Bybit's own
+    apikey-info docs for a readOnly:1 key - real keys ALWAYS carry scopes
+    (they're what the key may read), so mocking empty arrays proves nothing."""
     if permissions is None:
         permissions = {
-            "ContractTrade": [], "Spot": [], "Wallet": [], "Options": [],
-            "Derivatives": [], "Exchange": ["ExchangeHistory"], "NFT": ["NFTQueryProductList"],
+            "ContractTrade": ["Order", "Position"], "Spot": ["SpotTrade"],
+            "Wallet": ["AccountTransfer", "SubMemberTransfer"], "Options": [],
+            "Derivatives": ["DerivativesTrade"], "Exchange": ["ExchangeHistory"],
+            "NFT": ["NFTQueryProductList"],
         }
     return {"result": {"readOnly": read_only, "permissions": permissions, "ips": ["1.2.3.4"]}}
 
@@ -43,6 +48,14 @@ def test_read_only_flag_1_accepted():
     assert ok
 
 
+def test_realistic_readonly_key_with_populated_scopes_accepted():
+    # Regression: Bybit permission entries are SCOPES (what the key may READ),
+    # not write grants. A real read-only key that can read balances/orders
+    # always lists these - it must pass the gate, not be rejected.
+    ok, reason = _bybit_read_only(query_api()["result"])
+    assert ok, reason
+
+
 def test_read_only_flag_0_rejected():
     ok, reason = _bybit_read_only({"readOnly": 0, "permissions": {"Spot": []}})
     assert not ok and "write access" in reason
@@ -58,10 +71,12 @@ def test_non_dict_fails_closed():
     assert not ok
 
 
-def test_write_permission_contradicting_flag_is_rejected():
-    # readOnly claims 1 but a write action is granted -> defense-in-depth rejects.
-    ok, reason = _bybit_read_only({"readOnly": 1, "permissions": {"Spot": ["SpotTrade"]}})
-    assert not ok and "SpotTrade" in reason
+def test_trade_scopes_on_readonly_key_are_accepted():
+    # readOnly==1 is the platform-enforced write bar; SpotTrade here is the
+    # scope that lets the key READ spot orders. Rejecting it would make every
+    # usable read-only key fail onboarding.
+    ok, _ = _bybit_read_only({"readOnly": 1, "permissions": {"Spot": ["SpotTrade"]}})
+    assert ok
 
 
 def test_withdraw_permission_rejected_even_if_flag_says_readonly():

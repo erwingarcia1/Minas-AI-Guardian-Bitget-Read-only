@@ -34,15 +34,16 @@ def generate_unique_label(db: Database, name: str) -> str:
 # rather than assumed safe.
 _WRITE_KEYWORDS = ("trade", "withdraw", "transfer", "write")
 
-# Bybit v5: any of these sub-permission tokens (case-insensitive substring)
-# implies write/trade/withdraw access. Confirmed against Bybit's apikey-info
-# docs (docs/phase0-capability-audit.md, Bybit addendum). Defense-in-depth on
-# top of the authoritative readOnly==1 flag: if the flag says read-only but a
-# write action is present, that contradiction fails CLOSED.
-_BYBIT_WRITE_TOKENS = (
-    "spottrade", "order", "position", "optionstrade", "derivativestrade",
-    "copytrading", "withdraw", "transfer", "blocktrade", "earn", "nfttransfer",
-)
+# Bybit v5: the `permissions` object on query-api lists SCOPES (which endpoint
+# groups the key can access), NOT write grants - Bybit's own apikey-info docs
+# (bybit-exchange.github.io/docs/v5/user/apikey-info, verified 2026-07-06) show
+# a readOnly:1 key listing ContractTrade:[Order,Position], Spot:[SpotTrade],
+# Wallet:[AccountTransfer], and permissions are mandatory at key creation
+# regardless of readOnly. Reading wallet balance / order history REQUIRES those
+# scopes, so treating them as write grants would reject every usable read-only
+# key. readOnly==1 is the platform-enforced write bar; the only scope a
+# monitoring key must never carry is withdrawal - that one still fails CLOSED.
+_BYBIT_WRITE_TOKENS = ("withdraw",)
 
 
 class OnboardingRejected(Exception):
@@ -131,6 +132,12 @@ _BINANCE_WRITE_FLAGS = (
     "enableSpotAndMarginTrading", "enablePortfolioMarginTrading",
 )
 
+# The only boolean flags that may be true on a read-only Binance key. Binance
+# has repeatedly ADDED trade-capable flags (portfolio margin, FIX trade), so an
+# unrecognized enabled flag is treated as a possible new write grant and fails
+# CLOSED rather than assumed benign.
+_BINANCE_BENIGN_TRUE_FLAGS = ("enableReading", "ipRestrict", "enableFixReadOnly")
+
 
 def _okx_read_only(data: object) -> tuple[bool, str]:
     if not isinstance(data, dict):
@@ -160,6 +167,9 @@ def _binance_read_only(data: object) -> tuple[bool, str]:
             return False, f"Binance flag '{flag}' missing from response - failing closed"
         if value is not False:
             return False, f"Binance key grants '{flag}' ({value!r}) - not read-only"
+    for flag, value in data.items():
+        if value is True and flag not in _BINANCE_BENIGN_TRUE_FLAGS and flag not in _BINANCE_WRITE_FLAGS:
+            return False, f"Binance key has unrecognized enabled flag '{flag}' - failing closed"
     return True, "Binance enableReading=true and all write flags are false"
 
 

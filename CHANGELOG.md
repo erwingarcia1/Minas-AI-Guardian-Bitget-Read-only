@@ -13,6 +13,37 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Fixed
+- **Bybit onboarding gate rejected every real read-only key**: Bybit's
+  `permissions` entries are scopes (what the key may *read*), listed even on
+  `readOnly: 1` keys, and reading balances/orders requires them. The
+  defense-in-depth scan treated them as write grants, so no functional
+  read-only key could pass. `readOnly == 1` remains the enforced bar; only a
+  `Withdraw` scope still fails closed. Tests now mock the populated-scopes
+  shape Bybit actually returns.
+- **Binance false CRITICAL quantity-drop alerts**: closed-order coverage now
+  includes quote coins as bases (BTC sells), pairs from the traded-pair
+  baseline, and coins held on the previous poll (sold-to-zero assets), with
+  held-coin symbols surviving the per-cycle budget ahead of stale hints.
+- **Binance transfer blindness**: `fetch_transfers` now sweeps both directions
+  of spot⇄funding/futures/margin instead of ccxt's spot→USD-M-futures default,
+  cached per poll cycle.
+- **First-poll false HIGH `transfer_route_never_seen` alerts**: onboarding now
+  seeds pre-existing transfer routes/history (top-10 coins) into the baseline,
+  the same way withdrawals and traded pairs were already seeded.
+- **OKX IP-allowlist drift detection was inert**: OKX reports the allowlist as
+  `ip` (singular); now normalized to the `ips` field the drift detector reads.
+- **Off-market detection silently skipped on mixed batches**: a rejected batch
+  ticker call (Bybit spot+derivatives) now falls back to per-symbol fetches.
+- **Rate-limit accounting**: multi-call pulls (Bybit/OKX category loops,
+  Binance per-symbol/per-route loops) now charge the shared egress-IP budget
+  per real HTTP call via an `acquire` hook, instead of a flat 4 per loop.
+- **Binance gate hardening**: unrecognized *enabled* permission flags now fail
+  closed (Binance keeps adding trade-capable flags); CLI onboarding no longer
+  prompts for a passphrase Binance doesn't have.
+- **ccxt pinned to 4.5.63** — the version every adapter behavior was verified
+  against; image rebuilds no longer float to untested releases.
+
 ## [1.0.0] — 2026-07-05
 
 First production release. Running on AWS Tokyo (ap-northeast-1), reachable

@@ -80,15 +80,31 @@ class ExchangeClient:
     def fetch_deposits(self, since: int | None = None) -> list[dict]:
         return self._call(self._exchange.fetch_deposits, code=None, since=since)
 
-    def fetch_closed_orders(self, since: int | None = None) -> list[dict]:
+    def fetch_closed_orders(
+        self,
+        since: int | None = None,
+        symbol_hints: list[str] | None = None,
+        coin_hints: list[str] | None = None,
+        acquire=None,
+    ) -> list[dict]:
+        # symbol_hints/coin_hints matter only on exchanges whose order history
+        # is per-symbol (Binance); exchanges with account-wide history ignore
+        # them. `acquire(n)` is the poller's rate-limiter hook: clients that
+        # fan one logical pull into several HTTP calls charge each extra call,
+        # so the egress-IP budget reflects real request volume.
         return self._call(self._exchange.fetch_closed_orders, symbol=None, since=since)
 
-    def fetch_transfers(self, code: str, since: int | None = None) -> list[dict]:
+    def fetch_transfers(self, code: str, since: int | None = None, acquire=None) -> list[dict]:
         return self._call(self._exchange.fetch_transfers, code=code, since=since)
 
     def fetch_tickers(self, symbols: list[str]) -> dict:
         """Public reference prices for off-market fill detection."""
         return self._call(self._exchange.fetch_tickers, symbols=symbols)
+
+    def fetch_ticker(self, symbol: str) -> dict:
+        """Single-symbol fallback when a batch fetch_tickers is rejected
+        (Bybit refuses mixed spot+derivatives symbol lists)."""
+        return self._call(self._exchange.fetch_ticker, symbol)
 
     def fetch_account_info(self) -> dict:
         raise NotImplementedError
@@ -170,9 +186,17 @@ class BybitClient(ExchangeClient):
             raise last_exc
         return {}
 
-    def fetch_closed_orders(self, since: int | None = None) -> list[dict]:
+    def fetch_closed_orders(
+        self,
+        since: int | None = None,
+        symbol_hints: list[str] | None = None,
+        coin_hints: list[str] | None = None,
+        acquire=None,
+    ) -> list[dict]:
         orders: list[dict] = []
-        for params in self._ORDER_CATEGORIES:
+        for i, params in enumerate(self._ORDER_CATEGORIES):
+            if i and acquire is not None:
+                acquire(1)  # the poller's block budget covers only the first category
             try:
                 orders.extend(
                     self._call(self._exchange.fetch_closed_orders, symbol=None, since=since, params=dict(params))
@@ -223,9 +247,17 @@ class OKXClient(ExchangeClient):
             password,
         )
 
-    def fetch_closed_orders(self, since: int | None = None) -> list[dict]:
+    def fetch_closed_orders(
+        self,
+        since: int | None = None,
+        symbol_hints: list[str] | None = None,
+        coin_hints: list[str] | None = None,
+        acquire=None,
+    ) -> list[dict]:
         orders: list[dict] = []
-        for inst_type in self._ORDER_INST_TYPES:
+        for i, inst_type in enumerate(self._ORDER_INST_TYPES):
+            if i and acquire is not None:
+                acquire(1)  # the poller's block budget covers only the first instType
             try:
                 orders.extend(
                     self._call(self._exchange.fetch_closed_orders, symbol=None, since=since,
@@ -249,6 +281,9 @@ class OKXClient(ExchangeClient):
         row = rows[0] if isinstance(rows, list) and rows else {}
         data = dict(row) if isinstance(row, dict) else {}
         data.setdefault("authorities", data.get("perm"))
+        # OKX reports the key's IP allow-list under 'ip' (singular, comma-
+        # joined); normalize to 'ips' so the permission-drift detector sees it.
+        data.setdefault("ips", data.get("ip"))
         return {"data": data}
 
 
@@ -259,13 +294,24 @@ class BinanceClient(ExchangeClient):
 
     exchange_id = "binance"
     # Binance order history is per-symbol (fetch_closed_orders requires a
-    # symbol). Cover the assets actually held by deriving base/quote symbols
-    # from the current balance, bounded, so trade-reconciliation (quantity-drop)
-    # has data for held coins. Fully sold-out assets won't be covered - a known
-    # limitation to validate against a live key before trusting quantity-drop
-    # on Binance (see docs).
+    # symbol), so coverage is only as good as the symbol list. Candidates come
+    # from three sources: pairs the account is known to have traded
+    # (symbol_hints), coins held on the PREVIOUS poll (coin_hints - so an asset
+    # sold to zero still gets its own sell order pulled), and coins held now.
+    # Quote coins (incl. BTC) are treated as bases too: a customer selling BTC
+    # on BTC/USDT must produce an explaining fill or quantity-drop false-fires.
     _QUOTES = ("USDT", "FDUSD", "BTC")
-    _MAX_SYMBOLS = 12
+    _MAX_SYMBOLS = 24
+    # Universal-transfer routes to watch. ccxt's fetch_transfers default
+    # queries ONLY spot->USD-M-futures, which leaves the route detector blind
+    # to funding/margin staging and makes ordinary internal transfers look like
+    # unexplained balance drops. One call per route, all assets, cached per
+    # client instance (the poller builds a fresh client each loop).
+    _TRANSFER_ROUTES = (
+        ("spot", "funding"), ("funding", "spot"),
+        ("spot", "future"), ("future", "spot"),
+        ("spot", "margin"), ("margin", "spot"),
+    )
 
     def __init__(self, api_key: str, secret: str, password: str = ""):
         super().__init__(
@@ -274,31 +320,107 @@ class BinanceClient(ExchangeClient):
             secret,
             "",  # no passphrase on Binance
         )
+        self._transfers_cache: list[dict] | None = None
 
-    def fetch_closed_orders(self, since: int | None = None) -> list[dict]:
-        # Derive candidate symbols from non-zero balances (base coins) x quotes.
+    def fetch_closed_orders(
+        self,
+        since: int | None = None,
+        symbol_hints: list[str] | None = None,
+        coin_hints: list[str] | None = None,
+        acquire=None,
+    ) -> list[dict]:
+        if acquire is not None:
+            acquire(1)  # the internal fetch_balance below
         try:
             totals = self.fetch_balance().get("total", {})
         except TamperSignal:
             raise
         except Exception:  # noqa: BLE001
-            return []
-        bases = [c for c, v in totals.items() if v and c not in self._QUOTES]
-        orders: list[dict] = []
-        pulled = 0
-        for base in bases:
+            totals = {}
+
+        candidates: list[str] = []
+        seen: set[str] = set()
+
+        def add(symbol: str | None) -> None:
+            if symbol and symbol not in seen:
+                seen.add(symbol)
+                candidates.append(symbol)
+
+        # Held (and previously-held) coins FIRST: their fills are what
+        # quantity-drop reconciles, so if the budget truncates anything it must
+        # be stale history hints, never current coverage.
+        coins = [c for c, v in totals.items() if v] + [c for c in (coin_hints or ()) if c]
+        for base in coins:
             for quote in self._QUOTES:
-                if pulled >= self._MAX_SYMBOLS:
-                    return orders
-                symbol = f"{base}/{quote}"
+                if base != quote:
+                    add(f"{base}/{quote}")
+        held_syms = set(candidates)
+        for symbol in symbol_hints or ():
+            add(symbol)
+
+        # Drop nonexistent markets before spending private-call weight on them.
+        # load_markets is cached on the instance and ccxt would run it inside
+        # the first fetch_closed_orders call anyway.
+        try:
+            if acquire is not None:
+                acquire(1)
+            markets = self._call(self._exchange.load_markets)
+            candidates = [s for s in candidates if s in markets]
+        except TamperSignal:
+            raise
+        except Exception as exc:  # noqa: BLE001 - fall back to trial-and-error per symbol
+            logger.debug("binance load_markets failed: %s", self._redact(str(exc)))
+
+        if len(candidates) > self._MAX_SYMBOLS:
+            held_dropped = sum(1 for s in candidates[self._MAX_SYMBOLS:] if s in held_syms)
+            if held_dropped:
+                logger.warning(
+                    "binance closed-orders: %d held-coin symbols beyond the %d-symbol budget - "
+                    "quantity-drop coverage gap this cycle",
+                    held_dropped, self._MAX_SYMBOLS,
+                )
+            else:
+                logger.debug(
+                    "binance closed-orders: dropping %d stale hint symbols beyond the %d-symbol budget",
+                    len(candidates) - self._MAX_SYMBOLS, self._MAX_SYMBOLS,
+                )
+            candidates = candidates[: self._MAX_SYMBOLS]
+
+        orders: list[dict] = []
+        for i, symbol in enumerate(candidates):
+            if i and acquire is not None:
+                acquire(1)  # first pull rides the poller's block budget
+            try:
+                orders.extend(self._call(self._exchange.fetch_closed_orders, symbol=symbol, since=since))
+            except TamperSignal:
+                raise
+            except Exception as exc:  # noqa: BLE001 - a non-existent market must not kill the pull
+                logger.debug("binance closed-orders %s unavailable: %s", symbol, self._redact(str(exc)))
+        return orders
+
+    def fetch_transfers(self, code: str, since: int | None = None, acquire=None) -> list[dict]:
+        if self._transfers_cache is None:
+            rows: list[dict] = []
+            for i, (from_acct, to_acct) in enumerate(self._TRANSFER_ROUTES):
+                if i and acquire is not None:
+                    acquire(1)  # the poller charges 1 per coin; extra routes charge here
                 try:
-                    orders.extend(self._call(self._exchange.fetch_closed_orders, symbol=symbol, since=since))
-                    pulled += 1
+                    rows.extend(
+                        self._call(
+                            self._exchange.fetch_transfers, code=None, since=since,
+                            params={"fromAccount": from_acct, "toAccount": to_acct},
+                        )
+                    )
                 except TamperSignal:
                     raise
-                except Exception as exc:  # noqa: BLE001 - a non-existent market must not kill the pull
-                    logger.debug("binance closed-orders %s unavailable: %s", symbol, self._redact(str(exc)))
-        return orders
+                except Exception as exc:  # noqa: BLE001 - a disabled wallet must not kill the pull
+                    logger.debug(
+                        "binance transfers %s->%s unavailable: %s", from_acct, to_acct, self._redact(str(exc))
+                    )
+            self._transfers_cache = rows
+        if code is None:
+            return list(self._transfers_cache)
+        return [t for t in self._transfers_cache if t.get("currency") == code]
 
     def fetch_account_info(self) -> dict:
         method = getattr(self._exchange, BINANCE_API_RESTRICTIONS_METHOD, None)

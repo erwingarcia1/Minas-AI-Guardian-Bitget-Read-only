@@ -4,7 +4,7 @@ import json
 from datetime import datetime, timezone
 
 from sentinel.db import Database
-from sentinel.exchange import BitgetClient
+from sentinel.exchange import ExchangeClient
 from sentinel.numeric import to_decimal
 
 
@@ -185,7 +185,7 @@ def save_fee_baseline(db: Database, account_id: int, ema: dict) -> None:
         )
 
 
-def seed_baseline(db: Database, account_id: int, client: BitgetClient) -> None:
+def seed_baseline(db: Database, account_id: int, client: ExchangeClient) -> None:
     """Called once at onboarding. Builds the initial 'known good' picture so
     the first fast-loop poll doesn't fire CRITICAL alerts for history that
     predates monitoring (pre-existing withdrawals/addresses are baseline,
@@ -208,6 +208,22 @@ def seed_baseline(db: Database, account_id: int, client: BitgetClient) -> None:
             record_traded_pair(db, account_id, order.get("symbol"))
     except Exception:  # noqa: BLE001 - order history is a best-effort seed
         pass
+
+    # Seed transfer history the same way: internal routes the customer already
+    # uses (spot->funding, spot->p2p, ...) are baseline, not first-poll HIGH
+    # alerts. Seeds twice the poller's default sweep width (detectors.transfers
+    # .max_coins_per_cycle, default 5) so a modest raise of that knob doesn't
+    # expose unseeded coins whose old transfers would false-alert.
+    nonzero = {k: v for k, v in totals.items() if v}
+    top_coins = sorted(nonzero, key=lambda c: to_decimal(nonzero[c]), reverse=True)[:10]
+    for coin in top_coins:
+        try:
+            for transfer in client.fetch_transfers(coin):
+                record_seen_transfer(db, account_id, transfer)
+                route = f"{transfer.get('fromAccount') or '?'}->{transfer.get('toAccount') or '?'}"
+                record_transfer_route(db, account_id, route)
+        except Exception:  # noqa: BLE001 - transfer history is a best-effort seed
+            continue
 
     info = client.fetch_account_info()
     payload = info.get("data", info) if isinstance(info, dict) else info
