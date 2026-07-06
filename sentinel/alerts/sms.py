@@ -1,8 +1,32 @@
 from __future__ import annotations
 
+import os
+
 import requests
 
 from sentinel.alerts.base import AlertChannel, AlertMessage
+
+
+def build_sms_channel(recipients: list[str]) -> AlertChannel | None:
+    """Return an SMS channel for `recipients` based on configured env, or None
+    if no SMS provider is set. ClickSend is preferred when its credentials are
+    present; Twilio is the fallback. Callers no-op cleanly when this is None."""
+    recipients = [r for r in recipients if r]
+    if not recipients:
+        return None
+    cs_user, cs_key = os.environ.get("CLICKSEND_USERNAME"), os.environ.get("CLICKSEND_API_KEY")
+    if cs_user and cs_key:
+        from sentinel.alerts.clicksend import ClickSendSmsChannel
+
+        return ClickSendSmsChannel(cs_user, cs_key, os.environ.get("CLICKSEND_FROM"), recipients)
+    sid, token, frm = (
+        os.environ.get("TWILIO_ACCOUNT_SID"),
+        os.environ.get("TWILIO_AUTH_TOKEN"),
+        os.environ.get("TWILIO_FROM_NUMBER"),
+    )
+    if sid and token and frm:
+        return TwilioSmsChannel(sid, token, frm, recipients)
+    return None
 
 
 class TwilioSmsChannel(AlertChannel):

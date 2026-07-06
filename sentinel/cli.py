@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 
 from sentinel.alerts.email import EmailChannel
 from sentinel.alerts.escalation import Escalator
-from sentinel.alerts.sms import TwilioSmsChannel
 from sentinel.alerts.telegram import TelegramChannel
 from sentinel.config import RulesConfig
 from sentinel.crypto import CredentialCipher
@@ -62,10 +61,16 @@ def _build_named_channels() -> dict[str, object]:
     if token and team_chat:
         named["telegram_team"] = TelegramChannel(token, team_chat)
 
-    sid, tw_token = _env("TWILIO_ACCOUNT_SID"), _env("TWILIO_AUTH_TOKEN")
-    tw_from, tw_to = _env("TWILIO_FROM_NUMBER"), _env("TWILIO_TO_NUMBERS")
-    if sid and tw_token and tw_from and tw_to:
-        named["sms"] = TwilioSmsChannel(sid, tw_token, tw_from, [n.strip() for n in tw_to.split(",")])
+    # Global SMS ops channel - ClickSend preferred, Twilio fallback (see
+    # sentinel/alerts/sms.build_sms_channel). Recipients come from whichever
+    # provider's *_TO_NUMBERS is set.
+    sms_to = _env("CLICKSEND_TO_NUMBERS") or _env("TWILIO_TO_NUMBERS")
+    if sms_to:
+        from sentinel.alerts.sms import build_sms_channel
+
+        sms_channel = build_sms_channel([n.strip() for n in sms_to.split(",")])
+        if sms_channel is not None:
+            named["sms"] = sms_channel
 
     host, sender, recipients = _env("SMTP_HOST"), _env("SMTP_SENDER"), _env("SMTP_RECIPIENTS")
     if host and sender and recipients:

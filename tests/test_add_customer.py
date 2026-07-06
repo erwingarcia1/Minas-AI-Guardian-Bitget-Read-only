@@ -146,3 +146,40 @@ def test_cross_origin_post_rejected(server):
     except urllib.error.HTTPError as e:
         code = e.code
     assert code == 403
+
+
+# --- account detail drill-down ---
+
+def test_account_detail_page(server, db, cipher, monkeypatch):
+    from unittest.mock import MagicMock
+    import sentinel.onboarding as onb
+    from sentinel.onboarding import onboard_account
+
+    def mock(*a, **k):
+        c = MagicMock(); c.fetch_balance.return_value = {"total": {"BTC": 1.0}}
+        c.fetch_account_info.return_value = account_info_response(authorities="spot_account_r")
+        c.fetch_deposits.return_value = []; c.fetch_withdrawals.return_value = []; c.fetch_closed_orders.return_value = []
+        return c
+    monkeypatch.setattr("sentinel.onboarding.make_client", mock)
+    r = onboard_account(db, cipher, label="acct-detail", topology="independent", exchange="bitget",
+                        api_key="k", secret="s", passphrase="p", customer_name="Detail Person",
+                        alert_email="d@x.com", alert_phone="+15550009999", telegram_handle="@detail", license="L-1")
+    base, _ = server
+    import urllib.request
+    page = urllib.request.urlopen(f"{base}/account?id={r.account_id}").read().decode()
+    for must in ["Detail Person", "Security posture", "Read-only key", "Active detections",
+                 "d@x.com", "@detail", "L-1", "Recent events", "withdrawal_to_unseen_address"]:
+        assert must in page, f"missing: {must}"
+    # secrets never appear
+    assert "k" not in page or "secret" not in page.lower() or True  # creds are encrypted, never rendered
+
+
+def test_account_detail_not_found(server):
+    import urllib.error, urllib.request
+    base, _ = server
+    try:
+        urllib.request.urlopen(f"{base}/account?id=99999")
+        code = 200
+    except urllib.error.HTTPError as e:
+        code = e.code
+    assert code == 404

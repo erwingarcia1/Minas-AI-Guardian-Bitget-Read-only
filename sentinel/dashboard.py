@@ -81,6 +81,25 @@ _STYLE = """
   .fail { color:var(--high); font-weight:600; } .zero { color:var(--faint); }
   .empty { padding:34px; text-align:center; color:var(--faint); font-size:13px; }
   footer { margin-top:28px; text-align:center; color:var(--faint); font-size:11.5px; }
+  a.acctlink { color:var(--txt); text-decoration:none; font-weight:550; }
+  a.acctlink:hover { color:var(--gold); }
+  /* --- Account detail --- */
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  .dl { display:grid; grid-template-columns:150px 1fr; gap:11px 16px; padding:20px 22px; font-size:13.5px; }
+  .dl dt { color:var(--faint); font-size:12px; }
+  .dl dd { margin:0; color:var(--txt); word-break:break-word; }
+  .dl dd.dim { color:var(--faint); }
+  .checks { padding:6px 22px 18px; }
+  .check { display:flex; align-items:center; gap:11px; padding:11px 0; border-top:1px solid var(--line-soft); font-size:13.5px; }
+  .check:first-child { border-top:none; }
+  .check .ic { width:19px; height:19px; border-radius:50%; display:grid; place-items:center; font-size:11px; flex:none; font-weight:700; }
+  .check .ic.ok { background:rgba(52,211,153,.15); color:var(--ok); }
+  .check .ic.warn { background:rgba(255,166,61,.15); color:var(--high); }
+  .check .ic.na { background:rgba(139,92,246,.12); color:var(--accent); }
+  .check .txt { flex:1; } .check .meta { color:var(--faint); font-size:12px; text-align:right; }
+  .det { display:flex; align-items:center; gap:12px; padding:9px 22px; border-top:1px solid var(--line-soft); font-size:13px; }
+  .det .desc { color:var(--muted); }
+  @media (max-width:720px) { .cols { grid-template-columns:1fr; } }
   /* --- Add-customer form --- */
   form.addf { padding:22px; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px 20px; }
@@ -133,6 +152,24 @@ def _page(nav_html: str, body_html: str, refresh: bool = True) -> str:
     )
 
 
+# The protective detections that watch every account (the account's "safety
+# net"). Shown on the account detail page. Kept in sync with sentinel/detectors.
+_DETECTION_CATALOG = [
+    ("CRITICAL", "withdrawal_initiated", "Any withdrawal — including in-flight/pending"),
+    ("CRITICAL", "withdrawal_to_unseen_address", "Withdrawal to a never-before-seen address"),
+    ("CRITICAL", "unexplained_quantity_decrease", "Asset drop not explained by a trade or withdrawal"),
+    ("HIGH", "withdrawal_burst", "Several withdrawals in a short window (structuring)"),
+    ("HIGH", "transfer_route_never_seen", "Transfer along a route this account never used"),
+    ("HIGH", "never_touched_pair_activity", "Trading a pair this account never traded"),
+    ("HIGH", "off_market_execution", "Fill far from market price (counterparty drain)"),
+    ("HIGH", "monitoring_key_tamper_suspected", "Our own read-only key failing auth (tamper)"),
+    ("HIGH", "account_permission_state_changed", "Permission / IP-allowlist drift (proxy)"),
+    ("MEDIUM", "abnormal_fee_spend", "Fee spend spikes vs the account's baseline"),
+    ("MEDIUM", "account_unreachable", "Account unreachable for several polls"),
+    ("LOW", "baseline_drift_new_deposit_source", "A new deposit-source address appears"),
+]
+
+
 def _status_pill(status: str) -> str:
     cls = {"active": "s-active", "disabled": "s-disabled", "tamper_suspected": "s-tamper"}.get(status, "s-disabled")
     return f'<span class="pill {cls}">{html.escape(status.replace("_", " "))}</span>'
@@ -148,7 +185,7 @@ def _render(db: Database) -> str:
 
     with db.cursor() as cur:
         cur.execute(
-            "SELECT a.label, a.topology, a.status, p.last_success_at, p.consecutive_failures, "
+            "SELECT a.id, a.label, a.topology, a.status, p.last_success_at, p.consecutive_failures, "
             "p.consecutive_auth_failures, a.exchange FROM accounts a LEFT JOIN poll_state p ON p.account_id = a.id "
             "ORDER BY a.status = 'active' DESC, a.label"
         )
@@ -173,7 +210,7 @@ def _render(db: Database) -> str:
     medlow_24h = sum(1 for r in recent if r["severity"] in ("MEDIUM", "LOW"))
 
     account_rows = "".join(
-        f"<tr><td class='lbl'>{html.escape(r['label'])}</td>"
+        f"<tr><td><a class='acctlink' href='/account?id={r['id']}'>{html.escape(r['label'])} ›</a></td>"
         f"<td class='mono'>{html.escape((r['exchange'] if 'exchange' in r.keys() else 'bitget') or 'bitget')}</td>"
         f"<td class='mono'>{r['topology']}</td><td>{_status_pill(r['status'])}</td>"
         f"<td class='mono'>{(r['last_success_at'] or '—')[:19].replace('T', ' ')}</td>"
@@ -216,6 +253,161 @@ def _render(db: Database) -> str:
         f"<th>Severity</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
     )
     return _page(nav, body)
+
+
+def _dd(value) -> str:
+    return html.escape(str(value)) if value not in (None, "") else '<span class="dim">—</span>'
+
+
+def _check(ok: str, text: str, meta: str = "") -> str:
+    icon = {"ok": '<span class="ic ok">✓</span>', "warn": '<span class="ic warn">!</span>',
+            "na": '<span class="ic na">•</span>'}[ok]
+    meta_html = f'<span class="meta">{html.escape(meta)}</span>' if meta else ""
+    return f'<div class="check">{icon}<span class="txt">{text}</span>{meta_html}</div>'
+
+
+def _render_account(db: Database, account_id: int) -> str | None:
+    now = datetime.now(timezone.utc)
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
+        a = cur.fetchone()
+        if a is None:
+            return None
+        keys = a.keys()
+
+        def f(k):
+            return a[k] if k in keys else None
+
+        cur.execute("SELECT * FROM poll_state WHERE account_id = ?", (account_id,))
+        ps = cur.fetchone()
+        cur.execute("SELECT count(*) c FROM known_addresses WHERE account_id = ?", (account_id,))
+        n_addr = cur.fetchone()["c"]
+        cur.execute("SELECT count(*) c FROM traded_pairs WHERE account_id = ?", (account_id,))
+        n_pairs = cur.fetchone()["c"]
+        cur.execute("SELECT count(*) c FROM seen_withdrawals WHERE account_id = ?", (account_id,))
+        n_wd = cur.fetchone()["c"]
+        cur.execute("SELECT count(*) c FROM permission_snapshots WHERE account_id = ?", (account_id,))
+        has_perm = cur.fetchone()["c"] > 0
+        cur.execute(
+            "SELECT count(DISTINCT coin) c FROM balance_snapshots WHERE account_id = ? "
+            "AND snapshot_at = (SELECT MAX(snapshot_at) FROM balance_snapshots WHERE account_id = ?)",
+            (account_id, account_id),
+        )
+        n_assets = cur.fetchone()["c"]
+        cur.execute(
+            "SELECT event_type, severity, created_at FROM events WHERE account_id = ? ORDER BY created_at DESC LIMIT 20",
+            (account_id,),
+        )
+        events = cur.fetchall()
+        cur.execute(
+            "SELECT sent_at, severity, rule, acknowledged_at FROM alerts WHERE account_id = ? ORDER BY sent_at DESC LIMIT 20",
+            (account_id,),
+        )
+        alerts = cur.fetchall()
+
+    label = f("label")
+    status = f("status")
+    last_ok = ps["last_success_at"] if ps else None
+    cons_fail = (ps["consecutive_failures"] if ps else 0) or 0
+    cons_auth = (ps["consecutive_auth_failures"] if ps else 0) or 0
+
+    # Freshness of monitoring
+    live = "warn"
+    live_meta = "no successful poll yet"
+    if last_ok:
+        try:
+            age = (now - datetime.fromisoformat(last_ok)).total_seconds()
+        except ValueError:
+            age = 9999
+        live = "ok" if (status == "active" and age < 300) else "warn"
+        live_meta = f"last poll {last_ok[:19].replace('T', ' ')} UTC"
+
+    seeded = n_addr + n_pairs + n_wd > 0 or has_perm
+    dests = []
+    if f("alert_email"):
+        dests.append(f("alert_email"))
+    if f("alert_email_secondary"):
+        dests.append(f("alert_email_secondary"))
+    if f("alert_phone"):
+        dests.append(f("alert_phone"))
+    if f("alert_phone_secondary"):
+        dests.append(f("alert_phone_secondary"))
+    dest_meta = ", ".join(dests) if dests else "Telegram only"
+
+    checks = (
+        _check("ok", "<b>Read-only key</b> — verified at onboarding; no trade or withdraw scope",
+               f("exchange") or "bitget")
+        + _check("ok", "<b>Credentials encrypted at rest</b> — decrypted only in worker memory per call")
+        + _check(live, "<b>Monitoring live</b> — polled continuously for fund movement & config drift", live_meta)
+        + _check("ok" if cons_auth == 0 else "warn",
+                 "<b>Tamper detection armed</b> — repeated auth failures on our key raise a HIGH alert",
+                 f"{cons_auth} consecutive auth failures")
+        + _check("ok" if seeded else "warn", "<b>Baseline established</b> — known addresses, traded pairs & permissions snapshot",
+                 f"{n_addr} addrs · {n_pairs} pairs · {n_assets} assets · perms {'✓' if has_perm else '—'}")
+        + _check("ok" if cons_fail == 0 else "warn", "<b>Reachable</b> — account responding to polls",
+                 f"{cons_fail} consecutive failures")
+        + _check("na", "<b>Alert routing</b> — CRITICAL/HIGH go to Telegram + team group" +
+                 (" + per-account contacts" if dests else ""), dest_meta)
+    )
+
+    detections = "".join(
+        f'<div class="det"><span class="pill sev-{sev}">{sev}</span>'
+        f'<span class="rule">{html.escape(rule)}</span><span class="desc">{html.escape(desc)}</span></div>'
+        for sev, rule, desc in _DETECTION_CATALOG
+    )
+
+    event_rows = "".join(
+        f"<tr><td class='mono'>{r['created_at'][:19].replace('T', ' ')}</td>"
+        f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
+        f"<td class='rule'>{html.escape(r['event_type'])}</td></tr>"
+        for r in events
+    ) or "<tr><td colspan=3 class='empty'>No events logged yet</td></tr>"
+
+    alert_rows = "".join(
+        f"<tr><td class='mono'>{r['sent_at'][:19].replace('T', ' ')}</td>"
+        f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
+        f"<td class='rule'>{html.escape(r['rule'])}</td>"
+        f"<td class='{'ack-yes' if r['acknowledged_at'] else 'ack-no'}'>{'✓' if r['acknowledged_at'] else '—'}</td></tr>"
+        for r in alerts
+    ) or "<tr><td colspan=4 class='empty'>No alerts — all clear</td></tr>"
+
+    nav = '<a class="live" href="/">← Dashboard</a>'
+    body = (
+        '<section><div class="card"><div class="card-head">'
+        f'<h2>{html.escape(f("customer_name") or label)}</h2>'
+        f'<span class="count">{html.escape(label)} · {_status_pill(status)}</span></div></div></section>'
+        '<section class="cols">'
+        '<div class="card"><div class="card-head"><h2>Customer</h2></div><dl class="dl">'
+        f"<dt>Name</dt><dd>{_dd(f('customer_name'))}</dd>"
+        f"<dt>License</dt><dd>{_dd(f('license'))}</dd>"
+        f"<dt>Email</dt><dd>{_dd(f('alert_email'))}</dd>"
+        f"<dt>Phone / text</dt><dd>{_dd(f('alert_phone'))}</dd>"
+        f"<dt>Secondary email</dt><dd>{_dd(f('alert_email_secondary'))}</dd>"
+        f"<dt>Secondary phone</dt><dd>{_dd(f('alert_phone_secondary'))}</dd>"
+        f"<dt>Telegram</dt><dd>{_dd(f('telegram_handle'))}</dd>"
+        f"<dt>Secondary Telegram</dt><dd>{_dd(f('telegram_handle_secondary'))}</dd>"
+        "</dl></div>"
+        '<div class="card"><div class="card-head"><h2>Account</h2></div><dl class="dl">'
+        f"<dt>Label</dt><dd>{_dd(label)}</dd>"
+        f"<dt>Exchange</dt><dd>{_dd(f('exchange'))}</dd>"
+        f"<dt>Type</dt><dd>{_dd(f('topology'))}</dd>"
+        f"<dt>Status</dt><dd>{_status_pill(status)}</dd>"
+        f"<dt>Onboarded</dt><dd>{_dd((f('onboarded_at') or '')[:19].replace('T', ' '))}</dd>"
+        f"<dt>Last poll</dt><dd>{_dd((last_ok or '')[:19].replace('T', ' '))}</dd>"
+        "</dl></div></section>"
+        '<section><div class="card"><div class="card-head"><h2>Security posture</h2>'
+        '<span class="count">what keeps this account safe</span></div>'
+        f'<div class="checks">{checks}</div></div></section>'
+        '<section><div class="card"><div class="card-head"><h2>Active detections</h2>'
+        f'<span class="count">{len(_DETECTION_CATALOG)} rules watching this account</span></div>{detections}</div></section>'
+        '<section class="cols">'
+        '<div class="card"><div class="card-head"><h2>Recent events</h2><span class="count">latest 20</span></div>'
+        f'<table><thead><tr><th>Time (UTC)</th><th>Sev</th><th>Event</th></tr></thead><tbody>{event_rows}</tbody></table></div>'
+        '<div class="card"><div class="card-head"><h2>Alerts</h2><span class="count">latest 20</span></div>'
+        f'<table><thead><tr><th>Time (UTC)</th><th>Sev</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div>'
+        "</section>"
+    )
+    return _page(nav, body, refresh=False)
 
 
 def _input(name: str, label: str, values: dict, kind: str = "text", required: bool = False, hint: str = "") -> str:
@@ -321,6 +513,19 @@ def serve_dashboard(db: Database, cipher: CredentialCipher, port: int) -> Thread
                 self._send(render_metrics_html(dash_port=port).encode())
             elif path == "/add":
                 self._send(_render_add_form().encode())
+            elif path == "/account":
+                qs = parse_qs(urlparse(self.path).query)
+                try:
+                    aid = int((qs.get("id", ["0"])[0]))
+                except ValueError:
+                    aid = 0
+                page = _render_account(db, aid)
+                if page is None:
+                    self._send(_page('<a class="live" href="/">← Dashboard</a>',
+                                     '<section><div class="card"><div class="empty">Account not found</div></div></section>',
+                                     refresh=False).encode(), 404)
+                else:
+                    self._send(page.encode())
             elif self.path == "/favicon.ico":
                 self.send_response(204)
                 self.end_headers()
