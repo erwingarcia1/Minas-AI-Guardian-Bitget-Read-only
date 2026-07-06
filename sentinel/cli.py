@@ -56,6 +56,12 @@ def _build_named_channels() -> dict[str, object]:
     if token and chat_id:
         named["telegram"] = TelegramChannel(token, chat_id)
 
+    # Optional team/VA Telegram group: the bot must be a member of the group.
+    # Routed via the 'telegram_team' channel name in alerting.routing.
+    team_chat = _env("TELEGRAM_TEAM_CHAT_ID")
+    if token and team_chat:
+        named["telegram_team"] = TelegramChannel(token, team_chat)
+
     sid, tw_token = _env("TWILIO_ACCOUNT_SID"), _env("TWILIO_AUTH_TOKEN")
     tw_from, tw_to = _env("TWILIO_FROM_NUMBER"), _env("TWILIO_TO_NUMBERS")
     if sid and tw_token and tw_from and tw_to:

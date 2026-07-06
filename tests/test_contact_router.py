@@ -1,0 +1,99 @@
+from __future__ import annotations
+
+from sentinel.detectors.base import Detection
+
+
+def _detection():
+    return Detection(rule="withdrawal_initiated", severity="CRITICAL", confidence="high",
+                     message="m", evidence={"order_id": "wd-1"})
+
+
+class _RecEmail:
+    instances = []
+
+    def __init__(self, host, port, user, pw, sender, recipients):
+        self.recipients = recipients
+        _RecEmail.instances.append(self)
+
+    def send(self, alert):
+        self.sent = alert
+
+
+class _RecSms:
+    instances = []
+
+    def __init__(self, sid, token, frm, numbers):
+        self.numbers = numbers
+        _RecSms.instances.append(self)
+
+    def send(self, alert):
+        self.sent = alert
+
+
+def _router(monkeypatch, smtp=True, twilio=True):
+    _RecEmail.instances = []
+    _RecSms.instances = []
+    monkeypatch.setattr("sentinel.alerts.contact.EmailChannel", _RecEmail)
+    monkeypatch.setattr("sentinel.alerts.contact.TwilioSmsChannel", _RecSms)
+    if smtp:
+        monkeypatch.setenv("SMTP_HOST", "smtp.test")
+        monkeypatch.setenv("SMTP_SENDER", "alerts@test")
+    else:
+        monkeypatch.delenv("SMTP_HOST", raising=False)
+    if twilio:
+        monkeypatch.setenv("TWILIO_ACCOUNT_SID", "sid")
+        monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+        monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15550000000")
+    else:
+        monkeypatch.delenv("TWILIO_ACCOUNT_SID", raising=False)
+    from sentinel.alerts.contact import ContactRouter
+    return ContactRouter()
+
+
+def test_sends_to_primary_and_secondary_email(monkeypatch):
+    r = _router(monkeypatch)
+    r.send(_detection(), "acct", ["a@x.com", "b@x.com"], [])
+    assert len(_RecEmail.instances) == 1
+    assert _RecEmail.instances[0].recipients == ["a@x.com", "b@x.com"]
+
+
+def test_sends_sms_to_each_phone(monkeypatch):
+    r = _router(monkeypatch)
+    r.send(_detection(), "acct", [], ["+15551112222", "+15553334444"])
+    assert [i.numbers[0] for i in _RecSms.instances] == ["+15551112222", "+15553334444"]
+
+
+def test_dedupes_and_drops_blanks(monkeypatch):
+    r = _router(monkeypatch)
+    r.send(_detection(), "acct", ["a@x.com", "a@x.com", None, ""], [])
+    assert _RecEmail.instances[0].recipients == ["a@x.com"]
+
+
+def test_no_contacts_is_noop(monkeypatch):
+    r = _router(monkeypatch)
+    r.send(_detection(), "acct", [], [])
+    assert not _RecEmail.instances and not _RecSms.instances
+
+
+def test_unconfigured_transport_is_noop_not_error(monkeypatch):
+    r = _router(monkeypatch, smtp=False, twilio=False)
+    r.send(_detection(), "acct", ["a@x.com"], ["+15551112222"])  # must not raise
+    assert not _RecEmail.instances and not _RecSms.instances
+
+
+def test_team_telegram_channel_wired_when_env_set(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "111")
+    monkeypatch.setenv("TELEGRAM_TEAM_CHAT_ID", "-100999")
+    from sentinel.cli import _build_named_channels
+    named = _build_named_channels()
+    assert "telegram" in named and "telegram_team" in named
+
+
+def test_team_telegram_absent_when_env_unset(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "t")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "111")
+    monkeypatch.delenv("TELEGRAM_TEAM_CHAT_ID", raising=False)
+    from sentinel.cli import _build_named_channels
+    named = _build_named_channels()
+    assert "telegram" in named and "telegram_team" not in named

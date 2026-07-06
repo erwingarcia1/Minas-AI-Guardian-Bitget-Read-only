@@ -97,16 +97,20 @@ class AccountPoller:
         self._metrics = metrics
         self._contact_router = contact_router
 
-    def _account_contact(self, account_id: int) -> tuple[str | None, str | None]:
+    def _account_contact(self, account_id: int) -> tuple[list[str], list[str]]:
         with self._db.cursor() as cur:
-            cur.execute("SELECT alert_email, alert_phone FROM accounts WHERE id = ?", (account_id,))
+            cur.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
             row = cur.fetchone()
         if row is None:
-            return None, None
+            return [], []
         keys = row.keys()
-        email = row["alert_email"] if "alert_email" in keys else None
-        phone = row["alert_phone"] if "alert_phone" in keys else None
-        return email, phone
+
+        def val(k):
+            return row[k] if k in keys else None
+
+        emails = [val("alert_email"), val("alert_email_secondary")]
+        phones = [val("alert_phone"), val("alert_phone_secondary")]
+        return [e for e in emails if e], [p for p in phones if p]
 
     def _emit(self, account_id: int, label: str, detection) -> None:
         append_event(self._db, account_id, detection.rule, detection.severity, detection.evidence)
@@ -123,9 +127,9 @@ class AccountPoller:
             # Per-account destination fires only when the alert actually fired
             # (dedup/cooldown passed), reusing dispatch's dedup semantics.
             if self._contact_router is not None:
-                email, phone = self._account_contact(account_id)
-                if email or phone:
-                    self._contact_router.send(detection, label, email, phone)
+                emails, phones = self._account_contact(account_id)
+                if emails or phones:
+                    self._contact_router.send(detection, label, emails, phones)
 
     def _acquire(self, account_id: int, calls: float) -> None:
         if self._limiter is not None:

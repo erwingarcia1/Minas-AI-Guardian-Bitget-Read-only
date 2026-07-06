@@ -51,9 +51,11 @@ detectors:
 alerting:
   # Which channels each severity routes to. Channels not configured via env
   # are skipped with a warning at startup.
+  # telegram = your personal chat; telegram_team = the VA/team group (bot must
+  # be a member; set TELEGRAM_TEAM_CHAT_ID). Unconfigured channels are skipped.
   routing:
-    CRITICAL: [telegram, sms, email]
-    HIGH: [telegram, email]
+    CRITICAL: [telegram, telegram_team, sms, email]
+    HIGH: [telegram, telegram_team, email]
     MEDIUM: [digest]
     LOW: [digest]
   cooldown_minutes:
