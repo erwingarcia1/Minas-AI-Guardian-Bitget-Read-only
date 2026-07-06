@@ -26,4 +26,6 @@ jobs:
       - name: Compose config is valid
         run: |
           docker compose version
-          POSTGRES_PASSWORD= docker compose config --quiet && echo "compose OK"
+          cp .env.example .env   # git-ignored at runtime; a placeholder satisfies env_file
+          docker compose config --quiet && echo "compose OK"
+          rm -f .env
