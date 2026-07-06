@@ -14,6 +14,13 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Fixed
+- **Dashboard outage (2026-07-06)**: `latest_balance_snapshot` used a
+  correlated `MAX(snapshot_at)` subquery — quadratic cost on a table growing
+  every fast loop. ~10h after deploy the engine held the SQLite lock nearly
+  continuously and dashboard renders stalled past browser timeouts (polling
+  and alerting stayed healthy). Query de-correlated, `(account_id,
+  snapshot_at)` index added, and snapshots now prune to a 7-day window on the
+  slow loop.
 - **Bybit onboarding gate rejected every real read-only key**: Bybit's
   `permissions` entries are scopes (what the key may *read*), listed even on
   `readOnly: 1` keys, and reading balances/orders requires them. The
