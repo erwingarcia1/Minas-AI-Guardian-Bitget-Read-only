@@ -170,6 +170,11 @@ _DETECTION_CATALOG = [
 ]
 
 
+def _account_type_label(topology: str | None) -> str:
+    """Customer-facing name for the stored topology value."""
+    return {"independent": "Primary", "sub_account": "Sub-account"}.get(topology or "", topology or "—")
+
+
 def _status_pill(status: str) -> str:
     cls = {"active": "s-active", "disabled": "s-disabled", "tamper_suspected": "s-tamper"}.get(status, "s-disabled")
     return f'<span class="pill {cls}">{html.escape(status.replace("_", " "))}</span>'
@@ -212,7 +217,7 @@ def _render(db: Database) -> str:
     account_rows = "".join(
         f"<tr><td><a class='acctlink' href='/account?id={r['id']}'>{html.escape(r['label'])} ›</a></td>"
         f"<td class='mono'>{html.escape((r['exchange'] if 'exchange' in r.keys() else 'bitget') or 'bitget')}</td>"
-        f"<td class='mono'>{r['topology']}</td><td>{_status_pill(r['status'])}</td>"
+        f"<td class='mono'>{_account_type_label(r['topology'])}</td><td>{_status_pill(r['status'])}</td>"
         f"<td class='mono'>{(r['last_success_at'] or '—')[:19].replace('T', ' ')}</td>"
         f"<td>{_fail_cell(r['consecutive_failures'] or 0)}</td>"
         f"<td>{_fail_cell(r['consecutive_auth_failures'] or 0)}</td></tr>"
@@ -246,7 +251,7 @@ def _render(db: Database) -> str:
         f'<div class="foot">{high_24h} high · {medlow_24h} med/low</div></div></div>'
         '<section><div class="card"><div class="card-head"><h2>Accounts</h2>'
         f'<span class="count">{total} total</span></div><table><thead><tr><th>Account</th><th>Exchange</th>'
-        "<th>Topology</th><th>Status</th><th>Last success</th><th>Failures</th><th>Auth</th></tr></thead>"
+        "<th>Account type</th><th>Status</th><th>Last success</th><th>Failures</th><th>Auth</th></tr></thead>"
         f"<tbody>{account_rows}</tbody></table></div></section>"
         '<section><div class="card"><div class="card-head"><h2>Recent alerts</h2>'
         '<span class="count">latest 50</span></div><table><thead><tr><th>Time (UTC)</th><th>Account</th>'
@@ -390,7 +395,7 @@ def _render_account(db: Database, account_id: int) -> str | None:
         '<div class="card"><div class="card-head"><h2>Account</h2></div><dl class="dl">'
         f"<dt>Label</dt><dd>{_dd(label)}</dd>"
         f"<dt>Exchange</dt><dd>{_dd(f('exchange'))}</dd>"
-        f"<dt>Type</dt><dd>{_dd(f('topology'))}</dd>"
+        f"<dt>Account type</dt><dd>{_dd(_account_type_label(f('topology')))}</dd>"
         f"<dt>Status</dt><dd>{_status_pill(status)}</dd>"
         f"<dt>Onboarded</dt><dd>{_dd((f('onboarded_at') or '')[:19].replace('T', ' '))}</dd>"
         f"<dt>Last poll</dt><dd>{_dd((last_ok or '')[:19].replace('T', ' '))}</dd>"
