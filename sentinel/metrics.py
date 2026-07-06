@@ -163,8 +163,8 @@ _PAGE = """<!doctype html><html lang="en"><head>
       <div><h1><span class="minas">MINAS</span> AI Guardian · Metrics</h1><div class="sub">Service telemetry — Prometheus exposition</div></div>
     </div>
     <div class="nav">
-      <a class="chip" id="dash" href="#">Dashboard</a>
-      <a class="chip" href="/raw">Raw</a>
+      <a class="chip" href="/">Dashboard</a>
+      <a class="chip" href="/metrics/raw">Raw</a>
       <span class="chip"><span class="dot"></span> Live · {now}</span>
     </div>
   </header>
@@ -183,7 +183,6 @@ _PAGE = """<!doctype html><html lang="en"><head>
 
   <footer>Minas AI Guardian · scrapers get the raw exposition format automatically · refreshes every 15s</footer>
 </div>
-<script>document.getElementById('dash').href = location.protocol + '//' + location.hostname + ':{dash_port}';</script>
 </body></html>"""
 
 _TYPE_TAGS = {"counter": "counter", "gauge": "gauge", "histogram": "histogram", "summary": "summary"}
@@ -261,8 +260,16 @@ def render_metrics_html(dash_port: int = 8390) -> str:
         now=datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
         service_cards="".join(service_cards) or '<div class="empty">No service metrics yet</div>',
         runtime_rows="".join(runtime_rows) or '<tr><td colspan="3" class="empty">none</td></tr>',
-        dash_port=dash_port,
     )
+
+
+def raw_exposition() -> tuple[str, bytes]:
+    """Raw Prometheus exposition (content-type, body) - what scrapers consume.
+    Served same-origin at /metrics/raw so the browser 'Raw' link works behind
+    the Tailscale HTTPS proxy (which only fronts port 443)."""
+    if not _AVAILABLE:
+        return "text/plain; charset=utf-8", b"# prometheus_client not installed\n"
+    return CONTENT_TYPE_LATEST, generate_latest(REGISTRY)
 
 
 def _serve_metrics(port: int) -> None:

@@ -85,7 +85,10 @@ class Engine:
         jitter = self._rules.get_seconds("polling", "jitter_seconds", default=10)
         slow_interval = self._rules.get_seconds("polling", "slow_loop_seconds", default=600)
         now = time.monotonic()
-        for row in self._active_accounts():
+        active = self._active_accounts()
+        if self._metrics is not None:
+            self._metrics.set_active_accounts(len(active))
+        for row in active:
             account_id = row["id"]
             self._queue.put(Task(now + random.uniform(0, jitter), account_id, "fast"))
             if now - self._last_slow.get(account_id, 0) >= slow_interval:
