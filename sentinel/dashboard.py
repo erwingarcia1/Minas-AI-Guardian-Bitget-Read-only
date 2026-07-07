@@ -312,7 +312,31 @@ def _check(ok: str, text: str, meta: str = "", meta_is_html: bool = False) -> st
     return f'<div class="check">{icon}<span class="txt">{text}</span>{meta_html}</div>'
 
 
-def _render_account(db: Database, account_id: int) -> str | None:
+def _portal_access_card(db: Database, account_id: int, email: str | None) -> str:
+    """Ops-side management of the member-portal login for this customer's
+    email. The generated password is displayed exactly once."""
+    if not email:
+        inner = ('<div class="det"><span class="desc">No email on file — add a customer email '
+                 "to enable member-portal access.</span></div>")
+        return ('<section><div class="card"><div class="card-head"><h2>Member portal access</h2>'
+                "</div>" + inner + "</div></section>")
+    from sentinel.portal import member_exists
+
+    status = ("login active" if member_exists(db, email) else "no login yet")
+    label = "Reset portal password" if member_exists(db, email) else "Generate portal password"
+    inner = (
+        f'<div class="det"><span class="desc">Member login for <b>{html.escape(email)}</b> — '
+        f"covers every account under this email · {status}</span></div>"
+        f'<form method="post" action="/portal-access" style="padding:0 22px 18px">'
+        f'<input type="hidden" name="account_id" value="{account_id}">'
+        f'<button class="submit" type="submit">{label}</button> '
+        '<span class="hint">shown once — hand it to the member securely</span></form>'
+    )
+    return ('<section><div class="card"><div class="card-head"><h2>Member portal access</h2>'
+            '<span class="count">read-only member view</span></div>' + inner + "</div></section>")
+
+
+def _render_account(db: Database, account_id: int, notice_html: str = "") -> str | None:
     now = datetime.now(timezone.utc)
     with db.cursor() as cur:
         cur.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
@@ -420,7 +444,8 @@ def _render_account(db: Database, account_id: int) -> str | None:
 
     nav = '<a class="live" href="/">← Dashboard</a>'
     body = (
-        '<section><div class="card"><div class="card-head">'
+        notice_html
+        + '<section><div class="card"><div class="card-head">'
         f'<h2>{html.escape(f("customer_name") or label)}</h2>'
         f'<span class="count">{html.escape(label)} · {_status_pill(status)}</span></div></div></section>'
         '<section class="cols">'
@@ -453,6 +478,7 @@ def _render_account(db: Database, account_id: int) -> str | None:
         '<div class="card"><div class="card-head"><h2>Alerts</h2><span class="count">latest 20</span></div>'
         f'<table><thead><tr><th>Time</th><th>Sev</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div>'
         "</section>"
+        + _portal_access_card(db, account_id, f("alert_email"))
     )
     return _page(nav, body, refresh=False)
 
@@ -580,7 +606,11 @@ def serve_dashboard(db: Database, cipher: CredentialCipher, port: int) -> Thread
                 self._send(_render(db).encode())
 
         def do_POST(self):
-            if urlparse(self.path).path.rstrip("/") != "/add":
+            post_path = urlparse(self.path).path.rstrip("/")
+            if post_path == "/portal-access":
+                self._portal_access()
+                return
+            if post_path != "/add":
                 self._send(b"not found", 404)
                 return
             if not _same_origin(self):
@@ -630,6 +660,43 @@ def serve_dashboard(db: Database, cipher: CredentialCipher, port: int) -> Thread
                 self._send(_render_add_form(
                     values, error="Onboarding failed unexpectedly - check the service logs (secrets redacted)."
                 ).encode(), 500)
+
+        def _portal_access(self):
+            """Generate/reset the member-portal password for an account's
+            customer email; the password is rendered exactly once."""
+            if not _same_origin(self):
+                self._send(b"cross-origin POST rejected", 403)
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            if length <= 0 or length > 4 * 1024:
+                self._send(b"bad request", 400)
+                return
+            form = parse_qs(self.rfile.read(length).decode("utf-8"))
+            try:
+                aid = int((form.get("account_id", ["0"])[0]))
+            except ValueError:
+                aid = 0
+            with db.cursor() as cur:
+                cur.execute("SELECT alert_email FROM accounts WHERE id = ?", (aid,))
+                row = cur.fetchone()
+            email = (row["alert_email"] if row else None) or ""
+            if not email.strip():
+                self._send(b"account not found or has no email", 404)
+                return
+
+            import secrets as _secrets
+
+            from sentinel.portal import set_member_password
+
+            password = _secrets.token_urlsafe(12)
+            set_member_password(db, email, password)
+            logger.info("portal password generated for account %d", aid)
+            notice = (
+                '<div class="banner ok">✓ Member portal password for '
+                f"<b>{html.escape(email.strip().lower())}</b>: <code>{html.escape(password)}</code>"
+                " — copy it now, it is shown only once.</div>"
+            )
+            self._send(_render_account(db, aid, notice_html=notice).encode())
 
         def log_message(self, *args):  # keep stdout JSON-clean
             pass

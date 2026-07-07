@@ -151,7 +151,15 @@ def cmd_run(args: argparse.Namespace) -> int:
     Metrics.serve(metrics_port)
     dashboard_port = int(_env("SENTINEL_DASHBOARD_PORT", "8390"))
     serve_dashboard(db, cipher, dashboard_port)
-    logger.info("dashboard on :%d, metrics on :%d", dashboard_port, metrics_port)
+
+    from sentinel.portal import serve_portal
+
+    portal_port = int(_env("SENTINEL_PORTAL_PORT", "8391"))
+    serve_portal(db, portal_port)
+    logger.info(
+        "dashboard on :%d, member portal on :%d, metrics on :%d",
+        dashboard_port, portal_port, metrics_port,
+    )
 
     escalation_minutes = rules.get_int("alerting", "escalation_unacknowledged_minutes", default=15)
     escalator = Escalator(channels.get("CRITICAL", []), escalation_minutes)

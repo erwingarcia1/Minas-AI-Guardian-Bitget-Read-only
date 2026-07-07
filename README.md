@@ -26,7 +26,7 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 cp .env.example .env       # SENTINEL_MASTER_KEY + alert channels
 .venv/bin/sentinel onboard --exchange bitget --label customer-1
-.venv/bin/sentinel run     # engine + dashboard (:8390) + metrics (:9109)
+.venv/bin/sentinel run     # engine + dashboard (:8390) + member portal (:8391) + metrics (:9109)
 ```
 
 Production deployment (Docker on AWS): see [docs/deployment.md](docs/deployment.md).
@@ -68,6 +68,25 @@ fleet KPIs, per-account status, recent alerts, an **Add customer** form, a
 per-account **drill-down** (customer profile + security-posture panel + event
 history), and a styled **Metrics** page. See
 [docs/architecture.md](docs/architecture.md).
+
+## Member portal
+
+A **separate** authenticated server (`:8391`) that lets a customer sign in and
+see **only their own** accounts, alerts, events, and security posture — never
+another customer's. Identity is the customer email; a member sees every account
+whose `alert_email` matches (case-insensitive). Properties:
+
+- **Isolation is the invariant** — every query is scoped to the signed-in
+  member's account ids; a drill-down on an id you don't own returns 404 without
+  revealing that it exists.
+- **No self-registration** — the operator generates a member's password from
+  the ops dashboard (per-account **Member portal access** card); it's shown
+  once. Passwords are scrypt-hashed; sessions are HMAC-signed `HttpOnly` cookies
+  (12 h). Login is throttled per-email and per-IP, with constant-time email
+  lookup so timing can't reveal who's registered.
+- **Read-only, and on its own port** — it shares nothing with the network-gated
+  ops view. Front it with TLS (Tailscale Serve or a reverse proxy) before
+  exposing it; the container publishes it on `127.0.0.1:8391` only.
 
 ## Alerting
 

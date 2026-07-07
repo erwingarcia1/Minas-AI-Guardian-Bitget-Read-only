@@ -13,6 +13,22 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Added
+- **Member portal** (new server on `:8391`): customers sign in with their
+  email + an operator-generated password and see **only their own** accounts,
+  alerts, events, and security posture. Cross-member isolation is the hard
+  invariant — every query is scoped to the signed-in member's account ids, and
+  a drill-down on an unowned/nonexistent id returns 404 without disclosing it.
+  Passwords are scrypt-hashed with a constant-time email lookup (no
+  member-existence timing oracle); sessions are HMAC-signed `HttpOnly`/`Secure`/
+  `SameSite=Lax` cookies (12 h); login is throttled per-email and per-IP. No
+  self-registration — the operator issues each password (shown once) from a new
+  **Member portal access** card on the ops account drill-down. The portal is a
+  separate read-only HTTP server sharing nothing with the network-gated ops
+  view. Reviewed by an adversarial security panel (isolation / auth-session /
+  web-surface / correctness); the one confirmed finding (a login timing oracle)
+  is fixed and regression-tested.
+
 ### Fixed
 - **Dashboard outage (2026-07-06)**: `latest_balance_snapshot` used a
   correlated `MAX(snapshot_at)` subquery — quadratic cost on a table growing
