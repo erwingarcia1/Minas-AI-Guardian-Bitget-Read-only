@@ -25,8 +25,9 @@ def test_alert_is_sent_once_and_deduped_within_cooldown(db):
     sent_first = dispatch(db, channels, account_id, "a", detection, {"CRITICAL": 15})
     sent_second = dispatch(db, channels, account_id, "a", detection, {"CRITICAL": 15})
 
-    assert sent_first is True
-    assert sent_second is False
+    # dispatch returns the stored alert's row id so delivery logs can link to it.
+    assert isinstance(sent_first, int)
+    assert sent_second is None
     assert len(channel.sent) == 1
 
 
@@ -46,5 +47,5 @@ def test_different_evidence_is_not_deduped_together(db):
     dispatch(db, channels, account_id, "a", d1, {"CRITICAL": 15})
     sent = dispatch(db, channels, account_id, "a", d2, {"CRITICAL": 15})
 
-    assert sent is True
+    assert isinstance(sent, int)
     assert len(channel.sent) == 2

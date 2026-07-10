@@ -64,6 +64,14 @@ alerting:
     MEDIUM: "720"
     LOW: "1440"
   escalation_unacknowledged_minutes: "15"
+  # Duplicate-SMS protection for per-account (member) texts: at most one SMS
+  # per rule + account within this window. Wider than the dispatch dedup key
+  # on purpose - a burst of distinct withdrawals pages the member once, with
+  # the full detail on Telegram/email.
+  sms_cooldown_minutes: "30"
+  # Business rule: a CRITICAL alert still pages a member who opted out of
+  # SMS (sms_alerts_enabled = 0). Set false to make the opt-out absolute.
+  sms_critical_overrides_optout: true
 
 triage:
   enabled: false               # AI triage narrative on incidents; additive only,

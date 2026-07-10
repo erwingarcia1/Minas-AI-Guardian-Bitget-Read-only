@@ -202,22 +202,38 @@ def cmd_ack(args: argparse.Namespace) -> int:
 
 def cmd_set_contact(args: argparse.Namespace) -> int:
     """Set/clear an existing account's per-account alert destination. Pass
-    --alert-email/--alert-phone to set; pass --clear to remove both."""
+    --alert-email/--alert-phone to set; pass --clear to remove both. Pass
+    --sms-alerts on|off to toggle the member's SMS notification preference
+    (CRITICAL alerts may still page per alerting.sms_critical_overrides_optout)."""
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     with db.cursor() as cur:
         cur.execute("SELECT id FROM accounts WHERE label = ?", (args.label,))
         if cur.fetchone() is None:
             print(f"no account labeled '{args.label}'", file=sys.stderr)
             return 1
+        now = datetime.now(timezone.utc).isoformat()
+        # getattr: tests (and older callers) build the Namespace by hand
+        # without the newer optional flag.
+        sms_alerts = getattr(args, "sms_alerts", None)
+        if sms_alerts is not None:
+            cur.execute(
+                "UPDATE accounts SET sms_alerts_enabled = ?, updated_at = ? WHERE label = ?",
+                (1 if sms_alerts == "on" else 0, now, args.label),
+            )
         if args.clear:
             email, phone = None, None
+        elif args.alert_email is None and args.alert_phone is None and sms_alerts is not None:
+            # Preference-only update: leave the stored destinations untouched.
+            print(f"sms alerts for '{args.label}': {sms_alerts}")
+            return 0
         else:
             email, phone = args.alert_email, args.alert_phone
         cur.execute(
             "UPDATE accounts SET alert_email = ?, alert_phone = ?, updated_at = ? WHERE label = ?",
-            (email, phone, datetime.now(timezone.utc).isoformat(), args.label),
+            (email, phone, now, args.label),
         )
-    print(f"contact for '{args.label}': email={email or '-'} phone={phone or '-'}")
+    suffix = f" sms_alerts={sms_alerts}" if sms_alerts is not None else ""
+    print(f"contact for '{args.label}': email={email or '-'} phone={phone or '-'}{suffix}")
     return 0
 
 
@@ -277,6 +293,10 @@ def main() -> None:
     contact_parser.add_argument("--alert-email")
     contact_parser.add_argument("--alert-phone")
     contact_parser.add_argument("--clear", action="store_true", help="remove both email and phone")
+    contact_parser.add_argument(
+        "--sms-alerts", choices=["on", "off"], default=None,
+        help="member SMS notification preference (CRITICAL may still page per rules.yaml)",
+    )
     contact_parser.set_defaults(func=cmd_set_contact)
 
     args = parser.parse_args()

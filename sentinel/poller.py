@@ -121,16 +121,22 @@ class AccountPoller:
             sev: self._rules.get_int("alerting", "cooldown_minutes", sev, default=60)
             for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW")
         }
-        sent = dispatch(self._db, self._channels, account_id, label, detection, cooldowns)
-        if sent:
+        alert_id = dispatch(self._db, self._channels, account_id, label, detection, cooldowns)
+        if alert_id is not None:
             if self._metrics is not None:
                 self._metrics.alert_sent(detection.severity)
             # Per-account destination fires only when the alert actually fired
-            # (dedup/cooldown passed), reusing dispatch's dedup semantics.
+            # (dedup/cooldown passed), reusing dispatch's dedup semantics. The
+            # router is called even with no contacts on file so a CRITICAL
+            # with no SMS destination is logged for follow-up (AC: missing
+            # phone handling), and the alert id links sms_deliveries rows
+            # back to the stored alert.
             if self._contact_router is not None:
                 emails, phones = self._account_contact(account_id)
-                if emails or phones:
-                    self._contact_router.send(detection, label, emails, phones)
+                self._contact_router.send(
+                    detection, label, emails, phones,
+                    account_id=account_id, alert_id=alert_id,
+                )
 
     def _acquire(self, account_id: int, calls: float) -> None:
         if self._limiter is not None:

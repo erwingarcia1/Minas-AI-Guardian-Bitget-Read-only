@@ -25,10 +25,12 @@ def dispatch(
     account_label: str,
     detection: Detection,
     cooldown_minutes: dict[str, int],
-) -> bool:
+) -> int | None:
     """Sends `detection` to the channels registered for its severity, unless
     an alert with the same dedup key already fired within the cooldown
-    window for that severity. Returns True if an alert was actually sent."""
+    window for that severity. Returns the stored alert's row id when an
+    alert was actually sent (so downstream delivery logs can reference it),
+    or None when it was deduped away."""
     dedup_key = _dedup_key(account_id, detection)
     cooldown = timedelta(minutes=cooldown_minutes.get(detection.severity, 60))
     now = datetime.now(timezone.utc)
@@ -44,7 +46,7 @@ def dispatch(
     if row is not None:
         last_sent = datetime.fromisoformat(row["sent_at"])
         if now - last_sent < cooldown:
-            return False
+            return None
 
     alert = AlertMessage(
         account_label=account_label,
@@ -75,4 +77,5 @@ def dispatch(
                 now.isoformat(),
             ),
         )
-    return True
+        alert_id = cur.lastrowid
+    return alert_id

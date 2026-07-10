@@ -42,6 +42,7 @@ class Database:
             "ALTER TABLE accounts ADD COLUMN telegram_handle TEXT",
             "ALTER TABLE accounts ADD COLUMN telegram_handle_secondary TEXT",
             "ALTER TABLE accounts ADD COLUMN license TEXT",
+            "ALTER TABLE accounts ADD COLUMN sms_alerts_enabled INTEGER NOT NULL DEFAULT 1",
         )
         for ddl in migrations:
             try:

@@ -19,6 +19,10 @@ CREATE TABLE IF NOT EXISTS accounts (
     telegram_handle TEXT,
     telegram_handle_secondary TEXT,
     license TEXT,
+    -- Member SMS notification preference. 1 = send SMS alerts (default);
+    -- 0 = opted out. CRITICAL alerts may still be sent when
+    -- alerting.sms_critical_overrides_optout is true (business rule).
+    sms_alerts_enabled INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'tamper_suspected', 'disabled')),
     onboarded_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
@@ -133,6 +137,25 @@ CREATE TABLE IF NOT EXISTS fee_baseline (
     ema_json TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- Per-recipient SMS delivery log. One row per phone number per alert:
+-- 'sent' rows carry the provider message id ClickSend/Twilio returned;
+-- 'failed' rows carry the provider error for admin review; 'skipped' records
+-- an SMS that was due but had no usable destination or was opted out;
+-- 'suppressed' records duplicate-SMS protection kicking in.
+CREATE TABLE IF NOT EXISTS sms_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    alert_id INTEGER REFERENCES alerts(id),
+    rule TEXT NOT NULL,
+    phone TEXT,
+    provider TEXT,
+    provider_message_id TEXT,
+    status TEXT NOT NULL CHECK (status IN ('sent', 'failed', 'skipped', 'suppressed')),
+    detail TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_sms_deliveries_account ON sms_deliveries(account_id, rule, created_at);
 
 -- Member-portal logins. Identity is the customer email: a member sees every
 -- account whose alert_email matches (case-insensitive). Passwords are scrypt

@@ -421,6 +421,24 @@ def _render_account(db: Database, account_id: int, notice_html: str = "") -> str
                  (" + per-account contacts" if dests else ""), dest_meta)
     )
 
+    # Member SMS notifications: nudge the operator when there is no phone to
+    # text (a CRITICAL alert would have nowhere to page), and surface an
+    # explicit opt-out so nobody wonders why a member got no text.
+    has_phone = bool(f("alert_phone") or f("alert_phone_secondary"))
+    sms_pref = f("sms_alerts_enabled")
+    sms_on = True if sms_pref is None else bool(sms_pref)
+    if not has_phone:
+        sms_meta = "no phone number on file — add or verify one to enable text alerts"
+    elif not sms_on:
+        sms_meta = "member opted out — CRITICAL alerts may still page per business rules"
+    else:
+        sms_meta = ", ".join(p for p in (f("alert_phone"), f("alert_phone_secondary")) if p)
+    checks += _check(
+        "ok" if (has_phone and sms_on) else "warn",
+        "<b>SMS text alerts</b> — urgent alerts page the member by text (ClickSend)",
+        sms_meta,
+    )
+
     detections = "".join(
         f'<div class="det"><span class="pill sev-{sev}">{sev}</span>'
         f'<span class="rule">{html.escape(rule)}</span><span class="desc">{html.escape(desc)}</span></div>'

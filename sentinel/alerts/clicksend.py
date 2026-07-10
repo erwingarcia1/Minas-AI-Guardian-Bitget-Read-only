@@ -3,6 +3,7 @@ from __future__ import annotations
 import requests
 
 from sentinel.alerts.base import AlertChannel, AlertMessage
+from sentinel.alerts.sms import SMS_MAX_LEN, format_sms_body
 
 # Verified against ClickSend's official docs + Python/PHP SDKs (2026-07-05):
 # POST https://rest.clicksend.com/v3/sms/send, HTTP Basic auth (username + API
@@ -16,7 +17,7 @@ class ClickSendSmsChannel(AlertChannel):
     a report: the body is hard-truncated (full evidence goes out on Telegram/
     email in parallel)."""
 
-    MAX_LEN = 320  # two SMS segments
+    MAX_LEN = SMS_MAX_LEN
 
     def __init__(self, username: str, api_key: str, from_id: str | None, to_numbers: list[str], timeout: float = 15.0):
         self._username = username
@@ -25,10 +26,12 @@ class ClickSendSmsChannel(AlertChannel):
         self._to = to_numbers
         self._timeout = timeout
 
-    def send(self, alert: AlertMessage) -> None:
-        body = f"[Minas AI Guardian {alert.severity}] {alert.rule} - {alert.account_label}: {alert.message}"
-        if len(body) > self.MAX_LEN:
-            body = body[: self.MAX_LEN - 3] + "..."
+    def send(self, alert: AlertMessage) -> list[dict]:
+        """Sends to every recipient in one API call; returns one delivery
+        receipt per number: {to, provider, provider_message_id, status}.
+        Raises when ClickSend rejects the request or fails to queue any
+        message, so callers can log the failure for admin review."""
+        body = format_sms_body(alert, self.MAX_LEN)
         messages = []
         for number in self._to:
             msg = {"source": "minas", "body": body, "to": number}
@@ -49,6 +52,24 @@ class ClickSendSmsChannel(AlertChannel):
         # outcome. Require top-level SUCCESS AND every message queued.
         if data.get("response_code") != "SUCCESS":
             raise RuntimeError(f"ClickSend rejected the request: {data.get('response_code')} {data.get('response_msg')}")
-        failed = [m for m in data.get("data", {}).get("messages", []) if m.get("status") != "SUCCESS"]
+        results = data.get("data", {}).get("messages", [])
+        failed = [m for m in results if m.get("status") != "SUCCESS"]
         if failed:
-            raise RuntimeError(f"ClickSend failed to queue {len(failed)} message(s): {failed[0].get('status')}")
+            raise RuntimeError(
+                f"ClickSend failed to queue {len(failed)} message(s): "
+                f"{failed[0].get('status')} (to {failed[0].get('to')})"
+            )
+        # Response messages come back in request order; prefer ClickSend's own
+        # `to` field, falling back to the requested number by index.
+        receipts = []
+        for i, number in enumerate(self._to):
+            result = results[i] if i < len(results) else {}
+            receipts.append(
+                {
+                    "to": result.get("to") or number,
+                    "provider": "clicksend",
+                    "provider_message_id": result.get("message_id"),
+                    "status": "sent",
+                }
+            )
+        return receipts

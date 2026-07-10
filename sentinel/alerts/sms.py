@@ -6,6 +6,28 @@ import requests
 
 from sentinel.alerts.base import AlertChannel, AlertMessage
 
+# Two SMS segments. Shared by every SMS transport: SMS is a pager, not a
+# report - the full evidence goes out on Telegram/email in parallel.
+SMS_MAX_LEN = 320
+
+
+def format_sms_body(alert: AlertMessage, max_len: int = SMS_MAX_LEN) -> str:
+    """Short, action-focused SMS body: product name, severity, alert type,
+    affected account, what happened, and a log-in instruction. The login
+    link (SENTINEL_PORTAL_URL, the member portal's public URL) is appended
+    last and is never truncated away - only the free-text detail shrinks."""
+    portal_url = (os.environ.get("SENTINEL_PORTAL_URL") or "").strip()
+    if portal_url:
+        action = f" Log in now to review: {portal_url}"
+    else:
+        action = " Log in to Minas AI Guardian now to review."
+    prefix = f"Minas AI Guardian {alert.severity} alert: {alert.rule} on {alert.account_label}."
+    detail = f" {alert.message}." if alert.message else ""
+    room = max_len - len(prefix) - len(action)
+    if len(detail) > room:
+        detail = detail[: max(0, room - 3)] + "..." if room > 3 else ""
+    return prefix + detail + action
+
 
 def build_sms_channel(recipients: list[str]) -> AlertChannel | None:
     """Return an SMS channel for `recipients` based on configured env, or None
@@ -34,7 +56,7 @@ class TwilioSmsChannel(AlertChannel):
     routing; the body is truncated hard because SMS is a pager, not a
     report - the full evidence goes out on Telegram/email in parallel."""
 
-    MAX_LEN = 320  # two SMS segments
+    MAX_LEN = SMS_MAX_LEN
 
     def __init__(self, account_sid: str, auth_token: str, from_number: str, to_numbers: list[str], timeout: float = 15.0):
         self._sid = account_sid
@@ -43,11 +65,12 @@ class TwilioSmsChannel(AlertChannel):
         self._to = to_numbers
         self._timeout = timeout
 
-    def send(self, alert: AlertMessage) -> None:
-        body = f"[Minas AI Guardian {alert.severity}] {alert.rule} - {alert.account_label}: {alert.message}"
-        if len(body) > self.MAX_LEN:
-            body = body[: self.MAX_LEN - 3] + "..."
+    def send(self, alert: AlertMessage) -> list[dict]:
+        """Sends to every recipient; returns one delivery receipt per number:
+        {to, provider, provider_message_id, status}."""
+        body = format_sms_body(alert, self.MAX_LEN)
         url = f"https://api.twilio.com/2010-04-01/Accounts/{self._sid}/Messages.json"
+        receipts = []
         for number in self._to:
             resp = requests.post(
                 url,
@@ -56,3 +79,9 @@ class TwilioSmsChannel(AlertChannel):
                 timeout=self._timeout,
             )
             resp.raise_for_status()
+            try:
+                sid = resp.json().get("sid")
+            except ValueError:
+                sid = None
+            receipts.append({"to": number, "provider": "twilio", "provider_message_id": sid, "status": "sent"})
+        return receipts
