@@ -44,7 +44,7 @@ Production deployment (Docker on AWS): see [docs/deployment.md](docs/deployment.
 |---|---|
 | `sentinel onboard --exchange X --label Y` | Verify read-only key (fail-closed) + seed baseline |
 | `sentinel run` | Monitoring engine + status dashboard + metrics |
-| `sentinel set-contact --label X …` | Set/clear an account's per-account alert destination |
+| `sentinel set-contact --label X …` | Set/clear an account's alert destination; `--sms-alerts on\|off` toggles the SMS preference |
 | `sentinel digest` | Send the MEDIUM/LOW daily digest |
 | `sentinel ack <id>` | Acknowledge an alert (stops CRITICAL escalation) |
 | `sentinel triage --label X` | AI incident narrative (optional; additive only) |
@@ -94,6 +94,17 @@ Per-severity routing to your personal **Telegram**, a **VA/team Telegram
 group**, **SMS** (ClickSend or Twilio), and **email** (SMTP), plus
 per-customer email/phone destinations. Dedup + cooldown, unacked-CRITICAL
 escalation, and a MEDIUM/LOW daily digest.
+
+**Member SMS** (ClickSend): when an alert fires on a member's account, the
+member's phone gets a short, action-focused text — severity, alert type,
+affected account, and a member-portal login link (`SENTINEL_PORTAL_URL`).
+Every delivery outcome is recorded in an `sms_deliveries` audit log (ClickSend
+message id, provider error on failure, skip/suppress reasons) linked to the
+alert. Duplicate texts per rule + account are suppressed within
+`alerting.sms_cooldown_minutes` (default 30); a per-account `sms_alerts_enabled`
+preference is respected, with CRITICAL overriding an opt-out per
+`alerting.sms_critical_overrides_optout`. A CRITICAL with no phone on file is
+logged and flagged on the dashboard's security-posture panel.
 
 ## Verification
 

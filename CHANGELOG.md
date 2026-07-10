@@ -14,6 +14,23 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
+- **Member SMS alerts (ClickSend) made auditable and member-aware.** Texts to
+  a member's phone now carry the product name, severity, alert type, affected
+  account, and a member-portal login link (`SENTINEL_PORTAL_URL`) that
+  truncation can never cut — only the free-text detail shrinks. Every outcome
+  lands in a new `sms_deliveries` audit table linked to the stored alert id:
+  the ClickSend message id on success, the provider error on failure, and
+  explicit skip/suppress reasons otherwise. Duplicate texts for the same rule
+  + account are suppressed within `alerting.sms_cooldown_minutes` (default 30,
+  hot-reloaded) — wider than the dispatch dedup key on purpose, so a burst of
+  distinct withdrawals pages the member once with full detail on
+  Telegram/email. A new `sms_alerts_enabled` member preference is respected,
+  with CRITICAL overriding an opt-out per
+  `alerting.sms_critical_overrides_optout` (business rule, default true). A
+  CRITICAL alert with no phone on file is logged and recorded instead of
+  silently dropped, and the dashboard's security-posture panel now nudges the
+  operator to add or verify a number. `sentinel set-contact` gains
+  `--sms-alerts on|off`.
 - **Member portal** (new server on `:8391`): customers sign in with their
   email + an operator-generated password and see **only their own** accounts,
   alerts, events, and security posture. Cross-member isolation is the hard
