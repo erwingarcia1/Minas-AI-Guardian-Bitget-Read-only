@@ -329,6 +329,7 @@ class AccountPoller:
             tolerance_abs,
             window_start_ms=window_start_ms,
             exchange=label,
+            metrics=self._metrics,
         ):
             self._emit(account_id, label, detection)
 

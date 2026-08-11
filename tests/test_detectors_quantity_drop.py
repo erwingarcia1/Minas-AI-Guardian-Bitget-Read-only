@@ -171,3 +171,70 @@ def test_no_near_miss_log_for_a_genuinely_unexplained_drop(caplog):
 
     assert len(detections) == 1
     assert "near miss" not in caplog.text
+
+
+# --- Untimestamped-record metric -------------------------------------------
+# The log line above proves the exclusion is *recorded*; these prove it is
+# *countable*. A format change on the exchange side has to reach an operator
+# through an alarm, not through someone happening to read the logs.
+
+
+class _RecordingMetrics:
+    """Stands in for sentinel.metrics.Metrics - the detector only ever calls
+    untimestamped_record on it, and this pins that surface down."""
+
+    def __init__(self):
+        self.calls = []
+
+    def untimestamped_record(self, exchange, source):
+        self.calls.append((exchange, source))
+
+
+def test_untimestamped_records_are_counted_per_exchange_and_source():
+    previous = {"BTC": Decimal("1.0"), "ETH": Decimal("10")}
+    current = {"BTC": Decimal("0.5"), "ETH": Decimal("5")}
+    undated_fill = trade_record(symbol="BTC/USDT", side="sell", amount="0.5")
+    undated_fill.pop("timestamp")
+    unparseable_withdrawal = withdrawal_record(amount="5", currency="ETH", timestamp="not-a-number")
+
+    metrics = _RecordingMetrics()
+    detect_quantity_drop(
+        previous, current, [unparseable_withdrawal], [undated_fill], TOL_PCT, TOL_ABS,
+        window_start_ms=NOW_MS - MINUTE_MS, exchange="binance-main", metrics=metrics,
+    )
+
+    assert metrics.calls == [("binance-main", "withdrawal"), ("binance-main", "fill")]
+
+
+def test_undated_record_is_counted_once_not_once_per_pass():
+    """The near-miss probe re-walks the same records. If it also counted them,
+    a single undated fill would read as two on the alarm - a phantom trend,
+    and the alarm's threshold would be calibrated against a lie."""
+    previous = {"BTC": Decimal("1.0")}
+    current = {"BTC": Decimal("0.5")}
+    undated = trade_record(symbol="BTC/USDT", side="sell", amount="0.5")
+    undated.pop("timestamp")
+
+    metrics = _RecordingMetrics()
+    detect_quantity_drop(
+        previous, current, [], [undated], TOL_PCT, TOL_ABS,
+        window_start_ms=NOW_MS - MINUTE_MS, exchange="binance-main", metrics=metrics,
+    )
+
+    assert metrics.calls == [("binance-main", "fill")]
+
+
+def test_dated_records_are_never_counted():
+    """The counter must mean 'the exchange stopped stamping times', nothing
+    else. A perfectly dated record outside the window is not that."""
+    previous = {"BTC": Decimal("1.0")}
+    current = {"BTC": Decimal("0.5")}
+    stale = _ts(trade_record(symbol="BTC/USDT", side="sell", amount="0.5"), NOW_MS - 7 * 24 * 60 * MINUTE_MS)
+
+    metrics = _RecordingMetrics()
+    detect_quantity_drop(
+        previous, current, [], [stale], TOL_PCT, TOL_ABS,
+        window_start_ms=NOW_MS - MINUTE_MS, exchange="binance-main", metrics=metrics,
+    )
+
+    assert metrics.calls == []

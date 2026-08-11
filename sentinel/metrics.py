@@ -20,14 +20,29 @@ class Metrics:
     """Prometheus counters/gauges. A no-op shell when prometheus_client
     isn't installed, so callers never need to null-check."""
 
-    def __init__(self):
+    def __init__(self, registry=None):
         if not _AVAILABLE:
             return
-        self.polls_ok = Counter("sentinel_polls_ok_total", "Successful poll cycles")
-        self.polls_failed = Counter("sentinel_polls_failed_total", "Failed poll cycles", ["kind"])
-        self.detections = Counter("sentinel_detections_total", "Detections fired", ["rule", "severity"])
-        self.alerts = Counter("sentinel_alerts_sent_total", "Alerts sent (post-dedup)", ["severity"])
-        self.accounts_active = Gauge("sentinel_accounts_active", "Accounts with status=active")
+        reg = REGISTRY if registry is None else registry
+        self.polls_ok = Counter("sentinel_polls_ok_total", "Successful poll cycles", registry=reg)
+        self.polls_failed = Counter("sentinel_polls_failed_total", "Failed poll cycles", ["kind"], registry=reg)
+        self.detections = Counter(
+            "sentinel_detections_total", "Detections fired", ["rule", "severity"], registry=reg
+        )
+        self.alerts = Counter("sentinel_alerts_sent_total", "Alerts sent (post-dedup)", ["severity"], registry=reg)
+        self.accounts_active = Gauge("sentinel_accounts_active", "Accounts with status=active", registry=reg)
+        # A record the exchange sent without a usable timestamp. Rising here
+        # means an exchange changed its response format: those records can no
+        # longer be placed in time, so quantity-drop stops crediting them as
+        # explanations (G-7) and off-market/fee checking stops seeing them at
+        # all (#51). Both failures are silent, which is exactly why this is a
+        # counter an operator can alarm on and not only a log line.
+        self.untimestamped_records = Counter(
+            "sentinel_untimestamped_records_total",
+            "Exchange records received with a missing or unparseable timestamp",
+            ["exchange", "source"],
+            registry=reg,
+        )
 
     def poll_ok(self) -> None:
         if _AVAILABLE:
@@ -48,6 +63,10 @@ class Metrics:
     def set_active_accounts(self, count: int) -> None:
         if _AVAILABLE:
             self.accounts_active.set(count)
+
+    def untimestamped_record(self, exchange: str, source: str) -> None:
+        if _AVAILABLE:
+            self.untimestamped_records.labels(exchange=exchange, source=source).inc()
 
     @staticmethod
     def serve(port: int) -> None:

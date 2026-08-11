@@ -14,6 +14,16 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
+- **`sentinel_untimestamped_records_total{exchange, source}`** — a Prometheus
+  counter for records an exchange sends without a usable timestamp. G-7 makes
+  the detector refuse such records, which is correct but degrades quietly: if
+  an exchange changes a response format, monitoring keeps looking healthy while
+  explanations stop being credited. The counter's resting value is zero, so any
+  sustained rise is a format change, catchable before a customer finds it. The
+  near-miss probe deliberately doesn't count, so one undated record reads as
+  one. `Metrics` now takes an optional `registry` for testing; production still
+  uses the global one. The alarm that pages on this counter needs paging
+  machinery the deployment doesn't yet have — tracked as G-48 (#52).
 - **Member SMS alerts (ClickSend) made auditable and member-aware.** Texts to
   a member's phone now carry the product name, severity, alert type, affected
   account, and a member-portal login link (`SENTINEL_PORTAL_URL`) that

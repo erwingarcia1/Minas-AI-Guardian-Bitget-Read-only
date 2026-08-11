@@ -14,15 +14,18 @@ logger = logging.getLogger(__name__)
 NEAR_MISS_PROBE_SECONDS = 300
 
 
-def _in_window(record: dict, window_start_ms: int | None, source: str, exchange: str) -> bool:
+def _in_window(
+    record: dict, window_start_ms: int | None, source: str, exchange: str, metrics=None
+) -> bool:
     """True if this record can be proven to fall at or after the window start.
 
     A record with no usable timestamp CANNOT be proven to be in-window, so it
     is excluded - it must not explain away a drop. Same principle as the
     read-only key check: when the system can't tell, it refuses to assume
-    safe. Each exclusion is logged with the exchange name, because an exchange
-    that routinely omits timestamps would show up here as chronic false
-    positives long before a customer mutes the channel over it."""
+    safe. Each exclusion is logged with the exchange name AND counted on
+    `sentinel_untimestamped_records_total`, because nobody reads logs on a
+    quiet day: a Binance response-format change has to reach an operator
+    through an alarm, before it reaches a customer as a missed alert."""
     if window_start_ms is None:
         return True
 
@@ -34,6 +37,8 @@ def _in_window(record: dict, window_start_ms: int | None, source: str, exchange:
             source,
             record.get("id") or record.get("symbol") or "<unidentified>",
         )
+        if metrics is not None:
+            metrics.untimestamped_record(exchange, source)
         return False
 
     try:
@@ -46,6 +51,8 @@ def _in_window(record: dict, window_start_ms: int | None, source: str, exchange:
             record.get("id") or record.get("symbol") or "<unidentified>",
             raw,
         )
+        if metrics is not None:
+            metrics.untimestamped_record(exchange, source)
         return False
 
 
@@ -91,6 +98,7 @@ def detect_quantity_drop(
     tolerance_absolute: Decimal,
     window_start_ms: int | None = None,
     exchange: str = "exchange",
+    metrics=None,
 ) -> list[Detection]:
     """Flags a per-asset quantity decrease not explained by a withdrawal or
     a matching trade fill in the same window. Tracks quantity, not USD
@@ -115,11 +123,15 @@ def detect_quantity_drop(
     docs/phase0-capability-audit.md section 6 for the leveraged-futures gap
     and the Phase 2 fix (reconcile against contract account-bill liquidation
     entries once that businessType enum is confirmed)."""
-    withdrawals = [w for w in withdrawals_in_window if _in_window(w, window_start_ms, "withdrawal", exchange)]
-    fills = [f for f in fills_in_window if _in_window(f, window_start_ms, "fill", exchange)]
+    withdrawals = [
+        w for w in withdrawals_in_window if _in_window(w, window_start_ms, "withdrawal", exchange, metrics)
+    ]
+    fills = [f for f in fills_in_window if _in_window(f, window_start_ms, "fill", exchange, metrics)]
 
     # Records just outside the window, used only to report near misses: a
     # detection that a slightly wider settlement grace would have suppressed.
+    # The probe re-walks the same records, so it passes no metrics - counting
+    # an undated record twice would put a phantom trend under the alarm.
     if window_start_ms is None:
         probe_withdrawals: list[dict] = []
         probe_fills: list[dict] = []
