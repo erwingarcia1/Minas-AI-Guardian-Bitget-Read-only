@@ -568,10 +568,20 @@ def _render_result(label: str, exchange: str, account_id: int) -> str:
     return _render_add_form(ok=ok)
 
 
-def serve_dashboard(db: Database, cipher: CredentialCipher, port: int) -> ThreadingHTTPServer:
+def serve_dashboard(
+    db: Database, cipher: CredentialCipher, port: int, host: str = "127.0.0.1"
+) -> ThreadingHTTPServer:
     """Internal ops page. Network-gated (Tailscale) — it has no login of its
     own by design. The /add form runs the same fail-closed read-only gate as
-    the CLI, so a trade/withdraw key can never be stored through it."""
+    the CLI, so a trade/withdraw key can never be stored through it.
+
+    `host` defaults to loopback because this page has no login: on any other
+    default, following the quickstart puts an unauthenticated "add customer"
+    form — and every customer's name, email and phone — on every interface of
+    whatever machine it runs on (G-36). Widening it is a deliberate act:
+    `SENTINEL_DASHBOARD_HOST`, and only behind a VPN, an SSH tunnel or an
+    authenticating proxy. In Docker the container sets `0.0.0.0` and the
+    loopback *publish* in docker-compose.yml is what gates it instead."""
 
     def _same_origin(handler) -> bool:
         origin = handler.headers.get("Origin")
@@ -719,6 +729,6 @@ def serve_dashboard(db: Database, cipher: CredentialCipher, port: int) -> Thread
         def log_message(self, *args):  # keep stdout JSON-clean
             pass
 
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    server = ThreadingHTTPServer((host, port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True, name="dashboard").start()
     return server

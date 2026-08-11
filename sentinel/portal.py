@@ -380,7 +380,15 @@ def _render_not_found() -> str:
 
 # --- server ------------------------------------------------------------------
 
-def serve_portal(db: Database, port: int) -> ThreadingHTTPServer:
+def serve_portal(db: Database, port: int, host: str = "127.0.0.1") -> ThreadingHTTPServer:
+    """Customer-facing member portal.
+
+    Unlike the ops dashboard this one has its own login and is *meant* to be
+    reachable by customers — but it still defaults to loopback, because it
+    serves plain HTTP and its session cookie would cross the network in the
+    clear. Reaching customers is the job of a TLS-terminating proxy in front
+    of it, not of this socket. Set `SENTINEL_PORTAL_HOST` to widen it
+    deliberately once that proxy exists (G-36)."""
     secret = _session_secret(db)
     throttle = LoginThrottle()
 
@@ -496,6 +504,6 @@ def serve_portal(db: Database, port: int) -> ThreadingHTTPServer:
         def log_message(self, *args):  # keep stdout JSON-clean
             pass
 
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    server = ThreadingHTTPServer((host, port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True, name="portal").start()
     return server

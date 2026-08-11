@@ -149,17 +149,30 @@ def cmd_run(args: argparse.Namespace) -> int:
     metrics = Metrics()
     metrics_port = int(_env("SENTINEL_METRICS_PORT", "9109"))
     Metrics.serve(metrics_port)
+    # Loopback by default: the dashboard has no login of its own, so the
+    # quickstart must not put it on every interface (G-36). Widening either
+    # one is deliberate, and logged below so it's visible at startup rather
+    # than discovered by a port scan.
     dashboard_port = int(_env("SENTINEL_DASHBOARD_PORT", "8390"))
-    serve_dashboard(db, cipher, dashboard_port)
+    dashboard_host = _env("SENTINEL_DASHBOARD_HOST", "127.0.0.1")
+    serve_dashboard(db, cipher, dashboard_port, host=dashboard_host)
 
     from sentinel.portal import serve_portal
 
     portal_port = int(_env("SENTINEL_PORTAL_PORT", "8391"))
-    serve_portal(db, portal_port)
+    portal_host = _env("SENTINEL_PORTAL_HOST", "127.0.0.1")
+    serve_portal(db, portal_port, host=portal_host)
     logger.info(
-        "dashboard on :%d, member portal on :%d, metrics on :%d",
-        dashboard_port, portal_port, metrics_port,
+        "dashboard on %s:%d, member portal on %s:%d, metrics on :%d",
+        dashboard_host, dashboard_port, portal_host, portal_port, metrics_port,
     )
+    if dashboard_host not in ("127.0.0.1", "localhost", "::1"):
+        logger.warning(
+            "ops dashboard is bound to %s, not loopback - it has no login of its own, "
+            "so anything that can reach %s:%d can add customers and read customer contact "
+            "details. Ensure a VPN, SSH tunnel or authenticating proxy is in front of it.",
+            dashboard_host, dashboard_host, dashboard_port,
+        )
 
     escalation_minutes = rules.get_int("alerting", "escalation_unacknowledged_minutes", default=15)
     escalator = Escalator(channels.get("CRITICAL", []), escalation_minutes)

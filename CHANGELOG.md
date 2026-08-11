@@ -57,6 +57,18 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   is fixed and regression-tested.
 
 ### Fixed
+- **The ops dashboard and member portal bound every interface (G-36)**: both
+  servers hardcoded `0.0.0.0`, so following the local quickstart put an
+  unauthenticated *Add customer* form — and every customer's name, email and
+  phone — on every interface of the machine. Only `docker-compose.yml`'s
+  loopback publishes made the documented Docker path safe; a bare `sentinel
+  run` was exposed. Both now default to `127.0.0.1`, configurable via
+  `SENTINEL_DASHBOARD_HOST` / `SENTINEL_PORTAL_HOST`, and the dashboard logs a
+  warning at startup whenever it is not on loopback. The container sets
+  `0.0.0.0` explicitly, because Docker publishes a port by proxying to the
+  container's interface and never to its loopback — the `127.0.0.1:` publishes
+  are unchanged and remain the gate there. The metrics exporter still binds
+  `0.0.0.0`; contained under Docker, firewall it on a bare run.
 - **Old activity could explain away a fresh theft (G-7)**: the quantity-drop
   detector measured a drop between two consecutive balance snapshots — 45
   seconds apart — but was handed `withdrawals` and `fills` fetched with
