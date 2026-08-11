@@ -8,7 +8,9 @@ across **Bitget, Bybit, OKX Global, and Binance Global**.
 > package/CLI codename throughout the code.
 
 [![CI](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/actions/workflows/ci.yml/badge.svg)](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/actions/workflows/ci.yml)
-&nbsp;·&nbsp; version **1.0.0** ·&nbsp; see [CHANGELOG](CHANGELOG.md)
+&nbsp;·&nbsp; last tag **1.0.0** (2026-07-05) ·&nbsp; `main` also carries the
+untagged **member portal** and **member SMS** work ·&nbsp; see
+[CHANGELOG](CHANGELOG.md)
 
 ## The one non-negotiable
 
@@ -26,10 +28,25 @@ python3 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 cp .env.example .env       # SENTINEL_MASTER_KEY + alert channels
 .venv/bin/sentinel onboard --exchange bitget --label customer-1
-.venv/bin/sentinel run     # engine + dashboard (:8390) + member portal (:8391) + metrics (:9109)
+.venv/bin/sentinel run     # engine + dashboard + member portal + metrics
 ```
 
-Production deployment (Docker on AWS): see [docs/deployment.md](docs/deployment.md).
+`onboard` prompts for the API key/secret (and the passphrase on Bitget and OKX
+— Bybit and Binance have none) unless you pass `--api-key/--secret/--passphrase`,
+so credentials needn't land in shell history.
+
+| Server | Default port | Env var | Exposure |
+|---|---|---|---|
+| Ops dashboard | 8390 | `SENTINEL_DASHBOARD_PORT` | **No login** — network-gated only (Tailscale) |
+| Member portal | 8391 | `SENTINEL_PORTAL_PORT` | Member login; front with TLS |
+| Prometheus metrics | 9109 | `SENTINEL_METRICS_PORT` | Internal |
+
+All three bind `0.0.0.0` in-process; `docker-compose.yml` publishes them on
+`127.0.0.1` only, which is what keeps the unauthenticated dashboard private.
+Run the raw CLI on a shared network only behind a firewall.
+
+Docker (same image as production): `docker compose up -d --build`.
+Production deployment (AWS): see [docs/deployment.md](docs/deployment.md).
 
 ## Onboarding a customer
 
@@ -43,7 +60,7 @@ Production deployment (Docker on AWS): see [docs/deployment.md](docs/deployment.
 | Command | What |
 |---|---|
 | `sentinel onboard --exchange X --label Y` | Verify read-only key (fail-closed) + seed baseline |
-| `sentinel run` | Monitoring engine + status dashboard + metrics |
+| `sentinel run` | Monitoring engine + ops dashboard + member portal + metrics |
 | `sentinel set-contact --label X …` | Set/clear an account's alert destination; `--sms-alerts on\|off` toggles the SMS preference |
 | `sentinel digest` | Send the MEDIUM/LOW daily digest |
 | `sentinel ack <id>` | Acknowledge an alert (stops CRITICAL escalation) |
@@ -113,9 +130,11 @@ logged and flagged on the dashboard's security-posture panel.
 .venv/bin/python scripts/soak_test.py    # 100 synthetic accounts through the engine
 ```
 
-The suite (126 tests) never touches a live exchange. Latest soak: 100
-accounts (5 permanently failing, 3 under scripted attack) — full-fleet cycle
-well under the target, only the attacked accounts fired CRITICALs.
+The suite (169 tests across 24 files) never touches a live exchange — every
+CCXT response is a fixture. CI runs it on every push/PR to `main` and also
+validates that `docker compose config` parses. Latest soak: 100 accounts
+(5 permanently failing, 3 under scripted attack) — full-fleet cycle well under
+the target, only the attacked accounts fired CRITICALs.
 
 ## Architecture (short)
 
@@ -127,11 +146,18 @@ well under the target, only the attacked accounts fired CRITICALs.
   per-account breakers (one bad key never stalls the fleet).
 - `sentinel/poller.py` — fast loop (money movement) + slow loop (config drift).
 - `sentinel/detectors/` — the 12 rules, pure functions over unified data.
+- `sentinel/baseline.py` — what "normal" is per account (known addresses,
+  traded pairs, transfer routes, balance/permission snapshots, fee EMA).
 - `sentinel/alerts/` — Telegram / ClickSend / Twilio / SMTP, routing, dedup,
   escalation, digest, per-account contacts.
-- `sentinel/dashboard.py` + `metrics.py` — HTTP UI + Prometheus.
+- `sentinel/dashboard.py` — ops UI; `portal.py` — member portal (auth,
+  sessions, per-member scoping); `metrics.py` — Prometheus + styled page.
+- `sentinel/config.py` — `rules.yaml` loaded as `Decimal`, hot-reloaded on mtime.
 - `sentinel/db.py` + `schema.sql` — SQLite (Postgres is the scale path);
   append-only event log; `Decimal` everywhere; UTC everywhere.
+- `sentinel/triage.py` — optional AI incident narrative (off by default).
+- `sentinel/ws_monitor.py` — ccxt.pro stream watcher with a staleness watchdog:
+  implemented and unit-tested, **not yet wired into the engine**.
 
 Full write-up: [docs/architecture.md](docs/architecture.md).
 
@@ -159,6 +185,14 @@ Full write-up: [docs/architecture.md](docs/architecture.md).
   customer-side mitigations in the runbook.
 - Per-customer **Telegram-handle** delivery isn't automated (Bot API can't DM
   an arbitrary handle without the recipient opting in); handles are stored.
+- Detection is **REST-only**. `ws_monitor.py` is built and tested but not
+  wired into the engine — and no exchange streams withdrawals/deposits/
+  transfers over WS anyway, so it would only sharpen the trading signals.
+- **Member portal identity is `alert_email` only.** An account's
+  `alert_email_secondary` receives alerts but cannot be given portal access.
+- The engine is one process, one SQLite connection: workers, dashboard, and
+  portal all serialize on it. Fine at pilot scale; Postgres + a distributed
+  queue is the documented scale-out (the compose `scale` profile is the stub).
 
 ## License
 
