@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
@@ -168,6 +169,40 @@ def known_traded_pairs(db: Database, account_id: int) -> set[str]:
     with db.cursor() as cur:
         cur.execute("SELECT symbol FROM traded_pairs WHERE account_id = ?", (account_id,))
         return {r["symbol"] for r in cur.fetchall()}
+
+
+def fill_identity(fill: dict) -> str:
+    """A stable key for one fill, so it can be judged exactly once.
+
+    Prefers the exchange's own order id. When there isn't one, falls back to a
+    digest of the whole record rather than returning nothing: the alternative
+    is `record_seen_withdrawal`'s behaviour of treating an id-less record as
+    "not new", which drops it from examination altogether - that is G-11 (#16),
+    and repeating it here would reintroduce the very silence G-47 exists to
+    remove.
+
+    Two distinct fills collide only if every field matches, including fee and
+    the exchange's raw `info` block. The cost of such a collision is bounded:
+    identical fills produce identical evidence, so the alert the second one
+    would raise is the alert the first one already raised."""
+    order_id = str(fill.get("id") or "")
+    if order_id:
+        return f"id:{order_id}"
+    digest = hashlib.sha256(json.dumps(fill, sort_keys=True, default=str).encode()).hexdigest()
+    return f"sha256:{digest}"
+
+
+def record_seen_fill(db: Database, account_id: int, fill: dict) -> bool:
+    """Returns True the first time this fill is offered, False every time
+    after. The poller uses it to price-check and fee-check a fill once,
+    whether or not the exchange dated it."""
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO seen_fills (account_id, fill_key, symbol, first_seen_at) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT(account_id, fill_key) DO NOTHING",
+            (account_id, fill_identity(fill), fill.get("symbol"), _now()),
+        )
+        return cur.rowcount == 1
 
 
 def record_seen_transfer(db: Database, account_id: int, transfer: dict) -> bool:

@@ -18,6 +18,7 @@ from sentinel.baseline import (
     record_balance_snapshot,
     record_known_address,
     record_permission_snapshot,
+    record_seen_fill,
     record_seen_transfer,
     record_seen_withdrawal,
     record_traded_pair,
@@ -63,6 +64,33 @@ def _load_client(cipher: CredentialCipher, row) -> ExchangeClient:
         cipher.decrypt(row["encrypted_secret"]),
         cipher.decrypt(row["encrypted_passphrase"]),
     )
+
+
+def _fill_timestamp_ms(fill: dict, label: str) -> int | None:
+    """The fill's exchange timestamp in ms, or None when it has none or the
+    one it has can't be read.
+
+    None means "cannot be placed in time" and never 0. The `or 0` this
+    replaces made an undated fill look older than every window, which is how
+    it stopped being price-checked at all (G-47)."""
+    raw = fill.get("timestamp")
+    if raw is None or raw == "":
+        logger.warning(
+            "%s: fill %s has no timestamp - price-checking it on first sighting instead",
+            label,
+            fill.get("id") or fill.get("symbol") or "<unidentified>",
+        )
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        logger.warning(
+            "%s: fill %s has an unparseable timestamp %r - price-checking it on first sighting instead",
+            label,
+            fill.get("id") or fill.get("symbol") or "<unidentified>",
+            raw,
+        )
+        return None
 
 
 def _get_poll_state(db: Database, account_id: int) -> dict:
@@ -228,12 +256,43 @@ class AccountPoller:
         for fill in fills:
             record_traded_pair(self._db, account_id, fill.get("symbol"))
 
-        # Only fills newer than the previous fast loop are re-judged for
-        # off-market execution and fee spend; older ones were already seen.
-        recent_fills = fills
+        # Which fills get judged for off-market execution and fee spend.
+        #
+        # Two rules, and they answer different questions (G-47):
+        #
+        #   *Have I judged this one already?* - by identity, via seen_fills.
+        #     The old code answered this with the timestamp alone, which read a
+        #     missing one as 0 and so dropped undated fills out of the window
+        #     forever. They were never price-checked, on this cycle or any
+        #     later one, while still reaching the new-pair detector and the
+        #     traded-pair baseline. It looked watched.
+        #
+        #   *Is the reference price valid evidence about it?* - by time. The
+        #     off-market check compares a fill against the ticker as it is
+        #     right now, so a fill known to predate the last poll must stay
+        #     out: it would be measured against a price that moved since, and
+        #     the deviation would be the market's, not an attacker's.
+        #
+        # An undated fill can only be answered by the first rule. Judging it on
+        # first sighting presumes it is recent, which is what its appearance in
+        # a fresh response is evidence for - the same presumption
+        # record_seen_withdrawal already makes for an undated withdrawal.
+        last_run_ms = None
         if last_run_iso:
             last_run_ms = datetime.fromisoformat(last_run_iso).timestamp() * 1000
-            recent_fills = [f for f in fills if (f.get("timestamp") or 0) >= last_run_ms]
+
+        recent_fills = []
+        for fill in fills:
+            dated_ms = _fill_timestamp_ms(fill, label)
+            if last_run_ms is not None and dated_ms is not None and dated_ms < last_run_ms:
+                continue  # dated, and older than this window
+            # Undated fills are already counted on
+            # sentinel_untimestamped_records_total{source="fill"} by the
+            # quantity-drop path below, which walks the same list on the same
+            # pass. Counting them again here would double the series and put a
+            # phantom trend under whatever alarm binds to it.
+            if record_seen_fill(self._db, account_id, fill):
+                recent_fills.append(fill)
 
         if recent_fills:
             symbols = sorted({f.get("symbol") for f in recent_fills if f.get("symbol")})

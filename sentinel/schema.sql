@@ -114,6 +114,21 @@ CREATE TABLE IF NOT EXISTS traded_pairs (
     UNIQUE(account_id, symbol)
 );
 
+-- Fills already judged for off-market execution and fee spend. Identity, not
+-- time: an exchange that omits a fill's timestamp used to drop it out of the
+-- comparison window entirely, so it was never price-checked (G-47). Judging by
+-- "have I seen this record before" instead means an undated fill is examined
+-- exactly once. `fill_key` is the exchange's order id where there is one and a
+-- content digest where there isn't - see baseline.fill_identity.
+CREATE TABLE IF NOT EXISTS seen_fills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    fill_key TEXT NOT NULL,
+    symbol TEXT,
+    first_seen_at TEXT NOT NULL,
+    UNIQUE(account_id, fill_key)
+);
+
 CREATE TABLE IF NOT EXISTS seen_transfers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id INTEGER NOT NULL REFERENCES accounts(id),

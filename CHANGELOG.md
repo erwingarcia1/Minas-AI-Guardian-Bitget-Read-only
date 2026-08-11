@@ -13,6 +13,25 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Fixed
+- **Undated fills are price-checked again (G-47, #51).** A fill the exchange
+  returned without a timestamp was read as `timestamp = 0`, which put it before
+  every comparison window, which removed it from the only list feeding
+  off-market execution and fee-anomaly checking. It was never examined — not on
+  that cycle, not on any later one — while the same fill still reached the
+  new-pair detector and was written into the traded-pair baseline as ordinary
+  activity. A counterparty-drain trade could land on an account that looked
+  fully watched. Whether a fill has been *judged* is now answered by identity
+  (a new `seen_fills` table, keyed on the exchange order id or a content digest
+  where there is none) rather than by its timestamp, so an undated fill is
+  checked exactly once instead of never — and instead of re-alerting and
+  re-inflating the fee EMA on every 45-second poll. Time still answers the
+  separate question of whether the current ticker is valid evidence about a
+  fill: one known to predate the last poll stays out, because its deviation
+  would be the market's rather than an attacker's. Undated fills continue to be
+  counted on `sentinel_untimestamped_records_total{source="fill"}` exactly once
+  per pass, by the quantity-drop path that already walks them.
+
 ### Added
 - **`sentinel_untimestamped_records_total{exchange, source}`** — a Prometheus
   counter for records an exchange sends without a usable timestamp. G-7 makes
