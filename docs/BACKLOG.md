@@ -2,6 +2,12 @@
 
 **Version** 0.1 · **Date** 11 August 2026 · **Companion to** `guardian-prd.md`
 
+> **📌 Snapshot — this is no longer the live tracker.**
+> This document is a **point-in-time snapshot taken on 11 August 2026**. Every story below now exists as a GitHub issue, and **the issues are the source of truth**:
+> **https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/issues**
+>
+> The ✅ / ⚠️ / 🔨 / ⬜ markers and the acceptance-criteria checkboxes below were accurate on that date only and are **not** kept up to date. Where this document and an issue disagree, the issue wins. Use this file for the reasoning and the narrative; use the issues for current status.
+
 Every feature the product needs, written as user stories with acceptance criteria. Plain language — no code, no jargon.
 
 **How to use this with Claude Code:** each story has an ID like `G-14`. Enter plan mode (`Shift+Tab`), then say *"Implement G-14 from docs/BACKLOG.md. Show me the plan first."* Work one story at a time.
