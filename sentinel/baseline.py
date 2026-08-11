@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from datetime import datetime, timedelta, timezone
 
 from sentinel.db import Database
 from sentinel.exchange import ExchangeClient
+from sentinel.identity import fill_identity, withdrawal_identity
 from sentinel.numeric import to_decimal
 
 
@@ -42,10 +42,15 @@ def record_seen_withdrawal(db: Database, account_id: int, record: dict) -> bool:
     """Records a withdrawal (CCXT unified transaction dict) if not already
     seen. Returns True if it was newly recorded, False if already known -
     the poller uses that to decide whether to fire the withdrawal-created
-    detection."""
-    order_id = str(record.get("id") or record.get("txid") or "")
-    if not order_id:
-        return False
+    detection.
+
+    A record the exchange sent without any reference used to return False here,
+    which the poller reads as "already seen" - so it never reached the
+    withdrawal-created or unseen-address detectors, and money left the account
+    with nobody told (G-11). `withdrawal_identity` derives a key from the fields
+    that don't move as the withdrawal settles, so an unreferenced withdrawal is
+    alerted once rather than never."""
+    order_id = withdrawal_identity(record)
     status = str(record.get("status") or "unknown")
     coin = record.get("currency")
     size = str(record.get("amount"))
@@ -169,27 +174,6 @@ def known_traded_pairs(db: Database, account_id: int) -> set[str]:
     with db.cursor() as cur:
         cur.execute("SELECT symbol FROM traded_pairs WHERE account_id = ?", (account_id,))
         return {r["symbol"] for r in cur.fetchall()}
-
-
-def fill_identity(fill: dict) -> str:
-    """A stable key for one fill, so it can be judged exactly once.
-
-    Prefers the exchange's own order id. When there isn't one, falls back to a
-    digest of the whole record rather than returning nothing: the alternative
-    is `record_seen_withdrawal`'s behaviour of treating an id-less record as
-    "not new", which drops it from examination altogether - that is G-11 (#16),
-    and repeating it here would reintroduce the very silence G-47 exists to
-    remove.
-
-    Two distinct fills collide only if every field matches, including fee and
-    the exchange's raw `info` block. The cost of such a collision is bounded:
-    identical fills produce identical evidence, so the alert the second one
-    would raise is the alert the first one already raised."""
-    order_id = str(fill.get("id") or "")
-    if order_id:
-        return f"id:{order_id}"
-    digest = hashlib.sha256(json.dumps(fill, sort_keys=True, default=str).encode()).hexdigest()
-    return f"sha256:{digest}"
 
 
 def record_seen_fill(db: Database, account_id: int, fill: dict) -> bool:

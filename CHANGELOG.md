@@ -14,6 +14,23 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Fixed
+- **Withdrawals with no reference ID are alerted again (G-11, #15).** A
+  withdrawal the exchange returned without an `id` or `txid` was dropped in two
+  independent places, and money could leave an account with nobody told.
+  `record_seen_withdrawal` returned `False` for such a record, which the poller
+  reads as *already seen* — so it never reached the withdrawal-created or
+  unseen-address detectors at all. And `dispatch._dedup_key` falls back to the
+  *coin* when evidence carries no `order_id`, so two unrelated unreferenced
+  withdrawals of the same coin shared one dedup key and the second was
+  suppressed for a full CRITICAL cooldown. Both now derive an identity from the
+  fields that don't move as a withdrawal settles (coin, amount, destination,
+  network, timestamp — deliberately not `status`, `txid` or the raw `info`
+  block, all of which change as it goes from pending to success, and digesting
+  those would page the customer once per state transition). New
+  `sentinel/identity.py` holds that logic as pure functions so the baseline
+  writer and the alert-evidence builders cannot drift apart — an identity used
+  for storage but not for dedup gets a record past the first gate only to have
+  it collapsed at the second.
 - **Undated fills are price-checked again (G-47, #51).** A fill the exchange
   returned without a timestamp was read as `timestamp = 0`, which put it before
   every comparison window, which removed it from the only list feeding

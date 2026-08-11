@@ -133,10 +133,116 @@ before anyone assumes trade-level granularity is available here.
 
 #### Filed while here
 
-`exchange=label` — every call site passing the metric's `exchange` label
-actually passes the *account label*, so the series is keyed by customer account
-rather than by exchange, and its cardinality grows with the customer count. I
-kept my new code consistent with the existing call rather than fixing it
-inline, because one metric emitting two different label vocabularies is worse
-than one consistently wrong. Filed separately (see below) — it wants fixing
-before #52 binds a paging alarm to that exact metric.
+**#55** — `exchange=label`: every call site passing the metric's `exchange`
+label actually passes the *account label*, so the series is keyed by customer
+account rather than by exchange, and its cardinality grows with the customer
+count. I kept my new code consistent with the existing call rather than fixing
+it inline, because one metric emitting two different label vocabularies is
+worse than one consistently wrong. Wants fixing before #52 binds a paging alarm
+to that exact metric.
+
+---
+
+### A note on the queue's issue numbers
+
+Two entries in the queue point at the wrong issue number. The G-numbers and the
+descriptions are right, so I went by those:
+
+| Queue said | Actually |
+| --- | --- |
+| G-11 (#16) — withdrawals with no reference ID | **#15** (#16 is G-12) |
+| G-12 (#18) — bad threshold values | **#16** (#18 is G-14, Telegram alerts) |
+
+G-21 (#25) and G-47 (#51) were correct. Flagging in case the same off-by-one is
+in another list somewhere.
+
+---
+
+### G-11 (#15) · Withdrawals dropped when they have no reference ID
+
+**Root cause — and there were two, in series.** Fixing either alone still
+leaves the customer with a withdrawal nobody told them about, which is why the
+issue's own note ("currently dropped silently") only describes the first:
+
+1. `record_seen_withdrawal` returned `False` for a record with no `id` or
+   `txid`. The poller treats that return as *already seen*, so the record never
+   reached `detect_new_withdrawals` or `detect_unseen_address` at all. This is
+   the one the issue names.
+2. `dispatch._dedup_key` uses `evidence["order_id"] or evidence["coin"] or ""`.
+   An unreferenced withdrawal has no `order_id` in its evidence, so the key
+   falls back to the coin — identical for every BTC withdrawal on the account.
+   Two distinct unreferenced withdrawals therefore collapse into one alert, and
+   the second is suppressed for the whole 15-minute CRITICAL cooldown.
+
+I found the second only because I went looking for where the derived identity
+would need to travel. It is worth knowing that this class of bug comes in
+pairs: a record has to survive both the "have I seen it" gate and the "is this
+a repeat alert" gate, and they consult different fields.
+
+**The fix.** A new `sentinel/identity.py` with pure functions — no database, no
+exchange client — so the baseline writer and the alert-evidence builders draw
+on the same answer and can't drift apart.
+
+#### Judgment calls
+
+**Withdrawal identity digests only settling-invariant fields.** A fill (G-47)
+can be digested whole because a closed order is terminal. A withdrawal is not:
+`status` walks Bitget's pending → pending_review → success machine, `txid` and
+`updated` appear partway through, and the raw `info` block carries all of it.
+Digesting the whole record would make every state transition read as a brand
+new withdrawal and page the customer three times for one movement. The key uses
+coin, amount, address, tag, network, type and timestamp. There is a test for
+exactly this (`test_status_change_on_an_id_less_withdrawal_does_not_refire`),
+because it is the obvious wrong fix and it would look like it worked.
+
+**Residual collision, stated rather than hidden.** Two withdrawals identical in
+coin, amount, destination, network *and* millisecond timestamp collapse into
+one. With a timestamp present that is effectively impossible. With the
+timestamp *also* missing it stops being impossible — but that case means the
+exchange is sending records with neither a reference nor a time, which is a
+format breakage an operator should be looking at directly rather than something
+to paper over. Documented in the function's docstring.
+
+I considered and rejected a multiset scheme (keying by content plus an
+occurrence index, so N identical unreferenced withdrawals produce N alerts).
+It handles the drain-by-repeated-identical-withdrawals case, but it breaks
+under a sliding response window — once the oldest record ages out of the
+exchange's response the indices shift and a genuinely new withdrawal reuses a
+key that's already been seen, which is a *new* silent miss. Trading a
+near-impossible miss for a plausible one is a bad trade.
+
+**Touching two detectors, deliberately.** The working rules say to stop if a
+change touches a detector outside the issue's scope. I judged this inside it:
+the criterion is "withdrawals reported without a reference ID are still
+alerted", and an alert that is created and then deduped away has not alerted
+anyone. The change is confined to the `order_id` evidence field in
+`detect_new_withdrawals` and `detect_unseen_address`, and
+`evidence_reference()` returns the exchange's own reference whenever there is
+one — so for every withdrawal that already worked, the evidence is
+byte-identical and no dedup key moves. Flagging it because it is a judgment
+call against a stop rule, not because I'm uncertain about it.
+
+**Third criterion ticked without new code.** "Withdrawals to a destination
+never used before are marked as higher risk" was already implemented in
+`detect_unseen_address` and wired in the poller — it was unchecked because it
+inherited the same drop: an unreferenced withdrawal never reached it.
+`test_id_less_withdrawal_to_an_unseen_address_is_still_flagged` now covers the
+case that was missing, asserting CRITICAL.
+
+#### Verification
+
+- 6 tests in `tests/test_withdrawal_no_reference_id.py`, written first, 5
+  failing for the right reason (zero alerts).
+- Mutation check run **per layer**, since a single revert would have hidden
+  which test binds to which fix:
+  - Reverting the `record_seen_withdrawal` identity fallback → 5 red.
+  - Reverting only the evidence/dedup change → exactly 1 red
+    (`test_two_distinct_id_less_withdrawals_both_alert`, 1 of 2 alerts
+    delivered), everything else green.
+- Full suite green: 207 passed.
+
+#### Surprising
+
+`git checkout <file>` to undo a mutation also discards the real fix when both
+live in the same file. Cost me a re-apply of `baseline.py`. For the second
+mutation I copied the files aside first — worth doing by default.

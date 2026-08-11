@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from sentinel.detectors.base import Detection
+from sentinel.identity import evidence_reference, withdrawal_identity
 
 
 def detect_unseen_address(new_withdrawal_records: list[dict], known_addresses: set[str]) -> list[Detection]:
@@ -25,7 +26,7 @@ def detect_unseen_address(new_withdrawal_records: list[dict], known_addresses: s
                         "Withdrawal record had no destination address field - "
                         "unseen-address detection could not run for this withdrawal"
                     ),
-                    evidence={"order_id": record.get("id")},
+                    evidence={"order_id": evidence_reference(record, withdrawal_identity(record))},
                 )
             )
             continue
@@ -37,7 +38,7 @@ def detect_unseen_address(new_withdrawal_records: list[dict], known_addresses: s
                     confidence="high",
                     message=f"Withdrawal to address never seen before in this account's history: {address}",
                     evidence={
-                        "order_id": record.get("id"),
+                        "order_id": evidence_reference(record, withdrawal_identity(record)),
                         "address": address,
                         "coin": record.get("currency"),
                         "amount": record.get("amount"),
