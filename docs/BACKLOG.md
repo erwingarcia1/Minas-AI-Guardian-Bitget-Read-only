@@ -10,7 +10,7 @@
 
 Every feature the product needs, written as user stories with acceptance criteria. Plain language — no code, no jargon.
 
-**How to use this with Claude Code:** each story has an ID like `G-14`. Enter plan mode (`Shift+Tab`), then say *"Implement G-14 from docs/BACKLOG.md. Show me the plan first."* Work one story at a time.
+**How to use this with Claude Code:** work from the [GitHub issues](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/issues) — the G-IDs are in the issue titles. Enter plan mode (`Shift+Tab`), then say *"Implement G-14. Show me the plan first."* Work one story at a time.
 
 ### Status key
 
