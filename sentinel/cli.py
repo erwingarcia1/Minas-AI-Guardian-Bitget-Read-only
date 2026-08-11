@@ -148,7 +148,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     metrics = Metrics()
     metrics_port = int(_env("SENTINEL_METRICS_PORT", "9109"))
-    Metrics.serve(metrics_port)
+    metrics_host = _env("SENTINEL_METRICS_HOST", "127.0.0.1")
+    Metrics.serve(metrics_port, host=metrics_host)
     # Loopback by default: the dashboard has no login of its own, so the
     # quickstart must not put it on every interface (G-36). Widening either
     # one is deliberate, and logged below so it's visible at startup rather
@@ -163,8 +164,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     portal_host = _env("SENTINEL_PORTAL_HOST", "127.0.0.1")
     serve_portal(db, portal_port, host=portal_host)
     logger.info(
-        "dashboard on %s:%d, member portal on %s:%d, metrics on :%d",
-        dashboard_host, dashboard_port, portal_host, portal_port, metrics_port,
+        "dashboard on %s:%d, member portal on %s:%d, metrics on %s:%d",
+        dashboard_host, dashboard_port, portal_host, portal_port, metrics_host, metrics_port,
     )
     if dashboard_host not in ("127.0.0.1", "localhost", "::1"):
         logger.warning(

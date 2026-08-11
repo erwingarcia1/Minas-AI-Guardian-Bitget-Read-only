@@ -39,26 +39,23 @@ so credentials needn't land in shell history.
 |---|---|---|---|---|
 | Ops dashboard | 8390 | `127.0.0.1` | `SENTINEL_DASHBOARD_PORT`, `SENTINEL_DASHBOARD_HOST` | **No login** — network-gated only (Tailscale) |
 | Member portal | 8391 | `127.0.0.1` | `SENTINEL_PORTAL_PORT`, `SENTINEL_PORTAL_HOST` | Member login; front with TLS |
-| Prometheus metrics | 9109 | `0.0.0.0` | `SENTINEL_METRICS_PORT` | Internal |
+| Prometheus metrics | 9109 | `127.0.0.1` | `SENTINEL_METRICS_PORT`, `SENTINEL_METRICS_HOST` | Internal |
 
-**The dashboard and portal are reachable only from the machine running them.**
+**All three are reachable only from the machine running them.**
 That is deliberate: the dashboard has no login of its own, so a wider default
 would put an unauthenticated *Add customer* form — and every customer's contact
-details — on every interface of whatever box you ran the quickstart on. To use
-either from elsewhere, tunnel rather than widen: `ssh -L
-8390:127.0.0.1:8390 your-host`, Tailscale, or an authenticating reverse proxy.
-`SENTINEL_DASHBOARD_HOST` / `SENTINEL_PORTAL_HOST` do widen the bind if a
-deployment genuinely needs it; the dashboard logs a startup warning whenever
-it isn't on loopback.
+details — on every interface of whatever box you ran the quickstart on. The
+metrics view is on the same footing: unauthenticated, and it leaks operational
+shape (account counts, which rules are firing, which exchanges are
+misbehaving). To reach any of them from elsewhere, tunnel rather than widen:
+`ssh -L 8390:127.0.0.1:8390 your-host`, Tailscale, or an authenticating reverse
+proxy. The `*_HOST` vars above do widen the bind if a deployment genuinely
+needs it; the dashboard logs a startup warning whenever it isn't on loopback.
 
-The metrics exporter still binds `0.0.0.0` — under Docker that is contained
-(see below), but a bare `sentinel run` on a shared network does expose `:9109`.
-Firewall it there.
-
-Under Docker the two servers bind `0.0.0.0` *inside the container* on purpose,
+Under Docker all three bind `0.0.0.0` *inside the container* on purpose,
 because Docker publishes a port by proxying to the container's interface and
 never to its loopback. The `127.0.0.1:` publishes in `docker-compose.yml` are
-the gate instead, and they cover all three ports.
+the gate instead.
 
 Docker (same image as production): `docker compose up -d --build`.
 Production deployment (AWS): see [docs/deployment.md](docs/deployment.md).

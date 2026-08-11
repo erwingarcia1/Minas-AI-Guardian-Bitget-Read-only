@@ -5,6 +5,7 @@ import socket
 import pytest
 
 from sentinel.dashboard import serve_dashboard
+from sentinel.metrics import Metrics
 from sentinel.portal import serve_portal
 
 
@@ -36,6 +37,22 @@ def test_portal_binds_loopback_by_default(db, stop):
     server = serve_portal(db, 0)
     stop(server)
     assert server.server_address[0] == "127.0.0.1"
+
+
+def test_metrics_binds_loopback_by_default(stop):
+    """The exposition is unauthenticated, and the styled view leaks
+    operational shape - account counts, which rules are firing, which
+    exchanges are misbehaving. That is reconnaissance, so it gets the same
+    default as the two servers above."""
+    server = Metrics.serve(0)
+    stop(server)
+    assert server.server_address[0] == "127.0.0.1"
+
+
+def test_metrics_bind_address_is_configurable(stop):
+    server = Metrics.serve(0, host="0.0.0.0")
+    stop(server)
+    assert server.server_address[0] == "0.0.0.0"
 
 
 def test_dashboard_bind_address_is_configurable(db, cipher, stop):

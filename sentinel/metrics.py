@@ -69,12 +69,24 @@ class Metrics:
             self.untimestamped_records.labels(exchange=exchange, source=source).inc()
 
     @staticmethod
-    def serve(port: int) -> None:
+    def serve(port: int, host: str = "127.0.0.1"):
+        """Loopback by default, on the same terms as the dashboard and portal
+        (G-36). The exposition is unauthenticated and the styled view leaks
+        operational shape - account counts, which rules are firing, which
+        exchanges are misbehaving - so it is reconnaissance for anyone who can
+        reach it. `SENTINEL_METRICS_HOST` widens it; in Docker the container
+        sets 0.0.0.0 and the loopback publish is the gate instead.
+
+        Returns the server (None when prometheus_client isn't installed) so
+        the bind can be asserted."""
         if not _AVAILABLE:
             logger.warning("prometheus_client not installed - metrics endpoint disabled")
-            return
-        _serve_metrics(port)
-        logger.info("prometheus metrics on :%d (raw for scrapers, styled for browsers)", port)
+            return None
+        server = _serve_metrics(port, host)
+        logger.info(
+            "prometheus metrics on %s:%d (raw for scrapers, styled for browsers)", host, port
+        )
+        return server
 
 
 # --- browser-facing styled view ------------------------------------------------
@@ -291,7 +303,7 @@ def raw_exposition() -> tuple[str, bytes]:
     return CONTENT_TYPE_LATEST, generate_latest(REGISTRY)
 
 
-def _serve_metrics(port: int) -> None:
+def _serve_metrics(port: int, host: str = "127.0.0.1"):
     """Content-negotiating metrics server: browsers (Accept: text/html) get
     the styled view; Prometheus scrapers get the raw exposition format they
     require. /raw always returns the raw format."""
@@ -318,5 +330,6 @@ def _serve_metrics(port: int) -> None:
         def log_message(self, *args):  # keep stdout JSON-clean
             pass
 
-    server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
+    server = ThreadingHTTPServer((host, port), Handler)
     threading.Thread(target=server.serve_forever, daemon=True, name="metrics").start()
+    return server

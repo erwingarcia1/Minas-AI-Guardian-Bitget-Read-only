@@ -67,8 +67,11 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   warning at startup whenever it is not on loopback. The container sets
   `0.0.0.0` explicitly, because Docker publishes a port by proxying to the
   container's interface and never to its loopback — the `127.0.0.1:` publishes
-  are unchanged and remain the gate there. The metrics exporter still binds
-  `0.0.0.0`; contained under Docker, firewall it on a bare run.
+  are unchanged and remain the gate there. The metrics exporter got the same
+  treatment (`SENTINEL_METRICS_HOST`): the exposition is unauthenticated and
+  its styled view leaks operational shape — account counts, which rules are
+  firing, which exchanges are misbehaving — which is reconnaissance for anyone
+  who can reach it.
 - **Old activity could explain away a fresh theft (G-7)**: the quantity-drop
   detector measured a drop between two consecutive balance snapshots — 45
   seconds apart — but was handed `withdrawals` and `fills` fetched with

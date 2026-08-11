@@ -15,16 +15,17 @@ services:
       SENTINEL_DASHBOARD_PORT: "8390"
       SENTINEL_PORTAL_PORT: "8391"
       SENTINEL_METRICS_PORT: "9109"
-      # Both servers default to 127.0.0.1 so the bare `sentinel run` quickstart
-      # is private by default (G-36). In a container that default would make
-      # them unreachable: Docker publishes a port by proxying to the
-      # container's interface address, never to its loopback. So bind wide
+      # All three servers default to 127.0.0.1 so the bare `sentinel run`
+      # quickstart is private by default (G-36). In a container that default
+      # would make them unreachable: Docker publishes a port by proxying to
+      # the container's interface address, never to its loopback. So bind wide
       # *inside* the container and let the `127.0.0.1:` publish below be the
       # gate - which is where it belongs, since it's the host's network the
       # dashboard must stay off. Do not remove these without also changing the
       # port mappings and the healthcheck.
       SENTINEL_DASHBOARD_HOST: "0.0.0.0"
       SENTINEL_PORTAL_HOST: "0.0.0.0"
+      SENTINEL_METRICS_HOST: "0.0.0.0"
     volumes:
       - sentinel-data:/data
       - ./config:/app/config:ro   # rules.yaml stays hot-reloadable from the host
