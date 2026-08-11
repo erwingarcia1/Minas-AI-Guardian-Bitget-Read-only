@@ -104,6 +104,11 @@ class Engine:
                     self._escalator.check(self._db)
             except Exception as exc:  # noqa: BLE001 - scheduler must survive anything
                 logger.error("scheduler cycle failed: %s", exc)
+            # Republished every cycle rather than only on change: a scrape that
+            # starts after the rejection still sees the 0, and a restart that
+            # re-reads a still-broken file re-asserts it.
+            if self._metrics is not None:
+                self._metrics.set_rules_config_valid(self._rules.is_valid)
             fast_interval = self._rules.get_seconds("polling", "fast_loop_seconds", default=45)
             self._stop.wait(max(1.0, fast_interval - (time.monotonic() - started)))
 

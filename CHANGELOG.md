@@ -14,6 +14,30 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Fixed
+- **A mistyped threshold is rejected loudly instead of stopping detection
+  (G-12, #16).** `config/rules.yaml` is now validated against a declared schema
+  (`sentinel/rules_schema.py`) before it is allowed to take effect. Previously a
+  bad value was found by whichever detector read it first — and the failure was
+  far wider than the rule being edited. Writing `tolerance_pct: "0,5"` (a
+  decimal comma) left the value as a string, which raised `InvalidOperation`
+  from the middle of `run_fast_loop`, *after* the poll had already stamped
+  `last_success_at = now`, and escaped into the worker's blanket handler in
+  `engine.py` to become one log line. No detector ran, for any account, on any
+  cycle — the config is shared — while `consecutive_failures` stayed 0,
+  `detect_unreachable` never fired, and the dashboard showed every account
+  polled successfully seconds ago. One character silently disabled all
+  monitoring and left it looking healthy. Now: an invalid file at startup
+  refuses to start, and an invalid edit while running keeps the last valid
+  configuration in force so detection continues, reported through three
+  surfaces — an ERROR naming the setting and the offending value, a red banner
+  on the dashboard, and `sentinel_rules_config_valid` dropping to 0 (resting
+  value 1, so it is alarmable). Misspelled keys are rejected too, with the
+  intended key suggested — `tolerance_pc` is valid YAML, silently falls through
+  to the default, and leaves the operator believing their edit applied.
+  Constraints are derived from how each value is *used* rather than from an
+  opinion about sensitivity, so retuning stays free: `max_deviation_pct: "75"`
+  is accepted, `"-1"` is not, because `deviation > -1` is true of every fill
+  ever executed.
 - **Withdrawals with no reference ID are alerted again (G-11, #15).** A
   withdrawal the exchange returned without an `id` or `txid` was dropped in two
   independent places, and money could leave an account with nobody told.

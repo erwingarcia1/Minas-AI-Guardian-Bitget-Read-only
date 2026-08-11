@@ -156,7 +156,9 @@ def cmd_run(args: argparse.Namespace) -> int:
     # than discovered by a port scan.
     dashboard_port = int(_env("SENTINEL_DASHBOARD_PORT", "8390"))
     dashboard_host = _env("SENTINEL_DASHBOARD_HOST", "127.0.0.1")
-    serve_dashboard(db, cipher, dashboard_port, host=dashboard_host)
+    # `rules` so the page can say when config/rules.yaml was rejected and the
+    # thresholds in force are older than the file (G-12).
+    serve_dashboard(db, cipher, dashboard_port, host=dashboard_host, rules=rules)
 
     from sentinel.portal import serve_portal
 

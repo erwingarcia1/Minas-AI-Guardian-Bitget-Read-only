@@ -246,3 +246,138 @@ case that was missing, asserting CRITICAL.
 `git checkout <file>` to undo a mutation also discards the real fix when both
 live in the same file. Cost me a re-apply of `baseline.py`. For the second
 mutation I copied the files aside first — worth doing by default.
+
+---
+
+### G-12 (#16) · Bad threshold values silently disabling detectors
+
+The issue says a bad value "can switch a detector off without anyone noticing".
+I probed it against the real poller before designing anything, and the actual
+behaviour is considerably worse than that.
+
+**What really happened.** An operator writes `tolerance_pct: "0,5"` — a decimal
+comma, which is what half the world's keyboards produce. `_to_decimal_leaves`
+can't parse it, so it stays a string and nothing complains at load. The next
+poll calls `get_decimal`, which raises `InvalidOperation` from inside the
+detector section of `run_fast_loop` — *after* the exchange fetches have already
+written `last_success_at = now` into `poll_state`. The exception escapes
+`run_fast_loop` (its try/except only wraps the client calls) and is swallowed
+by the worker's blanket `except Exception` in `engine.py:143`, which logs one
+line and moves on to the next task.
+
+Net effect, confirmed by probe:
+
+- no detector runs — not the edited one, *all* of them
+- for every account, not just one — `RulesConfig` is shared
+- `consecutive_failures` stays 0, so `detect_unreachable` never fires
+- `last_success_at` is freshly stamped, so the dashboard shows every account
+  polled successfully seconds ago
+- `poll_ok()` is never reached, so `sentinel_polls_ok_total` flatlines — but
+  nothing alarms on it today
+
+One mistyped character stops all monitoring and leaves it looking healthy.
+
+**The fix.** Validate at load against a declared schema; never let an unparsed
+value reach a detector. At startup an invalid file raises and the process
+refuses to come up — coming up with unchecked thresholds looks exactly like
+monitoring, which is the failure mode. While running, an invalid edit is
+rejected and the last valid configuration stays in force, so detection
+continues.
+
+#### Judgment calls
+
+**Keeping last-known-good is louder, not quieter.** This is the one that
+touches the "don't make a failure quieter" stop rule, so it's worth being
+explicit. The old behaviour was not loud — it was a swallowed exception and
+silently dead detection. The new behaviour keeps detection alive *and* reports
+the rejection three ways. The risk it introduces is different: an operator
+believes their new threshold applied when it didn't. That risk is exactly what
+the three surfaces are for, and it is strictly better than the old risk, which
+was that nothing was being detected at all.
+
+**Three surfaces, because a log line is not a signal.** ERROR log naming the
+setting and the value; a red banner on the dashboard; and
+`sentinel_rules_config_valid` (resting value 1, drops to 0). The metric follows
+the precedent `163021e` set for undated records, and for the same stated reason
+— nobody reads logs on a quiet day. The dashboard banner matters because every
+other indicator on that page stays green during exactly this failure.
+
+**Constraints derived from usage, never invented sensitivity.** This is the
+design rule of `rules_schema.py` and it's written at the top of the file. The
+user story is "quiet a noisy rule immediately", so validation that
+second-guesses tuning would break the feature it protects.
+`max_deviation_pct: "75"` is accepted — wide, but meaningful. `"-1"` is
+rejected because `deviation_pct > -1` is true of every fill ever executed and
+there is no tuning intent that expression could express. Every constraint in
+the spec carries the expression it comes from. This also keeps me on the right
+side of the "don't guess at a security-relevant number" rule: I am rejecting
+values at which the formula has no meaning, not choosing how sensitive a
+detector should be.
+
+**Unknown keys are rejected, not warned about.** A misspelled key is the
+quietest failure in the set: `tolerance_pc` is valid YAML, the reader falls
+through to its default, and the operator leaves believing the change took
+effect. The message names the near-match (`difflib`), so the rejection carries
+its own fix.
+
+**`is_valid` reloads before answering.** Caught by a test I expected to pass
+trivially. The properties were plain attribute reads, so the dashboard could
+have reported "config healthy" from a file state two edits old — reporting
+stale health is the same failure mode the validation exists to close.
+
+**`_reject` advances `_mtime`.** Every `get()` calls `reload()`, and one poll
+cycle reads a dozen thresholds per account. Without advancing the mtime, one
+bad edit would re-parse and re-log on every read and bury its own message.
+There's a test pinning one ERROR per bad edit. The operator's next edit changes
+the mtime again and is re-validated normally, so a rejected file never wedges
+until restart — also tested, because hot reload is the thing this issue exists
+to protect.
+
+#### What I did not build, and why
+
+**Criterion 3 — "Threshold changes are recorded, showing who changed what and
+when" — is not done, and I left it unticked.**
+
+The "who" half cannot be built yet: there are no operator accounts (#54,
+G-50 · Operator identity), and `config/rules.yaml` is edited on disk, so from
+inside the process there is nobody to attribute a change *to*. The available
+proxies are guesses dressed as attribution — the file's owning uid is not who
+edited it — and #54's own philosophy is explicit that rows without an actor
+should not be backfilled with a guess.
+
+I could have built the "what and when" half now (a `config_changes` table, diff
+on successful reload) and left "who" for later. I decided against it: it is
+roughly as much work again — new table, callback plumbing out of the config
+lock to avoid a lock-ordering hazard against the DB write lock, CLI wiring,
+dashboard display — for half a criterion that still could not be ticked, and it
+would be reworked when actors land. Half an audit trail is the kind of thing
+that looks like progress and isn't.
+
+So **#16 stays open** with criterion 2 ticked and criterion 3 outstanding,
+noted on the issue as blocked on #54. It should be finished as part of #54,
+where the actor exists and the whole criterion can be met at once.
+
+#### Verification
+
+- 20 tests in `tests/test_rules_validation.py`, written first.
+- One is the behavioural proof at the level the defect actually bit
+  (`test_detection_keeps_running_after_a_bad_edit`): break the config, then
+  steal from the account, and require the withdrawal alert.
+- One asserts the shipped `config/rules.yaml` validates — a spec that rejects
+  the product's own config would stop the process from starting.
+- Mutation check: replacing `problems = validate(converted)` with
+  `problems = []` turns 17 of the 20 red, including the behavioural one. The 3
+  that stay green are the ones that describe behaviour holding either way
+  (legitimate retune accepted, shipped config valid, plain reads).
+- Full suite green: 227 passed.
+
+#### Surprising
+
+`poll_state.last_success_at` is written near the *top* of the fast loop, right
+after the exchange fetches, and the balance snapshot is written at the bottom.
+So "last success" means "the exchange answered", not "the account was
+checked" — anything that throws in between leaves an account looking freshly
+and successfully polled while nothing was examined. `latest_balance_snapshot_at`
+already documents a version of this trap for its own purposes. It is worth
+knowing that the dashboard's healthiest-looking column is the weakest claim on
+the page.

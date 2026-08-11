@@ -225,7 +225,24 @@ def _fail_cell(n: int) -> str:
     return f'<span class="fail">{n}</span>' if n else '<span class="zero">0</span>'
 
 
-def _render(db: Database) -> str:
+def _rules_banner(rules) -> str:
+    """Shown when config/rules.yaml on disk was rejected (G-12).
+
+    Detection carries on with the last values known to be good, which is the
+    safe behaviour but also an invisible one: every other indicator on this
+    page - fleet health, last success, alert counts - stays exactly as green as
+    it was. Without this the operator's only evidence that their edit never
+    took effect is a log line nobody is reading."""
+    if rules is None or rules.is_valid:
+        return ""
+    return (
+        '<div class="banner err">✕ <b>config/rules.yaml was rejected</b> — detection is running on '
+        "the last valid configuration, and the thresholds in the file are <b>not</b> in force. "
+        f"Rejected {_ts(rules.rejected_at)}: <code>{html.escape(rules.validation_error or '')}</code></div>"
+    )
+
+
+def _render(db: Database, rules=None) -> str:
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=24)).isoformat()
 
@@ -280,7 +297,8 @@ def _render(db: Database) -> str:
         f'<span class="live"><span class="dot"></span> Live · <span id="liveclock">{now.strftime("%H:%M:%S UTC")}</span></span>'
     )
     body = (
-        '<div class="kpis">'
+        _rules_banner(rules)
+        + '<div class="kpis">'
         f'<div class="kpi"><div class="label">Accounts monitored</div><div class="val">{total}</div>'
         f'<div class="foot">{n_active} active · {total - n_active} disabled</div></div>'
         f'<div class="kpi"><div class="label">Fleet health</div><div class="val ok">{health_pct}%</div>'
@@ -569,7 +587,7 @@ def _render_result(label: str, exchange: str, account_id: int) -> str:
 
 
 def serve_dashboard(
-    db: Database, cipher: CredentialCipher, port: int, host: str = "127.0.0.1"
+    db: Database, cipher: CredentialCipher, port: int, host: str = "127.0.0.1", rules=None
 ) -> ThreadingHTTPServer:
     """Internal ops page. Network-gated (Tailscale) — it has no login of its
     own by design. The /add form runs the same fail-closed read-only gate as
@@ -631,7 +649,7 @@ def serve_dashboard(
                 self.send_response(204)
                 self.end_headers()
             else:
-                self._send(_render(db).encode())
+                self._send(_render(db, rules).encode())
 
         def do_POST(self):
             post_path = urlparse(self.path).path.rstrip("/")

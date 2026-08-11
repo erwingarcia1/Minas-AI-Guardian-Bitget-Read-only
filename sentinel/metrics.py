@@ -43,6 +43,22 @@ class Metrics:
             ["exchange", "source"],
             registry=reg,
         )
+        # 0 means config/rules.yaml on disk was rejected and detection is
+        # running on the last values known to be good (G-12). Its resting value
+        # is 1, so this is a flat line an operator can alarm on: the thresholds
+        # someone just edited are not the thresholds in force, and every other
+        # indicator - poll success, account health, alert volume - looks
+        # completely normal while that is true.
+        self.rules_config_valid = Gauge(
+            "sentinel_rules_config_valid",
+            "1 when config/rules.yaml validated and is in use, 0 when it was rejected",
+            registry=reg,
+        )
+        self.rules_config_valid.set(1)
+
+    def set_rules_config_valid(self, ok: bool) -> None:
+        if _AVAILABLE:
+            self.rules_config_valid.set(1 if ok else 0)
 
     def poll_ok(self) -> None:
         if _AVAILABLE:
