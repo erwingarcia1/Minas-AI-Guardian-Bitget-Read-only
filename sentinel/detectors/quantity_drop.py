@@ -1,9 +1,52 @@
 from __future__ import annotations
 
+import logging
 from decimal import Decimal
 
 from sentinel.detectors.base import Detection
 from sentinel.numeric import to_decimal
+
+logger = logging.getLogger(__name__)
+
+# How far past the window start a detection would still have been suppressed by
+# a wider settlement grace. Fires a "near miss" log line so the grace can be
+# tuned from evidence instead of guesswork - see G-7.
+NEAR_MISS_PROBE_SECONDS = 300
+
+
+def _in_window(record: dict, window_start_ms: int | None, source: str, exchange: str) -> bool:
+    """True if this record can be proven to fall at or after the window start.
+
+    A record with no usable timestamp CANNOT be proven to be in-window, so it
+    is excluded - it must not explain away a drop. Same principle as the
+    read-only key check: when the system can't tell, it refuses to assume
+    safe. Each exclusion is logged with the exchange name, because an exchange
+    that routinely omits timestamps would show up here as chronic false
+    positives long before a customer mutes the channel over it."""
+    if window_start_ms is None:
+        return True
+
+    raw = record.get("timestamp")
+    if raw is None:
+        logger.warning(
+            "%s: %s %s has no timestamp - not counting it as an explanation for a balance drop",
+            exchange,
+            source,
+            record.get("id") or record.get("symbol") or "<unidentified>",
+        )
+        return False
+
+    try:
+        return int(raw) >= window_start_ms
+    except (TypeError, ValueError):
+        logger.warning(
+            "%s: %s %s has an unparseable timestamp %r - not counting it as an explanation",
+            exchange,
+            source,
+            record.get("id") or record.get("symbol") or "<unidentified>",
+            raw,
+        )
+        return False
 
 
 def _explained_outflow_for_coin(coin: str, withdrawals: list[dict], fills: list[dict]) -> Decimal:
@@ -46,10 +89,18 @@ def detect_quantity_drop(
     fills_in_window: list[dict],
     tolerance_pct: Decimal,
     tolerance_absolute: Decimal,
+    window_start_ms: int | None = None,
+    exchange: str = "exchange",
 ) -> list[Detection]:
     """Flags a per-asset quantity decrease not explained by a withdrawal or
     a matching trade fill in the same window. Tracks quantity, not USD
     value, so a price drop is never mistaken for theft.
+
+    `window_start_ms` enforces the "same window" half of that contract. The
+    caller is still expected to pass windowed lists, but this filters again
+    defensively: passing days of history here used to silently cancel out a
+    fresh theft, and the parameter names alone did not stop that happening
+    (G-7). When None, no filtering is applied and the caller is trusted.
 
     `fills_in_window` is expected to be CCXT unified Order records (from
     BitgetClient.fetch_closed_orders), not Trade records - Bitget's
@@ -64,6 +115,19 @@ def detect_quantity_drop(
     docs/phase0-capability-audit.md section 6 for the leveraged-futures gap
     and the Phase 2 fix (reconcile against contract account-bill liquidation
     entries once that businessType enum is confirmed)."""
+    withdrawals = [w for w in withdrawals_in_window if _in_window(w, window_start_ms, "withdrawal", exchange)]
+    fills = [f for f in fills_in_window if _in_window(f, window_start_ms, "fill", exchange)]
+
+    # Records just outside the window, used only to report near misses: a
+    # detection that a slightly wider settlement grace would have suppressed.
+    if window_start_ms is None:
+        probe_withdrawals: list[dict] = []
+        probe_fills: list[dict] = []
+    else:
+        probe_start_ms = window_start_ms - NEAR_MISS_PROBE_SECONDS * 1000
+        probe_withdrawals = [w for w in withdrawals_in_window if _in_window(w, probe_start_ms, "withdrawal", exchange)]
+        probe_fills = [f for f in fills_in_window if _in_window(f, probe_start_ms, "fill", exchange)]
+
     detections = []
     for coin, prev_qty in previous_balances.items():
         curr_qty = current_balances.get(coin, Decimal("0"))
@@ -71,10 +135,22 @@ def detect_quantity_drop(
         if drop <= 0:
             continue
 
-        explained = _explained_outflow_for_coin(coin, withdrawals_in_window, fills_in_window)
+        explained = _explained_outflow_for_coin(coin, withdrawals, fills)
         tolerance = max(tolerance_absolute, prev_qty * tolerance_pct / Decimal("100"))
         unexplained = drop - explained
         if unexplained > tolerance:
+            probe_explained = _explained_outflow_for_coin(coin, probe_withdrawals, probe_fills)
+            if drop - probe_explained <= tolerance:
+                logger.warning(
+                    "%s: near miss on %s - this detection would have been suppressed by a "
+                    "settlement grace of up to %ds (explained in window: %s, with wider probe: %s). "
+                    "Repeated near misses mean the grace is set too tight.",
+                    exchange,
+                    coin,
+                    NEAR_MISS_PROBE_SECONDS,
+                    explained,
+                    probe_explained,
+                )
             detections.append(
                 Detection(
                     rule="unexplained_quantity_decrease",

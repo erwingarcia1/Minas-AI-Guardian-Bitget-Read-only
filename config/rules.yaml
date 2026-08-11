@@ -26,6 +26,13 @@ detectors:
   quantity_drop:
     tolerance_pct: "0.5"
     tolerance_absolute: "0.00000001"
+    # Only activity at or after the previous balance snapshot can explain a
+    # drop measured from it. This grace widens that window backwards to cover
+    # settlement lag - a sale executing just before the snapshot whose balance
+    # effect lands just after it. Every second of grace is a second a real
+    # theft can hide in, so keep it tight; "near miss" warnings in the log show
+    # when it is too tight to tune from evidence rather than guesswork.
+    explanation_grace_seconds: "60"
 
   tamper:
     consecutive_auth_failures_threshold: 2

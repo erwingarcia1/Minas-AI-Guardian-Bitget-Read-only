@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sentinel.alerts.dispatch import dispatch
@@ -11,6 +11,7 @@ from sentinel.baseline import (
     known_traded_pairs,
     known_transfer_routes,
     latest_balance_snapshot,
+    latest_balance_snapshot_at,
     latest_permission_snapshot,
     load_fee_baseline,
     prune_balance_snapshots,
@@ -299,13 +300,35 @@ class AccountPoller:
                 record_transfer_route(self._db, account_id, route)
 
         # --- Balance: unexplained quantity decrease --------------------------
-        previous_balances = latest_balance_snapshot(self._db, account_id)
+        previous_balances, snapshot_at = latest_balance_snapshot_at(self._db, account_id)
         current_decimal = {k: to_decimal(v) for k, v in current_balances.items()}
 
         tolerance_pct = self._rules.get_decimal("detectors", "quantity_drop", "tolerance_pct")
         tolerance_abs = self._rules.get_decimal("detectors", "quantity_drop", "tolerance_absolute")
+
+        # The drop is measured from the previous balance snapshot, so only
+        # activity at or after that snapshot can explain it. `withdrawals` and
+        # `fills` are fetched with since=None and carry the exchange's full
+        # default history - days of it - so they must be windowed here. Without
+        # this, a legitimate sale from last week cancels out a theft from the
+        # last 45 seconds and nothing is ever alerted (G-7).
+        window_start_ms = None
+        if snapshot_at is not None:
+            grace = self._rules.get_decimal(
+                "detectors", "quantity_drop", "explanation_grace_seconds", default=Decimal("60")
+            )
+            window_start = datetime.fromisoformat(snapshot_at) - timedelta(seconds=float(grace))
+            window_start_ms = int(window_start.timestamp() * 1000)
+
         for detection in detect_quantity_drop(
-            previous_balances, current_decimal, withdrawals, fills, tolerance_pct, tolerance_abs
+            previous_balances,
+            current_decimal,
+            withdrawals,
+            fills,
+            tolerance_pct,
+            tolerance_abs,
+            window_start_ms=window_start_ms,
+            exchange=label,
         ):
             self._emit(account_id, label, detection)
 

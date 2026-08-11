@@ -79,6 +79,20 @@ def record_balance_snapshot(db: Database, account_id: int, balances: dict[str, o
 
 def latest_balance_snapshot(db: Database, account_id: int) -> dict[str, object]:
     """Most recent quantity per coin, as Decimal."""
+    balances, _ = latest_balance_snapshot_at(db, account_id)
+    return balances
+
+
+def latest_balance_snapshot_at(db: Database, account_id: int) -> tuple[dict[str, object], str | None]:
+    """Most recent quantity per coin, plus the ISO timestamp that snapshot was
+    taken at (None when the account has no snapshot yet).
+
+    The timestamp is what bounds the quantity-drop explanation window: a drop
+    is measured from this snapshot, so only activity at or after it can
+    explain that drop. `last_fast_loop_at` is NOT a safe substitute - it is
+    written near the top of the fast loop while the snapshot is written at the
+    bottom, and onboarding's seed_baseline records a snapshot without any poll
+    state at all."""
     with db.cursor() as cur:
         # The MAX() subquery must be non-correlated (parameterized, not
         # b.account_id): correlating it re-evaluates the MAX per row, which is
@@ -86,7 +100,7 @@ def latest_balance_snapshot(db: Database, account_id: int) -> dict[str, object]:
         # dashboard within ~10 hours of polling (2026-07-06 outage).
         cur.execute(
             """
-            SELECT coin, quantity FROM balance_snapshots
+            SELECT coin, quantity, snapshot_at FROM balance_snapshots
             WHERE account_id = ? AND snapshot_at = (
                 SELECT MAX(snapshot_at) FROM balance_snapshots WHERE account_id = ?
             )
@@ -94,7 +108,9 @@ def latest_balance_snapshot(db: Database, account_id: int) -> dict[str, object]:
             (account_id, account_id),
         )
         rows = cur.fetchall()
-    return {row["coin"]: to_decimal(row["quantity"]) for row in rows}
+    balances = {row["coin"]: to_decimal(row["quantity"]) for row in rows}
+    snapshot_at = rows[0]["snapshot_at"] if rows else None
+    return balances, snapshot_at
 
 
 def prune_balance_snapshots(db: Database, account_id: int, keep_days: int = 7) -> int:

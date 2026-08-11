@@ -47,6 +47,23 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   is fixed and regression-tested.
 
 ### Fixed
+- **Old activity could explain away a fresh theft (G-7)**: the quantity-drop
+  detector measured a drop between two consecutive balance snapshots — 45
+  seconds apart — but was handed `withdrawals` and `fills` fetched with
+  `since=None`, i.e. the exchange's full default history. A legitimate sale
+  from last week was counted as an explanation for a drain from the last
+  minute, and the alert never fired. The explanation window now starts at the
+  previous balance snapshot (`latest_balance_snapshot_at`, not
+  `last_fast_loop_at` — that is written at the top of the loop while the
+  snapshot is written at the bottom, and onboarding seeds a snapshot with no
+  poll state at all), widened backwards by
+  `detectors.quantity_drop.explanation_grace_seconds` (default 60) to cover
+  settlement lag. The detector filters again on `window_start_ms` rather than
+  trusting the caller's list. A record whose timestamp is missing or
+  unparseable cannot be proven in-window, so it never explains a drop and is
+  logged with the exchange name — the same fail-closed principle as the
+  read-only key check. Detections that a slightly wider grace would have
+  suppressed log a "near miss" so the grace is tuned from evidence.
 - **Dashboard outage (2026-07-06)**: `latest_balance_snapshot` used a
   correlated `MAX(snapshot_at)` subquery — quadratic cost on a table growing
   every fast loop. ~10h after deploy the engine held the SQLite lock nearly
