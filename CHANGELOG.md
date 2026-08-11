@@ -86,6 +86,11 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   logged with the exchange name — the same fail-closed principle as the
   read-only key check. Detections that a slightly wider grace would have
   suppressed log a "near miss" so the grace is tuned from evidence.
+  Because the anchor is durable state rather than process state, a restart is a
+  delay in detection rather than a hole in it: a drain that happens while the
+  service is down is caught by the first poll after it comes back, and the
+  window widens to cover the outage without crediting anything from before it.
+  Locked down by three end-to-end tests (see `tests/test_integration.py`).
 - **Dashboard outage (2026-07-06)**: `latest_balance_snapshot` used a
   correlated `MAX(snapshot_at)` subquery — quadratic cost on a table growing
   every fast loop. ~10h after deploy the engine held the SQLite lock nearly

@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock
 
 from sentinel.config import RulesConfig
+from sentinel.db import Database
 from sentinel.onboarding import onboard_account
 from sentinel.poller import AccountPoller, _update_poll_state
 from tests.fixtures.ccxt_responses import account_info_response, trade_record, withdrawal_record
@@ -187,4 +188,146 @@ def test_recent_sale_still_explains_a_drop(db, cipher, monkeypatch):
     fired_rules = {a.rule for a in channel.sent}
     assert "unexplained_quantity_decrease" not in fired_rules, (
         "a sale from 10s ago should still explain the drop it caused"
+    )
+
+
+# --- Restart coverage (G-7) -------------------------------------------------
+# Deploys are a manual `docker compose up -d --build` and the process handles
+# no SIGTERM, so it dies mid-cycle every release. Nothing in the drop path may
+# depend on process lifetime: the window anchors on the last balance snapshot,
+# which is in SQLite, so it survives the restart that produced the gap. These
+# tests pin that down - it is the property that makes an outage a delay in
+# detection rather than a hole in it.
+
+
+def _simulate_downtime(db, account_id, minutes):
+    """Backdate the persisted poll state so the account looks like it was last
+    seen `minutes` ago and the process has just come back up. Rewrites both
+    anchors, so a regression to `last_fast_loop_at` can't pass by accident."""
+    was_at = (datetime.now(timezone.utc) - timedelta(minutes=minutes)).isoformat()
+    with db.cursor() as cur:
+        cur.execute("UPDATE balance_snapshots SET snapshot_at = ? WHERE account_id = ?", (was_at, account_id))
+        cur.execute("UPDATE poll_state SET last_fast_loop_at = ? WHERE account_id = ?", (was_at, account_id))
+    return was_at
+
+
+def _restarted_poller(db_path, cipher, channel):
+    """A poller on a *new* Database handle over the same file - what the next
+    container gets. Anything the old process held in memory is gone."""
+    restarted_db = Database(db_path)
+    rules = RulesConfig("config/rules.yaml")
+    poller = AccountPoller(
+        restarted_db, cipher, rules,
+        {"CRITICAL": [channel], "HIGH": [channel], "MEDIUM": [channel], "LOW": [channel]},
+    )
+    return restarted_db, poller
+
+
+def _onboard_and_settle(db, cipher, monkeypatch, tmp_path):
+    """Onboard at 1.0 BTC and run one clean cycle, so the account is in the
+    steady state a restart would actually interrupt - a real snapshot written
+    by a real fast loop, not just the onboarding seed."""
+    onboarding_client = _mock_client(balance_total={"BTC": 1.0})
+    monkeypatch.setattr("sentinel.onboarding.make_client", lambda *a, **k: onboarding_client)
+    result = onboard_account(
+        db, cipher, label="acct-1", topology="independent", api_key="k", secret="s", passphrase="p"
+    )
+
+    quiet_client = _mock_client(balance_total={"BTC": 1.0})
+    monkeypatch.setattr("sentinel.poller.make_client", lambda *a, **k: quiet_client)
+    rules = RulesConfig("config/rules.yaml")
+    poller = AccountPoller(db, cipher, rules, {sev: [] for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW")})
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM accounts WHERE id = ?", (result.account_id,))
+        account_row = cur.fetchone()
+    poller.run_fast_loop(account_row)
+    return result.account_id, account_row
+
+
+def test_theft_during_a_restart_is_detected_on_the_first_poll_after_startup(db, cipher, monkeypatch, tmp_path):
+    """The headline property: a drain that happens while the service is down
+    is caught by the first poll after it comes back.
+
+    It holds because the drop is measured from the last *snapshot*, which is
+    in SQLite. The restarted process has no memory of the old one, and does
+    not need any: it compares a live balance against the last thing the
+    previous process durably recorded."""
+    account_id, account_row = _onboard_and_settle(db, cipher, monkeypatch, tmp_path)
+    _simulate_downtime(db, account_id, minutes=20)
+
+    # 20 minutes down. The account was drained to 0.5 BTC while nothing was
+    # watching, by a route that leaves no withdrawal or fill we can see.
+    channel = RecordingChannel()
+    monkeypatch.setattr("sentinel.poller.make_client", lambda *a, **k: _mock_client(balance_total={"BTC": 0.5}))
+    restarted_db, poller = _restarted_poller(tmp_path / "test.db", cipher, channel)
+    try:
+        poller.run_fast_loop(account_row)
+    finally:
+        restarted_db.close()
+
+    fired = {a.rule for a in channel.sent}
+    assert "unexplained_quantity_decrease" in fired, (
+        "a 0.5 BTC drain during a 20-minute outage went unreported on the first poll back"
+    )
+
+
+def test_legitimate_activity_during_a_restart_still_explains_the_drop(db, cipher, monkeypatch, tmp_path):
+    """The converse, and the reason the test above can't pass vacuously: the
+    window has to *widen* to cover the outage, not merely start late. A sale
+    the customer made while we were down must still explain its own drop, or
+    every deploy would page them."""
+    account_id, account_row = _onboard_and_settle(db, cipher, monkeypatch, tmp_path)
+    _simulate_downtime(db, account_id, minutes=20)
+
+    # Sold 10 minutes ago - inside the outage, after the last snapshot.
+    sale = trade_record(symbol="BTC/USDT", side="sell", amount="0.5", cost="30000")
+    sale["timestamp"] = int((datetime.now(timezone.utc) - timedelta(minutes=10)).timestamp() * 1000)
+
+    channel = RecordingChannel()
+    monkeypatch.setattr(
+        "sentinel.poller.make_client",
+        lambda *a, **k: _mock_client(balance_total={"BTC": 0.5}, fills=[sale]),
+    )
+    restarted_db, poller = _restarted_poller(tmp_path / "test.db", cipher, channel)
+    try:
+        poller.run_fast_loop(account_row)
+    finally:
+        restarted_db.close()
+
+    fired = {a.rule for a in channel.sent}
+    assert "unexplained_quantity_decrease" not in fired, (
+        "a sale made during the outage should still explain the drop it caused"
+    )
+
+
+def test_pre_outage_activity_does_not_explain_a_theft_during_the_outage(db, cipher, monkeypatch, tmp_path):
+    """The two properties together, which is where a regression would hide.
+
+    An outage necessarily widens the explanation window - that is what makes
+    the test above pass. This one proves it widens to the outage and no
+    further: a sale from before the last snapshot is still refused as an
+    explanation, so G-7 doesn't quietly come back the moment the service
+    restarts."""
+    account_id, account_row = _onboard_and_settle(db, cipher, monkeypatch, tmp_path)
+    _simulate_downtime(db, account_id, minutes=20)
+
+    # Settled and already reflected in the snapshot the drop is measured from,
+    # so it cannot account for any part of that drop.
+    old_sale = trade_record(symbol="BTC/USDT", side="sell", amount="0.5", cost="30000")
+    old_sale["timestamp"] = int((datetime.now(timezone.utc) - timedelta(days=7)).timestamp() * 1000)
+
+    channel = RecordingChannel()
+    monkeypatch.setattr(
+        "sentinel.poller.make_client",
+        lambda *a, **k: _mock_client(balance_total={"BTC": 0.5}, fills=[old_sale]),
+    )
+    restarted_db, poller = _restarted_poller(tmp_path / "test.db", cipher, channel)
+    try:
+        poller.run_fast_loop(account_row)
+    finally:
+        restarted_db.close()
+
+    fired = {a.rule for a in channel.sent}
+    assert "unexplained_quantity_decrease" in fired, (
+        "a week-old sale explained away a drain that happened during the outage"
     )
