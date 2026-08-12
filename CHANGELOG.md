@@ -38,6 +38,21 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   back to every configured channel, loudly.
 
 ### Fixed
+- **One failing alert channel no longer loses the alert entirely (#57).**
+  `dispatch()` called `channel.send()` unguarded, and *before* writing the
+  `alerts` row. A single raising channel therefore skipped every channel after
+  it — including the ones configured as backups — wrote no `alerts` row at all,
+  never reached `ContactRouter` so the customer's own email and phone went
+  untried, and threw far enough to abandon the rest of that account's poll
+  cycle. A flaky Telegram API meant the customer was told nothing, on any
+  channel, with no record, every cycle, for as long as it lasted — the only
+  outward sign being a log line about a "task failure". Each send is now
+  guarded individually, and the alert is recorded whether or not anyone took
+  it: a new `alerts.delivered_to` count keeps *"we detected this"* and *"we
+  managed to tell someone"* as separate facts. When the count is zero — every
+  channel refused it, or none was configured for that severity — an operator is
+  paged CRITICAL. Not when *a* channel fails, which is merely degraded; only
+  when the customer is genuinely uninformed.
 - **The database no longer serialises every check, and one account is never
   checked twice at once (G-45, #49).** Two defects that get worse with exactly
   the thing the issue is about — more customers. *Contention:* one `sqlite3`

@@ -85,6 +85,7 @@ class Database:
         # DB onboarded before the columns existed - e.g. the deployed Bitget one.)
         migrations = (
             "ALTER TABLE alerts ADD COLUMN escalated_at TEXT",
+            "ALTER TABLE alerts ADD COLUMN delivered_to INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE accounts ADD COLUMN exchange TEXT NOT NULL DEFAULT 'bitget'",
             "ALTER TABLE accounts ADD COLUMN alert_email TEXT",
             "ALTER TABLE accounts ADD COLUMN alert_phone TEXT",

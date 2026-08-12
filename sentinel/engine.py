@@ -104,6 +104,7 @@ class Engine:
         self._poller = AccountPoller(
             db, cipher, rules, channels, limiter=self.limiters, metrics=metrics,
             contact_router=ContactRouter(db=db, rules=rules),
+            operator_alerter=operator_alerter,
         )
         self._last_slow: dict[int, float] = {}
 

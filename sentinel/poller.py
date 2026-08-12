@@ -125,7 +125,7 @@ class AccountPoller:
     sentinel/engine.py; per-call rate limiting is handled by the engine via
     the optional `limiter`."""
 
-    def __init__(self, db: Database, cipher: CredentialCipher, rules: RulesConfig, channels: dict, limiter=None, metrics=None, contact_router=None):
+    def __init__(self, db: Database, cipher: CredentialCipher, rules: RulesConfig, channels: dict, limiter=None, metrics=None, contact_router=None, operator_alerter=None):
         self._db = db
         self._cipher = cipher
         self._rules = rules
@@ -133,6 +133,7 @@ class AccountPoller:
         self._limiter = limiter
         self._metrics = metrics
         self._contact_router = contact_router
+        self._operator_alerter = operator_alerter
 
     def _account_contact(self, account_id: int) -> tuple[list[str], list[str]]:
         with self._db.cursor() as cur:
@@ -161,6 +162,7 @@ class AccountPoller:
         if alert_id is not None:
             if self._metrics is not None:
                 self._metrics.alert_sent(detection.severity)
+            self._page_if_undelivered(account_id, label, detection, alert_id)
             # Per-account destination fires only when the alert actually fired
             # (dedup/cooldown passed), reusing dispatch's dedup semantics. The
             # router is called even with no contacts on file so a CRITICAL
@@ -173,6 +175,40 @@ class AccountPoller:
                     detection, label, emails, phones,
                     account_id=account_id, alert_id=alert_id,
                 )
+
+    def _page_if_undelivered(self, account_id: int, label: str, detection, alert_id: int) -> None:
+        """Pages an operator when an alert reached nobody.
+
+        Not when *a* channel failed - that is degraded, and dispatch already
+        tried the others. Only when the count is zero, which is the case where
+        the customer is genuinely uninformed: every configured channel refused
+        it, or none was configured for that severity at all. Paging on anything
+        weaker would train an operator to ignore the channel, which costs more
+        than it buys (#57)."""
+        if self._operator_alerter is None:
+            return
+        with self._db.cursor() as cur:
+            cur.execute("SELECT delivered_to FROM alerts WHERE id = ?", (alert_id,))
+            row = cur.fetchone()
+        if row is None or row["delivered_to"] > 0:
+            return
+        self._operator_alerter.page(
+            rule="alert_delivered_to_nobody",
+            severity="CRITICAL",
+            message=(
+                f"A {detection.severity} alert ({detection.rule}) on {label} was detected and "
+                f"reached no channel at all. It is recorded in the customer's alert history, "
+                f"but nobody was told. Check the channels routed for {detection.severity}."
+            ),
+            evidence={
+                "alert_id": alert_id,
+                "rule": detection.rule,
+                "severity": detection.severity,
+                "account_label": label,
+            },
+            account_id=account_id,
+            dedup_scope=detection.severity,
+        )
 
     def _acquire(self, account_id: int, calls: float) -> None:
         if self._limiter is not None:

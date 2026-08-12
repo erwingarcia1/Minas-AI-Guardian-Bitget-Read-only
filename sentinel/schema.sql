@@ -101,6 +101,10 @@ CREATE TABLE IF NOT EXISTS alerts (
     message TEXT NOT NULL,
     evidence_json TEXT NOT NULL,
     confidence TEXT NOT NULL,
+    -- How many channels accepted this alert. 0 means it was detected and
+    -- reached nobody, which is a different thing from not being detected and
+    -- must stay visible as such (#57).
+    delivered_to INTEGER NOT NULL DEFAULT 0,
     sent_at TEXT NOT NULL,
     acknowledged_at TEXT
 );

@@ -1477,3 +1477,64 @@ miss.
 The one mitigation: with no `alerts` row there is no dedup key, so the next
 cycle re-detects and re-sends. Recovery works once the channel returns. But
 while it is down, detection is truncated every cycle and nothing says so.
+
+---
+
+## #57 · One failing channel lost the alert entirely
+
+Built before #54 despite #54 being the queued next item: this is p1 / Phase 1,
+Phase 1 precedes Phase 2 in milestone order, and it is a customer-facing silent
+miss. Flagged in the task-4 entry above before starting.
+
+### Root cause
+
+`dispatch()` called `channel.send()` **unguarded**, and **before** writing the
+`alerts` row. Five consequences from one exception, in order:
+
+1. remaining channels never tried — CRITICAL routes to four, and the other
+   three exist precisely as backups;
+2. no `alerts` row — absent from the customer's history, the portal, the
+   dashboard, and anything handed to an exchange as evidence;
+3. `ContactRouter` never reached, because `_emit` calls `dispatch()` and *then*
+   the router — so the customer's own email and phone went untried too;
+4. the rest of that account's poll cycle abandoned;
+5. one log line, from a handler whose message is about *task failure* rather
+   than about a customer not being told.
+
+### Judgment calls
+
+**Record the alert even when nobody took it.** The deciding argument is that
+"we detected this" and "we managed to tell someone" are different facts, and
+sharing a row's *existence* made an undelivered alert indistinguishable from
+one that never happened. `delivered_to` follows the precedent `operator_pages`
+already set.
+
+**Dedup still applies to an undelivered alert**, and there is a test for it.
+This was the one real risk in recording undelivered alerts: the row is what
+dedup reads, so getting it wrong would turn a flaky channel into a repeat-alert
+storm. Recording it means the retry happens on the *next detection*, not on
+every cycle.
+
+**Page only when the count is zero.** Not when *a* channel fails — dispatch
+already tried the others, and that is degraded rather than silent. Zero means
+every configured channel refused it, or none was configured for that severity
+at all. Paging on anything weaker trains an operator to ignore the channel,
+which costs more than it buys.
+
+**Dedup scope is the severity, not the rule.** A channel outage affects every
+rule at that severity, so scoping per-rule would page once per detector during
+a Telegram outage. Per severity, per account.
+
+### A test that passed for the wrong reason, again
+
+Two tests initially failed because my mock client returned the same records to
+*onboarding* as to the poll — so `seed_baseline` had already recorded them and
+no detection fired. The tests were green-adjacent for a reason that had nothing
+to do with the code under test. Fixed by having onboarding see a quiet account,
+which is also what actually happens.
+
+### Verification
+
+10 tests, written first, all red. Three mutations — sends unguarded again,
+`delivered_to` hardcoded to 1, and the page removed — each red-lighting only
+its own guards. Full suite green at 339.

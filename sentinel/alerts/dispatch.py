@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sentinel.alerts.base import AlertChannel, AlertMessage
 from sentinel.db import Database
 from sentinel.detectors.base import Detection
+
+logger = logging.getLogger("sentinel.alerts.dispatch")
 
 
 def _dedup_key(account_id: int, detection: Detection) -> str:
@@ -56,15 +59,35 @@ def dispatch(
         message=detection.message,
         evidence=detection.evidence,
     )
+    # Each send is a network call - Telegram HTTP, SMTP, an SMS provider - and
+    # each is guarded on its own. Unguarded, one flaky channel skipped every
+    # channel after it (including the ones configured as backups), left no
+    # `alerts` row at all, and threw far enough to abandon the rest of that
+    # account's poll cycle (#57).
+    delivered = 0
     for channel in channels.get(detection.severity, []):
-        channel.send(alert)
+        try:
+            channel.send(alert)
+            delivered += 1
+        except Exception as exc:  # noqa: BLE001 - a dead channel must not cost the others
+            logger.error(
+                "alert channel failed (%s) for %s on %s: %s",
+                type(channel).__name__, detection.rule, account_label, exc,
+            )
 
+    # Recorded whether or not anyone took it. "We detected this" and "we managed
+    # to tell someone" are different facts, and sharing a row's existence made
+    # an undelivered alert indistinguishable from one that never happened - so
+    # it was absent from the customer's history, the portal, the dashboard, and
+    # anything handed to an exchange as evidence. `delivered_to` is what keeps
+    # them apart, on the same footing as operator_pages.
     with db.cursor() as cur:
         cur.execute(
             """
             INSERT INTO alerts
-                (account_id, rule, severity, dedup_key, message, evidence_json, confidence, sent_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                (account_id, rule, severity, dedup_key, message, evidence_json, confidence,
+                 sent_at, delivered_to)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 account_id,
@@ -75,6 +98,7 @@ def dispatch(
                 json.dumps(detection.evidence, default=str),
                 detection.confidence,
                 now.isoformat(),
+                delivered,
             ),
         )
         alert_id = cur.lastrowid
