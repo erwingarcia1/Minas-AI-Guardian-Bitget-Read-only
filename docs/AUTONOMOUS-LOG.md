@@ -497,3 +497,74 @@ total` is the only metric with an `exchange` label, and the remaining
 `exchange=label`) turns the poller-level one red while the two unit-level ones
 stay green — correct, since they call the detector directly and the conflation
 lived in the caller. Full suite green at 244.
+
+---
+
+### Log-and-skip pass · five product decisions written up
+
+Wrote `docs/DECISIONS-NEEDED.md` covering the five items flagged as needing a
+product call — G-33 (#37), G-23 (#27), G-25 (#29), G-20 (#24), G-43 (#47) —
+plus a sixth entry (incident PDF export) that I judged to be in the same class
+once I read G-25's criteria properly. Each has the options, a recommendation
+and what it blocks, and each issue has a comment pointing at it so nobody has
+to find the doc to know why the issue is untouched.
+
+Did this before starting the large Phase 2 builds rather than after, so the
+decisions are waiting whenever they're read rather than sitting behind however
+far I get.
+
+#### What unblocks what
+
+Two things worth pulling out, because they're the reason to read decisions 1
+and 2 together:
+
+- **#53 (G-49, operator alerting) gates the operator-paging rung of both G-23
+  and G-33.** There is no operator paging route in the repo at all — every
+  channel today is customer-scoped. Both issues have a criterion that says "a
+  Minas operator is paged", and neither can be finished without it. #53 is on
+  the build list, so it shouldn't end up the binding constraint, but the
+  decisions should be made knowing it's a prerequisite.
+- **Decision 4 (quiet hours) and decision 1 (escalation) interact.** Whether
+  CRITICAL escalation respects quiet hours has to be answered once, not twice,
+  or the two features will disagree.
+
+#### Judgment calls
+
+**Recommended in every case rather than only listing options.** The instruction
+was options plus a recommendation, and a list of options with no opinion is
+just the same decision handed back. Where I recommended something that does
+*not* satisfy a criterion as literally written I said so explicitly — decision
+2's fire drills are the clear case: I'd rather customers didn't get a `[DRILL]`
+text every week forever, and G-33 criterion 2 says they should.
+
+**Added a sixth item that wasn't on the skip list.** G-25's PDF-export
+criterion would mean adding a PDF library or a headless browser to a security
+product. That's a supply-chain surface for a feature whose real requirement is
+"something official-looking I can send to an exchange", and a print stylesheet
+does that with no dependency. That is a product judgment about what "export as
+PDF" means, so it went in the doc rather than getting decided by me.
+
+**Split G-25 rather than blocking all of it.** Only the "what to do next"
+wording is actually a product decision. The timeline, the balances and the
+detection → notification → acknowledgement chain are all buildable now. Said so
+on the issue and offered to build it with the advice block stubbed. Two of the
+five are partial blocks like this rather than total ones, which is worth knowing
+before treating the whole list as parked.
+
+**G-43 is the one to start today.** It's the only item on the list that isn't
+mine or the user's to decide at all — it needs a lawyer, which is the longest
+lead time in the backlog. I also flagged the one question that most changes the
+engineering: whether crypto-shredding counts as erasure. Every other resolution
+of the append-only-log-versus-right-to-erasure conflict sacrifices one
+obligation for the other; that one doesn't. And I noted that the pruning
+mechanism itself is buildable now behind a configurable period, so the legal
+answer changes a number rather than a design.
+
+#### Surprising
+
+`prune_balance_snapshots(keep_days=7)` is the *only* retention that exists
+anywhere in the codebase. `events`, `alerts`, `seen_withdrawals`,
+`seen_transfers` and `sms_deliveries` are all unbounded — and `seen_fills`,
+which I added earlier today, now joins them. Worth noting that the append-only
+tables grow at the rate the fast loop polls, which on the current 45-second
+cadence is not slow.
