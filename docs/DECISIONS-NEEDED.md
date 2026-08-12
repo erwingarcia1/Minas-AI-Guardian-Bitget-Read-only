@@ -10,7 +10,8 @@ product should do, and each was skipped rather than guessed at.
 **Read this first:** decisions 1 and 2 are worth answering together and unblock
 the most. Decision 6 is not a product call at all — it needs a lawyer, and it
 is the longest lead time on the list, so it's worth starting even if the rest
-waits.
+waits. Decisions 2 and 7 share a mechanism: both need a scheduled drill, and
+whoever builds one should build it to cover both.
 
 ---
 
@@ -24,6 +25,7 @@ waits.
 | 4 | Alert channel defaults + quiet hours | #24 (G-20) | Quiet hours non-critical only, 22:00–07:00 local |
 | 5 | PDF export for incidents | #29 (G-25) | Defer — print stylesheet now |
 | 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), #46 (G-42) | Start legal review now; 24 months interim |
+| 7 | External uptime monitoring: latency, vendor, what customers hear | #63 | Dead-man's switch, 15 min, third-party vendor |
 
 ---
 
@@ -259,6 +261,75 @@ driven by a configurable period, applied to every unbounded table. That's most
 of criterion 3 and it's useful regardless of what number goes in. Blocked
 without it: publishing the policy (criterion 4) and the lawyer sign-off
 (criterion 2, which no amount of engineering will produce).
+
+---
+
+## 7. External uptime monitoring — blocks #63
+
+**The question.** Nothing tells us if the Guardian itself stops running. G-10
+(#14) covers losing sight of an *account* while the Guardian is up; it cannot
+cover the process or the host dying, because no in-process alarm can — an alarm
+that depends on the thing it monitors is not an alarm.
+
+The failure is total and completely silent: the box goes away, every customer
+stops being monitored, and the only signal is an absence of alerts, which is
+precisely what a quiet week looks like.
+
+Until now this was prose inside #53's scope note, which is how it stayed
+untracked for so long.
+
+### The constraint that shapes it
+
+The deployment is closed inbound on purpose: dashboard, portal and metrics bind
+loopback and publish only to `127.0.0.1`, and the security group allows SSH from
+an admin IP only. So **an external monitor cannot poll a health endpoint**
+without weakening that, and the dashboard can't be the endpoint — it has no auth
+and shows customer names and contact details.
+
+### What has to be decided
+
+**a) Detection latency.** How long may the Guardian be down before someone is
+told? This is a promise about the product, not a tuning knob — it is the
+window in which a customer is unwatched and nobody knows. Too tight pages on
+every deploy; too loose and an hour of no monitoring passes unnoticed.
+
+**b) Vendor or self-hosted.** The parked hosting decision, finally written down:
+
+| | Approach | Trade |
+| --- | --- | --- |
+| **A** (recommended) | Dead-man's switch — the box pushes a heartbeat, a third party alerts on silence | Fits the egress-only posture exactly, no inbound at all, catches a *wedged* process as well as a dead one. Costs an outbound allowance and a third party knowing the service exists (no customer data) |
+| **B** | External poller against a minimal `/healthz` | Requires opening a port that doesn't exist yet, and widens the attack surface of a box holding customer credentials |
+| **C** | CloudWatch instance checks + alarm | No third party, but it lives in the same account and region as the thing it watches — only partly independent |
+| **D** | A second Guardian watching the first | Most infrastructure, and correlated failure unless it's genuinely separate — at which point it is A with more moving parts |
+
+The property that decides it: **the monitor must not share fate with the
+monitored.** Same process is useless, same host is useless, same provider and
+region is partial. Only A has that separation by default.
+
+**c) What customers are told.** If the Guardian was down for an hour, those
+customers were not being watched. Do they hear about it, and when? Touches #48
+(G-44, customers understand the limits) and #38 (G-34, system status is
+visible).
+
+### Recommendation
+
+**A, at 15 minutes, with a third-party dead-man's switch.** Fifteen minutes is
+short enough that a real outage is caught inside one fast-loop customer
+expectation and long enough to survive a deploy or a reboot. Revisit from the
+first month of real data rather than from this paragraph.
+
+On (c): tell the customer, in the digest rather than as an alert — a gap in
+monitoring is not an emergency to wake them for, and hiding it is the kind of
+thing that is much worse when discovered later than when disclosed.
+
+### The part that needs building carefully either way
+
+The external monitor's alert destination **cannot route through the Guardian**,
+so it needs its own credentials — which can drift out of sync with the operator
+channels and will not be exercised except during a real outage. #63 carries an
+acceptance criterion requiring a scheduled drill for exactly this, sharing the
+mechanism with G-33 (#37). An alerting path exercised only when it matters is
+one you should assume is broken.
 
 ---
 

@@ -1940,3 +1940,54 @@ on trains people to skip its output, which is the same failure as not having it.
 
 **Process note taken:** "add the command in a script" was not approval to run it
 with `--apply`. Report-only means report-only until asked.
+
+---
+
+## #63 · Nothing tells us if the Guardian itself stops running
+
+Filed at the user's request, pulling a scope boundary out of #53's prose and
+into its own issue. Two things surfaced while writing it.
+
+**The parked hosting decision had no home.** It existed only as a sentence
+inside #53's scope note — no issue, nothing in `DECISIONS-NEEDED.md`. The exact
+failure the user was describing ("that's where things get lost") had already
+happened to it. It is now #63 plus decision 7.
+
+**The deployment posture rules out the obvious answer.** Dashboard, portal and
+metrics all bind loopback and publish only to `127.0.0.1`, with SSH-only inbound
+from an admin IP. So an external monitor cannot poll a health endpoint without
+weakening that, and the dashboard cannot be the endpoint — no auth, and it shows
+customer names and contact details. That points at a dead-man's switch: the box
+pushes, the external service alerts on silence. It fits the egress-only posture
+and catches a *wedged* process, not just a dead one.
+
+Also worth recording, because each is a signal that already exists and goes
+nowhere:
+
+- `restart: unless-stopped` fixes a clean crash and tells nobody — useless for a
+  crash loop, a full disk, or a dead host.
+- The compose healthcheck already probes liveness every 30 seconds. **Docker
+  knows the container is unhealthy and nothing acts on it.**
+- `sentinel_polls_ok_total` flatlines, but the exporter dies with the process,
+  so there is nothing left to scrape.
+
+### The flaw I found and did not follow through on
+
+I identified that the external monitor's credentials cannot route through the
+Guardian, so they drift and go unexercised — and then wrote it up as "the part
+that is genuinely awkward" and left it as a caveat.
+
+The user's correction: that is the same problem G-33 solves, and it deserves the
+same answer. **The dead-man's switch needs its own drill** — on a schedule, stop
+the heartbeat deliberately, confirm the page arrives, restart it. Now an
+acceptance criterion rather than a note.
+
+The reasoning, worth keeping verbatim: *an alerting path with separate
+credentials, exercised only during a real outage, is a path you should assume is
+broken.* Writing that down as a known weakness is not the same as requiring it
+be fixed, and I stopped at the first.
+
+Cross-referenced on #37 so whoever builds the drill harness builds one that
+covers both paths. Two bespoke drill mechanisms would be two things to maintain
+and two things that can silently stop running — which is the failure these
+issues exist to prevent, reproduced in the tool that prevents it.
