@@ -38,6 +38,26 @@
 # 4. `mutmut run <pattern>` filters which mutants RUN, not which are generated.
 # 5. Mutant numbering is not stable across regenerations. Never record a
 #    survivor by number; record the module and the diff.
+#
+# ## Survivors that are not gaps
+#
+# Not every survivor is a missing test. Two kinds show up here and should be
+# recognised rather than chased:
+#
+# - **Equivalent mutants.** `off_market.py`'s `if not reference or reference <=
+#   0` has one: `<= 0` mutated to `< 0` survives, because `not reference` is
+#   already true for a zero Decimal, so no input distinguishes them. The `<= 0`
+#   arm only fires on a *negative* reference price, which no ticker produces.
+#   Killing it would need an unreachable input, and a test that manufactures one
+#   pins a fiction. Leave it.
+# - **Decisions inside log arguments.** `_in_window`'s `record.get("id") or
+#   record.get("symbol") or "<unidentified>"` is a chain of `or`s the classifier
+#   counts as decision points, but it only chooses wording for a warning line.
+#   Worth a test only if the log line is something an operator is expected to
+#   act on by name.
+#
+# The floor is set below the measured score to leave room for exactly these:
+# it is a ratchet against decisions *becoming* unpinned, not a target to reach.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -76,6 +96,8 @@ pytest_add_cli_args_test_selection=
     tests/test_dispatch_delivery_failure.py
     tests/test_falsy_sentinels.py
     tests/test_connection_broken.py
+    tests/test_outflow_attribution.py
+    tests/test_skip_does_not_stop.py
     tests/test_alert_stack.py
     tests/test_sms_notifications.py
 runner=python -m pytest -x -q -p no:cacheprovider

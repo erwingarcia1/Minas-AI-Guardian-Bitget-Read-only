@@ -13,6 +13,33 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Added
+- **23 tests pinning the outflow-attribution and skip-vs-stop decisions
+  (mutation survivors, #61).** The decision-point mutation score went from
+  **60% to 81%** — 43 surviving mutants down to 20 — with no production code
+  changed, because in every case the code was already right and nothing was
+  holding it there.
+
+  Two clusters, chosen by consequence rather than by count:
+
+  `tests/test_outflow_attribution.py` covers
+  `quantity_drop._explained_outflow_for_coin`, the function that decides whether
+  a balance drop is *explained*. Mutating `and` to `or` in its side/currency
+  checks made a sell of a **different** coin count as an explanation for this
+  coin's drop — a real theft, silently marked accounted-for, no alert. That is
+  the worst failure this product has, and nothing failed. The tests are grouped
+  by which way the error runs: over-crediting (theft looks explained) and
+  under-crediting (the customer gets a CRITICAL about their own trade).
+
+  `tests/test_skip_does_not_stop.py` covers the eight `continue` statements that
+  survived mutation to `break`. Every detector loop skips records it can't judge
+  — no reference price, no timestamp, no currency. Turned into `break`, the
+  **first** unjudgeable record ends the scan and every later record in that poll
+  goes unexamined. Each test puts a skippable record first and a detectable one
+  second. Both are reachable in production: `reference_prices` only holds symbols
+  whose ticker fetch succeeded, and the poller's per-symbol fallback is capped at
+  ten.
+
 ### Changed
 - **A rejected rules config no longer stops the service from starting
   (revises G-12, #16).** The original behaviour — refuse to start when no valid
