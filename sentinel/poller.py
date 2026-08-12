@@ -218,7 +218,6 @@ class AccountPoller:
         account_id = account_row["id"]
         label = account_row["label"]
         state = _get_poll_state(self._db, account_id)
-        last_run_iso = state.get("last_fast_loop_at")
 
         # Hints for per-symbol exchanges (Binance): pairs this account is known
         # to have traded, plus coins held on the previous poll - so a coin sold
@@ -246,6 +245,31 @@ class AccountPoller:
             self._handle_generic_failure(account_id, label, state, exc)
             return
 
+        # Success is recorded at the *end* of this method, not here (#59).
+        #
+        # It used to be stamped the moment the fetches returned, with nine
+        # detector invocations still to run, and `consecutive_failures` was
+        # reset alongside it. So a cycle that died partway counted as a success,
+        # never incremented the failure counter, never let `detect_unreachable`
+        # fire, and left the account green on the dashboard with a
+        # `last_success_at` of seconds ago - while nothing had been examined.
+        # An account could sit like that indefinitely.
+        #
+        # `last_fast_loop_at` moves with it: it bounds which fills are still
+        # worth price-checking against the current ticker, so advancing it for a
+        # cycle that never reached the fill section would step the window over
+        # fills nothing ever judged.
+        try:
+            self._run_fast_cycle(account_row, label, deposits, withdrawals, fills, balance, client, charge)
+        except Exception as exc:  # noqa: BLE001 - a dead cycle is a failed poll, not a silent one
+            # Deliberately handled here rather than left to the worker's blanket
+            # handler: that one logs "task failed" and moves on, which is how
+            # this stayed invisible. Routing it through the normal failure path
+            # increments the counter and lets the heartbeat detector do its job.
+            logger.error("fast loop for %s failed after the fetches: %s", label, exc)
+            self._handle_generic_failure(account_id, label, state, exc)
+            return
+
         _update_poll_state(
             self._db,
             account_id,
@@ -254,6 +278,17 @@ class AccountPoller:
             last_success_at=_now_iso(),
             last_fast_loop_at=_now_iso(),
         )
+        if self._metrics is not None:
+            self._metrics.poll_ok()
+
+    def _run_fast_cycle(self, account_row, label, deposits, withdrawals, fills, balance, client, charge) -> None:
+        """Everything between the fetches and recording success.
+
+        Split out so the caller can treat "this raised" as a failed poll. The
+        contents are unchanged; only their relationship to `poll_state` is."""
+        account_id = account_row["id"]
+        state = _get_poll_state(self._db, account_id)
+        last_run_iso = state.get("last_fast_loop_at")
 
         # --- Withdrawals: creation, unseen address, burst -------------------
         new_withdrawals = [w for w in withdrawals if record_seen_withdrawal(self._db, account_id, w)]
@@ -447,8 +482,6 @@ class AccountPoller:
             self._emit(account_id, label, detection)
 
         record_balance_snapshot(self._db, account_id, current_balances)
-        if self._metrics is not None:
-            self._metrics.poll_ok()
 
     def run_slow_loop(self, account_row) -> None:
         account_id = account_row["id"]

@@ -38,6 +38,23 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   back to every configured channel, loudly.
 
 ### Fixed
+- **A poll that dies partway no longer reports itself as a success (#59).**
+  `last_success_at` was stamped the moment the exchange fetches returned, with
+  **nine detector invocations still to run**, and `consecutive_failures` was
+  reset to `0` alongside it. So a cycle that crashed after the fetches counted
+  as a success, never incremented the failure counter, **never let
+  `detect_unreachable` fire**, and left the account green on the dashboard with
+  a `last_success_at` of seconds ago — while nothing had been examined. An
+  account could sit in that state indefinitely: polled every 45 seconds, healthy
+  on every indicator, never actually checked. The exception escaped
+  `run_fast_loop` entirely and became one log line about a "task failure" from
+  the worker's blanket handler. Success is now recorded when the cycle
+  *completes*; a cycle that raises after the fetches goes through the normal
+  failure path, so the heartbeat detector can do its job. `last_fast_loop_at`
+  moves with it, because it bounds which fills are still worth price-checking
+  and advancing it over a dead cycle would step the window past fills nothing
+  judged. **This is what reopened #14 (G-10)** — *losing sight of an account is
+  itself an alert* did not hold while this stood.
 - **Two more falsy sentinels, found by sweeping for the pattern rather than
   tripping over it.** *(a)* `record_seen_transfer` returned `False` for a
   transfer with no `id`, which the poller reads as *already seen* — so it never

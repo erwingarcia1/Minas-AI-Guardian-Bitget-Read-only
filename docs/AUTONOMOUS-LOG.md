@@ -1786,3 +1786,62 @@ fix widens what reaches it.
 8 tests, written first, 6 red. Two mutations — transfers back to the falsy
 drop, dedup key back to `order_id or coin or ""` — each red-lighting only its
 own guards. Full suite green at 375.
+
+---
+
+## #59 · A dead cycle reported itself as a success
+
+### Root cause
+
+`last_success_at` was stamped immediately after the exchange fetches returned,
+with nine detector invocations still to run, and `consecutive_failures` was
+reset to `0` in the same statement. Everything downstream then agreed the
+account was fine:
+
+- the cycle counted as a success, so `detect_unreachable` never fired;
+- the dashboard showed green, with a `last_success_at` of seconds ago;
+- the exception escaped `run_fast_loop` — its try/except wraps only the client
+  calls — and became one log line about a "task failure" in the worker.
+
+An account could sit there indefinitely: polled every 45 seconds, healthy on
+every indicator, never examined.
+
+### Judgment calls
+
+**Handled at the poller, not left to the worker.** The worker's blanket handler
+is what made this invisible — it logs "task failed" and moves on, which is
+true and useless. Routing a post-fetch failure through `_handle_generic_failure`
+increments the counter and lets the heartbeat detector alert the customer,
+which is what G-10 promised.
+
+**`last_fast_loop_at` moves with `last_success_at`.** It bounds which fills are
+still worth price-checking against the current ticker. Advancing it for a cycle
+that never reached the fill section would step the window past fills nothing
+ever judged — the G-47 failure, reintroduced from a different direction. Tested.
+
+**The extracted `_run_fast_cycle` changes no detector logic**, only its
+relationship to `poll_state`. Keeping the diff to that boundary is what makes
+this reviewable; the alternative was a `try` wrapped around 200 lines in place.
+
+**Removed a now-duplicated `poll_ok()`.** The old call sat at the end of the
+balance section, which is now inside the extracted method, so a successful poll
+would have incremented the metric twice. Caught by reading the diff rather than
+by a test — worth noting, since nothing would have failed.
+
+### What this says about closing issues
+
+I closed **#14 (G-10)** as complete, with both criteria ticked. Both were
+genuinely met: auth failures *are* treated as an attack, and they *are*
+alerted. But the issue's actual guarantee — *losing sight of an account is
+itself an alert* — did not hold, because the thing that feeds those detectors
+was quietly reporting success.
+
+**Criteria met, goal not.** That is the distinction worth catching earlier, and
+the tell is that the criteria described the detectors while the goal described
+the outcome. #14 is now closable honestly.
+
+### Verification
+
+7 tests, written first, 6 red. Two mutations — success stamped before the
+detectors again, and a dead cycle swallowed rather than counted — each
+red-lighting only its own guards. Full suite green at 382.
