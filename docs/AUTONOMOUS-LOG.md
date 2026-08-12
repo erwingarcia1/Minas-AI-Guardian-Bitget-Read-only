@@ -11,6 +11,109 @@ decision before anything can be built.
 
 ---
 
+# Summary — session of 2026-08-12
+
+**Ten issues closed, one partially. `main` is green at 283 tests, lint clean,
+coverage 79.18%. Nothing is half-finished.**
+
+## Read these first
+
+1. **`docs/DECISIONS-NEEDED.md`** — six product decisions, each with options and
+   a recommendation. Decisions 1 and 2 unblock the most and are worth answering
+   together. **Decision 6 (retention) needs a lawyer, not you** — it's the
+   longest lead time on the backlog, worth starting even if the rest waits.
+2. **Two judgment calls where I went against what an issue said**, both flagged
+   on the issues themselves:
+   - **#52** recommended Prometheus + Alertmanager; I built the alarm
+     in-process. Reasoning on the issue, follow-up filed as **#56** so it isn't
+     buried.
+   - **#50** — `pyproject.toml` said `0.1.0` while the CHANGELOG's newest
+     release heading was `1.0.0`. I set pyproject to **1.0.0**, choosing the
+     CHANGELOG as the record of what actually shipped. Reverse it if 0.1.0 was
+     the truth.
+3. **I pushed a red `main` once** (`609fe1d`), for about two minutes. Own
+     section below. It surfaced a real one-millisecond defect, which is fixed.
+
+## What was closed
+
+| Issue | What it was |
+| --- | --- |
+| #51 (G-47) | Undated fills never price-checked or fee-checked — silent |
+| #15 (G-11) | Withdrawals with no reference ID dropped — **two** separate gates |
+| #16 (G-12) | A mistyped threshold silently disabled **all** detection — partial, see below |
+| #25 (G-21) | Second contact couldn't use the portal — **two** separate gates |
+| #55 | Undated-record metric labelled by account instead of exchange (found by me) |
+| #53 (G-49) | Operator paging channel — foundational, unblocked five issues |
+| #52 (G-48) | Paging when an exchange stops stamping times |
+| #50 (G-46) | CI: style, coverage floor, dependency scanning, version agreement |
+| #49 (G-45) | DB contention + the same account checked twice at once |
+| #56 | *(filed)* Revisit alarms in Prometheus rather than in-process |
+
+Queue items 1 and 2 needed no work — the metrics loopback bind was already done
+in `aa6cfa6`, and #54 already existed with #40 already retitled and rescoped.
+
+## Still open, and why
+
+- **#16 (G-12)** — validation is done; "record **who** changed a threshold" is
+  blocked on #54 (no operator accounts exist, and `rules.yaml` is edited on
+  disk, so there is nobody to attribute a change to). Should be finished as
+  part of #54.
+- **#54 (G-50, Operator identity)** — **this is the next thing to build.** It
+  is the largest remaining unblocker: #40, #41, #32 and #16's last criterion
+  all wait on it. I stopped before starting it rather than leave it half-built.
+- **#37, #29, #27, #24, #47** — parked on decisions 1–6 above. #29 and #47 are
+  *partial* blocks: most of #29 (timeline, balances, the
+  detection→notification→acknowledgement chain) and #47's pruning mechanism are
+  buildable now.
+- **#43, #44, #32, #33** (billing, payments, 2FA, password reset) — untouched
+  by instruction. No code written.
+
+## A pattern worth knowing about this codebase
+
+Three of the four Phase 1 defects had **the same shape, and each came in a
+pair**: a record has to survive both a *"have I seen this?"* gate and a
+*"should this alert fire?"* gate, and those gates live in different files and
+consult different fields. Fixing only the one the issue names leaves the
+customer just as uninformed.
+
+- **G-11**: `record_seen_withdrawal` dropped id-less records, *and*
+  `dispatch._dedup_key` collapsed two of them into one alert.
+- **G-21**: `member_accounts` didn't match the secondary contact, *and* the ops
+  dashboard couldn't issue them a password.
+- **G-48**: found a live instance of it in my own day-old #53 code — two
+  exchanges sharing one dedup key.
+
+If you take one thing from this session into the next: when an issue describes
+a record being dropped, look for the second place it gets dropped.
+
+## What surprised me
+
+- `poll_state.last_success_at` is written near the **top** of the fast loop,
+  right after the exchange fetches, so "last success" means *the exchange
+  answered*, not *the account was checked*. Anything raising in between leaves
+  an account looking freshly and successfully polled while nothing was
+  examined. The dashboard's healthiest-looking column is its weakest claim.
+- `prune_balance_snapshots(keep_days=7)` is the **only** retention anywhere.
+  `events`, `alerts`, `seen_withdrawals`, `seen_transfers`, `sms_deliveries`
+  and now `seen_fills` all grow forever, at fast-loop cadence.
+- `fills` in the fast loop are CCXT **closed orders**, not trades, despite the
+  name used everywhere.
+- A generated portal password is scoped to an **email**, not an account — so
+  "Generate portal password" on account A also grants account B if that person
+  is a contact there. Coherent, but not what the button's placement suggests.
+- The G-45 concurrency fix cut the test suite from ~70s to ~38s. That lock was
+  costing roughly 40% of wall-clock, which is a fair proxy for what it cost the
+  poller.
+
+## Why I stopped
+
+Not because the buildable work ran out — **#54 is next and is ready to start**.
+I stopped because starting an issue that size risked leaving it half-finished,
+which is worse than a clean handover. Everything committed is complete,
+tested and revertable as a single unit per issue.
+
+---
+
 ## Session — 2026-08-12
 
 ### Starting state
