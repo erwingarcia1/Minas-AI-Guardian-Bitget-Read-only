@@ -1,33 +1,44 @@
 #!/usr/bin/env python3
-"""Keep closed issues' `status:` labels honest.
+"""Audit the `status:` label on every issue against what the code actually is.
 
-Closing an issue with a `Closes #N` trailer closes it **without touching its
-labels**, so issues finished by a commit keep whatever status they were filed
-with while issues closed by hand get updated. Three had drifted before anyone
-looked: two sat `status: broken` months after being fixed, and one sat
-`status: partial` after its blocker was closed.
+The definition it enforces is in CONTRIBUTING.md. In short, the label describes
+the **current state of the feature** — not the state it was in when the backlog
+was written, and not whether the issue is closed:
 
-Run it periodically, or before a review:
+    built      every acceptance criterion met, tested, nothing left
+    partial    works, but some criteria remain
+    broken     a defect exists in it right now
+    not-built  doesn't exist yet
 
-    python3 scripts/audit_issue_status.py            # report, changes nothing
-    python3 scripts/audit_issue_status.py --fix      # promote the safe ones
-    python3 scripts/audit_issue_status.py --check    # exit 1 if anything is stale
+Two consequences do most of the work here. A **closed issue labelled broken is
+a contradiction** unless the defect genuinely still exists. And **unticked
+criteria are incompatible with `built`** in either direction, including on open
+issues — which is where fifteen had drifted under the label's older reading
+("core is built, may still have unchecked criteria").
 
-## What it will and will not do
+Usage (see also scripts/audit-issue-status.sh):
 
-It promotes an issue to `status: built` only when **all** of these hold:
+    audit-issue-status.sh              # report; changes nothing; exit 1 on drift
+    audit-issue-status.sh --apply      # also apply the recommendations it can evidence
 
-  - it is closed, and closed as *completed* rather than *not planned*;
-  - at least one commit on `main` references it, so something beyond a click
-    says the work landed;
-  - every acceptance-criteria checkbox in the body is ticked.
+## What it checks, and what it cannot
 
-Everything else goes to a human, with the reason printed. In particular it will
-**not** tick a checkbox for you. A tick is a claim that a criterion is met, and
-nothing here can verify that — a script that ticked boxes to make itself pass
-would destroy the one signal that caught the original drift.
+Per issue it gathers:
 
-Needs the `gh` CLI, authenticated. Read-only unless `--fix` is passed.
+  1. whether every acceptance-criteria checkbox is ticked;
+  2. whether a commit on `main` references it, and whether CI passed on that
+     commit;
+  3. whether any test file mentions the issue or its G-number;
+  4. whether any issue it names as a blocker is still open.
+
+It **cannot** check whether the code actually does what the criteria claim.
+Nothing mechanical can. That judgement stays with a person, and everything above
+exists to make it cheap rather than to replace it — so the script recommends,
+and applies only recommendations that have evidence behind them.
+
+It will never tick a checkbox. A tick is a claim that a criterion is met; a
+script that ticked boxes to make itself pass would destroy the signal it exists
+to raise.
 """
 
 from __future__ import annotations
@@ -40,79 +51,120 @@ import sys
 
 STATUS_PREFIX = "status:"
 BUILT = "status: built"
-UNTICKED = re.compile(r"^\s*-\s*\[ \]", re.MULTILINE)
+PARTIAL = "status: partial"
 
-VERDICT_ORDER = ("review", "promote", "leave", "ok", "skip")
+UNTICKED = re.compile(r"^\s*-\s*\[ \]", re.MULTILINE)
+GNUMBER = re.compile(r"\bG-(\d+)\b")
+# Issue references on a line that reads like a dependency, rather than every
+# `#N` in the body - most references are context, not blockers.
+BLOCKER_LINE = re.compile(
+    r"^.*\b(blocked on|blocks this|depends on|prerequisite|waits on|needs .* first)\b.*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+ISSUE_REF = re.compile(r"#(\d+)")
 
 
 def unticked_count(body: str) -> int:
     return len(UNTICKED.findall(body or ""))
 
 
-def classify(issue: dict, commit_count: int) -> tuple[str, str]:
-    """One of: skip / ok / promote / review / leave, with the reason.
+def blocker_refs(body: str) -> list[int]:
+    """Issue numbers named on a line that reads like a dependency."""
+    found: list[int] = []
+    for line in BLOCKER_LINE.findall(body or ""):
+        found.extend(int(n) for n in ISSUE_REF.findall(line))
+    return sorted(set(found))
 
-    Deliberately conservative. The failure that matters is promoting something
-    that is not built, so every ambiguous case resolves to `review` rather than
-    to an action."""
-    if issue.get("state") != "closed":
-        return "skip", "still open"
 
-    if issue.get("state_reason") == "not_planned":
-        # GitHub's "closed without doing it". Calling that built would put a lie
-        # in the tracker, and it is the most likely way a script like this does
-        # real damage.
-        return "leave", "closed as not planned - a status of built would be a lie"
+def recommend(issue: dict, evidence: dict) -> tuple[str | None, str, bool]:
+    """(recommended label or None, reason, safe to apply).
 
+    Conservative by construction: the failure that matters is asserting
+    something is built when it is not, so every ambiguous case returns
+    `actionable=False` and goes to a person.
+    """
     labels = issue.get("labels") or []
     status = [label for label in labels if label.startswith(STATUS_PREFIX)]
+    current = status[0] if status else None
+    closed = issue.get("state") == "closed"
     open_boxes = unticked_count(issue.get("body", ""))
 
-    if open_boxes:
-        # Checked before the built shortcut on purpose: an issue already
-        # labelled built with unticked criteria is a closed issue claiming a
-        # completeness it never recorded, and that is worth surfacing too.
-        return "review", f"{open_boxes} acceptance criteria still unticked"
+    if closed and issue.get("state_reason") == "not_planned":
+        return None, "closed as not planned - never work, so no status change follows", False
 
     if not status:
-        return "review", "no status label at all"
-    if BUILT in status:
-        return "ok", "closed and labelled built"
-    if commit_count == 0:
-        # Closed is a claim; a commit on main is evidence.
-        return "review", f"labelled '{status[0]}' but no commit on main references it"
+        return None, "no status label at all - needs one before it can be audited", False
 
-    return "promote", (
-        f"closed as completed, {commit_count} commit(s) reference it, all criteria ticked "
-        f"- currently '{status[0]}'"
-    )
+    # Unticked criteria settle it on their own, in both directions.
+    if open_boxes:
+        if current == BUILT:
+            return PARTIAL, (
+                f"labelled built with {open_boxes} criteria unticked - either the work is "
+                f"incomplete or the issue was never updated, and this cannot tell which"
+            ), False
+        return None, f"{open_boxes} criteria unticked - consistent with '{current}'", False
+
+    if not closed:
+        return None, (
+            f"open with every criterion ticked and labelled '{current}' - worth a look: "
+            f"finished but unclosed, or criteria that don't capture what's left"
+        ), False
+
+    # Closed, completed, every box ticked. Now weigh the evidence.
+    notes = []
+    if evidence.get("commits", 0) == 0:
+        return None, "closed with all criteria ticked but no commit on main references it", False
+    if evidence.get("ci") == "failure":
+        return None, (
+            f"CI failed on {evidence.get('sha', 'the closing commit')} - verify the work "
+            f"separately before trusting the closure"
+        ), False
+    if evidence.get("open_blockers"):
+        refs = ", ".join(f"#{n}" for n in evidence["open_blockers"])
+        return None, f"names {refs} as a blocker, still open - 'nothing left' cannot be true", False
+
+    if evidence.get("ci") is None:
+        notes.append("CI unknown (check runs expire)")
+    if not evidence.get("tests"):
+        notes.append("no test names this issue")
+
+    if current == BUILT:
+        return None, "already correct", False
+
+    suffix = f"; {', '.join(notes)}" if notes else ""
+    return BUILT, (
+        f"closed as completed, all criteria ticked, {evidence['commits']} commit(s) on main"
+        f"{suffix} - currently '{current}'"
+    ), True
 
 
-def needs_attention(counts: dict) -> bool:
-    """True when something is stale. `--check` exits non-zero on this."""
-    return bool(counts.get("promote") or counts.get("review"))
+def has_drift(recommendations: list) -> bool:
+    """Any recommendation at all is drift - including the ones a person has to
+    resolve, since an unresolved question is exactly what this exists to
+    surface."""
+    return bool(recommendations)
 
 
-# --- talking to git and gh ----------------------------------------------------
+# --- gathering evidence -------------------------------------------------------
 
-def _run(cmd: list[str]) -> str:
+def _run(cmd: list[str], check: bool = True) -> str:
     result = subprocess.run(cmd, capture_output=True, text=True)
     if result.returncode != 0:
-        raise SystemExit(f"command failed: {' '.join(cmd)}\n{result.stderr.strip()}")
+        if check:
+            raise SystemExit(f"command failed: {' '.join(cmd)}\n{result.stderr.strip()}")
+        return ""
     return result.stdout
 
 
 def fetch_issues() -> list[dict]:
-    """Every issue, with the fields the classifier needs.
+    """Every issue with the fields the classifier needs.
 
-    Uses the REST endpoint rather than `gh issue list --json` because
-    `state_reason` - the completed/not-planned distinction this whole thing
-    turns on - is not exposed by the latter in every gh version. Pull requests
-    share the issues endpoint and are filtered out."""
-    raw = _run(["gh", "api", "--paginate",
-                "repos/:owner/:repo/issues?state=all&per_page=100"])
-    issues = []
-    # --paginate concatenates JSON arrays; parse each one.
+    REST rather than `gh issue list --json`, because `state_reason` - the
+    completed/not-planned distinction several rules turn on - is not exposed by
+    the latter in every gh version. Pull requests share this endpoint and are
+    filtered out."""
+    raw = _run(["gh", "api", "--paginate", "repos/:owner/:repo/issues?state=all&per_page=100"])
+    issues: list[dict] = []
     for chunk in re.findall(r"\[.*?\]\s*(?=\[|$)", raw, re.DOTALL) or [raw]:
         try:
             issues.extend(json.loads(chunk))
@@ -132,71 +184,130 @@ def fetch_issues() -> list[dict]:
     ]
 
 
-def commit_count_for(number: int) -> int:
-    out = _run(["git", "log", "--oneline", f"--grep=#{number}\\b"])
-    return len([line for line in out.splitlines() if line.strip()])
+def commits_for(issue: dict) -> list[str]:
+    """Commits referencing this issue, closing commit first.
+
+    Two refinements the first version got wrong, both found by running it:
+
+    - It took the most *recent* mention, which for several issues was a later
+      docs commit rather than the commit that closed them - so it reported CI
+      for the wrong commit entirely. A `Closes/Fixes/Resolves #N` trailer names
+      the closing commit, so that is preferred.
+    - It matched only `#N`. Work predating the issue-number convention is
+      referenced by G-number instead (`G-7`, not `#5`), and looked to the script
+      like work that never landed."""
+    number = issue["number"]
+    patterns = [rf"(Closes|Fixes|Resolves) #{number}\b", rf"#{number}\b"]
+    match = GNUMBER.search(issue.get("title", ""))
+    if match:
+        patterns.append(rf"\bG-{match.group(1)}\b")
+
+    ordered: list[str] = []
+    for pattern in patterns:
+        out = _run(["git", "log", "--format=%H", "-E", f"--grep={pattern}"], check=False)
+        for line in out.splitlines():
+            sha = line.strip()
+            if sha and sha not in ordered:
+                ordered.append(sha)
+    return ordered
 
 
-def promote(number: int, current_status: str, dry_run: bool) -> None:
-    if dry_run:
-        return
-    _run(["gh", "issue", "edit", str(number),
-          "--remove-label", current_status, "--add-label", BUILT])
+def ci_for(sha: str) -> str | None:
+    """'success', 'failure', or None when GitHub has no check runs for it."""
+    out = _run(["gh", "api", f"repos/:owner/:repo/commits/{sha}/check-runs",
+                "--jq", "[.check_runs[].conclusion] | join(\",\")"], check=False).strip()
+    if not out:
+        return None
+    conclusions = [c for c in out.split(",") if c]
+    if not conclusions:
+        return None
+    return "success" if all(c == "success" for c in conclusions) else "failure"
+
+
+def tests_reference(issue: dict) -> bool:
+    """Does any test name this issue or its G-number?
+
+    A grep, and deliberately only informative: plenty of real work is covered by
+    tests that never name the issue."""
+    needles = [f"#{issue['number']}"]
+    match = GNUMBER.search(issue.get("title", ""))
+    if match:
+        needles.append(f"G-{match.group(1)}")
+    return any(_run(["grep", "-rl", needle, "tests/"], check=False).strip() for needle in needles)
+
+
+def needs_evidence(issue: dict) -> bool:
+    """Whether the expensive checks are worth making for this issue.
+
+    Criteria, state and label settle most rows on their own, and each evidence
+    pass costs a git log plus a check-runs API call. Gathering it for an open
+    issue with unticked boxes - which is decided before evidence is consulted -
+    made a full audit take minutes instead of seconds."""
+    if issue.get("state") != "closed":
+        return False
+    if issue.get("state_reason") == "not_planned":
+        return False
+    if not [x for x in (issue.get("labels") or []) if x.startswith(STATUS_PREFIX)]:
+        return False
+    return unticked_count(issue.get("body", "")) == 0
+
+
+def build_evidence(issue: dict, states: dict[int, str]) -> dict:
+    shas = commits_for(issue)
+    return {
+        "commits": len(shas),
+        "sha": shas[0][:7] if shas else None,
+        "ci": ci_for(shas[0]) if shas else None,
+        "tests": tests_reference(issue),
+        "open_blockers": [n for n in blocker_refs(issue["body"]) if states.get(n) == "open"],
+    }
+
+
+def apply_label(number: int, current: str, recommended: str) -> None:
+    _run(["gh", "issue", "edit", str(number), "--remove-label", current, "--add-label", recommended])
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--fix", action="store_true",
-                        help="Apply the safe promotions (default: report only)")
-    parser.add_argument("--check", action="store_true",
-                        help="Exit 1 if anything needs promoting or reviewing")
+    parser.add_argument("--apply", action="store_true",
+                        help="Apply the recommendations that have evidence behind them")
     args = parser.parse_args()
 
     issues = fetch_issues()
-    counts: dict[str, int] = {}
-    promoted, flagged = [], []
+    states = {i["number"]: i["state"] for i in issues}
+    rows, recommendations = [], []
 
     for issue in sorted(issues, key=lambda i: i["number"]):
-        verdict, reason = classify(issue, commit_count_for(issue["number"]))
-        counts[verdict] = counts.get(verdict, 0) + 1
-        if verdict == "promote":
-            status = next(label for label in issue["labels"] if label.startswith(STATUS_PREFIX))
-            promote(issue["number"], status, dry_run=not args.fix)
-            promoted.append((issue, reason))
-        elif verdict in ("review", "leave"):
-            flagged.append((verdict, issue, reason))
+        evidence = build_evidence(issue, states) if needs_evidence(issue) else {}
+        label, reason, actionable = recommend(issue, evidence)
+        current = next((label_ for label_ in issue["labels"]
+                        if label_.startswith(STATUS_PREFIX)), "(none)")
+        if label is None and not reason.startswith(("already correct", f"{unticked_count(issue['body'])} criteria unticked")):
+            rows.append((issue, current, "—", reason, False))
+            recommendations.append((issue["number"], None, False))
+        elif label is not None:
+            rows.append((issue, current, label, reason, actionable))
+            recommendations.append((issue["number"], label, actionable))
+            if actionable and args.apply:
+                apply_label(issue["number"], current, label)
 
-    if promoted:
-        header = "PROMOTED to status: built" if args.fix else "WOULD PROMOTE (run with --fix)"
-        print(f"\n{header}")
-        for issue, reason in promoted:
-            print(f"  #{issue['number']:<4} {issue['title'][:62]}")
-            print(f"        {reason}")
+    if not rows:
+        print("No drift. Every issue's status label matches its state.")
+        return 0
 
-    review = [f for f in flagged if f[0] == "review"]
-    if review:
-        print("\nNEEDS A HUMAN — not touched")
-        for _, issue, reason in review:
-            print(f"  #{issue['number']:<4} {issue['title'][:62]}")
-            print(f"        {reason}")
+    verb = "APPLIED" if args.apply else "RECOMMENDED"
+    print(f"\n{'ISSUE':<7}{'STATE':<8}{'CURRENT':<19}{'RECOMMENDED':<19}WHY")
+    print("─" * 110)
+    for issue, current, label, reason, actionable in rows:
+        mark = "*" if actionable else " "
+        print(f"{mark}#{issue['number']:<5} {issue['state']:<8}{current:<19}{label:<19}{reason}")
+    print("─" * 110)
+    acted = sum(1 for _, label, actionable in recommendations if actionable and label)
+    print(f"* = evidenced, {verb.lower()} with --apply ({acted} of {len(rows)})")
+    print("Everything unmarked needs a person: the script cannot check whether the")
+    print("code does what the criteria claim, and does not guess.")
 
-    left = [f for f in flagged if f[0] == "leave"]
-    if left:
-        print("\nDELIBERATELY LEFT")
-        for _, issue, reason in left:
-            print(f"  #{issue['number']:<4} {issue['title'][:62]} — {reason}")
-
-    print(
-        f"\n{counts.get('ok', 0)} already correct, {counts.get('promote', 0)} to promote, "
-        f"{counts.get('review', 0)} need a human, {counts.get('leave', 0)} left alone, "
-        f"{counts.get('skip', 0)} still open."
-    )
-
-    if args.check and needs_attention(counts):
-        print("\nIssue status is stale. Run with --fix, or resolve the flagged ones by hand.",
-              file=sys.stderr)
-        return 1
-    return 0
+    return 1 if has_drift(recommendations) else 0
 
 
 if __name__ == "__main__":

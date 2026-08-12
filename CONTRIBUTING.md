@@ -92,23 +92,50 @@ any long-lived host and false on a runner. Use `None` for "never happened", not
 `0`.
 
 
-## Keeping issue status honest
+## Status labels
 
-Closing an issue with a `Closes #N` commit trailer closes it **without touching
-its labels**, so an issue finished by a commit keeps whatever `status:` it was
-filed with. Three had drifted before anyone looked — two sat `status: broken`
-long after being fixed.
+The `status:` label describes the **current state of the feature** — not the
+state it was in when the backlog was written, and not whether the issue is
+closed.
+
+| Label | Means |
+|---|---|
+| `status: built` | Every acceptance criterion met, tested, nothing left |
+| `status: partial` | Works, but some criteria remain |
+| `status: broken` | A defect exists in it **right now** |
+| `status: not-built` | Doesn't exist yet |
+
+Two things follow directly, and both had drifted before this was written down:
+
+- **A closed issue labelled `broken` is a contradiction**, unless the defect
+  genuinely still exists. Closing an issue with a `Closes #N` trailer closes it
+  without touching its labels, so issues fixed by a commit kept the status they
+  were filed with.
+- **Unticked criteria are incompatible with `built`**, on open issues as much as
+  closed ones. The label previously read "core is built — may still have
+  unchecked criteria", which is a different claim; fifteen open issues are
+  labelled `built` with criteria outstanding and are `partial` under this
+  definition.
+
+Closing an issue is not itself a reason to change its label. A `not_planned`
+closure never becomes `built`.
+
+### Auditing it
 
 ```bash
-python3 scripts/audit_issue_status.py            # report, changes nothing
-python3 scripts/audit_issue_status.py --fix      # promote the safe ones
-python3 scripts/audit_issue_status.py --check    # exit 1 if anything is stale
+scripts/audit-issue-status.sh            # report; changes nothing; exit 1 on drift
+scripts/audit-issue-status.sh --apply    # also apply the evidenced recommendations
 ```
 
-It promotes to `status: built` only when the issue is closed *as completed*, at
-least one commit on `main` references it, and every acceptance-criteria checkbox
-is ticked. Everything else is printed for a human with the reason.
+Per issue it checks whether every checkbox is ticked, whether a commit on `main`
+references it and CI passed on that commit, whether any test names it, and
+whether anything it calls a blocker is still open.
 
-It will **not** tick a checkbox for you. A tick is a claim that a criterion is
-met, and nothing in a script can verify that — one that ticked boxes to make
-itself pass would destroy the signal it exists to raise.
+It **cannot** check whether the code does what the criteria claim — nothing
+mechanical can — so it recommends rather than decides, and `--apply` touches
+only recommendations with evidence behind them. Rows without a `*` need a
+person.
+
+It will never tick a checkbox for you. A tick is a claim that a criterion is
+met; a script that ticked boxes to make itself pass would destroy the signal it
+exists to raise.
