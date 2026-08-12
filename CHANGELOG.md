@@ -14,7 +14,7 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
-- **13 more tests pinning thresholds and evidence (#61).** Decision-point
+- **13 more tests pinning thresholds and evidence (#66).** Decision-point
   mutation score **81% → 92%**; combined with the commit below, **60% → 92%**.
   Every threshold in the product is a comparison, and every one of them
   survived being loosened or tightened by one notch. A boundary is the one
@@ -35,7 +35,7 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   `or` chains that only pick wording for a log line.
 
 - **23 tests pinning the outflow-attribution and skip-vs-stop decisions
-  (mutation survivors, #61).** The decision-point mutation score went from
+  (mutation survivors, #66).** The decision-point mutation score went from
   **60% to 81%** — 43 surviving mutants down to 20 — with no production code
   changed, because in every case the code was already right and nothing was
   holding it there.

@@ -2132,7 +2132,7 @@ reason in a comment beside it.
 
 ---
 
-## Mutation survivors, fixed by consequence (#61)
+## Mutation survivors, fixed by consequence (#66)
 
 Decision-point mutation score **60% → 92%** across two commits. 43 survivors →
 8, and the 8 remaining are documented in `scripts/mutation-check.sh` as *not
@@ -2195,6 +2195,15 @@ is a ratchet against decisions *becoming* unpinned, not a target.
   Recomputing `max_len - len(prefix) - len(action)` in the test would make it
   agree with `sms.py` by construction, and keep agreeing after either changed.
   That is the exact failure this file exists to close.
+
+### A bookkeeping error, left uncorrected on purpose
+
+Both commits cite `#61` in their messages. There was no issue for this work when
+I made them, and #61 is an unrelated portal-scoping issue that now carries two
+stray cross-links. Fixing it would mean rewriting pushed history, which is off
+limits, so instead: the work is filed as #66, and #61 has a comment saying the
+links are mine and wrong. A wrong reference with a correction next to it is
+recoverable; a silently rewritten branch is not.
 
 ### What to take from this
 
