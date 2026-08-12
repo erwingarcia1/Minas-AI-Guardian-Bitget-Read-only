@@ -11,6 +11,29 @@ decision before anything can be built.
 
 ---
 
+## Standing rule: check CI after every push
+
+**After every `git push`, run `gh run list --limit 1`. A red CI is a stop
+condition — do not start the next issue until it is green.**
+
+```bash
+git push && until [ "$(gh run list --limit 1 --json status --jq '.[0].status')" = "completed" ]; do sleep 15; done && gh run list --limit 1
+```
+
+Added after CI ran red for ten hours across roughly ten pushes and nobody
+noticed, because nothing was watching it. The failure was real — a product
+defect, not a flaky test — and every push after the first red one was building
+on a broken baseline.
+
+Worth stating plainly: this is the same failure mode this log is full of fixing
+elsewhere. Detectors nobody called, alarms nobody wired, defaults that switched
+things off silently, a config that reported a problem and used the bad value
+anyway — all of them *looked* fine because nothing was looking. Then I did it
+to my own workflow. Green locally is not evidence CI is green; the failure that
+caused this only appeared on a freshly booted machine.
+
+---
+
 # Summary — session of 2026-08-12
 
 **Thirteen issues closed, one partially, across three sessions. `main` is green
@@ -1627,3 +1650,78 @@ the standing instruction is not to build 2FA flows without eyes on them.
 session without re-checking status, letting a disabled operator's password
 still verify, and dropping the `--as` requirement — each red-lighting only its
 own guards. Full suite green at 365; coverage up to 82.6%.
+
+---
+
+## CI was red for ten hours
+
+### What happened
+
+The last green run was `Stop tracking the .coverage artifact`. The first red was
+`G-45: stop serialising every read behind one lock`, and every push after it was
+red — about ten of them, over ten hours. I never looked. The user found it.
+
+That is the same failure mode as everything else in this log: detectors nobody
+called, alarms nobody wired, defaults that switched things off silently, a
+config that reported a problem and then used the bad value anyway. All of them
+looked fine because nothing was looking. I spent the session fixing that shape
+of problem and then produced it in my own workflow.
+
+The standing rule is now at the top of this file and in `CONTRIBUTING.md`, and
+saved to my own working memory so it survives a fresh session.
+
+### The failure was real, not flaky
+
+`test_fast_and_slow_loops_for_one_account_do_not_block_each_other` asserted that
+one scheduling pass queues both a fast and a slow task. On the runner only
+`fast` was queued.
+
+**`time.monotonic()` is seconds since boot on Linux**, and `_last_slow.get(id, 0)`
+used `0` to mean "never polled". So the check
+
+```python
+now - self._last_slow.get(account_id, 0) >= slow_interval
+```
+
+was really asking *"has this machine been up for ten minutes?"* — a question
+about the host with nothing to do with the account. This workstation reads
+`64601`, so it passed trivially and the dependency was invisible. A GitHub
+runner booted seconds earlier reads single digits, so it is false and no slow
+task is ever queued.
+
+**In production:** a freshly booted host — a rebooted VM, a container on a new
+instance — runs **no slow loop at all for the first ten minutes of the machine's
+life**. The slow loop carries permission-change detection and the balance
+snapshot, which is exactly the baseline you want established early on a host
+that just came up. The same comparison was in `poller.run_forever`.
+
+### Fix
+
+`None` for "never polled", tested explicitly, so the question stops being about
+the clock's origin.
+
+The existing test depended on machine uptime and passed or failed accordingly —
+it is now pinned to a fixed clock. Two tests added: a host up for twelve seconds
+still schedules its first slow poll, and making the *first* poll unconditional
+does not make *every* poll unconditional (that would run the slow loop at the
+fast cadence and triple the exchange calls per account). Both mutation-checked.
+
+### Reproducing it, rather than widening a sleep
+
+The brief was explicit that a test passing because you waited longer will fail
+again on a slower runner. So the reproduction is deterministic: patch
+`time.monotonic` to a small value and the failure appears on demand.
+
+Verified beyond that:
+
+- the **whole suite** under a `monotonic()` rebased to near zero — a fresh-boot
+  clock, which this machine never produces;
+- three consecutive full runs;
+- a run pinned to **two CPUs**, matching a runner;
+- the concurrency file **twenty times**.
+
+367 passed throughout. No sleep was lengthened and no timeout widened.
+
+### Confirmed green
+
+`gh run list --limit 1` → `completed success` on `31600661665`, 1m11s.

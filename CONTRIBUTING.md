@@ -73,3 +73,20 @@ ssh -i <key.pem> <host> "sudo tar xzf /tmp/minas-deploy.tar.gz -C /opt/minas-gua
 Full procedure, region notes, and the DB-migration recipe:
 [docs/deployment.md](docs/deployment.md). Deploy only committed code so
 GitHub and production stay in lockstep.
+
+
+## After pushing
+
+Check the run. A red CI is a stop condition — don't start the next piece of
+work until it's green:
+
+```bash
+gh run list --limit 1
+```
+
+Green locally is not evidence CI is green. The tests run on a freshly booted
+runner with fewer cores, and at least one real defect has been found only there:
+`time.monotonic()` is seconds since **boot**, so any `now - last.get(k, 0) >= interval`
+check is really asking "has this machine been up that long?" — which is true on
+any long-lived host and false on a runner. Use `None` for "never happened", not
+`0`.
