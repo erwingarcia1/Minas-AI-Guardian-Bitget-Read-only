@@ -7,6 +7,7 @@ import logging
 import os
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -85,6 +86,24 @@ def _build_named_channels() -> dict[str, object]:
     return named
 
 
+# Used when a severity has no usable routing - because the section is missing,
+# or because it was pruned as invalid and the process is running degraded.
+#
+# This exists because `default=[]` is a trap here in a way it isn't for a
+# threshold. A missing tolerance falls back to a number; a missing routing table
+# falls back to *no channels*, so alerts are stored, deduped, and delivered
+# nowhere. That is a silent total failure of the product, reachable from a
+# single mistyped line, and it is worse than anything the schema validation was
+# added to prevent. Falling back to every configured channel is noisy in the
+# worst case and correct in the important one.
+_FALLBACK_ROUTING = {
+    "CRITICAL": ["telegram", "telegram_team", "sms", "email"],
+    "HIGH": ["telegram", "telegram_team", "email"],
+    "MEDIUM": ["digest"],
+    "LOW": ["digest"],
+}
+
+
 def build_channels(rules: RulesConfig) -> dict[str, list]:
     """severity -> [channel objects], from alerting.routing in rules.yaml.
     'digest' entries are intentionally skipped here: MEDIUM/LOW alerts are
@@ -93,7 +112,14 @@ def build_channels(rules: RulesConfig) -> dict[str, list]:
     named = _build_named_channels()
     channels: dict[str, list] = {}
     for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
-        routed = rules.get("alerting", "routing", severity, default=[]) or []
+        routed = rules.get("alerting", "routing", severity, default=None)
+        if not routed:
+            routed = _FALLBACK_ROUTING[severity]
+            logger.error(
+                "no usable alert routing for %s - falling back to %s. An alert with no "
+                "channel is an alert that is never delivered.",
+                severity, ", ".join(routed),
+            )
         resolved = []
         for name in routed:
             if name == "digest":
@@ -118,7 +144,14 @@ def build_operator_channels(rules: RulesConfig) -> dict[str, list]:
     named = _build_named_channels()
     channels: dict[str, list] = {}
     for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
-        routed = rules.get("operator_alerting", "routing", severity, default=[]) or []
+        routed = rules.get("operator_alerting", "routing", severity, default=None)
+        if not routed:
+            # Same trap as the customer routing above, and worse here: the
+            # page this drops would be the one telling us the config is broken.
+            routed = _FALLBACK_ROUTING[severity]
+            logger.error(
+                "no usable operator routing for %s - falling back to %s", severity, ", ".join(routed)
+            )
         resolved = []
         for name in routed:
             if name == "digest":
@@ -161,6 +194,72 @@ def cmd_onboard(args: argparse.Namespace) -> int:
 
     print(f"Onboarded '{result.label}' ({exchange}) as account id {result.account_id}")
     return 0
+
+
+def cmd_validate_config(args: argparse.Namespace) -> int:
+    """Checks a rules file against the schema and reports, without starting
+    anything or opening the database.
+
+    Meant to be run against a *server's* live rules file before an upgrade,
+    from a shell, as a deploy gate. The service itself no longer refuses to
+    start on a rejected config - refusing turns an upgrade into an outage - so
+    this is where failing fast lives: before the deploy rather than during it.
+
+    Exit codes are the contract, since this gets called from deploy scripts:
+      0  valid
+      1  read, but the schema rejects it
+      2  could not be read at all
+
+    1 and 2 are kept apart on purpose. A typo in the config and a typo in the
+    path need different reactions, and a script that treats them the same will
+    report a missing file as a bad config."""
+    import yaml as _yaml
+
+    from sentinel.config import _to_decimal_leaves
+    from sentinel.rules_schema import validate
+
+    path = Path(getattr(args, "path", None) or "./config/rules.yaml")
+
+    try:
+        with open(path, "r") as f:
+            raw_text = f.read()
+    except OSError as exc:
+        print(f"FAIL  {path}\n      could not be read: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        raw = _yaml.safe_load(raw_text) or {}
+    except _yaml.YAMLError as exc:
+        print(f"FAIL  {path}\n      not valid YAML: {exc}", file=sys.stderr)
+        _print_degraded_warning()
+        return 1
+
+    problems = validate(_to_decimal_leaves(raw))
+    if not problems:
+        print(f"OK    {path}\n      valid — every setting is recognised and in range.")
+        return 0
+
+    plural = "problem" if len(problems) == 1 else "problems"
+    print(f"FAIL  {path}\n      {len(problems)} {plural}:", file=sys.stderr)
+    for problem in problems:
+        print(f"        - {problem}", file=sys.stderr)
+    _print_degraded_warning()
+    return 1
+
+
+def _print_degraded_warning() -> None:
+    """What happens if they deploy it anyway.
+
+    Worth printing rather than leaving them to infer: the answer changed when
+    the service stopped refusing to start, and "it won't come up" is the thing
+    an operator would otherwise reasonably assume."""
+    print(
+        "\n      Deploying this will NOT stop the service from starting. It will run on\n"
+        "      the settings that validate plus built-in defaults for the rest, and raise\n"
+        "      a CRITICAL operator page. The thresholds in force would not be the ones\n"
+        "      in this file.",
+        file=sys.stderr,
+    )
 
 
 def cmd_run(args: argparse.Namespace) -> int:
@@ -324,6 +423,16 @@ def main() -> None:
     onboard_parser.add_argument("--alert-email", help="per-account alert destination (email)")
     onboard_parser.add_argument("--alert-phone", help="per-account alert destination (E.164 phone)")
     onboard_parser.set_defaults(func=cmd_onboard)
+
+    validate_parser = sub.add_parser(
+        "validate-config",
+        help="Check a rules file against the schema (no database, nothing started)",
+    )
+    validate_parser.add_argument(
+        "path", nargs="?", default=None,
+        help="Path to the rules file (default: ./config/rules.yaml)",
+    )
+    validate_parser.set_defaults(func=cmd_validate_config)
 
     run_parser = sub.add_parser("run", help="Run the monitoring engine (workers, rate limits, breakers)")
     run_parser.set_defaults(func=cmd_run)

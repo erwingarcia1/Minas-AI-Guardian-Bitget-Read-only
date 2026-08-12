@@ -13,6 +13,30 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed
+- **A rejected rules config no longer stops the service from starting
+  (revises G-12, #16).** The original behaviour — refuse to start when no valid
+  config has ever loaded — missed the case that matters most: an **upgrade**,
+  where a file the old code ran happily on is rejected by a schema that shipped
+  after it. Refusing there turns a working monitor into a dead one during a
+  deploy, and dying loudly is still not monitoring. Now the process runs on
+  every setting that validates, falls back to built-in defaults only for the
+  ones that don't (per setting, so one mistyped key doesn't discard an
+  operator's whole detector tuning), and raises a **CRITICAL operator page**
+  saying the thresholds in force are not the ones in the file. What made
+  starting-anyway indefensible before was that the only signal was a log line
+  nobody reads; that changed when G-49 landed a paging route, so the decision
+  was revisited because its binding constraint went away. Fail-fast moved to
+  `sentinel validate-config`, which belongs before a deploy rather than during
+  one. A config that *has* loaded validly is still preferred over a pruned one:
+  it's both valid and what the operator actually asked for.
+- **Alert routing falls back to channels rather than to nothing.**
+  `build_channels` read routing with `default=[]`, so a missing or pruned
+  routing table meant *no channels for that severity* — alerts stored, deduped,
+  and delivered nowhere. Reachable from one mistyped line, silent, and a worse
+  failure than anything the schema validation was added to prevent. Now falls
+  back to every configured channel, loudly.
+
 ### Fixed
 - **The database no longer serialises every check, and one account is never
   checked twice at once (G-45, #49).** Two defects that get worse with exactly
@@ -118,6 +142,12 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   per pass, by the quantity-drop path that already walks them.
 
 ### Added
+- **`sentinel validate-config [path]`** — checks a rules file against the
+  schema and reports either "valid" or the exact problems, with no database
+  opened and nothing started. Built to be run against a *server's* live
+  `config/rules.yaml` before an upgrade. Exit codes are the contract for deploy
+  scripts: `0` valid, `1` read but rejected, `2` could not be read — 1 and 2
+  kept apart so a wrong path isn't reported as a bad config.
 - **CI enforces style, coverage, dependency vulnerabilities and version
   agreement (G-46, #50).** Four gates that previously depended on memory.
   **Ruff** with a rule set chosen to catch mistakes rather than impose a house
@@ -320,7 +350,6 @@ over a Tailscale-served HTTPS dashboard.
 - Customer schema: `customer_name`, secondary email/phone, two Telegram
   handles, `license` (with online migrations for the deployed database).
 
-### Changed
 - Metrics page nav links are same-origin (`/`, `/metrics/raw`) so they work
   behind the Tailscale HTTPS proxy; added a `/metrics/raw` route serving the
   raw Prometheus exposition on the dashboard port.

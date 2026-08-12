@@ -169,6 +169,35 @@ def _suggest(key: str, candidates) -> str:
     return f" — did you mean '{close[0]}'?" if close else ""
 
 
+def prune_invalid(data, spec=SPEC):
+    """A copy of `data` with every setting the schema rejects removed.
+
+    What survives is exactly the settings that validate, so the readers in
+    `RulesConfig` fall through to their own defaults for the rest. That
+    granularity is the point: all-or-nothing would discard an operator's entire
+    detector tuning because they mistyped `triage.max_events`, which is its own
+    kind of surprise.
+
+    Used when the process must run on a file it can't fully accept - see
+    `RulesConfig._reject`. Never used to decide *whether* a file is valid;
+    `validate` does that, and it is what `sentinel validate-config` reports.
+    """
+    if not isinstance(data, dict):
+        return {}
+    clean: dict = {}
+    for key, value in data.items():
+        if key not in spec:
+            continue
+        expected = spec[key]
+        if isinstance(expected, dict):
+            section = prune_invalid(value, expected)
+            if section:
+                clean[key] = section
+        elif expected.check(value) is None:
+            clean[key] = value
+    return clean
+
+
 def validate(data, spec=SPEC, path=()) -> list[str]:
     """Returns a list of human-readable problems; empty means valid.
 

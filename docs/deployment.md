@@ -92,6 +92,25 @@ is useless from any other network — do this for every onboarded account.
 **Reboot survival:** `restart: unless-stopped` + Docker's systemd unit mean
 the stack comes back on its own after a reboot or crash; no operator action.
 
+## Before any upgrade: check the config that is already on the box
+
+```bash
+sentinel validate-config /path/to/config/rules.yaml   # on the server
+```
+
+`0` valid, `1` the schema rejects it, `2` the file could not be read.
+
+Thresholds are validated against a schema (G-12) that gains entries as
+detectors are added, so a file an older build ran happily on can be rejected by
+a newer one. The service **will still start** in that case — it runs on the
+settings that validate, falls back to built-in defaults for the rest, and
+raises a CRITICAL operator page — because refusing to start would turn an
+upgrade into a monitoring outage. That is a safety net, not a plan: the
+thresholds in force would not be the ones in the file.
+
+So check first. It costs a second and it is the difference between fixing a
+typo at your desk and finding out from a page.
+
 ## First deployment (any host)
 
 ```bash

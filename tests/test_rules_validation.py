@@ -29,7 +29,7 @@ from decimal import Decimal
 
 import pytest
 
-from sentinel.config import RulesConfig, RulesConfigError
+from sentinel.config import RulesConfig
 
 GOOD = """
 polling:
@@ -79,28 +79,43 @@ def rules_path(tmp_path):
 def test_a_bad_threshold_is_rejected_when_the_file_is_read(rules_path):
     """The whole point: the complaint arrives at load time, naming the setting,
     rather than as an InvalidOperation from inside a detector twenty minutes
-    later."""
+    later.
+
+    Rejection means *not used*, which is the property worth pinning - stronger
+    than the exception this originally asserted. The process no longer refuses
+    to start; see tests/test_rules_degraded_start.py for why."""
     _write(rules_path, GOOD.replace('tolerance_pct: "0.5"', 'tolerance_pct: "0,5"'), 2_000_000)
 
-    with pytest.raises(RulesConfigError) as exc:
-        RulesConfig(rules_path)
+    rules = RulesConfig(rules_path)
 
-    assert "tolerance_pct" in str(exc.value)
-    assert "0,5" in str(exc.value)
+    assert rules.is_valid is False
+    assert "tolerance_pct" in rules.validation_error
+    assert "0,5" in rules.validation_error
+    assert rules.get("detectors", "quantity_drop", "tolerance_pct") is None, (
+        "the rejected value reached a reader"
+    )
 
 
-def test_startup_with_a_bad_config_refuses_to_run(rules_path):
-    """There is no last-known-good to fall back to at startup, and running with
-    unknown thresholds is worse than not starting: it looks like monitoring."""
+def test_startup_with_a_bad_config_reports_it_and_does_not_use_the_value(rules_path):
     _write(rules_path, "detectors:\n  fee_anomaly:\n    multiplier: nonsense\n", 2_000_000)
-    with pytest.raises(RulesConfigError):
-        RulesConfig(rules_path)
+
+    rules = RulesConfig(rules_path)
+
+    assert rules.is_valid is False
+    assert "multiplier" in rules.validation_error
+    assert rules.get_decimal(
+        "detectors", "fee_anomaly", "multiplier", default=Decimal("5")
+    ) == Decimal("5"), "a rejected multiplier was used instead of the default"
 
 
-def test_malformed_yaml_is_rejected_as_a_config_error(rules_path):
+def test_malformed_yaml_is_reported_and_nothing_from_it_is_used(rules_path):
     _write(rules_path, "detectors:\n  quantity_drop:\n   tolerance_pct: [unclosed\n", 2_000_000)
-    with pytest.raises(RulesConfigError):
-        RulesConfig(rules_path)
+
+    rules = RulesConfig(rules_path)
+
+    assert rules.is_valid is False
+    assert "YAML" in rules.validation_error
+    assert rules.get("detectors", "quantity_drop", "tolerance_pct") is None
 
 
 # --- a bad edit while running must not stop monitoring -----------------------
@@ -168,19 +183,19 @@ def test_a_misspelled_key_is_rejected_and_names_the_intended_one(rules_path):
     took effect, and nothing anywhere says otherwise."""
     _write(rules_path, GOOD.replace("tolerance_pct:", "tolerance_pc:"), 2_000_000)
 
-    with pytest.raises(RulesConfigError) as exc:
-        RulesConfig(rules_path)
+    rules = RulesConfig(rules_path)
 
-    message = str(exc.value)
+    message = rules.validation_error
+    assert rules.is_valid is False
     assert "tolerance_pc" in message
     assert "tolerance_pct" in message, "should suggest the key that was meant"
 
 
 def test_an_unknown_section_is_rejected(rules_path):
     _write(rules_path, GOOD + "\ndetector:\n  off_market:\n    max_deviation_pct: '5'\n", 2_000_000)
-    with pytest.raises(RulesConfigError) as exc:
-        RulesConfig(rules_path)
-    assert "detector" in str(exc.value)
+    rules = RulesConfig(rules_path)
+    assert rules.is_valid is False
+    assert "detector" in rules.validation_error
 
 
 # --- values that parse but mean "never fire" --------------------------------
@@ -208,9 +223,9 @@ def test_a_value_that_breaks_its_own_formula_is_rejected(rules_path, original, b
     the value, which is a different thing from an opinion about how sensitive
     the detector ought to be. No range here narrows a detector's sensitivity."""
     _write(rules_path, GOOD.replace(original, broken), 2_000_000)
-    with pytest.raises(RulesConfigError) as exc:
-        RulesConfig(rules_path)
-    assert setting in str(exc.value)
+    rules = RulesConfig(rules_path)
+    assert rules.is_valid is False
+    assert setting in rules.validation_error
 
 
 def test_detection_keeps_running_after_a_bad_edit(db, cipher, rules_path, monkeypatch):

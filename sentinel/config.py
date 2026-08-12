@@ -9,15 +9,17 @@ from typing import Any
 
 import yaml
 
-from sentinel.rules_schema import validate
+from sentinel.rules_schema import prune_invalid, validate
 
 logger = logging.getLogger("sentinel.config")
 
 
 class RulesConfigError(ValueError):
-    """config/rules.yaml could not be trusted. Raised only when there is no
-    previously-valid configuration to fall back on - i.e. at startup, where
-    running with unknown thresholds would look exactly like monitoring."""
+    """A rules file could not be read or parsed at all.
+
+    Raised by `sentinel validate-config`, which is where failing fast on a bad
+    config belongs: before a deploy, not during one. `RulesConfig` itself never
+    raises - see `_reject`."""
 
 
 def _to_decimal_leaves(node: Any) -> Any:
@@ -106,7 +108,7 @@ class RulesConfig:
             converted = _to_decimal_leaves(raw)
             problems = validate(converted)
             if problems:
-                self._reject(mtime, problems)
+                self._reject(mtime, problems, parsed=converted)
                 return
 
             self._data = converted
@@ -120,15 +122,32 @@ class RulesConfig:
             self._rejected_at = None
             self._loaded = True
 
-    def _reject(self, mtime: float | None, problems: list[str]) -> None:
-        """Refuses the file on disk.
+    def _reject(self, mtime: float | None, problems: list[str], parsed=None) -> None:
+        """Refuses the file on disk. Never raises, and never stops the process.
 
-        Before startup has produced one valid load there is nothing to fall
-        back to, so this raises: better to not come up than to come up with
-        thresholds nobody has checked. Afterwards, detection continues on the
-        last values known to be good - stopping detection because a threshold
-        was mistyped is the failure this issue is about - and the rejection is
-        reported loudly.
+        This used to raise when no valid configuration had been loaded yet, on
+        the reasoning that coming up with unchecked thresholds looks exactly
+        like monitoring. That missed the case that matters most: an **upgrade**,
+        where a file the old code ran happily on is rejected by a schema that
+        shipped after it. Refusing there turns a working monitor into a dead one
+        during a deploy - and dying loudly is still not monitoring.
+
+        Two paths, and which one applies depends on whether there is anything
+        better available:
+
+        - **A valid configuration has been loaded before.** Keep it. It is both
+          valid and what the operator actually asked for, which beats a pruned
+          version of a broken file.
+        - **Nothing valid has ever loaded** (startup on a bad file). Run on the
+          settings that *do* validate, and let the readers fall through to their
+          own defaults for the rest. Some detection beats none, in every case.
+
+        What makes that defensible rather than merely quiet is the CRITICAL
+        operator page raised from `Engine._check_config_health` - which only
+        became possible when G-49 landed a paging route. The decision was
+        revisited because its binding constraint went away, not because the risk
+        did. Fail-fast now lives in `sentinel validate-config`, run before the
+        deploy rather than during it.
 
         `self._mtime` advances even on rejection, so one bad edit produces one
         ERROR rather than one per `get()`; every read calls `reload()`, and a
@@ -139,13 +158,20 @@ class RulesConfig:
         self._validation_error = detail
         self._rejected_at = datetime.now(timezone.utc).isoformat()
 
-        if not self._loaded:
-            raise RulesConfigError(f"config/rules.yaml ({self._path}) rejected: {detail}")
+        if self._loaded:
+            logger.error(
+                "rules config rejected (%s): %s - KEEPING the last valid configuration; "
+                "the values on disk are NOT in use until this is fixed",
+                self._path, detail,
+            )
+            return
 
+        self._data = prune_invalid(parsed) if parsed is not None else {}
         logger.error(
-            "config/rules.yaml rejected: %s - KEEPING the last valid configuration; "
-            "the values on disk are NOT in use until this is fixed",
-            detail,
+            "rules config rejected at startup (%s): %s - RUNNING ANYWAY on the settings that "
+            "validate, with built-in defaults for the rest. Detection is active but is NOT "
+            "using the rejected values. Fix the file; an operator page has been raised.",
+            self._path, detail,
         )
 
     # --- readers ------------------------------------------------------------

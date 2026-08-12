@@ -9,6 +9,7 @@ the latter arrived with #53.
 from __future__ import annotations
 
 import pytest
+from prometheus_client import CollectorRegistry
 
 from sentinel.alarms import UntimestampedRecordAlarm
 from sentinel.alerts.operator import OperatorAlerter, recent_operator_pages
@@ -219,3 +220,33 @@ def test_the_alarm_is_wired_into_the_engine(db, cipher):
         engine._untimestamped_alarm.evaluate(now=t)
 
     assert len(recent_operator_pages(db)) == 1
+
+
+def test_the_scheduler_actually_evaluates_the_alarm(db, cipher):
+    """Wiring, separate from behaviour.
+
+    Every other test here drives `evaluate` directly, so all of them keep
+    passing if the call is dropped from the scheduler - which is precisely the
+    "exists but was never connected" failure this issue set as its own
+    standard. The behaviour is covered above; this pins that something calls
+    it."""
+    from sentinel.alerts.operator import OperatorAlerter
+    from sentinel.engine import Engine
+
+    class Spy:
+        def __init__(self):
+            self.calls = 0
+
+        def evaluate(self, now):
+            self.calls += 1
+
+    engine = Engine(
+        db, cipher, RulesConfig("config/rules.yaml"), {},
+        metrics=Metrics(registry=CollectorRegistry()),
+        operator_alerter=OperatorAlerter(db, {}, RulesConfig("config/rules.yaml")),
+    )
+    spy = Spy()
+    engine._untimestamped_alarm = spy
+    engine._scheduler_tick()
+
+    assert spy.calls == 1, "the scheduler is not evaluating the untimestamped-record alarm"

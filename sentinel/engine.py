@@ -80,6 +80,9 @@ class Engine:
         # records, both racing to write the same poll_state (G-45).
         self._inflight: set[tuple[int, str]] = set()
         self._inflight_lock = threading.Lock()
+        # Which config rejection we have already paged about, so a persistent
+        # one doesn't page every scheduler cycle while a *new* one still does.
+        self._paged_config_rejection: str | None = None
 
         def _rate(key: str, default: str) -> float:
             return float(rules.get_decimal("rate_limits", key, default=Decimal(default)))
@@ -139,24 +142,75 @@ class Engine:
     def _scheduler_loop(self) -> None:
         while not self._stop.is_set():
             started = time.monotonic()
-            try:
-                self._schedule_cycle()
-                if self._escalator is not None:
-                    self._escalator.check(self._db)
-            except Exception as exc:  # noqa: BLE001 - scheduler must survive anything
-                logger.error("scheduler cycle failed: %s", exc)
+            self._scheduler_tick()
+            fast_interval = self._rules.get_seconds("polling", "fast_loop_seconds", default=45)
+            self._stop.wait(max(1.0, fast_interval - (time.monotonic() - started)))
+
+    def _scheduler_tick(self) -> None:
+        """One pass of the scheduler's housekeeping: queue the due work, run
+        escalation, and republish the health signals.
+
+        Split out of the loop so a test can drive it. Asserting the pieces
+        individually does not catch one being dropped from the loop, and an
+        alarm that exists but is never called is the same as no alarm - the
+        standard #52 set for itself.
+
+        Everything is inside the handler, not just the queuing. These calls run
+        on the scheduler thread every cycle, so an exception in any of them
+        would kill the scheduler outright and stop all polling: the loudest
+        possible failure expressed as complete silence."""
+        try:
+            self._schedule_cycle()
+            if self._escalator is not None:
+                self._escalator.check(self._db)
             # Republished every cycle rather than only on change: a scrape that
             # starts after the rejection still sees the 0, and a restart that
             # re-reads a still-broken file re-asserts it.
             if self._metrics is not None:
                 self._metrics.set_rules_config_valid(self._rules.is_valid)
+            self._check_config_health()
             if self._untimestamped_alarm is not None:
-                try:
-                    self._untimestamped_alarm.evaluate(now=time.monotonic())
-                except Exception as exc:  # noqa: BLE001 - an alarm must never stop the scheduler
-                    logger.error("untimestamped-record alarm failed: %s", exc)
-            fast_interval = self._rules.get_seconds("polling", "fast_loop_seconds", default=45)
-            self._stop.wait(max(1.0, fast_interval - (time.monotonic() - started)))
+                self._untimestamped_alarm.evaluate(now=time.monotonic())
+        except Exception as exc:  # noqa: BLE001 - scheduler must survive anything
+            logger.error("scheduler cycle failed: %s", exc)
+
+    def _check_config_health(self) -> None:
+        """Pages CRITICAL while the rules file on disk is rejected.
+
+        This is what makes running on a rejected config defensible rather than
+        merely quiet. `RulesConfig` no longer refuses to start - refusing turns
+        an upgrade into an outage - so the thing that must not be missed is that
+        the thresholds in force are not the ones in the file.
+
+        Keyed on the rejection itself, so a persistent problem pages once and a
+        *new* mistake pages again: an operator who fixes one error and
+        introduces another has to hear about the second.
+        """
+        rejected_at = self._rules.rejected_at
+        if rejected_at is None:
+            self._paged_config_rejection = None
+            return
+        if rejected_at == self._paged_config_rejection:
+            return
+        self._paged_config_rejection = rejected_at
+        if self._operator_alerter is None:
+            return
+        self._operator_alerter.page(
+            rule="rules_config_rejected",
+            severity="CRITICAL",
+            message=(
+                f"The rules config was rejected and is NOT in use: "
+                f"{self._rules.validation_error}. Detection is running on the settings that "
+                f"validated plus built-in defaults for the rest, so the thresholds in force "
+                f"are not the ones in the file. Fix it and the next edit is picked up without "
+                f"a restart; `sentinel validate-config <path>` checks a file before you ship it."
+            ),
+            evidence={
+                "problems": self._rules.validation_error,
+                "rejected_at": rejected_at,
+            },
+            dedup_scope=rejected_at,
+        )
 
     def _claim(self, account_id: int, kind: str) -> bool:
         """Reserves this account for this kind of poll. False if one is already

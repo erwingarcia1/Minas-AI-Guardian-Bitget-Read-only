@@ -77,6 +77,7 @@ Production deployment (AWS): see [docs/deployment.md](docs/deployment.md).
 | `sentinel digest` | Send the MEDIUM/LOW daily digest |
 | `sentinel ack <id>` | Acknowledge an alert (stops CRITICAL escalation) |
 | `sentinel triage --label X` | AI incident narrative (optional; additive only) |
+| `sentinel validate-config [path]` | Check a rules file against the schema. No database, nothing started. Exit 0 valid / 1 rejected / 2 unreadable — **run it against the server's live file before an upgrade** |
 
 ## Detection catalog
 

@@ -1043,3 +1043,121 @@ millisecond. The bug was there the whole time.
 
 **What I changed about how I work:** run the suite as its own command and read
 the result before committing. Chaining them reads as one step and isn't.
+
+---
+
+## Follow-up session — `validate-config`, and reversing the fail-closed decision
+
+Two requests: a pre-deploy config checker, and a challenge to the
+refuse-to-start behaviour I built into G-12. The second one was right and I've
+reversed it.
+
+### I got the startup decision wrong
+
+My reasoning in G-12 was: *coming up with thresholds nobody has checked looks
+exactly like monitoring, so refuse.* That is a real risk and the argument still
+holds for a fresh install. What it missed is the **upgrade**, which is the case
+that actually happens:
+
+A file the old code ran happily on gets rejected by a schema that shipped after
+it. `rules_schema.SPEC` gains entries as detectors are added, so this isn't
+hypothetical — it's the expected consequence of the feature. Refusing there
+turns a working monitor into a dead one, during a deploy window, on a service
+whose whole purpose is to be watching. **Dying loudly and not monitoring is
+still not monitoring**, and the customer being drained is not comforted by the
+clarity of the log line.
+
+Starting on defaults strictly dominates refusing on coverage: some detection
+beats none, in every case. What made it the wrong trade *before* was that the
+only signal available was a log line nobody reads. **That changed when G-49
+(#53) landed a paging route** — which I built later the same session. So the
+decision gets revisited because its binding constraint went away, not because
+the risk did. Worth noting as a pattern: a safety decision made under a
+constraint should be re-examined when the constraint lifts, and nothing
+prompts that automatically.
+
+### What it does now
+
+- **Never refuses.** Runs on every setting that validates.
+- **Per-setting fallback, not all-or-nothing.** `prune_invalid` drops only the
+  leaves the schema rejects, so the readers fall through to their own defaults
+  for those and keep the operator's values everywhere else. All-or-nothing
+  would discard someone's entire detector tuning because they mistyped
+  `triage.max_events`, which is its own kind of surprise.
+- **A known-good config still wins.** Once a valid configuration has loaded,
+  it beats a pruned version of a broken file — it's both valid *and* what the
+  operator asked for. The running-reload behaviour is unchanged.
+- **CRITICAL operator page**, keyed on the rejection, so a persistent problem
+  pages once and a *new* mistake pages again. This is the thing that makes
+  starting-anyway defensible rather than merely quiet.
+
+### The trap I nearly shipped
+
+"Start with defaults" is not uniformly safe, and I only found this by writing
+the test for it. `build_channels` read routing with `default=[]`. For a
+threshold, falling back to a default means falling back to *a number*. For
+`alerting.routing`, it means falling back to **no channels** — alerts stored,
+deduped, and delivered nowhere.
+
+So a single mistyped line in the routing table could have produced a system
+that detects perfectly and tells nobody: silent, total, and *worse than the
+failure this whole change is fixing*. Now falls back to every configured
+channel, and says so at ERROR. Applies to the operator routing too, where it's
+worse still — the page it would drop is the one telling us the config is
+broken.
+
+### `sentinel validate-config [path]`
+
+Reads a file, runs `rules_schema.validate`, prints either "valid" or every
+problem with its full dotted path and offending value. No database opened,
+nothing started, nothing written.
+
+**Exit codes are the contract**, since this goes in a deploy script: `0` valid,
+`1` read but rejected, `2` could not be read. 1 and 2 are deliberately separate
+— a typo in the config and a typo in the *path* need different reactions, and a
+script that conflates them reports a missing file as a bad config.
+
+It also prints **what deploying anyway would do**. That is not decoration: the
+answer changed with the decision above, and "it won't come up" is exactly what
+an operator would otherwise reasonably assume.
+
+### Two wiring gaps the mutation checks found
+
+Both the same shape, and worth recording because I'd written the standard for
+it myself in #52 ("an alarm that exists but was never connected is the same as
+no alarm") and then failed to meet it twice:
+
+1. Removing `_check_config_health()` from the scheduler broke **no test** — my
+   tests all called it directly.
+2. Removing the untimestamped-record alarm's `evaluate()` call from the
+   scheduler also broke no test, for the same reason. That gap shipped in #52.
+
+Fixed by extracting `_scheduler_tick()` as a testable seam and pinning both
+calls. **Testing a component's behaviour and testing that anything calls it are
+different tests**, and the second one is the one that goes missing.
+
+While there: the metrics and alarm calls previously sat *outside* the
+scheduler's `try`, so an exception in either would have killed the scheduler
+thread and stopped all polling — the loudest possible failure expressed as
+total silence. Now inside it, with a test.
+
+### Tests that had to change
+
+Nine tests in `test_rules_validation.py` asserted `pytest.raises(RulesConfigError)`
+at startup. They were pinning the decision I just reversed, so they're rewritten
+rather than deleted — and to something **stronger**: that the rejected value is
+not merely reported but *not in force*, with the reader falling back to its
+default. Asserting an exception only proved it stopped; asserting the effective
+value proves what it does instead.
+
+### Verification
+
+27 new tests across two files, written first. Six mutations: all-or-nothing
+pruning; treating a pruned config as known-good; dropping the health check from
+the scheduler; dropping the alarm from the scheduler; routing falling back to
+nothing; and the CLI's exit-code split. Each red-lights only its own guard.
+Full suite green at 311, lint clean.
+
+Also exercised by hand against a deliberately-broken copy of the production
+config shape (decimal comma plus a stale key) to check the output is readable
+by someone under deploy pressure.
