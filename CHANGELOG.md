@@ -97,6 +97,30 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   per pass, by the quantity-drop path that already walks them.
 
 ### Added
+- **Operator paging, scoped to Minas rather than to a customer (G-49, #53).**
+  The gap was never that we couldn't reach ourselves — `build_channels` already
+  wires our own Telegram, the team group, our SMS numbers and our email. It was
+  that every route ran through an account: `dispatch()` takes an `account_id`,
+  `_dedup_key` is built from it, and the `alerts` row carries it as a foreign
+  key. A product-level fault had nowhere to be raised, and anything raised
+  against a real account continued through `ContactRouter` and told that
+  customer about our problem. New `OperatorAlerter` and an `operator_pages`
+  table: `account_id` is nullable and means **about**, never **to**, so a page
+  can name the account it concerns (a key that broke because our egress IP was
+  blocked) while never reaching that customer. There is no customer path in the
+  module at all — not a disabled one, not a conditional one — because a route
+  that must never fire is safest when it doesn't exist. Own `operator_alerting`
+  routing and cooldowns, separate from the customer `alerting` table, so "our
+  product is broken" doesn't inherit the 15-minute cooldown chosen for a
+  flapping detection on one account; defaults are wider (30/60/240/720) because
+  an outage persists until someone fixes it. Pages are recorded even when no
+  channel is configured — a page that couldn't be delivered must not also be a
+  page that never happened — and shown in their own dashboard section, kept
+  apart from customer alerts because a customer's alert history is something
+  they read in the portal and something we hand to an exchange as evidence.
+  **This does not mean we would know if Guardian stopped**: nothing in-process
+  can report its own death, and that needs external uptime monitoring on
+  separate infrastructure.
 - **`sentinel_untimestamped_records_total{exchange, source}`** — a Prometheus
   counter for records an exchange sends without a usable timestamp. G-7 makes
   the detector refuse such records, which is correct but degrades quietly: if

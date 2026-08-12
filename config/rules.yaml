@@ -80,6 +80,26 @@ alerting:
   # SMS (sms_alerts_enabled = 0). Set false to make the opt-out absolute.
   sms_critical_overrides_optout: true
 
+# Paging scoped to Minas, not to a customer (G-49). Kept separate from
+# `alerting` above on purpose: "our product is broken" and "this customer may
+# be being robbed" are different kinds of urgency. An operator page never
+# reaches a customer, even when it names the account it is about.
+operator_alerting:
+  routing:
+    CRITICAL: [telegram, telegram_team, sms, email]
+    HIGH: [telegram, telegram_team, email]
+    MEDIUM: [telegram_team]
+    LOW: [telegram_team]
+  # Wider than the customer cooldowns above, deliberately. Those are tuned for
+  # a flapping detection on one account, where re-firing quickly matters. An
+  # operator page reports a condition that persists until someone fixes it, so
+  # re-sending every 15 minutes produces noise rather than urgency.
+  cooldown_minutes:
+    CRITICAL: "30"
+    HIGH: "60"
+    MEDIUM: "240"
+    LOW: "720"
+
 triage:
   enabled: false               # AI triage narrative on incidents; additive only,
                                # deterministic rules remain authoritative

@@ -146,6 +146,35 @@ CREATE TABLE IF NOT EXISTS transfer_routes (
     UNIQUE(account_id, route)
 );
 
+-- Operator pages: the product reporting its own faults (G-49). Deliberately a
+-- separate table from `alerts` rather than a flag on it.
+--
+-- `account_id` is NULLABLE and means "about", never "to". A product-level fault
+-- - the scheduler falling behind, an exchange dropping timestamps, a failed
+-- drill - belongs to no customer, and inventing an account row to carry it
+-- would pollute the dashboard, the digest and every per-account query. A page
+-- that IS about one account (its key stopped working because our egress IP was
+-- blocked) still never reaches that customer: nothing on this path touches
+-- ContactRouter.
+--
+-- Separate table, not a column on `alerts`, because a customer's alert history
+-- is something they can read in the portal and something we hand to an
+-- exchange as evidence. Our outages do not belong in it.
+CREATE TABLE IF NOT EXISTS operator_pages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER REFERENCES accounts(id),
+    rule TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    dedup_key TEXT NOT NULL,
+    message TEXT NOT NULL,
+    evidence_json TEXT NOT NULL,
+    delivered_to INTEGER NOT NULL DEFAULT 0,
+    sent_at TEXT NOT NULL,
+    acknowledged_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_operator_pages_dedup ON operator_pages(dedup_key, sent_at);
+CREATE INDEX IF NOT EXISTS idx_operator_pages_time ON operator_pages(sent_at);
+
 -- Per-coin EMA of fee spend per fast-loop window, stored as JSON {"USDT": "1.23", ...}
 CREATE TABLE IF NOT EXISTS fee_baseline (
     account_id INTEGER PRIMARY KEY REFERENCES accounts(id),

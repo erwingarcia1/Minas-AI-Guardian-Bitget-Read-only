@@ -568,3 +568,96 @@ anywhere in the codebase. `events`, `alerts`, `seen_withdrawals`,
 which I added earlier today, now joins them. Worth noting that the append-only
 tables grow at the rate the fast loop polls, which on the current 45-second
 cadence is not slow.
+
+---
+
+### G-49 (#53) · Operator alerting channel
+
+The foundational one. Five other issues have a criterion that can't be met
+without it (#42, #52, #37, #27, #11), so it was the right thing to do first in
+Phase 2.
+
+The issue's own analysis was accurate and I didn't find anything to add to it:
+Minas-side *destinations* already existed, and the gap was that everything had
+to hang off an account. `dispatch()` takes an `account_id`, `_dedup_key` is
+built from it, the `alerts` row carries it as a foreign key, and
+`AccountPoller._emit` calls `dispatch()` *and* `ContactRouter.send()` — so
+anything raised against a real account reached that customer.
+
+#### Judgment calls
+
+**A separate table, not a flag on `alerts`.** The deciding argument is what
+`alerts` is *for*: a customer reads their alert history in the portal, and we
+hand it to an exchange as evidence. Our outages do not belong in it. A boolean
+column would have worked mechanically and would have needed a filter on every
+existing query, each of which is a place to forget one.
+
+**No customer path in the module at all.** Not a disabled one, not one behind a
+flag — `OperatorAlerter` has no ContactRouter and no way to acquire one. A
+route that must never fire is safest when it doesn't exist. The test asserts
+the attribute is absent rather than that some mock wasn't called, which is the
+stronger claim.
+
+**`account_id` means "about", never "to".** Stated in the schema comment, the
+module docstring and the method docstring, because it is the one thing about
+this design that someone could get wrong later in a way that emails a customer
+about our outage.
+
+**The account is in the dedup key.** Two accounts going unwatchable are two
+facts. Collapsing them by rule alone would report the first and hide the rest
+of a fleet-wide outage — which is precisely the shape of problem this exists to
+catch. Mutation-tested.
+
+**Cooldown defaults are wider than the customer side (30/60/240/720 vs
+15/30/720/1440).** The reasoning: customer cooldowns are tuned for a flapping
+detection where re-firing quickly matters; an operator page reports a condition
+that persists until someone fixes it, so re-sending every 15 minutes is noise
+rather than urgency. These are the one set of numbers I chose rather than
+derived. I'm comfortable with that — a paging cooldown isn't a security
+threshold, it's operational hygiene, it's hot-reloadable, and criterion 3
+required *some* value. Flagged in `DECISIONS-NEEDED.md` decision 1 as worth
+revisiting alongside the escalation ladder, since the two interact.
+
+**An undeliverable page is still recorded.** If no channel is configured for a
+severity, the row is written anyway and the dashboard marks it `undelivered`.
+Otherwise a misconfigured route is invisible in exactly the situation where it
+matters most — which is the same silent-failure shape as everything else fixed
+today.
+
+**Added to `rules_schema.py`, necessarily.** G-12's validation now rejects
+unknown keys, so a new config section that isn't declared would make the
+product refuse to start. There's a test asserting the shipped `rules.yaml`
+still validates *and* that `operator_alerting.routing` is readable — the two
+changes could have collided silently.
+
+#### What I deliberately did not build
+
+**No callers.** The conditions that should page — the untimestamped counter
+rising (#52), a failed drill (#37), the scheduler falling behind (#42),
+unacknowledged escalation (#27), a fleet-wide key failure (#11) — each belong
+to their own issue, and each involves a threshold decision that isn't mine to
+make here. `Engine` holds the alerter so those issues plug in without
+re-plumbing. That leaves one unused constructor argument on `main` today, which
+I'd normally avoid; it's justified here because the issue is explicitly
+groundwork and the alternative is inventing detector behaviour under the wrong
+issue number.
+
+**Not in scope, restated because it would be easy to assume otherwise:** this
+is the product reporting its own faults *while running*. It cannot report the
+process or the machine dying — nothing in-process can, and an alarm that
+depends on the thing it monitors isn't an alarm. Closing #53 does not mean we
+would know if Guardian stopped. That needs external uptime monitoring on
+separate infrastructure, which is a parked hosting decision. Said in the module
+docstring and the CHANGELOG as well as here.
+
+#### Verification
+
+15 tests, written first. Mutation check on three separate properties, each
+red-lighting exactly its own guard:
+
+- dedup key ignoring the account → the fleet-wide-outage test only
+- cooldown read from `alerting` instead of `operator_alerting` → the
+  independence test only
+- undeliverable pages not recorded → both the recording and the dashboard test
+
+Full suite green: 259 passed.

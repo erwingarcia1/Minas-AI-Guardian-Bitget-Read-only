@@ -142,6 +142,13 @@ SPEC: dict = {
         "sms_cooldown_minutes": NON_NEGATIVE,
         "sms_critical_overrides_optout": _boolean(),
     },
+    # Paging scoped to Minas rather than to a customer (G-49). Separate from
+    # `alerting` on purpose: "our product is broken" and "this customer may be
+    # being robbed" are different kinds of urgency and need their own dials.
+    "operator_alerting": {
+        "routing": {sev: _channel_list() for sev in SEVERITIES},
+        "cooldown_minutes": {sev: NON_NEGATIVE for sev in SEVERITIES},
+    },
     "triage": {
         "enabled": _boolean(),
         "model": _text(),

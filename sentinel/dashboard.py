@@ -315,8 +315,45 @@ def _render(db: Database, rules=None) -> str:
         '<section><div class="card"><div class="card-head"><h2>Recent alerts</h2>'
         '<span class="count">latest 50</span></div><table><thead><tr><th>Time</th><th>Account</th>'
         f"<th>Severity</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
+        + _operator_pages_section(db)
     )
     return _page(nav, body)
+
+
+def _operator_pages_section(db: Database) -> str:
+    """Our own faults, kept visibly apart from customer alerts (G-49).
+
+    Separate section rather than mixed into "Recent alerts" for the same reason
+    they're a separate table: a customer's alert history is something they read
+    in the portal and something we hand to an exchange as evidence. Our outages
+    do not belong in it, and an operator scanning this page needs to be able to
+    tell "a customer may be being robbed" from "our product is broken" at a
+    glance."""
+    from sentinel.alerts.operator import recent_operator_pages
+
+    pages = recent_operator_pages(db, limit=20)
+    if not pages:
+        return ""
+    rows = ""
+    for p in pages:
+        about = _dd(p["account_label"]) if p["account_id"] is not None else '<span class="dim">product</span>'
+        undelivered = (
+            '' if p["delivered_to"] else
+            ' <span class="fail" title="no channel was configured for this severity">undelivered</span>'
+        )
+        ack = ('<span class="ack-yes">✓</span>' if p["acknowledged_at"]
+               else '<span class="ack-no">—</span>')
+        rows += (
+            f'<tr><td class="mono">{_ts(p["sent_at"])}</td><td>{about}</td>'
+            f'<td><span class="pill sev-{html.escape(p["severity"])}">{html.escape(p["severity"])}</span></td>'
+            f'<td class="rule">{html.escape(p["rule"])}{undelivered}</td><td>{ack}</td></tr>'
+        )
+    return (
+        '<section><div class="card"><div class="card-head"><h2>Operator pages</h2>'
+        '<span class="count">our faults, not the customer\'s · latest 20</span></div>'
+        '<table><thead><tr><th>Time</th><th>About</th><th>Severity</th><th>Rule</th><th>Ack</th>'
+        f"</tr></thead><tbody>{rows}</tbody></table></div></section>"
+    )
 
 
 def _dd(value) -> str:

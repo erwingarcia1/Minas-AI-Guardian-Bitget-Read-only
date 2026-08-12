@@ -43,12 +43,18 @@ class Engine:
         channels: dict,
         metrics=None,
         escalator=None,
+        operator_alerter=None,
     ):
         self._db = db
         self._cipher = cipher
         self._rules = rules
         self._metrics = metrics
         self._escalator = escalator
+        # Paging scoped to Minas (G-49). Held here so the conditions that need
+        # it - the untimestamped counter rising (#52), a failed drill (#37),
+        # the scheduler falling behind (#42) - have somewhere to raise from.
+        # Those callers belong to their own issues; this is the route.
+        self._operator_alerter = operator_alerter
         self._queue: queue.Queue[Task] = queue.Queue()
         self._stop = threading.Event()
 

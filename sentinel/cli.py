@@ -107,6 +107,34 @@ def build_channels(rules: RulesConfig) -> dict[str, list]:
     return channels
 
 
+def build_operator_channels(rules: RulesConfig) -> dict[str, list]:
+    """severity -> [channel objects], from `operator_alerting.routing` (G-49).
+
+    Same named channels as the customer routing - they are all Minas-side
+    destinations already - but resolved through a separate table, so paging
+    ourselves about an outage can't be changed by retuning a customer's alert
+    preferences. 'digest' is meaningless for an operator page and is skipped:
+    an outage that waits for the daily digest is not a page."""
+    named = _build_named_channels()
+    channels: dict[str, list] = {}
+    for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        routed = rules.get("operator_alerting", "routing", severity, default=[]) or []
+        resolved = []
+        for name in routed:
+            if name == "digest":
+                continue
+            channel = named.get(str(name))
+            if channel is None:
+                logger.warning(
+                    "operator channel '%s' routed for %s but not configured (missing env vars)",
+                    name, severity,
+                )
+                continue
+            resolved.append(channel)
+        channels[severity] = resolved
+    return channels
+
+
 def cmd_onboard(args: argparse.Namespace) -> int:
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     cipher = CredentialCipher()
@@ -137,6 +165,7 @@ def cmd_onboard(args: argparse.Namespace) -> int:
 
 def cmd_run(args: argparse.Namespace) -> int:
     _setup_logging()
+    from sentinel.alerts.operator import OperatorAlerter
     from sentinel.dashboard import serve_dashboard
     from sentinel.engine import Engine
     from sentinel.metrics import Metrics
@@ -180,7 +209,12 @@ def cmd_run(args: argparse.Namespace) -> int:
     escalation_minutes = rules.get_int("alerting", "escalation_unacknowledged_minutes", default=15)
     escalator = Escalator(channels.get("CRITICAL", []), escalation_minutes)
 
-    engine = Engine(db, cipher, rules, channels, metrics=metrics, escalator=escalator)
+    operator_alerter = OperatorAlerter(db, build_operator_channels(rules), rules)
+
+    engine = Engine(
+        db, cipher, rules, channels, metrics=metrics, escalator=escalator,
+        operator_alerter=operator_alerter,
+    )
     engine.run()
     return 0
 
