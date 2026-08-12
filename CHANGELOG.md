@@ -14,6 +14,26 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
+- **13 more tests pinning thresholds and evidence (#61).** Decision-point
+  mutation score **81% → 92%**; combined with the commit below, **60% → 92%**.
+  Every threshold in the product is a comparison, and every one of them
+  survived being loosened or tightened by one notch. A boundary is the one
+  input an attacker can choose — a withdrawal timed to land exactly on the
+  window edge, a fee at exactly the multiplier — so these were the values most
+  worth checking and the ones nothing checked. Also pinned: alert evidence
+  reports the quantity that **executed**, not the quantity ordered. The alert
+  still fires with the wrong number otherwise, and the number is what the
+  recipient acts on.
+
+  One boundary was a live false-alarm risk: a fee baseline of exactly zero —
+  what every account has on its first observation — must seed rather than
+  alert. Tightened by one character it becomes `spent > 0`, and every account
+  alerts on the first fee it ever pays.
+
+  The eight remaining survivors are documented in `scripts/mutation-check.sh`
+  as not gaps: two equivalent mutants with no distinguishing input, and six
+  `or` chains that only pick wording for a log line.
+
 - **23 tests pinning the outflow-attribution and skip-vs-stop decisions
   (mutation survivors, #61).** The decision-point mutation score went from
   **60% to 81%** — 43 surviving mutants down to 20 — with no production code

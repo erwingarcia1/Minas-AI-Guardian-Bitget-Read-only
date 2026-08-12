@@ -49,7 +49,10 @@
 #   already true for a zero Decimal, so no input distinguishes them. The `<= 0`
 #   arm only fires on a *negative* reference price, which no ticker produces.
 #   Killing it would need an unreachable input, and a test that manufactures one
-#   pins a fiction. Leave it.
+#   pins a fiction. Leave it. `quantity_drop.py`'s `if drop <= 0: continue` is
+#   the same: with a drop of exactly zero, `unexplained` cannot exceed a
+#   non-negative tolerance, so `< 0` reaches the same no-detection by a longer
+#   route through a pure function.
 # - **Decisions inside log arguments.** `_in_window`'s `record.get("id") or
 #   record.get("symbol") or "<unidentified>"` is a chain of `or`s the classifier
 #   counts as decision points, but it only chooses wording for a warning line.
@@ -98,6 +101,7 @@ pytest_add_cli_args_test_selection=
     tests/test_connection_broken.py
     tests/test_outflow_attribution.py
     tests/test_skip_does_not_stop.py
+    tests/test_thresholds_and_evidence.py
     tests/test_alert_stack.py
     tests/test_sms_notifications.py
 runner=python -m pytest -x -q -p no:cacheprovider

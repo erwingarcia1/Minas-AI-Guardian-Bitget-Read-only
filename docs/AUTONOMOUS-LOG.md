@@ -2129,3 +2129,77 @@ red-lighting only its own guards. Full suite green at 418.
 
 `_last_prune` is `None` rather than `0`, per the monotonic lesson, with the
 reason in a comment beside it.
+
+---
+
+## Mutation survivors, fixed by consequence (#61)
+
+Decision-point mutation score **60% → 92%** across two commits. 43 survivors →
+8, and the 8 remaining are documented in `scripts/mutation-check.sh` as *not
+gaps*. Every non-equivalent decision point in the detection and alerting paths
+is now pinned by a test.
+
+**No production code changed.** That surprised me, and it is the finding worth
+recording: 35 surviving mutants, every one of them a correctness-relevant
+decision, and in every single case the code was already right. What was missing
+was anything holding it there. The suite tested that detectors *fire*; almost
+nothing tested the conditions under which they *don't*.
+
+### The order, and why
+
+Silent misses first, then false alarms, then evidence, then boundaries. Two of
+the clusters deserve naming:
+
+`_explained_outflow_for_coin` decides whether a balance drop is accounted for.
+Its `and`s mutate to `or` and survive — a sell of a *different coin* then
+explains this coin's drop. Balance leaves the account, the detector marks it
+explained, nobody is told. That is the worst thing this product can do, it was
+one operator away, and the whole suite stayed green.
+
+The eight `continue` → `break` survivors are the same failure at loop scope.
+Every detector skips records it can't judge. As `break`, the first unjudgeable
+record ends the scan and everything after it that poll is never examined —
+including, on a compromised account, the withdrawal. I confirmed reachability
+before writing the tests rather than assuming it: `reference_prices` only holds
+symbols whose ticker fetch succeeded, so a missing reference is ordinary.
+
+### Three survivors I did not kill, deliberately
+
+Per the standing instruction not to write a test that enshrines a fiction:
+
+- `off_market`'s `reference <= 0` → `< 0` and `quantity_drop`'s `drop <= 0` →
+  `< 0` are **equivalent mutants**. No reachable input distinguishes them
+  (`not reference` already catches zero; a zero drop can't exceed a
+  non-negative tolerance). Killing them needs an input production can't
+  produce.
+- Six `or` chains inside `_in_window`'s log arguments choose *wording*, not
+  behaviour. My classifier counts `or` as a decision point and can't tell that
+  this one only picks a string. Left as a known false positive.
+
+The floor is 90, below the measured 92, precisely so these eight have room. It
+is a ratchet against decisions *becoming* unpinned, not a target.
+
+### Judgment calls
+
+- **`quantity_drop` #108 guards only a log line, and I tested it anyway.** It
+  changes no alert. But the line it guards is the one that says a detection
+  would have been suppressed by a slightly longer settlement grace — the only
+  signal that the grace is set too tight. That is a log a human is expected to
+  act on, which is the bar I set for the `_in_window` ones and this clears it.
+- **`sms.py` at exactly three characters of room is a genuine coin flip.**
+  Current code sends nothing; the mutant sends `"..."`. Both fit. I pinned the
+  current behaviour with the reasoning written into the test rather than
+  leaving the decision unpinned — if someone later prefers the ellipsis, the
+  test tells them what they are trading away instead of just going red.
+- **The SMS tests probe for the character budget instead of recomputing it.**
+  Recomputing `max_len - len(prefix) - len(action)` in the test would make it
+  agree with `sms.py` by construction, and keep agreeing after either changed.
+  That is the exact failure this file exists to close.
+
+### What to take from this
+
+Every one of these was invisible to review. Two rounds of it looked at
+`_explained_outflow_for_coin` and saw correct code — which it is. Review can't
+see the difference between code that is right and code that is right *and
+held*. Mutation testing is the only tool here that has found that difference,
+five times in Tier 1 and thirty-five times now.
