@@ -320,18 +320,103 @@ def cmd_digest(args: argparse.Namespace) -> int:
 
 
 def cmd_ack(args: argparse.Namespace) -> int:
+    """Acknowledge an alert, by name.
+
+    `--as` is required once operator accounts exist, and not before. That is
+    the upgrade path: a deployment with no operators keeps working exactly as
+    it did, and attribution becomes mandatory the moment there is somebody to
+    attribute to (G-50). An unattributed ack on a system that has names would
+    be a hole in the record straight through the one command that is run from a
+    shell by whoever has SSH."""
+    from sentinel.operators import acknowledge_alert, is_active_operator, list_operators, operator_count
+
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
-    with db.cursor() as cur:
-        cur.execute(
-            "UPDATE alerts SET acknowledged_at = ? WHERE id = ? AND acknowledged_at IS NULL",
-            (datetime.now(timezone.utc).isoformat(), args.alert_id),
-        )
-        updated = cur.rowcount
-    if updated:
-        print(f"alert {args.alert_id} acknowledged")
+    actor = getattr(args, "as_operator", None)
+
+    if operator_count(db) > 0:
+        if not actor:
+            names = ", ".join(o["username"] for o in list_operators(db) if o["status"] == "active")
+            print(
+                f"--as <operator> is required: this alert's acknowledgement is recorded "
+                f"against a name. Active operators: {names or '(none active)'}",
+                file=sys.stderr,
+            )
+            return 2
+        if not is_active_operator(db, actor):
+            print(f"'{actor}' is not an active operator", file=sys.stderr)
+            return 2
+    elif actor:
+        print("no operator accounts exist - create one with `sentinel operator add`", file=sys.stderr)
+        return 2
+
+    if acknowledge_alert(db, args.alert_id, actor):
+        by = f" by {actor}" if actor else ""
+        print(f"alert {args.alert_id} acknowledged{by}")
         return 0
     print(f"alert {args.alert_id} not found or already acknowledged", file=sys.stderr)
     return 1
+
+
+def cmd_operator(args: argparse.Namespace) -> int:
+    """Manage operator accounts. Offboarding is `disable`, never a DELETE:
+    removing the row would orphan every action the person ever took."""
+    from sentinel.operators import (
+        create_operator,
+        disable_operator,
+        enable_operator,
+        list_operators,
+        set_operator_password,
+    )
+
+    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+
+    if args.operator_command == "list":
+        rows = list_operators(db)
+        if not rows:
+            print("no operator accounts yet - the ops dashboard is unprotected until one exists")
+            return 0
+        print(f"{'USERNAME':<20}{'STATUS':<12}{'LAST LOGIN':<28}NAME")
+        for row in rows:
+            print(f"{row['username']:<20}{row['status']:<12}"
+                  f"{(row['last_login_at'] or '—'):<28}{row['display_name'] or ''}")
+        return 0
+
+    username = args.username
+    if args.operator_command in ("add", "passwd"):
+        password = args.password or getpass.getpass("password: ")
+        confirm = args.password or getpass.getpass("confirm: ")
+        if password != confirm:
+            print("passwords do not match", file=sys.stderr)
+            return 1
+        if len(password) < 12:
+            # Not a policy, a floor. These accounts gate every customer's
+            # contact details and every stored API key.
+            print("password must be at least 12 characters", file=sys.stderr)
+            return 1
+
+    try:
+        if args.operator_command == "add":
+            create_operator(db, username, password, display_name=args.name)
+            print(f"operator '{username}' created - the ops dashboard now requires a sign-in")
+        elif args.operator_command == "passwd":
+            if not set_operator_password(db, username, password):
+                print(f"no such operator '{username}'", file=sys.stderr)
+                return 1
+            print(f"password updated for '{username}'")
+        elif args.operator_command == "disable":
+            if not disable_operator(db, username):
+                print(f"no such operator '{username}'", file=sys.stderr)
+                return 1
+            print(f"operator '{username}' disabled - existing sessions stop working immediately")
+        elif args.operator_command == "enable":
+            if not enable_operator(db, username):
+                print(f"no such operator '{username}'", file=sys.stderr)
+                return 1
+            print(f"operator '{username}' enabled")
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    return 0
 
 
 def cmd_set_contact(args: argparse.Namespace) -> int:
@@ -424,7 +509,25 @@ def main() -> None:
     digest_parser.add_argument("--hours", type=int, default=24)
     digest_parser.set_defaults(func=cmd_digest)
 
+    operator_parser = sub.add_parser("operator", help="Manage operator accounts (ops dashboard sign-in)")
+    operator_sub = operator_parser.add_subparsers(dest="operator_command", required=True)
+    for name, help_text in (
+        ("add", "Create an operator account"),
+        ("passwd", "Change an operator's password"),
+        ("disable", "Disable an operator (offboarding; keeps their name for attribution)"),
+        ("enable", "Re-enable a disabled operator"),
+    ):
+        sp = operator_sub.add_parser(name, help=help_text)
+        sp.add_argument("username")
+        if name in ("add", "passwd"):
+            sp.add_argument("--password", help="Prompted for if omitted")
+        if name == "add":
+            sp.add_argument("--name", help="Display name")
+    operator_sub.add_parser("list", help="List operator accounts")
+    operator_parser.set_defaults(func=cmd_operator)
+
     ack_parser = sub.add_parser("ack", help="Acknowledge an alert by id (stops CRITICAL escalation)")
+    ack_parser.add_argument("--as", dest="as_operator", help="Operator acknowledging this alert")
     ack_parser.add_argument("alert_id", type=int)
     ack_parser.set_defaults(func=cmd_ack)
 

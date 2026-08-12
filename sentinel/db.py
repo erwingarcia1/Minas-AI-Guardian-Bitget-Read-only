@@ -86,6 +86,10 @@ class Database:
         migrations = (
             "ALTER TABLE alerts ADD COLUMN escalated_at TEXT",
             "ALTER TABLE alerts ADD COLUMN delivered_to INTEGER NOT NULL DEFAULT 0",
+            # Nullable on purpose (G-50): a detector firing has no person behind
+            # it, and existing rows are not backfilled with a guess.
+            "ALTER TABLE alerts ADD COLUMN acknowledged_by TEXT",
+            "ALTER TABLE events ADD COLUMN actor TEXT",
             "ALTER TABLE accounts ADD COLUMN exchange TEXT NOT NULL DEFAULT 'bitget'",
             "ALTER TABLE accounts ADD COLUMN alert_email TEXT",
             "ALTER TABLE accounts ADD COLUMN alert_phone TEXT",

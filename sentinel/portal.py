@@ -8,7 +8,6 @@ import logging
 import secrets
 import threading
 import time
-from collections import defaultdict, deque
 from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
@@ -22,6 +21,8 @@ from sentinel.dashboard import (
     _ts,
 )
 from sentinel.db import Database
+from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
+from sentinel.passwords import LoginThrottle
 
 logger = logging.getLogger("sentinel.portal")
 
@@ -37,8 +38,6 @@ _SECRET_KEY_ROW = "session_signing_secret"
 
 # Login throttling: after this many failures per email or per client IP in
 # the window, further attempts are rejected without checking the password.
-_MAX_FAILURES = 5
-_FAILURE_WINDOW_SECONDS = 15 * 60
 
 
 # --- password hashing (scrypt, stdlib) --------------------------------------
@@ -71,8 +70,8 @@ def verify_password(password: str, encoded: str) -> bool:
 # A single precomputed scrypt hash used to equalize login timing for unknown
 # emails: verifying against it costs exactly ONE scrypt op, the same as the
 # real-email path, so response time never reveals whether an email is
-# registered. Built once at import.
-_DUMMY_HASH = hash_password(secrets.token_hex(16))
+# registered. Shared with the operator login from sentinel.passwords - the
+# primitives are common, the identities deliberately are not.
 
 
 # --- member records ----------------------------------------------------------
@@ -187,30 +186,6 @@ def verify_session_token(secret: bytes, token: str, now: float | None = None) ->
         return None
 
 
-class LoginThrottle:
-    """Sliding-window failure counter per key (email or client IP)."""
-
-    def __init__(self, max_failures: int = _MAX_FAILURES, window: float = _FAILURE_WINDOW_SECONDS):
-        self._max = max_failures
-        self._window = window
-        self._failures: dict[str, deque] = defaultdict(deque)
-        self._lock = threading.Lock()
-
-    def blocked(self, key: str, now: float | None = None) -> bool:
-        now = now if now is not None else time.time()
-        with self._lock:
-            q = self._failures[key]
-            while q and q[0] <= now - self._window:
-                q.popleft()
-            return len(q) >= self._max
-
-    def record_failure(self, key: str, now: float | None = None) -> None:
-        with self._lock:
-            self._failures[key].append(now if now is not None else time.time())
-
-    def reset(self, key: str) -> None:
-        with self._lock:
-            self._failures.pop(key, None)
 
 
 # --- pages -------------------------------------------------------------------

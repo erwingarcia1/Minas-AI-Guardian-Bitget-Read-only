@@ -1538,3 +1538,71 @@ which is also what actually happens.
 10 tests, written first, all red. Three mutations — sends unguarded again,
 `delivered_to` hardcoded to 1, and the page removed — each red-lighting only
 its own guards. Full suite green at 339.
+
+---
+
+## #54 (G-50) · Operator identity
+
+The largest remaining unblocker: #40, #41, #32 and G-12's last criterion all
+wait on it.
+
+### Judgment calls
+
+**Separate tables, separate logins, separate session secrets.** The issue is
+explicit that conflating operator and customer identity is how an operator ends
+up reachable through a customer login, so `operators` is its own table reached
+through its own form, and its session secret lives in `operator_meta` rather
+than `portal_meta` — a leak of one must not mint sessions for the other. A test
+asserts each credential fails against the other's login.
+
+Only the *primitives* are shared, moved into `sentinel/passwords.py`. Sharing a
+scrypt call is not conflating identity; duplicating the crypto so the two could
+drift would be worse. (This also resolved a circular import — `portal` already
+imports `dashboard`, so the login throttle had to live somewhere neutral.)
+
+**Sign-in becomes mandatory only once an operator exists.** This is the config
+reversal's lesson applied before it could bite: shipping operator identity must
+not lock an existing deployment out of its own dashboard during an upgrade.
+Until somebody runs `sentinel operator add`, the page behaves exactly as it
+always has — and carries a red banner saying it is unprotected, which was true
+before this change too and was written down nowhere the operator would see it.
+
+Same shape for `sentinel ack`: `--as` is required once operators exist and not
+before, so a deployment with no accounts keeps working and attribution becomes
+mandatory the moment there is somebody to attribute to.
+
+**Disable, never delete.** Deleting an operator would orphan every action they
+ever took, and the entire point of having names is that the log can still point
+at one. `disable_operator` also had to revoke *live* sessions, not just block
+new sign-ins — otherwise a session minted before offboarding stays valid for
+its full 12 hours and `disable` is a promise rather than a control. So
+`session_operator` re-checks status on every request rather than trusting the
+token. Mutation-tested both ways.
+
+**Adding a customer wrote no event at all.** The issue lists it as an
+unattributed action, which I read as "the row has no actor" — it is worse than
+that: there was no row. `onboard_account` now appends a `customer_added` event,
+so there is something for an actor to hang off.
+
+**Nullable actors, nothing backfilled.** A detector firing has nobody behind
+it. Filling the column in with a guess would make the log say a person acted
+when none did, which is worse than saying nothing — and the issue asks for
+exactly this. There is a test that an unattributed shell ack records
+`acknowledged_by = NULL` rather than inventing a name.
+
+**A 12-character password floor, not a policy.** These accounts gate every
+customer's contact details and every stored API key. I did not add complexity
+rules, expiry, or history — those are opinions, and this is a floor.
+
+### What this does *not* do
+
+2FA. #32's fourth criterion ("operator accounts must have 2FA") is now
+buildable — there is an account to protect — but it is that issue's work, and
+the standing instruction is not to build 2FA flows without eyes on them.
+
+### Verification
+
+26 tests, written first. Four mutations — removing the auth gate, trusting the
+session without re-checking status, letting a disabled operator's password
+still verify, and dropping the `--as` requirement — each red-lighting only its
+own guards. Full suite green at 365; coverage up to 82.6%.

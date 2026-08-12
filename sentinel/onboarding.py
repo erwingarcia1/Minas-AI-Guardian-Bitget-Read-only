@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
+from sentinel.events import append_event
 from sentinel.exchange import SUPPORTED_EXCHANGES, ExchangeClient, TamperSignal, make_client
 
 
@@ -216,6 +217,7 @@ def onboard_account(
     secret: str,
     passphrase: str,
     exchange: str = "bitget",
+    actor: str | None = None,
     alert_email: str | None = None,
     alert_phone: str | None = None,
     customer_name: str | None = None,
@@ -272,5 +274,15 @@ def onboard_account(
     from sentinel.baseline import seed_baseline  # local import avoids a module cycle
 
     seed_baseline(db, account_id, client)
+
+    # The act of onboarding is itself something a person did, and until G-50
+    # it left no trace at all - no event row, so no "who added this customer".
+    # `actor` is None when it came from the CLI on a system with no operator
+    # accounts, which is honest: there was nobody to name.
+    append_event(
+        db, account_id, "customer_added", "LOW",
+        {"label": label, "exchange": exchange, "topology": topology},
+        actor=actor,
+    )
 
     return OnboardingResult(account_id=account_id, label=label)

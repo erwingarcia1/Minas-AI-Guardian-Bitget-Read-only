@@ -9,6 +9,16 @@ from urllib.parse import parse_qs, urlparse
 
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
+from sentinel.events import append_event
+from sentinel.operators import (
+    SESSION_COOKIE,
+    check_operator_login,
+    make_session_token,
+    operator_count,
+    session_operator,
+    session_secret,
+)
+from sentinel.passwords import LoginThrottle
 
 logger = logging.getLogger("sentinel.dashboard")
 
@@ -225,6 +235,44 @@ def _fail_cell(n: int) -> str:
     return f'<span class="fail">{n}</span>' if n else '<span class="zero">0</span>'
 
 
+def _render_operator_login(error: str | None = None) -> str:
+    """The ops sign-in. Deliberately says nothing about which usernames exist -
+    one message for a bad username and a bad password alike."""
+    banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
+    body = (
+        banner
+        + '<section><div class="card"><div class="card-head"><h2>Operator sign-in</h2>'
+        '<span class="count">Minas staff only</span></div>'
+        '<form class="addf" method="post" action="/login">'
+        '<div class="grid2">'
+        '<div class="fld"><label>Username</label>'
+        '<input type="text" name="username" autocomplete="username" required></div>'
+        '<div class="fld"><label>Password</label>'
+        '<input type="password" name="password" autocomplete="current-password" required></div>'
+        '</div><div style="margin-top:18px">'
+        '<button class="submit" type="submit">Sign in</button></div>'
+        "</form></div></section>"
+    )
+    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False)
+
+
+def _unprotected_banner() -> str:
+    """Shown while no operator account exists.
+
+    Shipping operator identity must not lock an existing deployment out of its
+    own dashboard, so sign-in only becomes mandatory once there is somebody to
+    sign in as (G-50). Until then the page behaves exactly as it always has -
+    and says so, because "the network is the only thing protecting this" is
+    true either way and was previously written down nowhere the operator would
+    see it."""
+    return (
+        '<div class="banner err">✕ <b>No operator accounts exist</b> — anyone who can reach '
+        "this page can add customers and read every customer's contact details. Create one with "
+        "<code>sentinel operator add &lt;username&gt;</code> and this page will require a "
+        "sign-in.</div>"
+    )
+
+
 def _rules_banner(rules) -> str:
     """Shown when config/rules.yaml on disk was rejected (G-12).
 
@@ -297,6 +345,8 @@ def _render(db: Database, rules=None) -> str:
         f'<span class="live"><span class="dot"></span> Live · <span id="liveclock">{now.strftime("%H:%M:%S UTC")}</span></span>'
     )
     body = (
+        _unprotected_banner() if operator_count(db) == 0 else ""
+    ) + (
         _rules_banner(rules)
         + '<div class="kpis">'
         f'<div class="kpi"><div class="label">Accounts monitored</div><div class="val">{total}</div>'
@@ -665,6 +715,11 @@ def serve_dashboard(
     authenticating proxy. In Docker the container sets `0.0.0.0` and the
     loopback *publish* in docker-compose.yml is what gates it instead."""
 
+    # Shared across requests for this server, like the portal's. Throttles by
+    # client IP and by username, so neither a single source nor a single
+    # account can be ground down.
+    _login_throttle = LoginThrottle()
+
     def _same_origin(handler) -> bool:
         origin = handler.headers.get("Origin")
         if not origin:
@@ -679,8 +734,49 @@ def serve_dashboard(
             self.end_headers()
             self.wfile.write(body)
 
+        def _operator(self) -> str | None:
+            """The signed-in operator, or None.
+
+            Re-derived per request rather than trusted from the token, so
+            disabling an account takes effect immediately instead of at the end
+            of a 12-hour session."""
+            raw = self.headers.get("Cookie") or ""
+            for part in raw.split(";"):
+                name, _, value = part.strip().partition("=")
+                if name == SESSION_COOKIE:
+                    return session_operator(db, value)
+            return None
+
+        def _gate(self) -> bool:
+            """True when the request may proceed.
+
+            Sign-in is required only once an operator account exists. That is
+            the upgrade path: shipping this must not lock an existing
+            deployment out of its own dashboard, which is the same mistake as
+            refusing to start on a config a previous build accepted. Until
+            somebody creates an account the page behaves as it always has, and
+            says loudly that it is unprotected."""
+            if operator_count(db) == 0 or self._operator() is not None:
+                return True
+            self._send(_render_operator_login().encode(), 401)
+            return False
+
         def do_GET(self):
             path = urlparse(self.path).path.rstrip("/") or "/"
+            if path == "/login":
+                self._send(_render_operator_login().encode())
+                return
+            if path == "/logout":
+                self.send_response(303)
+                self.send_header("Location", "/login")
+                self.send_header(
+                    "Set-Cookie", f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+                )
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            if not self._gate():
+                return
             if path == "/metrics/raw":
                 from sentinel.metrics import raw_exposition
 
@@ -717,6 +813,11 @@ def serve_dashboard(
 
         def do_POST(self):
             post_path = urlparse(self.path).path.rstrip("/")
+            if post_path == "/login":
+                self._login()
+                return
+            if not self._gate():
+                return
             if post_path == "/portal-access":
                 self._portal_access()
                 return
@@ -750,7 +851,8 @@ def serve_dashboard(
             try:
                 label = generate_unique_label(db, g("name"))
                 result = onboard_account(
-                    db, cipher, label=label, topology=g("topology") or "independent",
+                    db, cipher, actor=self._operator(),
+                    label=label, topology=g("topology") or "independent",
                     exchange=g("exchange") or "bitget", api_key=g("api_key"), secret=g("secret"),
                     passphrase=g("passphrase"), customer_name=g("name"),
                     alert_email=g("email") or None, alert_phone=g("phone") or None,
@@ -811,13 +913,60 @@ def serve_dashboard(
 
             password = _secrets.token_urlsafe(12)
             set_member_password(db, email, password)
-            logger.info("portal password generated for account %d (%s contact)", aid, contact)
+            actor = self._operator()
+            logger.info(
+                "portal password generated for account %d (%s contact) by %s",
+                aid, contact, actor or "an unattributed operator",
+            )
+            # Handing someone a credential is an act with a person behind it,
+            # and it now leaves a row naming them (G-50).
+            append_event(
+                db, aid, "member_portal_password_generated", "LOW",
+                {"contact": contact, "email": email.strip().lower()}, actor=actor,
+            )
             notice = (
                 f'<div class="banner ok">✓ Member portal password — {html.escape(title)}, '
                 f"<b>{html.escape(email.strip().lower())}</b>: <code>{html.escape(password)}</code>"
                 " — copy it now, it is shown only once.</div>"
             )
             self._send(_render_account(db, aid, notice_html=notice).encode())
+
+        def _login(self):
+            length = int(self.headers.get("Content-Length", 0))
+            if length <= 0 or length > 4 * 1024:
+                self._send(_render_operator_login("empty or oversized submission").encode(), 400)
+                return
+            form = parse_qs(self.rfile.read(length).decode("utf-8"))
+            username = (form.get("username", [""])[0] or "").strip()
+            password = form.get("password", [""])[0] or ""
+
+            client_ip = self.client_address[0] if self.client_address else "?"
+            if _login_throttle.blocked(f"ip:{client_ip}") or _login_throttle.blocked(f"user:{username.lower()}"):
+                logger.warning("operator login throttled for %s from %s", username, client_ip)
+                self._send(_render_operator_login("too many attempts - wait and try again").encode(), 429)
+                return
+
+            if not check_operator_login(db, username, password):
+                _login_throttle.record_failure(f"ip:{client_ip}")
+                _login_throttle.record_failure(f"user:{username.lower()}")
+                logger.warning("failed operator login for %r from %s", username, client_ip)
+                # One message for a bad username and a bad password alike, so
+                # the form is not an oracle for which accounts exist.
+                self._send(_render_operator_login("invalid username or password").encode(), 401)
+                return
+
+            _login_throttle.reset(f"ip:{client_ip}")
+            _login_throttle.reset(f"user:{username.lower()}")
+            logger.info("operator %s signed in from %s", username.lower(), client_ip)
+            token = make_session_token(session_secret(db), username)
+            self.send_response(303)
+            self.send_header("Location", "/")
+            self.send_header(
+                "Set-Cookie",
+                f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200",
+            )
+            self.send_header("Content-Length", "0")
+            self.end_headers()
 
         def log_message(self, *args):  # keep stdout JSON-clean
             pass
