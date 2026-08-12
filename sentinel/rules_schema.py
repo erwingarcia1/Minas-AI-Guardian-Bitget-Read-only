@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """What a valid config/rules.yaml looks like.
 
 Every setting the code actually reads is declared here, with a constraint
@@ -18,6 +16,8 @@ Unknown keys are rejected too. A misspelled key is the quietest failure of the
 lot: it parses as valid YAML, the reader falls through to its default, and the
 operator goes away believing the new value took effect.
 """
+
+from __future__ import annotations
 
 import difflib
 from decimal import Decimal

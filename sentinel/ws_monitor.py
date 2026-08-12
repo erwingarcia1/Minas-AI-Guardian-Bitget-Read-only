@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import time
 
@@ -84,10 +85,10 @@ class WebSocketMonitor:
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
-            try:
+            # Shutdown path: a close that fails must not mask the reason we
+            # are shutting down.
+            with contextlib.suppress(Exception):
                 await self._exchange.close()
-            except Exception:  # noqa: BLE001
-                pass
 
     def stop(self) -> None:
         self._stop.set()

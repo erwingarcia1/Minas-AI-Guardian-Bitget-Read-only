@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from sentinel.exchange import BinanceClient, BitgetClient, BybitClient, ExchangeClient, OKXClient, make_client
+from sentinel.exchange import BinanceClient, BitgetClient, BybitClient, OKXClient, make_client
 from sentinel.poller import _load_client
 
 

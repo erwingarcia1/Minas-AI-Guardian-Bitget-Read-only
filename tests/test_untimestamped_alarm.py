@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """G-48 (#52): an operator is paged when an exchange stops stamping times.
 
 The counter has existed since 163021e and its resting value is exactly zero, so
@@ -7,6 +5,8 @@ the threshold is derived rather than chosen: any increase at all is anomalous.
 What was missing was something watching it and somewhere for the page to go —
 the latter arrived with #53.
 """
+
+from __future__ import annotations
 
 import pytest
 

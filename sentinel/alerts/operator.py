@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Paging scoped to Minas rather than to a customer (G-49).
 
 The gap this closes was never "we have no way to reach ourselves" -
@@ -26,6 +24,8 @@ cannot report the process or the machine dying, because nothing in-process can,
 and an alarm that depends on the thing it monitors is not an alarm. Closing
 G-49 does not mean we would know if Guardian stopped.
 """
+
+from __future__ import annotations
 
 import hashlib
 import json

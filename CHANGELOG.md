@@ -97,6 +97,25 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   per pass, by the quantity-drop path that already walks them.
 
 ### Added
+- **CI enforces style, coverage, dependency vulnerabilities and version
+  agreement (G-46, #50).** Four gates that previously depended on memory.
+  **Ruff** with a rule set chosen to catch mistakes rather than impose a house
+  style — `FURB157` is off because it would rewrite `Decimal("0")` to
+  `Decimal(0)` and the string form is load-bearing in the money code; `SIM118`
+  is off because `"col" in row.keys()` on a `sqlite3.Row` is genuinely not
+  `"col" in row` (iterating a Row yields *values*), so the "simplification"
+  would turn a column-presence check into a value search. **Coverage** floored
+  at the measured 78% rather than a round aspiration, since the criterion is
+  that it not *silently decline*. **`pip-audit .`**, scoped to the
+  dependencies this project declares rather than the whole environment — a bare
+  `pip-audit` reports advisories against the runner's own pip, which nobody can
+  act on from this repo and which is the fastest way to teach a team to ignore
+  a security gate. **Version agreement** as a test rather than a CI-only
+  script, so it fails on the machine of whoever forgot. That one found a real
+  disagreement: `pyproject.toml` said `0.1.0` while the CHANGELOG's newest
+  release heading was `1.0.0` — the package version was never bumped, and
+  nothing anywhere would have said so. `sentinel.__version__` is now derived
+  from installed metadata rather than written down a third time.
 - **An operator is paged when an exchange stops stamping times (G-48, #52).**
   First alarm through the G-49 door. The threshold is *derived* rather than
   chosen: `sentinel_untimestamped_records_total` has a resting value of exactly

@@ -2,11 +2,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from sentinel.exchange import BinanceClient, OKXClient, make_client
 from sentinel.onboarding import _binance_read_only, _okx_read_only, verify_read_only
-
 
 # ---------------- OKX gate ----------------
 

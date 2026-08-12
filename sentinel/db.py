@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -45,10 +46,9 @@ class Database:
             "ALTER TABLE accounts ADD COLUMN sms_alerts_enabled INTEGER NOT NULL DEFAULT 1",
         )
         for ddl in migrations:
-            try:
+            # Already-applied ALTERs raise; that is the no-op case, not a failure.
+            with contextlib.suppress(sqlite3.OperationalError):
                 self._conn.execute(ddl)
-            except sqlite3.OperationalError:
-                pass
         self._conn.commit()
 
     @contextmanager

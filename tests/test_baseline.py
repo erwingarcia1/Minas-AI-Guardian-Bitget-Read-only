@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock
-
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from unittest.mock import MagicMock
 
 from sentinel.baseline import (
     is_known_address,

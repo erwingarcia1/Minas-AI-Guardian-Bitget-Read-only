@@ -20,8 +20,25 @@ jobs:
       - name: Install
         run: pip install -e ".[dev]"
 
+      - name: Lint
+        run: ruff check sentinel tests
+
+      # The floor is measured, not aspirational: the suite was at 78.87% when
+      # this gate was added, so 78 is the real number with a fraction of
+      # rounding headroom. The criterion is that coverage doesn't *silently
+      # decline*, which means the floor has to sit just under where we actually
+      # are - a round 80 would fail on day one, and a round 50 would let half
+      # the suite rot away without a word. Raise it when the number rises.
       - name: Test (mocked CCXT — no network to any exchange)
-        run: pytest -q
+        run: pytest -q --cov=sentinel --cov-report=term-missing --cov-fail-under=78
+
+      # Audits the dependencies this project declares, resolved from
+      # pyproject.toml. Deliberately not a bare `pip-audit`, which audits the
+      # whole environment and reports advisories against the runner's own pip
+      # and setuptools - findings nobody can act on from this repo, and the
+      # fastest way to teach a team to ignore a security gate.
+      - name: Dependency vulnerability scan
+        run: pip-audit .
 
       - name: Compose config is valid
         run: |

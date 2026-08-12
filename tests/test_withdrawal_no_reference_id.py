@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """G-11 (#15): a withdrawal the exchange reports without a reference ID must
 still be alerted.
 
@@ -15,6 +13,8 @@ with a withdrawal nobody told them about:
    share one dedup key, and the second is suppressed as a repeat of the first
    for the whole CRITICAL cooldown.
 """
+
+from __future__ import annotations
 
 from unittest.mock import MagicMock
 

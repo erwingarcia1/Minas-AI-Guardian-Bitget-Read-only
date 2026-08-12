@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """In-process alarms on the product's own health (G-48).
 
 An alarm here watches a condition the running process can observe about itself
@@ -16,6 +14,8 @@ single-container deployment or duplicating operator credentials into a second
 config, and the reusable seam is `OperatorAlerter`, which any future
 Alertmanager webhook can also land on.
 """
+
+from __future__ import annotations
 
 import logging
 

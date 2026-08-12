@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """G-21 (#25): the second contact must actually be able to use the portal.
 
 `alert_email_secondary` could be recorded, and alerts were routed to it, but the
@@ -13,6 +11,8 @@ portal was primary-only in both directions:
 A second pair of eyes that can be alerted but can't look anything up is not the
 cover the customer was promised.
 """
+
+from __future__ import annotations
 
 import http.client
 import urllib.parse
@@ -221,7 +221,6 @@ def test_the_portal_offers_no_way_to_change_settings_or_remove_accounts(db, ciph
             conn.request("POST", path, urllib.parse.urlencode({"account_id": 1}),
                          {"Content-Type": "application/x-www-form-urlencoded", "Cookie": session})
             status = conn.getresponse().status
-            conn.getresponse if False else None
             assert status in (404, 405, 403), (
                 f"POST {path} returned {status} - the member portal has grown a "
                 f"state-changing route, and the secondary contact can reach it"

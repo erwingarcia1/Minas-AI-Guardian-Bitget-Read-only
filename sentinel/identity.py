@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """Stable identities for exchange records, so each one is judged exactly once.
 
 Every detector in the fast loop asks the same question first: *have I already
@@ -15,6 +13,8 @@ answer. They must, in fact: an identity used for storage but not for alert
 dedup gets a record past the first gate only to have it silently collapsed at
 the second.
 """
+
+from __future__ import annotations
 
 import hashlib
 import json

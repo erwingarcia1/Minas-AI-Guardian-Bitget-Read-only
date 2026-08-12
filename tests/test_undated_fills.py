@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """G-47 (#51): a fill the exchange didn't stamp with a time must still be
 price-checked and fee-checked - exactly once.
 
@@ -10,6 +8,8 @@ was never examined - not on that cycle, not on any later one - while the same
 fill still reached the new-pair detector and the traded-pair baseline. The
 account looked watched.
 """
+
+from __future__ import annotations
 
 from datetime import datetime, timezone
 from decimal import Decimal

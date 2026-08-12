@@ -223,7 +223,9 @@ def cmd_digest(args: argparse.Namespace) -> int:
     from sentinel.alerts.digest import send_digest
 
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
-    rules = RulesConfig(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+    # Not bound: constructing it validates config/rules.yaml and refuses to
+    # run the digest on a config the poller would also be rejecting (G-12).
+    RulesConfig(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
     named = _build_named_channels()
     # Digest goes to telegram + email when configured.
     targets = [c for name, c in named.items() if name in ("telegram", "email")]

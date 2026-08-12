@@ -182,8 +182,9 @@ class ContactRouter:
     def _send_sms(self, detection, alert, account_label, phones, account_id, alert_id, auditable) -> None:
         # Member preference: opted-out accounts get no SMS, except CRITICAL
         # when the business rule says a critical alert must still page.
-        if auditable and not self._sms_pref_enabled(account_id):
-            if detection.severity != "CRITICAL" or not self._critical_overrides_optout():
+        if auditable and not self._sms_pref_enabled(account_id) and (
+            detection.severity != "CRITICAL" or not self._critical_overrides_optout()
+        ):
                 self._record_sms(
                     account_id, alert_id, detection.rule, "skipped",
                     detail="sms_alerts disabled by member preference",

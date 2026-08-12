@@ -17,10 +17,8 @@ def format_sms_body(alert: AlertMessage, max_len: int = SMS_MAX_LEN) -> str:
     link (SENTINEL_PORTAL_URL, the member portal's public URL) is appended
     last and is never truncated away - only the free-text detail shrinks."""
     portal_url = (os.environ.get("SENTINEL_PORTAL_URL") or "").strip()
-    if portal_url:
-        action = f" Log in now to review: {portal_url}"
-    else:
-        action = " Log in to Minas AI Guardian now to review."
+    action = (f" Log in now to review: {portal_url}" if portal_url
+              else " Log in to Minas AI Guardian now to review.")
     prefix = f"Minas AI Guardian {alert.severity} alert: {alert.rule} on {alert.account_label}."
     detail = f" {alert.message}." if alert.message else ""
     room = max_len - len(prefix) - len(action)

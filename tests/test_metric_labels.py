@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """#55: `sentinel_untimestamped_records_total`'s `exchange` label carried the
 account label.
 
@@ -9,6 +7,8 @@ integration to go and look at* said which customer noticed instead — and the
 series grew a new dimension for every account signed, where the intended one
 has exactly four values.
 """
+
+from __future__ import annotations
 
 from decimal import Decimal
 from unittest.mock import MagicMock

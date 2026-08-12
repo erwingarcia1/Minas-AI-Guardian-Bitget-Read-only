@@ -1,7 +1,7 @@
-from __future__ import annotations
-
 """Sample CCXT-unified response shapes used across tests. Fixed values only -
 tests never hit a live exchange."""
+
+from __future__ import annotations
 
 
 def withdrawal_record(

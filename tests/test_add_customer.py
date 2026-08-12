@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import threading
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -152,13 +151,16 @@ def test_cross_origin_post_rejected(server):
 
 def test_account_detail_page(server, db, cipher, monkeypatch):
     from unittest.mock import MagicMock
-    import sentinel.onboarding as onb
+
     from sentinel.onboarding import onboard_account
 
     def mock(*a, **k):
-        c = MagicMock(); c.fetch_balance.return_value = {"total": {"BTC": 1.0}}
+        c = MagicMock()
+        c.fetch_balance.return_value = {"total": {"BTC": 1.0}}
         c.fetch_account_info.return_value = account_info_response(authorities="spot_account_r")
-        c.fetch_deposits.return_value = []; c.fetch_withdrawals.return_value = []; c.fetch_closed_orders.return_value = []
+        c.fetch_deposits.return_value = []
+        c.fetch_withdrawals.return_value = []
+        c.fetch_closed_orders.return_value = []
         return c
     monkeypatch.setattr("sentinel.onboarding.make_client", mock)
     r = onboard_account(db, cipher, label="acct-detail", topology="independent", exchange="bitget",
@@ -175,7 +177,8 @@ def test_account_detail_page(server, db, cipher, monkeypatch):
 
 
 def test_account_detail_not_found(server):
-    import urllib.error, urllib.request
+    import urllib.error
+    import urllib.request
     base, _ = server
     try:
         urllib.request.urlopen(f"{base}/account?id=99999")

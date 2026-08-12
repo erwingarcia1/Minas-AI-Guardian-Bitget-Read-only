@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """G-12 (#16): a typo in a threshold must be rejected loudly, not silently
 disable detection.
 
@@ -23,6 +21,8 @@ The system is not monitoring anything and says it is fine.
 That is broader than "silently disabling the rule": one typo silently disables
 everything.
 """
+
+from __future__ import annotations
 
 import logging
 from decimal import Decimal

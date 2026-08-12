@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 """G-49 (#53): a paging route scoped to Minas rather than to a customer.
 
 The gap was never "we can't reach ourselves" — `build_channels` already wires
@@ -10,6 +8,8 @@ had nowhere to be raised, and anything raised against a real account went
 through `AccountPoller._emit` → `ContactRouter.send` and told that customer
 about our problem.
 """
+
+from __future__ import annotations
 
 from unittest.mock import MagicMock
 

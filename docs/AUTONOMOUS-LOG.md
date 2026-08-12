@@ -743,3 +743,87 @@ is what found this; it would have shipped as false coverage otherwise.
 10 tests, written first. Three mutations, each red-lighting only its own guard:
 streak not resetting on a clean window; the window not enforced (after the test
 was fixed); `dedup_scope` dropped. Full suite green: 269 passed.
+
+---
+
+### G-46 (#50) · Automated code quality
+
+Four unchecked criteria, all now enforced in CI. The interesting part of this
+one was choosing what *not* to enforce.
+
+#### Judgment calls
+
+**Ruff's rule set is chosen to catch mistakes, not to impose a house style.**
+Run with everything on, it reported 128 findings — most of them arguments with
+decisions this codebase made on purpose. The two I explicitly turned off, with
+the reasoning written into `pyproject.toml` so nobody re-enables them without
+reading it:
+
+- `FURB157` (39 hits) would rewrite `Decimal("0")` to `Decimal(0)`. The string
+  form is load-bearing — `config/rules.yaml`'s own header says thresholds are
+  strings so they load as Decimal and never float. Enabling it would fight the
+  one convention the money code depends on.
+- `SIM118` (2 hits) wants `"col" in row.keys()` simplified to `"col" in row`.
+  On a `sqlite3.Row` that is **not the same expression**: iterating a Row
+  yields its *values*, so the "simplification" silently converts a
+  column-presence check into a value search. Both sites are the pre-migration
+  guards that decide which column to read off an old database. This one is
+  worth knowing about generally — it's a lint rule that will introduce a bug if
+  applied blindly.
+
+Also off: `UP017` (33 hits, `timezone.utc` → `datetime.UTC` — valid but pure
+churn) and `BLE001` (blind excepts that are deliberate, already carrying noqa
+and a comment about one bad account not stalling the fleet).
+
+**E402 was a real finding, and it was mine.** 45 hits, all from a pattern I'd
+followed from `tests/fixtures/ccxt_responses.py`: `from __future__ import
+annotations` *then* a triple-quoted string. That string is not a docstring — a
+docstring must be the first statement — so it's invisible to `help()`, to
+tooling, and to anyone using introspection. Twelve files fixed mechanically by
+moving the string above the future-import, which is where it belongs and where
+it becomes a real docstring. Four of those files were ones I created earlier
+today.
+
+**The style gate caught my own dead code**, on its first run:
+`conn.getresponse if False else None`, an editing artefact left in the G-21
+portal test. It did nothing and looked deliberate. Exactly the thing an
+automated check is for, and a small argument for having added it.
+
+**The coverage floor is measured, not aspirational.** The suite is at 78.87%,
+so the gate is 78. The criterion is that coverage must not *silently decline* —
+a round 80 would fail on day one, and a round 50 would let half the suite rot
+without a word. Raise it when the number rises.
+
+**`pip-audit .`, not bare `pip-audit`.** The bare form audits the whole
+environment and, run here, reported six advisories against the runner's own
+`pip`. Nobody can act on those from this repo, and a security gate that fires
+on things you cannot fix is the fastest way to teach a team to ignore it.
+Scoped to the project's declared dependencies, it is clean — and it will be
+loud for a real reason. Worth noting that `ccxt` is pinned to an exact version
+on purpose (adapter behaviour was verified against it), so a future advisory
+there is a deliberate re-verification rather than a bump.
+
+**Version agreement is a test, not a CI step.** It fails on the machine of
+whoever forgot, at the moment they forgot, rather than three minutes later in a
+pipeline they have already stopped watching.
+
+#### The disagreement it found
+
+`pyproject.toml` said `0.1.0`. `CHANGELOG.md`'s newest release heading is
+`[1.0.0] — 2026-07-05`. The package version was never bumped through four
+releases, and nothing anywhere would have said so — which is precisely the
+criterion. **I set `pyproject.toml` to `1.0.0`** to match the CHANGELOG, on the
+grounds that the CHANGELOG is the record of what was actually released. Calling
+it out because it's a judgment call about *which* of two disagreeing sources is
+right, and I picked the one with dates in it.
+
+`sentinel/__init__.py` was empty; it now derives `__version__` from installed
+metadata rather than writing the number down a third time.
+
+#### Verification
+
+4 new tests. Mutation checks: reverting `pyproject.toml` to `0.1.0` turns two
+red; appending a small unused-import/unused-variable function to a module turns
+ruff red. Coverage gate verified to pass at 78 and to have failed at 79 (the
+real number is 78.87 — I set the floor from the measurement rather than the
+other way round). `pip-audit .` clean. Full suite green: 273 passed.
