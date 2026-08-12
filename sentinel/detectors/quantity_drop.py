@@ -15,17 +15,25 @@ NEAR_MISS_PROBE_SECONDS = 300
 
 
 def _in_window(
-    record: dict, window_start_ms: int | None, source: str, exchange: str, metrics=None
+    record: dict, window_start_ms: int | None, source: str, exchange: str, metrics=None,
+    account_label: str | None = None,
 ) -> bool:
     """True if this record can be proven to fall at or after the window start.
 
     A record with no usable timestamp CANNOT be proven to be in-window, so it
     is excluded - it must not explain away a drop. Same principle as the
     read-only key check: when the system can't tell, it refuses to assume
-    safe. Each exclusion is logged with the exchange name AND counted on
+    safe. Each exclusion is logged AND counted on
     `sentinel_untimestamped_records_total`, because nobody reads logs on a
     quiet day: a Binance response-format change has to reach an operator
-    through an alarm, before it reaches a customer as a missed alert."""
+    through an alarm, before it reaches a customer as a missed alert.
+
+    `exchange` and `account_label` answer different questions and must not be
+    conflated (#55). The metric is labelled by exchange, because an alarm on it
+    needs to name the integration that changed, and because its cardinality has
+    to stay bounded by how many exchanges we support rather than by how many
+    customers we sign. The log line names the account, because that is what an
+    operator reading it wants to know."""
     if window_start_ms is None:
         return True
 
@@ -33,7 +41,7 @@ def _in_window(
     if raw is None:
         logger.warning(
             "%s: %s %s has no timestamp - not counting it as an explanation for a balance drop",
-            exchange,
+            account_label or exchange,
             source,
             record.get("id") or record.get("symbol") or "<unidentified>",
         )
@@ -46,7 +54,7 @@ def _in_window(
     except (TypeError, ValueError):
         logger.warning(
             "%s: %s %s has an unparseable timestamp %r - not counting it as an explanation",
-            exchange,
+            account_label or exchange,
             source,
             record.get("id") or record.get("symbol") or "<unidentified>",
             raw,
@@ -99,6 +107,7 @@ def detect_quantity_drop(
     window_start_ms: int | None = None,
     exchange: str = "exchange",
     metrics=None,
+    account_label: str | None = None,
 ) -> list[Detection]:
     """Flags a per-asset quantity decrease not explained by a withdrawal or
     a matching trade fill in the same window. Tracks quantity, not USD
@@ -122,11 +131,19 @@ def detect_quantity_drop(
     for spot/hold-style accounts in the pilot. See
     docs/phase0-capability-audit.md section 6 for the leveraged-futures gap
     and the Phase 2 fix (reconcile against contract account-bill liquidation
-    entries once that businessType enum is confirmed)."""
+    entries once that businessType enum is confirmed).
+
+    `exchange` labels the metrics and `account_label` names the account in log
+    lines. They were one argument until #55, which meant every undated-record
+    counter was keyed by customer instead of by integration."""
     withdrawals = [
-        w for w in withdrawals_in_window if _in_window(w, window_start_ms, "withdrawal", exchange, metrics)
+        w for w in withdrawals_in_window
+        if _in_window(w, window_start_ms, "withdrawal", exchange, metrics, account_label)
     ]
-    fills = [f for f in fills_in_window if _in_window(f, window_start_ms, "fill", exchange, metrics)]
+    fills = [
+        f for f in fills_in_window
+        if _in_window(f, window_start_ms, "fill", exchange, metrics, account_label)
+    ]
 
     # Records just outside the window, used only to report near misses: a
     # detection that a slightly wider settlement grace would have suppressed.
@@ -137,8 +154,14 @@ def detect_quantity_drop(
         probe_fills: list[dict] = []
     else:
         probe_start_ms = window_start_ms - NEAR_MISS_PROBE_SECONDS * 1000
-        probe_withdrawals = [w for w in withdrawals_in_window if _in_window(w, probe_start_ms, "withdrawal", exchange)]
-        probe_fills = [f for f in fills_in_window if _in_window(f, probe_start_ms, "fill", exchange)]
+        probe_withdrawals = [
+            w for w in withdrawals_in_window
+            if _in_window(w, probe_start_ms, "withdrawal", exchange, None, account_label)
+        ]
+        probe_fills = [
+            f for f in fills_in_window
+            if _in_window(f, probe_start_ms, "fill", exchange, None, account_label)
+        ]
 
     detections = []
     for coin, prev_qty in previous_balances.items():
@@ -157,7 +180,7 @@ def detect_quantity_drop(
                     "%s: near miss on %s - this detection would have been suppressed by a "
                     "settlement grace of up to %ds (explained in window: %s, with wider probe: %s). "
                     "Repeated near misses mean the grace is set too tight.",
-                    exchange,
+                    account_label or exchange,
                     coin,
                     NEAR_MISS_PROBE_SECONDS,
                     explained,

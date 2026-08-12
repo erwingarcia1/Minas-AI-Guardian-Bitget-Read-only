@@ -464,3 +464,36 @@ they are a contact there too. That is coherent and is what the card's "covers
 every account under this email" copy said, but it means the button is not
 scoped the way its placement on a single account's page suggests. Nothing to
 fix for this issue; worth knowing before anyone builds per-account sharing.
+
+---
+
+### #55 · Undated-record metric labelled with the account, not the exchange
+
+My own finding from G-47, fixed before it could set. The counter exists so a
+response-format change reaches an operator before a customer finds it as a
+missed alert — and the one field that would say *which integration to go and
+look at* said which customer noticed. Cardinality grew with the customer count
+instead of staying at the four values the dimension actually has.
+
+**Root cause:** `exchange` and the account label were one argument.
+`detect_quantity_drop(..., exchange=label)` in the poller, and inside
+`_in_window` that single value fed both `logger.warning` and
+`metrics.untimestamped_record`. Two different questions sharing one parameter,
+which is how they drifted — the same pattern as G-47's timestamp doing double
+duty and G-11's identity being needed at two gates. Three for three today.
+
+**Judgment call:** I split the argument rather than changing what the log line
+says. An operator reading a warning wants the account; an alarm binding to the
+metric wants the exchange. Both are right, and the fix is that they stop
+sharing. `_account_exchange` keeps `_load_client`'s existing default-to-bitget
+guard for pre-migration rows — a label of `"unknown"` there would be worse than
+a slightly optimistic one, because it would split the series an alarm binds to.
+
+Checked the issue's fourth criterion directly: `sentinel_untimestamped_records_
+total` is the only metric with an `exchange` label, and the remaining
+`exchange=` call sites in the tree are onboarding paths passing the real thing.
+
+**Verification:** 3 tests written first, all red. Mutation (restoring
+`exchange=label`) turns the poller-level one red while the two unit-level ones
+stay green — correct, since they call the detector directly and the conflation
+lived in the caller. Full suite green at 244.

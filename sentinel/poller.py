@@ -54,12 +54,19 @@ def _now_iso() -> str:
     return _now().isoformat()
 
 
+def _account_exchange(row) -> str:
+    """The account's exchange, for metric labels.
+
+    `exchange` may be absent on rows read from a pre-migration DB snapshot;
+    default to bitget to match the historical single-exchange behavior. A label
+    of `"unknown"` here would be worse than a slightly optimistic one - it would
+    split the series an alarm binds to."""
+    return (row["exchange"] if "exchange" in row.keys() else None) or "bitget"
+
+
 def _load_client(cipher: CredentialCipher, row) -> ExchangeClient:
-    # `exchange` may be absent on rows read from a pre-migration DB snapshot;
-    # default to bitget to match the historical single-exchange behavior.
-    exchange = row["exchange"] if "exchange" in row.keys() else "bitget"
     return make_client(
-        exchange,
+        _account_exchange(row),
         cipher.decrypt(row["encrypted_api_key"]),
         cipher.decrypt(row["encrypted_secret"]),
         cipher.decrypt(row["encrypted_passphrase"]),
@@ -387,7 +394,12 @@ class AccountPoller:
             tolerance_pct,
             tolerance_abs,
             window_start_ms=window_start_ms,
-            exchange=label,
+            # The metric dimension is the exchange; the log line names the
+            # account. Passing `label` for both keyed the undated-record
+            # counter by customer, so it named who noticed rather than which
+            # integration changed, and grew a series per account (#55).
+            exchange=_account_exchange(account_row),
+            account_label=label,
             metrics=self._metrics,
         ):
             self._emit(account_id, label, detection)

@@ -14,6 +14,15 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Fixed
+- **`sentinel_untimestamped_records_total` is labelled by exchange, not by
+  account (#55).** Every call site passed the *account label* into a metric
+  label named `exchange`, so the counter that exists to say *which integration
+  changed its response format* said which customer noticed instead — and grew a
+  new series for every account signed, where the intended dimension has exactly
+  four values. `exchange` and `account_label` are now separate arguments
+  through `detect_quantity_drop`: the metric takes the exchange, the log line
+  keeps naming the account. Worth doing before #52 binds a paging alarm to this
+  series, which is cheap now and a coordinated change later.
 - **The second contact can actually use the portal (G-21, #25).** A secondary
   alert email could be recorded and was already receiving alerts, but the
   portal was primary-only in both directions, so the second pair of eyes could
