@@ -189,6 +189,10 @@ def test_a_misspelled_key_is_rejected_and_names_the_intended_one(rules_path):
     assert rules.is_valid is False
     assert "tolerance_pc" in message
     assert "tolerance_pct" in message, "should suggest the key that was meant"
+    # Reported *and* not in force: the unrecognised key must not be served to
+    # anything either. Asserting only the message would let a config that
+    # complains and then hands the value out anyway pass.
+    assert rules.get("detectors", "quantity_drop", "tolerance_pc") is None
 
 
 def test_an_unknown_section_is_rejected(rules_path):
@@ -196,22 +200,29 @@ def test_an_unknown_section_is_rejected(rules_path):
     rules = RulesConfig(rules_path)
     assert rules.is_valid is False
     assert "detector" in rules.validation_error
+    assert rules.get("detector") is None, "the unknown section was still served"
 
 
 # --- values that parse but mean "never fire" --------------------------------
 
 @pytest.mark.parametrize(
-    "original,broken,setting",
+    "original,broken,setting,path",
     [
-        ('min_count: 3', 'min_count: 0', "min_count"),
-        ('multiplier: "5"', 'multiplier: "0"', "multiplier"),
-        ('ema_alpha: "0.2"', 'ema_alpha: "1.5"', "ema_alpha"),
-        ('ema_alpha: "0.2"', 'ema_alpha: "-0.2"', "ema_alpha"),
-        ('max_deviation_pct: "10"', 'max_deviation_pct: "-1"', "max_deviation_pct"),
-        ('tolerance_pct: "0.5"', 'tolerance_pct: "-0.5"', "tolerance_pct"),
+        ('min_count: 3', 'min_count: 0', "min_count",
+         ("detectors", "withdrawal_burst", "min_count")),
+        ('multiplier: "5"', 'multiplier: "0"', "multiplier",
+         ("detectors", "fee_anomaly", "multiplier")),
+        ('ema_alpha: "0.2"', 'ema_alpha: "1.5"', "ema_alpha",
+         ("detectors", "fee_anomaly", "ema_alpha")),
+        ('ema_alpha: "0.2"', 'ema_alpha: "-0.2"', "ema_alpha",
+         ("detectors", "fee_anomaly", "ema_alpha")),
+        ('max_deviation_pct: "10"', 'max_deviation_pct: "-1"', "max_deviation_pct",
+         ("detectors", "off_market", "max_deviation_pct")),
+        ('tolerance_pct: "0.5"', 'tolerance_pct: "-0.5"', "tolerance_pct",
+         ("detectors", "quantity_drop", "tolerance_pct")),
     ],
 )
-def test_a_value_that_breaks_its_own_formula_is_rejected(rules_path, original, broken, setting):
+def test_a_value_that_breaks_its_own_formula_is_rejected(rules_path, original, broken, setting, path):
     """Each of these parses as a number and is nonsense where it is used:
 
     - a burst of fewer than one withdrawal is not a burst
@@ -226,6 +237,11 @@ def test_a_value_that_breaks_its_own_formula_is_rejected(rules_path, original, b
     rules = RulesConfig(rules_path)
     assert rules.is_valid is False
     assert setting in rules.validation_error
+    # The half that matters at runtime. Being *told* about a value that then
+    # reaches the detector anyway is not a rejection - a mutation that kept the
+    # reporting and dropped the pruning passed every one of these cases before
+    # this line existed.
+    assert rules.get(*path) is None, f"the rejected {setting} was still served to readers"
 
 
 def test_detection_keeps_running_after_a_bad_edit(db, cipher, rules_path, monkeypatch):

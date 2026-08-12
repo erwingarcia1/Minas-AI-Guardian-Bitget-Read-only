@@ -1176,3 +1176,58 @@ Full suite green at 311, lint clean.
 Also exercised by hand against a deliberately-broken copy of the production
 config shape (decimal comma plus a stale key) to check the output is readable
 by someone under deploy pressure.
+
+---
+
+## Task 1 · Verifying the rewritten tests by mutation
+
+Asked to prove, by mutation rather than by reading, that the nine tests I
+rewrote when reversing the fail-closed decision still pin something. They do —
+but the check found that **my description of them was overstated**, and the
+overstatement was in exactly the direction that matters.
+
+### Mutation A — remove rejection handling entirely
+
+`validate()` returns no problems, and `_reject` records nothing and prunes
+nothing. Result: **all 11 rewritten instances go red.** (18 of the file's 20;
+the two survivors are correctly the ones describing behaviour that holds either
+way — the shipped config validating, and a legitimate retune being accepted.)
+
+So none of them were vacuous. That is the question I was asked, and the answer
+is clean.
+
+### Mutation B — the one that mattered
+
+"All red" only proves they pin *something*. I told the user I had rewritten them
+"to something stronger: that a rejected value is not merely reported but not in
+force". So I mutated exactly that claim: **keep** the reporting (`is_valid`
+False, message set, log, page) and remove **only** the pruning, so rejected
+values stay in force.
+
+Under that, **only 2 of the 11 went red.**
+
+The other nine asserted that the rejection was *reported* and nothing more. They
+would have caught validation being deleted. They would **not** have caught a
+config that complains about a bad value and then hands it to a detector anyway —
+which is the failure mode with actual teeth, because it looks correct from
+every angle except the one that matters.
+
+My claim was true of two tests and I stated it of all of them.
+
+### Fixed
+
+Added a "not in force" assertion to each: the misspelled key and unknown section
+must not be *served*, and the six formula cases now carry their full key path so
+absence can be asserted directly. Mutation B now turns **10 red instead of 2**.
+
+One remains structurally unable to pin it: the malformed-YAML case has no parsed
+data to leak, so there is nothing for pruning to remove. That is inherent rather
+than a gap, and it is noted in place.
+
+### What I take from it
+
+"All red under a full revert" is a weak check that reads like a strong one. The
+useful mutation is not *remove the feature* — it is **remove the specific
+property the test claims to pin**, one property at a time. A test suite can be
+100% mutation-killed against a coarse revert while pinning half of what its
+names promise.
