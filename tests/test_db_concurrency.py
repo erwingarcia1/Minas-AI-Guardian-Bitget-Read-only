@@ -21,6 +21,7 @@ and both racing to write the same `poll_state`.
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
@@ -196,11 +197,17 @@ def test_the_account_is_schedulable_again_once_its_task_completes(db, cipher):
     assert engine._queue.qsize() >= 1, "the account was never scheduled again"
 
 
-def test_fast_and_slow_loops_for_one_account_do_not_block_each_other(db, cipher):
+def test_fast_and_slow_loops_for_one_account_do_not_block_each_other(db, cipher, monkeypatch):
     """They read different things and write different state, so a pending slow
-    loop must not stop the fast loop that watches for withdrawals."""
+    loop must not stop the fast loop that watches for withdrawals.
+
+    Pinned to a fixed clock. This test used to depend on the *machine's uptime*
+    and passed or failed accordingly - see
+    `test_the_first_slow_poll_does_not_wait_for_machine_uptime` below for what
+    that was hiding."""
     _account(db, "acct-3")
     engine = _engine(db, cipher)
+    monkeypatch.setattr(time, "monotonic", lambda: 12.0)
 
     engine._schedule_cycle()
     kinds = []
@@ -208,6 +215,62 @@ def test_fast_and_slow_loops_for_one_account_do_not_block_each_other(db, cipher)
         kinds.append(engine._queue.get().kind)
 
     assert "fast" in kinds and "slow" in kinds
+
+
+def test_the_first_slow_poll_does_not_wait_for_machine_uptime(db, cipher, monkeypatch):
+    """`time.monotonic()` is seconds since **boot** on Linux, and `_last_slow`
+    used `0` to mean "never polled". So the first slow poll was gated on
+    `monotonic() - 0 >= slow_loop_seconds` - that is, on the machine having
+    been up for ten minutes, which has nothing to do with this account.
+
+    On a long-lived host monotonic is enormous and the check passes trivially,
+    which is why it went unnoticed. On a freshly booted one - a CI runner, a
+    rebooted VM, a container on a new instance - the slow loop simply does not
+    run for the first ten minutes of the machine's life. Permission-change and
+    balance-snapshot detection are exactly what you want established early on a
+    host that just came up.
+
+    "Never polled" is now `None` rather than `0`, so the question stops being
+    about the clock's origin."""
+    _account(db, "fresh-boot")
+    engine = _engine(db, cipher)
+
+    # A host that booted twelve seconds ago.
+    monkeypatch.setattr(time, "monotonic", lambda: 12.0)
+    engine._schedule_cycle()
+
+    kinds = []
+    while not engine._queue.empty():
+        kinds.append(engine._queue.get().kind)
+
+    assert "slow" in kinds, (
+        "the first slow poll was skipped because the machine had not been up long enough"
+    )
+
+
+def test_the_slow_interval_is_still_respected_after_the_first_poll(db, cipher, monkeypatch):
+    """The other half: making the first poll unconditional must not make every
+    poll unconditional, or the slow loop runs at the fast cadence and triples
+    the exchange calls per account."""
+    _account(db, "cadence")
+    engine = _engine(db, cipher)
+
+    clock = {"now": 12.0}
+    monkeypatch.setattr(time, "monotonic", lambda: clock["now"])
+
+    engine._schedule_cycle()
+    while not engine._queue.empty():
+        task = engine._queue.get()
+        engine._release(task.account_id, task.kind)
+
+    clock["now"] = 30.0  # well inside the 600s slow interval
+    engine._schedule_cycle()
+    kinds = []
+    while not engine._queue.empty():
+        kinds.append(engine._queue.get().kind)
+
+    assert "fast" in kinds
+    assert "slow" not in kinds, "the slow loop ran again inside its own interval"
 
 
 def test_a_failed_task_still_releases_the_account(db, cipher):

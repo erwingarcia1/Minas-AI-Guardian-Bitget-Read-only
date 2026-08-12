@@ -38,6 +38,18 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   back to every configured channel, loudly.
 
 ### Fixed
+- **The first slow poll no longer waits on the machine's uptime.**
+  `time.monotonic()` is seconds since *boot* on Linux, and the scheduler used
+  `0` to mean "this account has never had a slow poll" — so
+  `now - 0 >= slow_loop_seconds` was really asking *"has this host been up for
+  ten minutes?"*, a question about the machine with nothing to do with the
+  account. On a long-lived box monotonic is enormous and it passed trivially,
+  which is why it went unnoticed; on a freshly booted one — a CI runner, a
+  rebooted VM, a container on a new instance — the **slow loop did not run at
+  all for the first ten minutes of the machine's life**, delaying exactly the
+  permission-change and balance-snapshot baseline you most want established on
+  a host that just came up. "Never polled" is now `None` rather than `0`. Fixed
+  in both the engine scheduler and `poller.run_forever`.
 - **One failing alert channel no longer loses the alert entirely (#57).**
   `dispatch()` called `channel.send()` unguarded, and *before* writing the
   `alerts` row. A single raising channel therefore skipped every channel after

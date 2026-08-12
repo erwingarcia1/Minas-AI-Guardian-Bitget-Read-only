@@ -518,7 +518,11 @@ def run_forever(db: Database, cipher: CredentialCipher, rules: RulesConfig, chan
             account_id = account_row["id"]
             slow_interval = rules.get_seconds("polling", "slow_loop_seconds", default=600)
             now = time.monotonic()
-            if now - last_slow_loop.get(account_id, 0) >= slow_interval:
+            # Same "never polled is None, not 0" as Engine._schedule_cycle -
+            # monotonic() counts from boot, so comparing against 0 asked about
+            # the machine's uptime rather than this account's last slow poll.
+            last_slow = last_slow_loop.get(account_id)
+            if last_slow is None or now - last_slow >= slow_interval:
                 poller.run_slow_loop(account_row)
                 last_slow_loop[account_id] = now
 

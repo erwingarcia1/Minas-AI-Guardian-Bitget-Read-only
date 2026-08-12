@@ -137,7 +137,18 @@ class Engine:
             # The fast and slow loops read different things and write different
             # state, so they are claimed separately: a pending slow loop must
             # never hold up the loop that watches for withdrawals.
-            if now - self._last_slow.get(account_id, 0) >= slow_interval and self._claim(account_id, "slow"):
+            #
+            # "Never polled" is None, not 0. `time.monotonic()` is seconds since
+            # *boot* on Linux, so `now - 0 >= slow_interval` was really asking
+            # "has this machine been up for ten minutes?" - a question about the
+            # host that has nothing to do with this account. On a long-lived box
+            # monotonic is enormous and it passed trivially; on a freshly booted
+            # one the slow loop did not run at all for the first ten minutes of
+            # the machine's life, which is exactly when you want a permission
+            # and balance baseline established.
+            last_slow = self._last_slow.get(account_id)
+            due = last_slow is None or now - last_slow >= slow_interval
+            if due and self._claim(account_id, "slow"):
                 self._queue.put(Task(now + random.uniform(0, jitter), account_id, "slow"))
                 self._last_slow[account_id] = now
 
