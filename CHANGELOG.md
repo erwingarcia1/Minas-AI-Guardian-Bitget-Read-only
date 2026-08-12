@@ -14,6 +14,27 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Fixed
+- **The database no longer serialises every check, and one account is never
+  checked twice at once (G-45, #49).** Two defects that get worse with exactly
+  the thing the issue is about — more customers. *Contention:* one `sqlite3`
+  connection was shared across the whole worker pool with a single lock around
+  it, so every **read** queued behind every other read and write; eight workers
+  polling eight accounts spent their time waiting for a connection rather than
+  talking to exchanges. Now WAL, `synchronous = NORMAL`, a 5s busy timeout, and
+  a connection per thread — the write lock remains (SQLite has one writer
+  regardless) but readers no longer wait on it. The test suite dropped from
+  ~70s to ~41s as a side effect. *Double-checking:* the scheduler enqueued a
+  fast task per active account every `fast_loop_seconds` regardless of whether
+  the previous one had finished, so a poll slower than the interval — a slow
+  exchange, an open breaker, a backed-up queue — put two workers on one
+  account, both reading the same baseline, both judging the same records, both
+  racing to write the same `poll_state`. An in-flight claim now covers queued
+  *and* running, released in a `finally` so a raising poll can't leave an
+  account permanently unschedulable, and fast and slow loops are claimed
+  separately so a pending slow loop never holds up the loop watching for
+  withdrawals. A skipped cycle logs a warning: it's correct behaviour, but a
+  customer whose polls consistently overrun is being watched less often than
+  the dashboard implies.
 - **`sentinel_untimestamped_records_total` is labelled by exchange, not by
   account (#55).** Every call site passed the *account label* into a metric
   label named `exchange`, so the counter that exists to say *which integration

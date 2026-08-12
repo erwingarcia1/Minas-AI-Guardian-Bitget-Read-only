@@ -827,3 +827,81 @@ red; appending a small unused-import/unused-variable function to a module turns
 ruff red. Coverage gate verified to pass at 78 and to have failed at 79 (the
 real number is 78.87 — I set the floor from the measurement rather than the
 other way round). `pip-audit .` clean. Full suite green: 273 passed.
+
+---
+
+### G-45 (#49) · Database contention, and the same account checked twice
+
+Two criteria, two independent defects, both of which get worse with exactly the
+thing the issue is about.
+
+**Contention.** One `sqlite3` connection shared across the whole worker pool,
+with `Database.cursor()` taking a single lock around it. That lock was held for
+every *read* as well as every write, so eight workers polling eight accounts
+serialised against each other on the database while their actual work was
+waiting on exchange HTTP. The issue says this has already caused one incident;
+the mechanism is right there in the constructor comment ("One connection shared
+across the worker pool: serialize access").
+
+**Double-checking.** `_schedule_cycle` enqueued a fast task per active account
+every `fast_loop_seconds`, with no reference to whether the previous one had
+finished. Any poll slower than the interval — a slow exchange, an open circuit
+breaker, a backed-up queue — meant two workers on one account.
+
+#### Judgment calls
+
+**WAL plus a connection per thread, keeping the write lock.** WAL gives one
+writer and many concurrent readers, which is exactly the shape of this
+workload. The write lock stays because SQLite allows one writer regardless, and
+holding a Python lock is better than burning the busy timeout and surfacing
+`SQLITE_BUSY` as a failed poll.
+
+**I did not split it into a read/write lock**, which was the obvious next
+optimisation. `cursor()` yields an opaque block: a caller can read *and* write
+inside one `with`, and `record_seen_withdrawal` does precisely that — SELECT to
+check, INSERT if absent. Classifying blocks by intent would need every call site
+audited, and getting one wrong reintroduces a race in the code that decides
+whether a withdrawal is new. The contention that mattered was reads blocking
+reads, and WAL fixes that without the risk.
+
+**`synchronous = NORMAL`.** The documented companion to WAL: durable across
+process crashes, at risk only of losing the last transactions in a power loss.
+Everything written here is a snapshot or an append-only observation the next
+poll re-derives, so the trade is worth the per-write fsync it saves. Stated
+because it *is* a durability reduction and shouldn't be discovered later as a
+surprise.
+
+**`:memory:` keeps a single shared connection.** A second connection to
+`:memory:` is a second, empty database — thread-local connections there would
+silently lose every row written. There's a test for it, because this is the
+kind of thing that passes every unit test and then loses data in the one place
+it's used.
+
+**A skipped cycle logs a warning.** Skipping is correct, but silently skipping
+would mean a customer whose polls consistently overrun the interval is watched
+less often than the dashboard implies — the same class of "looks fine, isn't"
+this session has been clearing all day.
+
+**Release lives in a `finally`, and there's a test for the raising case.** A
+leaked claim would stop that account being checked for the lifetime of the
+process: a silent, permanent monitoring gap for one customer, which is strictly
+worse than the double-poll the guard exists to prevent.
+
+**Fast and slow loops are claimed separately.** They read different things and
+write different state. Sharing one claim would let a slow loop (permissions,
+balance snapshot — 10-minute cadence) hold up the fast loop that watches for
+withdrawals.
+
+#### Verification
+
+10 tests, written first, 6 failing. One is a genuine concurrency exercise:
+sixteen threads writing and reading in a loop, requiring all 320 rows and no
+errors. Mutations, each red-lighting only its own guard: forcing the shared
+connection; making `_claim` always succeed; moving `_release` out of the
+`finally`. Full suite green: 283 passed, coverage up to 79.18%.
+
+#### Surprising
+
+The suite went from ~70s to ~41s. The lock this removed was costing roughly
+40% of test wall-clock, which is a reasonable proxy for what it was costing the
+poller under a full worker pool.

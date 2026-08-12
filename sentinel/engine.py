@@ -72,6 +72,14 @@ class Engine:
         ) if metrics is not None else None
         self._queue: queue.Queue[Task] = queue.Queue()
         self._stop = threading.Event()
+        # (account_id, kind) pairs that are queued or currently running.
+        # The scheduler fires every fast_loop_seconds regardless of whether the
+        # previous poll finished, so a poll slower than the interval - a slow
+        # exchange, an open breaker, a backed-up queue - used to put two workers
+        # on one account: both reading the same baseline, both judging the same
+        # records, both racing to write the same poll_state (G-45).
+        self._inflight: set[tuple[int, str]] = set()
+        self._inflight_lock = threading.Lock()
 
         def _rate(key: str, default: str) -> float:
             return float(rules.get_decimal("rate_limits", key, default=Decimal(default)))
@@ -111,8 +119,20 @@ class Engine:
             self._metrics.set_active_accounts(len(active))
         for row in active:
             account_id = row["id"]
-            self._queue.put(Task(now + random.uniform(0, jitter), account_id, "fast"))
-            if now - self._last_slow.get(account_id, 0) >= slow_interval:
+            if self._claim(account_id, "fast"):
+                self._queue.put(Task(now + random.uniform(0, jitter), account_id, "fast"))
+            else:
+                # Not an error: the previous fast loop for this account is still
+                # in flight. Skipping is the correct behaviour, but a customer
+                # whose polls consistently overrun the interval is being watched
+                # less often than the dashboard implies, so say so.
+                logger.warning(
+                    "account %d still has a fast poll in flight - skipping this cycle", account_id
+                )
+            # The fast and slow loops read different things and write different
+            # state, so they are claimed separately: a pending slow loop must
+            # never hold up the loop that watches for withdrawals.
+            if now - self._last_slow.get(account_id, 0) >= slow_interval and self._claim(account_id, "slow"):
                 self._queue.put(Task(now + random.uniform(0, jitter), account_id, "slow"))
                 self._last_slow[account_id] = now
 
@@ -137,6 +157,24 @@ class Engine:
                     logger.error("untimestamped-record alarm failed: %s", exc)
             fast_interval = self._rules.get_seconds("polling", "fast_loop_seconds", default=45)
             self._stop.wait(max(1.0, fast_interval - (time.monotonic() - started)))
+
+    def _claim(self, account_id: int, kind: str) -> bool:
+        """Reserves this account for this kind of poll. False if one is already
+        queued or running."""
+        with self._inflight_lock:
+            key = (account_id, kind)
+            if key in self._inflight:
+                return False
+            self._inflight.add(key)
+            return True
+
+    def _release(self, account_id: int, kind: str) -> None:
+        """Always called from a `finally`. A claim leaked by a raising poll
+        would stop that account being checked for the lifetime of the process -
+        a silent, permanent monitoring gap for one customer, which is worse
+        than the double-poll this guard exists to prevent."""
+        with self._inflight_lock:
+            self._inflight.discard((account_id, kind))
 
     # --- workers -----------------------------------------------------------
 
@@ -175,6 +213,7 @@ class Engine:
                 logger.error("task failed account=%d kind=%s: %s", task.account_id, task.kind, exc)
                 self.breakers.for_account(task.account_id).record_failure()
             finally:
+                self._release(task.account_id, task.kind)
                 self._queue.task_done()
 
     def _consecutive_failures(self, account_id: int) -> int:
@@ -206,6 +245,14 @@ class Engine:
     def run_one_cycle(self) -> None:
         """Synchronous single pass (used by tests and the soak harness)."""
         self._schedule_cycle()
+        self._drain_once()
+
+    def _drain_once(self) -> None:
+        """Processes everything currently queued, on this thread.
+
+        Split out of run_one_cycle so a test can drive the worker body against
+        a task it queued itself - notably to prove that a poll which raises
+        still releases its in-flight claim."""
         while not self._queue.empty():
             task = self._queue.get()
             try:
@@ -225,6 +272,7 @@ class Engine:
                 else:
                     breaker.record_success()
             finally:
+                self._release(task.account_id, task.kind)
                 self._queue.task_done()
 
     def stop(self) -> None:
