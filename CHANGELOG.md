@@ -97,6 +97,21 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   per pass, by the quantity-drop path that already walks them.
 
 ### Added
+- **An operator is paged when an exchange stops stamping times (G-48, #52).**
+  First alarm through the G-49 door. The threshold is *derived* rather than
+  chosen: `sentinel_untimestamped_records_total` has a resting value of exactly
+  zero, so any increase is anomalous and there is no sensitivity dial to guess
+  at — the only judgment is how long a rise must persist to be a format change
+  rather than a blip (default: two 15-minute windows, both tunable). Tracked per
+  (exchange, record kind), because Bitget dropping timestamps on withdrawals and
+  Binance dropping them on fills are two different investigations. Built
+  **in-process** rather than as the Prometheus + Alertmanager rules the issue
+  recommended — see the issue comment for the full reasoning and the follow-up
+  filed to revisit it. Severity is **HIGH, not CRITICAL**, and that changed
+  while it was being built: the issue was written when an undated record meant a
+  *missed* alert, which G-7 and G-47 have since made untrue. An exchange
+  dropping timestamps now degrades quality and adds noise rather than silently
+  stopping detection.
 - **Operator paging, scoped to Minas rather than to a customer (G-49, #53).**
   The gap was never that we couldn't reach ourselves — `build_channels` already
   wires our own Telegram, the team group, our SMS numbers and our email. It was

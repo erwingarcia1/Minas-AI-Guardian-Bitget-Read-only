@@ -661,3 +661,85 @@ red-lighting exactly its own guard:
 - undeliverable pages not recorded → both the recording and the dashboard test
 
 Full suite green: 259 passed.
+
+---
+
+### G-48 (#52) · Paging when exchange records lose their timestamps
+
+The first alarm through the door #53 opened, and the completion of an arc that
+ran through this whole session: G-7 made the detector refuse undated records →
+`163021e` added the counter → G-47 fixed the mirror failure → #55 fixed the
+counter's label → #53 built the route → this watches it.
+
+#### The judgment call that needs your eyes: I did not follow the issue's recommendation
+
+**#52 recommends option (1): ship Prometheus rules + Alertmanager in
+`docker-compose`. I built option (2), in-process.** Reasons, in the order they
+weighed:
+
+1. **The issue's own argument against (2) doesn't apply to this condition.** It
+   says "an alarm that depends on the process it's monitoring goes quiet exactly
+   when it matters" — true, and decisive for *"is Guardian running?"*. But this
+   condition is "the process is running and receiving records without
+   timestamps". If the process is down, this alarm is irrelevant and what's
+   needed is external uptime monitoring, which #53 explicitly parks as a
+   hosting decision. Option (2) is not weaker for *this* alarm.
+2. **I can't test or deploy option (1).** It means writing `docker-compose`
+   services, Prometheus rules and Alertmanager routing that need operator
+   credentials in a second config — and I'm not to touch deployment config
+   beyond what an issue requires, not to touch `.env`, and not to deploy. I'd
+   be committing untested infrastructure and calling the criteria met.
+3. **Criterion 3 asks the alarm path to be exercised by a test or a documented
+   fire drill.** In-process gives a real automated test, which is the stronger
+   half of that "or".
+4. **Criterion 4 asks for reusability.** `OperatorAlerter` is the seam, and it
+   stays the seam under either option — a future Alertmanager webhook lands on
+   the same call. So choosing (2) now doesn't foreclose (1); it makes (1) a
+   delivery-mechanism change rather than a redesign.
+
+**This is reversible and I've filed it** so it isn't buried in a log. If you
+want the Prometheus path, the alarm logic moves out and the page call stays.
+
+#### The other thing that changed: severity
+
+Set to **HIGH, not CRITICAL**, and the reasoning shifted *while I was building
+it*. #52's motivating fear is "a customer whose theft alert never fired". That
+was true when it was written. It isn't any more:
+
+- G-7 makes quantity-drop *refuse* to credit an undated record as an
+  explanation — so a drop alerts rather than going quiet. Fail-safe.
+- G-47 (landed this session) makes undated fills judged on first sighting
+  rather than dropped — so they're still price-checked.
+
+An exchange dropping timestamps now produces **more** alerts and degraded
+quality, not silence. That is urgent, not wake-at-3am, and pretending otherwise
+would train an operator to ignore the channel. Said in the code comment, the
+page's own message text, and the issue.
+
+#### A defect in my own #53 code, caught by my own test
+
+`test_each_exchange_and_kind_is_tracked_separately` failed, and it was right to.
+`_dedup_key(rule, account_id)` produced the same key for "Binance stopped
+stamping fills" and "Bitget stopped stamping withdrawals" — one rule,
+`account_id=None` twice — so the second page would be suppressed for a full
+hour. I'd reasoned carefully about the account being in the key and completely
+missed that a page with *no* account needs the same treatment for a different
+discriminator. Fixed by adding `dedup_scope`. Worth noting how it was caught:
+not by review, but by writing a test for a property I'd already convinced
+myself was handled.
+
+#### A test that passed for the wrong reason
+
+`test_the_window_is_respected` passed under the mutation that removed the window
+guard entirely. Written with a single record before the loop, the delta went to
+zero on the second tick and the streak reset, so no page happened either way —
+the test was asserting nothing. Rewritten to emit a record before *each* tick,
+the way a real format change looks, at which point removing the guard pages at
+90 seconds instead of 30 minutes and the test fails properly. The mutation check
+is what found this; it would have shipped as false coverage otherwise.
+
+#### Verification
+
+10 tests, written first. Three mutations, each red-lighting only its own guard:
+streak not resetting on a clean window; the window not enforced (after the test
+was fixed); `dedup_scope` dropped. Full suite green: 269 passed.

@@ -21,6 +21,9 @@ class Metrics:
     isn't installed, so callers never need to null-check."""
 
     def __init__(self, registry=None):
+        # Maintained regardless of _AVAILABLE - see untimestamped_record.
+        self._undated: dict = {}
+        self._undated_lock = threading.Lock()
         if not _AVAILABLE:
             return
         reg = REGISTRY if registry is None else registry
@@ -81,8 +84,22 @@ class Metrics:
             self.accounts_active.set(count)
 
     def untimestamped_record(self, exchange: str, source: str) -> None:
+        # Counted twice on purpose. The Prometheus counter is for scraping; the
+        # plain dict is what `alarms.UntimestampedRecordAlarm` reads, and it is
+        # maintained whether or not prometheus_client is installed. This class
+        # is explicitly a no-op shell without it, and an alarm that quietly
+        # stops existing along with an optional dependency is worse than no
+        # alarm - it looks like coverage.
+        with self._undated_lock:
+            self._undated[(exchange, source)] = self._undated.get((exchange, source), 0) + 1
         if _AVAILABLE:
             self.untimestamped_records.labels(exchange=exchange, source=source).inc()
+
+    def untimestamped_snapshot(self) -> dict:
+        """Cumulative undated-record counts per (exchange, source). A copy, so
+        a caller diffing two snapshots isn't reading a live dict."""
+        with self._undated_lock:
+            return dict(self._undated)
 
     @staticmethod
     def serve(port: int, host: str = "127.0.0.1"):

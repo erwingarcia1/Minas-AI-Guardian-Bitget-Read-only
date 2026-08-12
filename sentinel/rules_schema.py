@@ -148,6 +148,11 @@ SPEC: dict = {
     "operator_alerting": {
         "routing": {sev: _channel_list() for sev in SEVERITIES},
         "cooldown_minutes": {sev: NON_NEGATIVE for sev in SEVERITIES},
+        # G-48's alarm. The counter's resting value is zero, so there is no
+        # sensitivity threshold here - only how long a rise must persist before
+        # it is a format change rather than a blip.
+        "untimestamped_window_seconds": POSITIVE,
+        "untimestamped_consecutive_windows": POSITIVE,
     },
     "triage": {
         "enabled": _boolean(),

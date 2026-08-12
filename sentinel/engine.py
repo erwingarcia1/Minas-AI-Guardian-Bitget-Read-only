@@ -55,6 +55,21 @@ class Engine:
         # the scheduler falling behind (#42) - have somewhere to raise from.
         # Those callers belong to their own issues; this is the route.
         self._operator_alerter = operator_alerter
+        # First alarm through the G-49 door (G-48). Watches the undated-record
+        # counter, whose resting value is exactly zero, so the threshold is
+        # derived rather than chosen: any sustained rise is a format change.
+        from sentinel.alarms import UntimestampedRecordAlarm
+
+        self._untimestamped_alarm = UntimestampedRecordAlarm(
+            metrics,
+            operator_alerter,
+            window_seconds=rules.get_seconds(
+                "operator_alerting", "untimestamped_window_seconds", default=900
+            ),
+            consecutive_windows=rules.get_int(
+                "operator_alerting", "untimestamped_consecutive_windows", default=2
+            ),
+        ) if metrics is not None else None
         self._queue: queue.Queue[Task] = queue.Queue()
         self._stop = threading.Event()
 
@@ -115,6 +130,11 @@ class Engine:
             # re-reads a still-broken file re-asserts it.
             if self._metrics is not None:
                 self._metrics.set_rules_config_valid(self._rules.is_valid)
+            if self._untimestamped_alarm is not None:
+                try:
+                    self._untimestamped_alarm.evaluate(now=time.monotonic())
+                except Exception as exc:  # noqa: BLE001 - an alarm must never stop the scheduler
+                    logger.error("untimestamped-record alarm failed: %s", exc)
             fast_interval = self._rules.get_seconds("polling", "fast_loop_seconds", default=45)
             self._stop.wait(max(1.0, fast_interval - (time.monotonic() - started)))
 

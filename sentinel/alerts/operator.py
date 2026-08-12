@@ -55,14 +55,21 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _dedup_key(rule: str, account_id: int | None) -> str:
-    """Scoped by rule and by the account it is about.
+def _dedup_key(rule: str, account_id: int | None, dedup_scope: str | None = None) -> str:
+    """Scoped by rule, by the account it is about, and by whatever else makes
+    two occurrences of that rule distinct.
 
     The account has to be in the key. Two accounts going unwatchable are two
     facts, and collapsing them would report the first and hide the rest of a
     fleet-wide outage - which is the exact shape of problem this exists to
-    catch."""
-    raw = f"operator:{rule}:{account_id if account_id is not None else '-'}"
+    catch.
+
+    `dedup_scope` is the same argument for pages that aren't about an account
+    at all. "Binance stopped stamping fills" and "Bitget stopped stamping
+    withdrawals" are one rule with `account_id=None` twice, and without a scope
+    they collapse into one page - reporting the first exchange and hiding the
+    second. Callers pass whatever their own unit of distinctness is."""
+    raw = f"operator:{rule}:{account_id if account_id is not None else '-'}:{dedup_scope or '-'}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 
 
@@ -94,14 +101,18 @@ class OperatorAlerter:
         message: str,
         evidence: dict | None = None,
         account_id: int | None = None,
+        dedup_scope: str | None = None,
     ) -> int | None:
         """Raises an operator page. Returns the stored row id, or None if an
         identical page fired inside the cooldown.
 
         `account_id` names the account a page is *about*. It never causes the
-        customer to be notified."""
+        customer to be notified.
+
+        `dedup_scope` separates two occurrences of one rule that aren't
+        distinguished by the account - see `_dedup_key`."""
         evidence = dict(evidence or {})
-        key = _dedup_key(rule, account_id)
+        key = _dedup_key(rule, account_id, dedup_scope)
         cooldown = self._cooldown(severity)
         now = _now()
 

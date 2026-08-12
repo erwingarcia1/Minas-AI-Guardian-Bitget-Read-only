@@ -99,6 +99,13 @@ operator_alerting:
     HIGH: "60"
     MEDIUM: "240"
     LOW: "720"
+  # G-48: page when an exchange stops stamping times on records. The counter's
+  # resting value is exactly zero, so there is no sensitivity dial - any rise is
+  # anomalous. These two only decide how long it must persist before it counts
+  # as a format change rather than a blip. Tune from the first week of real
+  # data rather than from this comment.
+  untimestamped_window_seconds: "900"
+  untimestamped_consecutive_windows: "2"
 
 triage:
   enabled: false               # AI triage narrative on incidents; additive only,
