@@ -13,13 +13,14 @@ decision before anything can be built.
 
 # Summary — session of 2026-08-12
 
-**Ten issues closed, one partially, plus a follow-up session. `main` is green at
-311 tests, lint clean. Nothing is half-finished.**
+**Thirteen issues closed, one partially, across three sessions. `main` is green
+at 365 tests, lint clean, coverage 82.6%. Nothing is half-finished.**
 
-> **Follow-up (same day):** added `sentinel validate-config` as a pre-deploy
-> gate, and **reversed the refuse-to-start-on-a-bad-config decision** I made in
-> G-12 — it turned an upgrade into an outage. Full write-up at the bottom of
-> this file; the short version is in "Read these first" below.
+> **Follow-up sessions (same day):** added `sentinel validate-config`;
+> **reversed the refuse-to-start-on-a-bad-config decision** I made in G-12;
+> then four audits that found substantially more than expected — see
+> "What the audits found" below — plus **#57** (a p1 silent failure) and
+> **#54** (operator identity). Full write-ups at the bottom of this file.
 
 ## Read these first
 
@@ -46,6 +47,23 @@ decision before anything can be built.
    deploy. Writing the test for it also found a trap: routing was falling back
    to *no channels*, which would have detected perfectly and told nobody.
 
+## What the audits found
+
+Four sweeps, and three of them found more than I expected:
+
+| Audit | Finding |
+| --- | --- |
+| Did the rewritten tests soften? | All 11 survive a full revert — but only **2 of 11** pinned the "value is not in force" property I claimed of all of them. Strengthened; now 10. |
+| Defaults that silently disable | **4 divergences** beyond the known routing one. `alerting.cooldown_minutes` fell back to a flat 60 against a shipped CRITICAL of 15 — quieter, on the severity where quieter is worst. Fixed with a registry so the class can't recur. |
+| Tested but never wired | **8 of 12 detectors** were unpinned, including `detect_tamper`. All logic unit-tested; nothing failed when the poller stopped calling them. Plus 2 calls that could kill a thread. |
+| Constraint-lifted sweep | 19 sites filed as **#58**, and one genuine defect — **#57**, where a single failing channel lost the alert on *every* channel and truncated the poll. |
+
+**The recurring fault, four times now:** testing what a component decides and
+never testing that anything asks it. Coverage doesn't show it — every one of
+those eight detectors was "covered", because coverage counts lines executed and
+a unit test executes the detector's lines without the caller's. The cheap check
+is to delete the call site and see whether the suite notices.
+
 ## What was closed
 
 | Issue | What it was |
@@ -59,7 +77,9 @@ decision before anything can be built.
 | #52 (G-48) | Paging when an exchange stops stamping times |
 | #50 (G-46) | CI: style, coverage floor, dependency scanning, version agreement |
 | #49 (G-45) | DB contention + the same account checked twice at once |
-| #56 | *(filed)* Revisit alarms in Prometheus rather than in-process |
+| #57 | One failing channel lost the alert on every channel (found by me, p1) |
+| #54 (G-50) | Operator identity — accounts, dashboard sign-in, actor attribution |
+| #56, #58 | *(filed, not built)* Prometheus alarms; the logged-and-swallowed sweep |
 
 Queue items 1 and 2 needed no work — the metrics loopback bind was already done
 in `aa6cfa6`, and #54 already existed with #40 already retitled and rescoped.
@@ -70,9 +90,10 @@ in `aa6cfa6`, and #54 already existed with #40 already retitled and rescoped.
   blocked on #54 (no operator accounts exist, and `rules.yaml` is edited on
   disk, so there is nobody to attribute a change to). Should be finished as
   part of #54.
-- **#54 (G-50, Operator identity)** — **this is the next thing to build.** It
-  is the largest remaining unblocker: #40, #41, #32 and #16's last criterion
-  all wait on it. I stopped before starting it rather than leave it half-built.
+- **#40 (G-36)** — attribution and sign-in are now done via #54. **Only 2FA
+  remains**, and that is #32's work, which is on your do-not-build list.
+- **#41, #16** — both unblocked by #54 now. #16's last criterion (record *who*
+  changed a threshold) is straightforwardly buildable.
 - **#37, #29, #27, #24, #47** — parked on decisions 1–6 above. #29 and #47 are
   *partial* blocks: most of #29 (timeline, balances, the
   detection→notification→acknowledgement chain) and #47's pruning mechanism are
@@ -117,7 +138,7 @@ a record being dropped, look for the second place it gets dropped.
   costing roughly 40% of wall-clock, which is a fair proxy for what it cost the
   poller.
 
-## Why I stopped
+## Why I stopped (first session)
 
 Not because the buildable work ran out — **#54 is next and is ready to start**.
 I stopped because starting an issue that size risked leaving it half-finished,
