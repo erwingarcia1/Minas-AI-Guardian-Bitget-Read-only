@@ -12,11 +12,37 @@ from sentinel.detectors.base import Detection
 logger = logging.getLogger("sentinel.alerts.dispatch")
 
 
+# Evidence fields that identify *which* occurrence of a rule this is, in
+# preference order. A detection is deduped against others sharing its rule,
+# account and identity - so anything that distinguishes two real occurrences has
+# to appear here.
+#
+# `symbol` is why this is a list rather than the previous
+# `order_id or coin or ""`. An off-market fill carries `symbol`, not `coin`, and
+# its `order_id` is None when the exchange didn't reference the fill - so the
+# identity collapsed to the empty string and *every* off-market fill on an
+# account shared one dedup key. The second symbol's alert was suppressed for the
+# whole HIGH cooldown. G-47 is what made that reachable: before it, id-less
+# fills were never judged at all, so they never got as far as being deduped.
+_IDENTITY_FIELDS = ("order_id", "symbol", "coin", "address", "route")
+
+
 def _dedup_key(account_id: int, detection: Detection) -> str:
     """Stable across repeated firings of the 'same' underlying condition
-    (same rule + same primary evidence identifier) so a flapping condition
-    doesn't storm the alert channel."""
-    identity_bits = detection.evidence.get("order_id") or detection.evidence.get("coin") or ""
+    (same rule + same evidence identity) so a flapping condition doesn't storm
+    the alert channel - while two genuinely different occurrences of one rule
+    stay two alerts.
+
+    Absent fields are skipped rather than substituted with a falsy value: an
+    identity of `""` is not an identity, and treating it as one is how distinct
+    events collapse into a single suppressed alert. When a detection genuinely
+    carries nothing identifying, rule + account is the honest key - that is one
+    condition, not many."""
+    identity_bits = ":".join(
+        f"{field}={detection.evidence[field]}"
+        for field in _IDENTITY_FIELDS
+        if detection.evidence.get(field) is not None
+    )
     raw = f"{account_id}:{detection.rule}:{identity_bits}"
     return hashlib.sha256(raw.encode()).hexdigest()[:16]
 

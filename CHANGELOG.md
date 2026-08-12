@@ -38,6 +38,22 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   back to every configured channel, loudly.
 
 ### Fixed
+- **Two more falsy sentinels, found by sweeping for the pattern rather than
+  tripping over it.** *(a)* `record_seen_transfer` returned `False` for a
+  transfer with no `id`, which the poller reads as *already seen* — so it never
+  reached `detect_new_transfer_route`, the detector whose entire job is noticing
+  funds moving over a route the customer has never used. This is G-11's defect
+  verbatim, in the function G-11 didn't touch. *(b)* `dispatch._dedup_key` used
+  `order_id or coin or ""`, but an `off_market_execution` detection carries
+  `symbol`, not `coin`, and its `order_id` is `None` for a fill the exchange
+  didn't reference — so the identity collapsed to the empty string and **every
+  off-market fill on an account shared one dedup key**, suppressing the second
+  symbol's alert for the whole HIGH cooldown. G-47 made that reachable by
+  ensuring id-less fills get judged at all. The key is now built from whichever
+  identifying fields are actually present, skipping absent ones instead of
+  substituting a falsy value. Also: ClickSend returning `SUCCESS` with no
+  per-message results no longer records an SMS as delivered that the provider
+  never acknowledged.
 - **The first slow poll no longer waits on the machine's uptime.**
   `time.monotonic()` is seconds since *boot* on Linux, and the scheduler used
   `0` to mean "this account has never had a slow poll" — so

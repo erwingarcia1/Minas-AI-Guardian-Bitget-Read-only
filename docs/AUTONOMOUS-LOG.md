@@ -1725,3 +1725,64 @@ Verified beyond that:
 ### Confirmed green
 
 `gh run list --limit 1` → `completed success` on `31600661665`, 1m11s.
+
+---
+
+## Sweep: falsy sentinels
+
+Third and fourth instances of one pattern, swept for deliberately this time
+rather than tripped over: **"I don't have this value" silently becoming a
+specific wrong value instead of an unknown.**
+
+Prior instances: `(f.get("timestamp") or 0) >= last_run_ms` (G-47, undated fill
+never checked); `evidence["order_id"] or evidence["coin"]` (G-11, two
+withdrawals one alert); `self._last_slow.get(account_id, 0)` (today, slow loop
+gated on machine uptime).
+
+### 47 sites examined, 3 real
+
+Full verdict table is in the issue thread; the summary:
+
+- **`record_seen_transfer`** — `str(transfer.get("id") or "")` then
+  `if not transfer_id: return False`. The poller reads False as *already seen*,
+  so an id-less transfer never reaches `detect_new_transfer_route`. **This is
+  G-11 verbatim in the function G-11 didn't touch.** I fixed withdrawals, wrote
+  at length about the pattern, and left its twin sitting three functions away.
+- **`dispatch._dedup_key`** — `order_id or coin or ""`. An
+  `off_market_execution` detection carries `symbol`, not `coin`, and `order_id`
+  is None for an unreferenced fill, so the identity collapsed to `""` and every
+  off-market fill on the account shared one key. **G-47 is what made this
+  reachable**: before it, id-less fills were never judged at all, so they never
+  got as far as being deduped. Fixing one silent miss exposed another.
+- **ClickSend** — `SUCCESS` with an empty `messages` array passed the
+  per-message check vacuously and recorded a delivery the provider never
+  acknowledged. Minor, and the same shape.
+
+Everything else was genuinely harmless, and it is worth saying why rather than
+just counting: `alarms.py`'s `.get(key, 0)` is subtracting cumulative counters
+where absent really *was* zero; `poller.py`'s `state.get(..., 0)` reads columns
+declared `NOT NULL DEFAULT 0`; `identity.py`'s `or ""` is immediately tested and
+routed to the digest, which is the correct shape of this pattern; and
+`quantity_drop`'s `symbol or ""` produces no coin match, so an unattributable
+fill credits no explanation — exactly G-7's intent.
+
+### What I take from it
+
+**A pattern I have fixed and written about three times still had live
+instances two functions away from the fix.** Fixing an instance is not fixing a
+pattern, and the only reliable way to tell the difference is to go looking with
+a grep and a verdict per site. That is cheap — an hour — and it found a
+detector that could not fire.
+
+The other thing worth recording: **fixing a silent miss can expose another
+one.** The off-market dedup collapse was unreachable until G-47 started
+examining id-less fills. Nothing was wrong with G-47; it moved a class of
+record from "never judged" to "judged", and the next gate downstream had the
+same falsy-sentinel bug waiting. Worth checking the downstream path whenever a
+fix widens what reaches it.
+
+### Verification
+
+8 tests, written first, 6 red. Two mutations — transfers back to the falsy
+drop, dedup key back to `order_id or coin or ""` — each red-lighting only its
+own guards. Full suite green at 375.

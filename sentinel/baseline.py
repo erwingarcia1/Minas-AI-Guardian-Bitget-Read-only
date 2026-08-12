@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from sentinel.db import Database
 from sentinel.exchange import ExchangeClient
-from sentinel.identity import fill_identity, withdrawal_identity
+from sentinel.identity import fill_identity, transfer_identity, withdrawal_identity
 from sentinel.numeric import to_decimal
 
 
@@ -190,10 +190,12 @@ def record_seen_fill(db: Database, account_id: int, fill: dict) -> bool:
 
 
 def record_seen_transfer(db: Database, account_id: int, transfer: dict) -> bool:
-    """Returns True if this transfer record hasn't been processed before."""
-    transfer_id = str(transfer.get("id") or "")
-    if not transfer_id:
-        return False
+    """Returns True if this transfer record hasn't been processed before.
+
+    A transfer with no `id` used to return False here, which the poller reads as
+    "already seen" - so it never reached `detect_new_transfer_route`. That is
+    G-11's defect exactly, in the function G-11 didn't touch."""
+    transfer_id = transfer_identity(transfer)
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO seen_transfers (account_id, transfer_id, raw_json, first_seen_at) VALUES (?, ?, ?, ?) "

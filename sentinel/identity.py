@@ -54,6 +54,26 @@ def withdrawal_identity(record: dict) -> str:
     return "sha256:" + _digest({f: record.get(f) for f in _WITHDRAWAL_IDENTITY_FIELDS})
 
 
+# A transfer describes a movement between two internal accounts. None of these
+# fields change after the fact the way a withdrawal's `status` does, so the
+# whole set is safe to digest.
+_TRANSFER_IDENTITY_FIELDS = ("currency", "amount", "fromAccount", "toAccount", "timestamp")
+
+
+def transfer_identity(transfer: dict) -> str:
+    """A stable key for one internal transfer.
+
+    Same reasoning as `withdrawal_identity`, and the same bug: an id-less
+    transfer used to be reported as "already seen", so it never reached
+    `detect_new_transfer_route` - the detector whose whole job is noticing funds
+    moving over a route the customer has never used. G-11 fixed this for
+    withdrawals and left its twin standing."""
+    reference = str(transfer.get("id") or "")
+    if reference:
+        return f"id:{reference}"
+    return "sha256:" + _digest({f: transfer.get(f) for f in _TRANSFER_IDENTITY_FIELDS})
+
+
 def fill_identity(fill: dict) -> str:
     """A stable key for one fill.
 

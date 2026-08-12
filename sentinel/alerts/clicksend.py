@@ -53,6 +53,11 @@ class ClickSendSmsChannel(AlertChannel):
         if data.get("response_code") != "SUCCESS":
             raise RuntimeError(f"ClickSend rejected the request: {data.get('response_code')} {data.get('response_msg')}")
         results = data.get("data", {}).get("messages", [])
+        if not results:
+            # SUCCESS with no per-message results is a malformed response, and
+            # the per-message check below would pass it silently - recording an
+            # SMS as delivered that the provider never acknowledged.
+            raise RuntimeError("ClickSend returned SUCCESS with no message results")
         failed = [m for m in results if m.get("status") != "SUCCESS"]
         if failed:
             raise RuntimeError(
