@@ -1400,3 +1400,80 @@ whether the suite notices.
 10 tests, written first. The detector sweep re-run end to end (12 call sites ×
 full suite). Two further mutations on the thread guards, each red-lighting only
 its own test. Full suite green at 329.
+
+---
+
+## Task 4 · The constraint-lifted sweep
+
+Filed as **#58**, plus **#57** for a defect the sweep turned up. Nothing changed.
+
+### The premise, and why it generalises
+
+Guardian was built with no operator paging route at all — every channel was
+customer-scoped. That absence didn't merely leave a gap; it *shaped decisions*.
+Over and over, the honest available option was "log it and carry on", and that
+is what the code does. #53 removed the constraint, and nothing automatically
+revisits the choices it forced.
+
+Same reasoning as the fail-closed reversal: **a decision made under a constraint
+should be re-examined when the constraint lifts, and nothing prompts that.** It
+is worth doing deliberately, once, rather than rediscovering it one issue at a
+time.
+
+### What I looked for
+
+Not "this logs an error" — that would have returned every handler in the tree.
+Specifically: *the customer or the system is worse off, nobody is told, and the
+reason nobody is told is that there was nobody to tell.*
+
+Nineteen sites in four groups:
+
+- **A — a customer was not reached, and nobody knows** (6). The strongest group:
+  an alert was correctly detected and then failed to arrive. Per-account email
+  failures leave nothing but a log line; SMS at least leaves an
+  `sms_deliveries` row.
+- **B — detection silently didn't run** (6). Worker and scheduler failures,
+  ticker fetches falling back to a 10-symbol cap, per-coin transfer failures.
+- **C — an account was onboarded with an incomplete baseline** (2). Both
+  best-effort seeds swallow entirely. The reasoning is sound — a seeding failure
+  shouldn't block onboarding — but the consequence lands *later*, as
+  false-positive new-pair alerts for pairs the customer has always traded.
+- **D — capability silently absent** (4). Notably `prometheus_client` missing
+  means every metric-based alarm never fires, and MEDIUM/LOW alerts depend on a
+  host crontab that `docs/deployment.md` already warns "fails silently every day
+  and the digest never sends".
+
+### One issue, not nineteen
+
+Deliberate. Paging on all of these would train an operator to ignore the
+channel, which is the same outcome as not paging at all — so the *work* is the
+triage, and splitting before triaging would be busywork. The issue records the
+four questions each entry needs answered (page or not, what severity, page or
+metric-plus-alarm, what dedup scope) rather than presuming the answer.
+
+### The thing the sweep actually found: #57
+
+`dispatch()` calls `channel.send()` **unguarded**, and **before** writing the
+`alerts` row. One raising channel therefore means:
+
+1. the remaining channels are never tried — including the ones configured as
+   backups;
+2. no `alerts` row is written, so the alert is absent from the customer's
+   history, the portal, the dashboard, and anything handed to an exchange;
+3. `ContactRouter` is never reached, so the customer's own email and phone are
+   never attempted either;
+4. the exception aborts the rest of that account's poll cycle;
+5. one log line, from a handler whose message is about *task failure*.
+
+A flaky Telegram API means the customer is told nothing, on any channel, with no
+record, and the rest of that account's detection stops — every cycle, for as
+long as it lasts.
+
+Filed **p1 / Phase 1** under the standing rule for silent failures. It is not a
+missing page; it is a missing `try`. **I will build it before #54**, because
+Phase 1 precedes Phase 2 in milestone order and this is a customer-facing silent
+miss.
+
+The one mitigation: with no `alerts` row there is no dedup key, so the next
+cycle re-detects and re-sends. Recovery works once the channel returns. But
+while it is down, detection is truncated every cycle and nothing says so.
