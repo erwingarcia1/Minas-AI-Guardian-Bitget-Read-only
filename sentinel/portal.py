@@ -208,6 +208,94 @@ def _page(body_html: str, nav_html: str = "") -> str:
     )
 
 
+def _member_alert_account(db: Database, alert_id: int, account_ids: list[int]) -> int | None:
+    """The account an alert belongs to, but only if it is one of this member's.
+    Returns None for someone else's alert and for one that doesn't exist — the
+    caller renders both as not-found, so a member cannot use acknowledgement to
+    discover that an alert id is in use."""
+    if not account_ids:
+        return None
+    marks = ",".join("?" for _ in account_ids)
+    with db.cursor() as cur:
+        cur.execute(
+            f"SELECT account_id FROM alerts WHERE id = ? AND account_id IN ({marks})",
+            [alert_id, *account_ids],
+        )
+        row = cur.fetchone()
+    return row["account_id"] if row else None
+
+
+def acknowledge_alert_as_member(
+    db: Database, alert_id: int, email: str, account_ids: list[int]
+) -> bool:
+    """Member-side acknowledgement (G-22). False if the alert isn't theirs or
+    was already acknowledged.
+
+    The account scope is in the UPDATE itself rather than in a check before it.
+    A member acknowledging an alert makes the product quieter — it is what
+    stops escalation — so "which alerts may I silence" is a boundary that has
+    to hold inside the statement that does the silencing, not in a caller that
+    a later route might forget to run.
+
+    `acknowledged_at IS NULL` keeps the first acknowledgement. See
+    `operators.acknowledge_alert`, which holds the same rule for the operator
+    path: an acknowledgement is a claim someone made at a moment, and the
+    second person to open the incident does not get to become the first."""
+    normalized = normalize_email(email)
+    if not normalized or not account_ids:
+        return False
+    marks = ",".join("?" for _ in account_ids)
+    with db.cursor() as cur:
+        cur.execute(
+            f"UPDATE alerts SET acknowledged_at = ?, acknowledged_by = ? "
+            f"WHERE id = ? AND acknowledged_at IS NULL AND account_id IN ({marks})",
+            [datetime.now(timezone.utc).isoformat(), normalized, alert_id, *account_ids],
+        )
+        return cur.rowcount == 1
+
+
+def _time_to_acknowledge(sent_at: str | None, acknowledged_at: str | None) -> str:
+    """How long the alert waited, as a short human string.
+
+    This is the number that says whether the alerting works. Four minutes means
+    someone read it; nine hours means someone eventually found it. Both are
+    already recorded — `sent_at` and `acknowledged_at` — but a pair of
+    timestamps is not something a customer subtracts in their head."""
+    if not sent_at or not acknowledged_at:
+        return ""
+    try:
+        seconds = int(
+            (datetime.fromisoformat(acknowledged_at) - datetime.fromisoformat(sent_at))
+            .total_seconds()
+        )
+    except (TypeError, ValueError):
+        return ""
+    if seconds < 0:
+        return ""
+    if seconds < 60:
+        return f"{seconds}s"
+    if seconds < 3600:
+        return f"{seconds // 60}m"
+    if seconds < 86400:
+        return f"{seconds // 3600}h {(seconds % 3600) // 60}m"
+    return f"{seconds // 86400}d {(seconds % 86400) // 3600}h"
+
+
+def _ack_cell(row) -> str:
+    """The acknowledgement column: who and how long if it's done, a button if
+    it isn't. One tap, from the row the alert is on."""
+    if row["acknowledged_at"]:
+        who = html.escape(row["acknowledged_by"] or "—")
+        elapsed = _time_to_acknowledge(row["sent_at"], row["acknowledged_at"])
+        suffix = f" · {elapsed}" if elapsed else ""
+        return f"<td class='ack-yes'>✓ {who}{suffix}</td>"
+    return (
+        "<td class='ack-no'><form method='post' action='/acknowledge' style='margin:0'>"
+        f"<input type='hidden' name='alert_id' value=\"{int(row['id'])}\">"
+        "<button class='ackbtn' type='submit'>Acknowledge</button></form></td>"
+    )
+
+
 def _render_login(error: str | None = None) -> str:
     banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
     body = (
@@ -233,7 +321,7 @@ def _render_home(db: Database, email: str) -> str:
         marks = ",".join("?" for _ in ids)
         with db.cursor() as cur:
             cur.execute(
-                f"SELECT al.sent_at, al.severity, al.rule, al.acknowledged_at, ac.label "
+                f"SELECT al.id, al.sent_at, al.severity, al.rule, al.acknowledged_at, al.acknowledged_by, ac.label "
                 f"FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
                 f"WHERE al.account_id IN ({marks}) ORDER BY al.sent_at DESC LIMIT 30",
                 ids,
@@ -253,9 +341,10 @@ def _render_home(db: Database, email: str) -> str:
         f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
         f"<td class='lbl'>{html.escape(r['label'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
-        f"<td class='rule'>{html.escape(r['rule'])}</td></tr>"
+        f"<td class='rule'>{html.escape(r['rule'])}</td>"
+        f"{_ack_cell(r)}</tr>"
         for r in alerts
-    ) or "<tr><td colspan=4 class='empty'>No alerts — all quiet</td></tr>"
+    ) or "<tr><td colspan=5 class='empty'>No alerts — all quiet</td></tr>"
 
     body = (
         '<section><div class="card"><div class="card-head"><h2>Your accounts</h2>'
@@ -265,7 +354,8 @@ def _render_home(db: Database, email: str) -> str:
         f"<tbody>{account_rows}</tbody></table></div></section>"
         '<section><div class="card"><div class="card-head"><h2>Your recent alerts</h2>'
         '<span class="count">latest 30</span></div>'
-        "<table><thead><tr><th>Time</th><th>Account</th><th>Severity</th><th>Rule</th></tr></thead>"
+        "<table><thead><tr><th>Time</th><th>Account</th><th>Severity</th><th>Rule</th>"
+        "<th>Acknowledged</th></tr></thead>"
         f"<tbody>{alert_rows}</tbody></table></div></section>"
     )
     nav = (
@@ -292,7 +382,7 @@ def _render_member_account(db: Database, email: str, account_id: int) -> str | N
         )
         events = cur.fetchall()
         cur.execute(
-            "SELECT sent_at, severity, rule, acknowledged_at FROM alerts "
+            "SELECT id, sent_at, severity, rule, acknowledged_at, acknowledged_by FROM alerts "
             "WHERE account_id = ? ORDER BY sent_at DESC LIMIT 20",
             (account_id,),
         )
@@ -336,8 +426,7 @@ def _render_member_account(db: Database, email: str, account_id: int) -> str | N
         f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
         f"<td class='rule'>{html.escape(r['rule'])}</td>"
-        f"<td class='{'ack-yes' if r['acknowledged_at'] else 'ack-no'}'>"
-        f"{'✓' if r['acknowledged_at'] else '—'}</td></tr>"
+        f"{_ack_cell(r)}</tr>"
         for r in alerts
     ) or "<tr><td colspan=4 class='empty'>No alerts — all quiet</td></tr>"
 
@@ -448,6 +537,36 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1") -> ThreadingH
             else:
                 self._send(_render_not_found().encode(), 404)
 
+        def _acknowledge(self, form):
+            """The portal's only member-facing write (G-22, #26).
+
+            Every failure renders the same not-found page. A member poking at
+            alert ids must not be able to tell "that isn't yours" from "that
+            doesn't exist" - the first answer maps out other customers' alert
+            volume one id at a time."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            try:
+                alert_id = int((form.get("alert_id") or [""])[0])
+            except (TypeError, ValueError):
+                self._send(_render_not_found().encode(), 404)
+                return
+
+            account_ids = [r["id"] for r in member_accounts(db, email)]
+            account_id = _member_alert_account(db, alert_id, account_ids)
+            if account_id is None:
+                self._send(_render_not_found().encode(), 404)
+                return
+
+            if acknowledge_alert_as_member(db, alert_id, email, account_ids):
+                logger.info("portal: alert %d acknowledged by %s", alert_id, email)
+            # An already-acknowledged alert is not an error - two people
+            # opening the same incident is the normal case. It redirects to the
+            # same page, where the first acknowledgement is still shown.
+            self._redirect(f"/account?id={account_id}")
+
         def do_POST(self):
             path = urlparse(self.path).path.rstrip("/")
             if not _same_origin(self):
@@ -464,6 +583,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1") -> ThreadingH
                     "Set-Cookie",
                     f"{SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
                 )])
+                return
+
+            if path == "/acknowledge":
+                self._acknowledge(form)
                 return
 
             if path != "/login":

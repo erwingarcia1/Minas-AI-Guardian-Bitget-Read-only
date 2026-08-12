@@ -14,6 +14,29 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
+- **Customers can acknowledge their own alerts from the portal (G-22, #26).**
+  Acknowledgement existed for operators (`sentinel acknowledge --as <name>`,
+  #54) but there was no way for the person the alert is *about* to say they
+  have seen it. Each unacknowledged alert now carries an Acknowledge button in
+  its own row; acknowledged ones show who acknowledged it and how long the
+  alert waited.
+
+  The elapsed time is the point of that last part: four minutes means someone
+  read the alert, nine hours means someone eventually found it, and until now
+  the two timestamps existed but nobody ever subtracted them.
+
+  This is the first member-facing **write** in the portal, and the first thing
+  a customer can do that makes the product quieter — acknowledging stops
+  escalation. So the account scope lives inside the UPDATE statement itself,
+  not in a check before it, and a member acknowledging an alert that isn't
+  theirs gets the same not-found page as one that doesn't exist.
+
+  **Not built: acknowledging from a link in the alert email.** "One tap from
+  the alert" could mean a tokenised URL that acknowledges without a login.
+  That would let anyone holding the email — including whoever compromised the
+  mailbox that the account takeover started from — silence the alarm about it.
+  The button is one tap from the alert *in the portal*, behind the session.
+
 - **13 more tests pinning thresholds and evidence (#66).** Decision-point
   mutation score **81% → 92%**; combined with the commit below, **60% → 92%**.
   Every threshold in the product is a comparison, and every one of them

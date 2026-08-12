@@ -2212,3 +2212,71 @@ Every one of these was invisible to review. Two rounds of it looked at
 see the difference between code that is right and code that is right *and
 held*. Mutation testing is the only tool here that has found that difference,
 five times in Tier 1 and thirty-five times now.
+
+---
+
+## G-22 · Customers can acknowledge their own alerts (#26)
+
+Operators could already acknowledge (#54). The customer could not — which is
+backwards, because the customer is the one who knows whether the withdrawal was
+theirs.
+
+### The part that needed care
+
+This is the **first member-facing write in the portal**. Everything else there
+is read-only and scoped by `member_accounts`, so a scoping bug leaked data.
+Acknowledgement is different: it *suppresses escalation*. A scoping bug here
+lets one customer silence another customer's CRITICAL while their account is
+being drained — a read-scoped leak turning into a write that disarms the alarm.
+
+So the account scope is inside the UPDATE statement, not in a check before it:
+
+    UPDATE alerts SET acknowledged_at = ?, acknowledged_by = ?
+    WHERE id = ? AND acknowledged_at IS NULL AND account_id IN (...)
+
+The route *also* checks visibility first, to choose 404 vs redirect. Two guards
+in sequence — and that is exactly the arrangement where one quietly stops
+working, because the outer one hides the inner one's absence.
+
+### Mutation testing found two of my tests passing for the wrong reason
+
+Six mutations, four killed immediately. The two survivors were the two security
+guards:
+
+- **Removing the account scope from the UPDATE survived.** The route's
+  visibility check caught it first, so nothing failed. The inner guard — the
+  one that survives someone adding a JSON endpoint or a bulk action later —
+  was untested. Fixed by testing `acknowledge_alert_as_member` directly rather
+  than only through the route.
+- **Removing the session check survived.** My test asserted only that nothing
+  was acknowledged. With the check removed and the identity falling back to an
+  unknown email, `member_accounts` returns nothing and the acknowledgement
+  fails anyway — the right outcome by accident, and an accident that a real
+  member's address in the form would undo. Fixed by pinning the login page,
+  and by adding a *forged cookie naming the real owner*, which is the shape
+  this attack actually has.
+
+Same lesson as the detector work above: a test that asserts an absence
+(`is None`, `== []`) is the easiest kind to pass for the wrong reason.
+
+### Judgment call: "one tap from the alert" — from where?
+
+The criterion can be read as a tokenised link in the alert email that
+acknowledges without a login. I did not build that, and this is the
+stop-and-log rule rather than a preference: it would weaken a safety property.
+Account takeovers routinely start at the customer's mailbox, so an
+unauthenticated acknowledgement link hands the attacker a mute button for the
+alert about the compromise they just carried out — and it would arrive in the
+same inbox they already control.
+
+The button is one tap from the alert *in the portal*, behind the session. If
+the email link is wanted anyway, it needs a decision about single-use
+short-lived tokens and about what an acknowledgement from an unauthenticated
+tap is even worth as a record, which is a product decision and not mine.
+
+### Not in scope
+
+`acknowledged_by` is one free-text column holding either an operator username
+or a member email. Today they cannot collide meaningfully (operators are
+usernames, members are addresses) and the page each is shown on says which it
+is. If a third actor type ever appears, that column needs a role beside it.

@@ -89,6 +89,13 @@ _STYLE = """
   .sev-MEDIUM { color:var(--med); background:rgba(255,210,61,.13); }
   .sev-LOW { color:var(--low); background:rgba(124,138,165,.15); }
   .ack-yes { color:var(--ok); } .ack-no { color:var(--faint); }
+  /* Member acknowledgement button (G-22). Deliberately quiet: it sits in every
+     unacknowledged row, and a row of loud buttons reads as the page asking to
+     be clicked rather than as a list of things that happened. */
+  .ackbtn { font:inherit; font-size:12px; cursor:pointer; padding:3px 10px;
+            border:1px solid var(--line); border-radius:6px;
+            background:transparent; color:var(--txt); }
+  .ackbtn:hover { border-color:var(--ok); color:var(--ok); }
   .fail { color:var(--high); font-weight:600; } .zero { color:var(--faint); }
   .empty { padding:34px; text-align:center; color:var(--faint); font-size:13px; }
   footer { margin-top:28px; text-align:center; color:var(--faint); font-size:11.5px; }
