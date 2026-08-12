@@ -155,6 +155,19 @@ SPEC: dict = {
         "untimestamped_window_seconds": POSITIVE,
         "untimestamped_consecutive_windows": POSITIVE,
     },
+    # Retention periods (#60). NON_NEGATIVE rather than POSITIVE: 0 is a
+    # meaningful choice here - "keep this table forever" - and rejecting it
+    # would force an operator to write 99999 to say the same thing.
+    "retention": {
+        "events_days": NON_NEGATIVE,
+        "alerts_days": NON_NEGATIVE,
+        "operator_pages_days": NON_NEGATIVE,
+        "sms_deliveries_days": NON_NEGATIVE,
+        "dedup_days": NON_NEGATIVE,
+        "balance_snapshots_days": NON_NEGATIVE,
+        "permission_snapshots_days": NON_NEGATIVE,
+        "prune_interval_minutes": POSITIVE,
+    },
     "triage": {
         "enabled": _boolean(),
         "model": _text(),
@@ -241,6 +254,16 @@ DEFAULTS: dict = {
         "cooldown_minutes": {"CRITICAL": 30, "HIGH": 60, "MEDIUM": 240, "LOW": 720},
         "untimestamped_window_seconds": 900,
         "untimestamped_consecutive_windows": 2,
+    },
+    "retention": {
+        "events_days": 730,
+        "alerts_days": 730,
+        "operator_pages_days": 730,
+        "sms_deliveries_days": 730,
+        "dedup_days": 365,
+        "balance_snapshots_days": 7,
+        "permission_snapshots_days": 730,
+        "prune_interval_minutes": 60,
     },
     "triage": {"enabled": False, "model": "claude-opus-4-8", "max_events": 50},
 }

@@ -28,8 +28,15 @@ CREATE TABLE IF NOT EXISTS accounts (
     updated_at TEXT NOT NULL
 );
 
--- Append-only forensic log. The application never issues UPDATE/DELETE
--- against this table - only INSERT.
+-- Append-only forensic log. The application never issues UPDATE or DELETE
+-- against a row's contents - what was recorded is never edited, which is the
+-- property that makes it evidence.
+--
+-- Retention (#60) does delete whole rows once they pass their configured age.
+-- That is a different act from rewriting one: nothing that survives has been
+-- altered. The window is deliberately long (two years by default) because #29's
+-- incident timeline reads this table, and it is configurable so the legal
+-- retention decision sets it without a deploy.
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     account_id INTEGER NOT NULL REFERENCES accounts(id),

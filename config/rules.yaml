@@ -112,6 +112,29 @@ operator_alerting:
   untimestamped_window_seconds: "900"
   untimestamped_consecutive_windows: "2"
 
+# How long each growing table is kept. Interim engineering defaults - the legal
+# retention decision (#47 / DECISIONS-NEEDED decision 6) sets the real numbers,
+# and because they live here that is a config change rather than a deploy.
+#
+# `dedup_days` is different in kind from the rest. seen_withdrawals /
+# seen_transfers / seen_fills are not history, they are the answer to "have I
+# already alerted on this" - prune one while the exchange still returns that
+# record and it re-alerts on a months-old movement. Its floor is set by the
+# longest history any exchange returns on a since=None fetch, which we do not
+# control, so it is deliberately far longer than it looks like it needs to be.
+# Legal cannot shorten this one below that floor without causing re-alerts.
+#
+# 0 on any of these means "keep forever".
+retention:
+  events_days: "730"                  # forensic log; #29's incident timeline reads it
+  alerts_days: "730"
+  operator_pages_days: "730"
+  sms_deliveries_days: "730"
+  dedup_days: "365"                   # see above - bounded below by correctness
+  balance_snapshots_days: "7"         # only "what changed since the last poll" needs these
+  permission_snapshots_days: "730"
+  prune_interval_minutes: "60"        # full-table deletes do not belong on the 45s loop
+
 triage:
   enabled: false               # AI triage narrative on incidents; additive only,
                                # deterministic rules remain authoritative

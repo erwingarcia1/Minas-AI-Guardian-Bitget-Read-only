@@ -2053,3 +2053,79 @@ outcome that both the right and wrong implementations produce.**
 per-rule cooldown ignored, auth path skipping the coverage check, and
 `auth_failures` not passed — each red-lighting only its own guard. Full suite
 green at 405.
+
+---
+
+## Tier 1 · Retention and unbounded growth (#60)
+
+Eight tables grew forever, most at the 45-second fast loop. Deleting old rows
+was the easy part; the work was deciding what must *not* be deleted, because
+both wrong answers are silent detection failures rather than visible ones.
+
+### Three classes, not one
+
+**Never prune — baseline tables.** `known_addresses`, `traded_pairs`,
+`transfer_routes`, `fee_baseline`. These aren't history, they're the account's
+baseline. Deleting an old row doesn't reclaim space, it *manufactures a false
+positive*: the next withdrawal to a five-year-old address becomes "never seen
+before" and the customer gets a CRITICAL about their own cold wallet. A test
+asserts each survives pruning.
+
+**Prune, but keep the newest row per account** — the snapshot tables.
+`detect_permission_state_change` returns `[]` when there is no previous
+snapshot, so deleting the last one doesn't disable detection loudly, it makes
+the next comparison find nothing to compare against. Same for the balance
+baseline.
+
+That one has a subtlety worth recording: a balance snapshot is *many rows
+sharing one timestamp*, one per coin. Keeping "the newest row" would keep a
+single coin and silently shrink the baseline to it, so every other coin reads as
+having vanished. The delete is keyed on `(account_id, MAX(timestamp))`, not on
+the newest row id — and there is a test that inserts three coins and requires
+all three to survive.
+
+**Prune on a long window — the dedup tables.** `seen_withdrawals`,
+`seen_transfers`, `seen_fills` are the answer to *"have I already alerted on
+this"*. Prune one while the exchange still returns that record and the next poll
+re-alerts on a months-old movement.
+
+**So their retention is bounded below by correctness, not by policy.** It must
+exceed the longest history any exchange returns on a `since=None` fetch — a
+number we don't control. That floor is an engineering constraint the legal
+retention decision (#47) *cannot* shorten, which is worth knowing before
+decision 6 is answered, and it's now written into `config/rules.yaml` next to
+the setting.
+
+There is a test that demonstrates the hazard rather than asserting it: delete
+the dedup row, poll again, and watch a months-old withdrawal get re-detected.
+
+### The append-only claim
+
+`schema.sql` said the application "never issues UPDATE/DELETE against this
+table". Retention makes that literally false, so the comment now says what is
+actually true: **contents are never edited** — which is the property that makes
+it evidence — and retention deletes whole rows once they age out. Quietly
+leaving the old wording would have been the easy thing and a lie in the one file
+people read to understand the guarantees.
+
+### Two test-data errors of my own
+
+Both failed for reasons unrelated to the code, and both were worth chasing
+rather than adjusting the assertion:
+
+- The balance-snapshot test called `_ago(400)` three times, producing three
+  *different* microsecond timestamps — where production writes one shared
+  timestamp per snapshot. The test was wrong; the code was right.
+- The dedup-resurrection test asserted on delivered alerts, and dispatch's
+  cooldown swallows an immediate repeat — which makes the hazard look
+  survivable. It isn't: on a real deployment the prune and the re-poll are days
+  apart, with no cooldown left to help. Now asserted on the detection.
+
+### Verification
+
+13 tests, written first. Four mutations — baseline tables pruned, keep-latest
+guard removed, pruning unwired from the scheduler, interval guard removed — each
+red-lighting only its own guards. Full suite green at 418.
+
+`_last_prune` is `None` rather than `0`, per the monotonic lesson, with the
+reason in a comment beside it.

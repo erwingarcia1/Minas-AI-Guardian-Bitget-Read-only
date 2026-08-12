@@ -58,6 +58,17 @@ class Metrics:
             registry=reg,
         )
         self.rules_config_valid.set(1)
+        # Row counts per table. This project has already had one outage from a
+        # query going quadratic over a table nobody was watching grow, so the
+        # size is a first-class signal rather than something to discover.
+        self.table_rows = Gauge(
+            "sentinel_table_rows", "Rows per table", ["table"], registry=reg,
+        )
+
+    def set_table_rows(self, counts: dict) -> None:
+        if _AVAILABLE:
+            for table, rows in counts.items():
+                self.table_rows.labels(table=table).set(rows)
 
     def set_rules_config_valid(self, ok: bool) -> None:
         if _AVAILABLE:

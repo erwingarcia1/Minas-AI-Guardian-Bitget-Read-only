@@ -14,6 +14,7 @@ from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
 from sentinel.poller import AccountPoller
 from sentinel.ratelimit import RateLimiters
+from sentinel.retention import prune_all, table_counts
 from sentinel.rules_schema import default_for
 
 logger = logging.getLogger("sentinel.engine")
@@ -84,6 +85,10 @@ class Engine:
         # Which config rejection we have already paged about, so a persistent
         # one doesn't page every scheduler cycle while a *new* one still does.
         self._paged_config_rejection: str | None = None
+        # None, not 0. `time.monotonic()` is seconds since boot, so 0 as "never
+        # pruned" would gate the first prune on the machine's uptime - the exact
+        # defect that made CI red for ten hours.
+        self._last_prune: float | None = None
 
         def _rate(key: str, default: str) -> float:
             return float(rules.get_decimal("rate_limits", key, default=Decimal(default)))
@@ -199,10 +204,25 @@ class Engine:
             if self._metrics is not None:
                 self._metrics.set_rules_config_valid(self._rules.is_valid)
             self._check_config_health()
+            self._prune_if_due()
             if self._untimestamped_alarm is not None:
                 self._untimestamped_alarm.evaluate(now=time.monotonic())
         except Exception as exc:  # noqa: BLE001 - scheduler must survive anything
             logger.error("scheduler cycle failed: %s", exc)
+
+    def _prune_if_due(self) -> None:
+        """Retention, on its own interval rather than the scheduler's.
+
+        Full-table deletes on a 45-second loop would be wasted I/O against the
+        very tables the fast loop queries."""
+        interval = self._rules.get_seconds("retention", "prune_interval_minutes") * 60
+        now = time.monotonic()
+        if self._last_prune is not None and now - self._last_prune < interval:
+            return
+        self._last_prune = now
+        prune_all(self._db, self._rules)
+        if self._metrics is not None:
+            self._metrics.set_table_rows(table_counts(self._db))
 
     def _check_config_health(self) -> None:
         """Pages CRITICAL while the rules file on disk is rejected.
