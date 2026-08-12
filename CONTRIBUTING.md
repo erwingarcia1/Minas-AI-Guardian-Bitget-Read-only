@@ -191,3 +191,34 @@ if reference:
     return f"id:{reference}"
 return "sha256:" + _digest(...)       # explicit, not a fallback value
 ```
+
+## Mutation testing
+
+```bash
+scripts/mutation-check.sh            # run; print survivors and the score
+scripts/mutation-check.sh --check    # fail below the floor, raise it on improvement
+```
+
+Restricted to **decision points** — comparison operators, boolean operators,
+`continue`/`break`/`return` — over `sentinel/detectors/` and `sentinel/alerts/`.
+
+An unrestricted run produced **588 survivors from 1,322 mutants** and would take
+~36 hours for the whole package; roughly 60% were cosmetic (mutated log text,
+SQL keyword casing, string literals). Chasing that list is a project that
+stalls. The restricted run is **110 mutants**, and every survivor is a decision
+a test could reasonably be expected to pin.
+
+The score is a floor in `scripts/mutation-floor.txt`, ratcheted the same way as
+the coverage floor: set from measured reality, never lowered, raised whenever it
+improves.
+
+**Known blind spot:** a module with no conditionals produces no decision-point
+mutants at all. `detectors/withdrawal.py` is the case — a straight-line
+`Detection` builder whose unrestricted survival rate is the worst in the
+codebase (62.7%), and which this tool reports nothing for. Its mutations are
+evidence-key and message changes, and those matter because
+`dispatch._dedup_key` reads `evidence["order_id"]`. Cover it by hand.
+
+The mutmut invocation quirks (whole-package `source_paths`, newline-separated
+test selection, the cached `mutants/` copy, unstable mutant numbering) are
+documented at the top of the script so nobody rediscovers them.

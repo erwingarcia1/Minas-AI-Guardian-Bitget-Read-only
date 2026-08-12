@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # The mutation job below is too slow for every push (mutant generation alone
+  # is ~8 minutes and is not cacheable across runners), so it runs weekly and
+  # on demand instead. A ratchet that only moves on a schedule still only ever
+  # moves one way.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 jobs:
   test:
@@ -46,3 +53,32 @@ jobs:
           cp .env.example .env   # git-ignored at runtime; a placeholder satisfies env_file
           docker compose config --quiet && echo "compose OK"
           rm -f .env
+
+  # Decision-point mutation score, as a floor that can only go up.
+  #
+  # Deliberately NOT part of the `test` job: mutant generation is ~8 minutes and
+  # the run itself several more, which would put ten minutes on every push for a
+  # signal that changes slowly. Weekly and on-demand keeps the ratchet without
+  # making the feedback loop useless.
+  mutation:
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          pip install -e ".[dev]"
+          pip install mutmut
+
+      # Fails if the score drops below scripts/mutation-floor.txt, and raises
+      # the floor when it improves - so a decision this suite pins today cannot
+      # quietly stop being pinned tomorrow.
+      - name: Decision-point mutation score
+        run: scripts/mutation-check.sh --check

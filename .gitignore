@@ -14,5 +14,9 @@ sentinel_data/
 .claude/settings.local.json
 .DS_Store
 
-
 *.pem
+
+# mutmut's working copy of the package and the config scripts/mutation-check.sh
+# writes; both are regenerated and neither belongs in the repo.
+mutants/
+setup.cfg
