@@ -145,3 +145,49 @@ most likely way a script like this does real damage.
 
 It cannot check whether the code does what the criteria claim. Nothing
 mechanical can, so it recommends rather than decides.
+
+## Falsy sentinels
+
+**Never use a falsy value to mean "absent".** Use `None`, and handle it
+explicitly.
+
+```python
+ts = f.get("timestamp") or 0          # NO  - 0 is a valid timestamp
+ts = f.get("timestamp")               # yes - then decide what None means
+if ts is None: ...
+```
+
+Five shipped defects in this project were one mistake, and every one was silent:
+
+- `(f.get("timestamp") or 0) >= last_run_ms` — an undated fill sorted before
+  every window and was **never price-checked** (G-47).
+- `str(record.get("id") or "")` then `return False` — an id-less withdrawal read
+  as *already seen*, so **money left the account with nobody told** (G-11). The
+  identical line in `record_seen_transfer` survived that fix and had to be found
+  again.
+- `evidence["order_id"] or evidence["coin"]` — two distinct withdrawals shared a
+  dedup key and the second was suppressed. Later, off-market fills (which carry
+  `symbol`, not `coin`) collapsed to `""` and **every one on an account shared a
+  key**.
+- `self._last_slow.get(account_id, 0)` — `time.monotonic()` is seconds since
+  **boot**, so this asked "has the machine been up 10 minutes?". It passed
+  trivially on any long-lived host and failed on every fresh CI runner.
+
+The shape: a falsy default is indistinguishable from a real falsy value, and
+both are indistinguishable from absent. `0` is a valid timestamp, `""` is a
+valid string, `[]` is a valid routing list. The moment one stands in for
+"missing", every comparison, dict key and dedup key downstream is reasoning
+about a value that was never there.
+
+**Where it matters most:** anything feeding a comparison, a dict key, or a dedup
+key. `or ""` for display or string-building is fine.
+
+**The correct shape**, when a derived value genuinely is needed — take the real
+one if present, otherwise derive one deliberately, and never silently:
+
+```python
+reference = str(record.get("id") or record.get("txid") or "")
+if reference:
+    return f"id:{reference}"
+return "sha256:" + _digest(...)       # explicit, not a fallback value
+```
