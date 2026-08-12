@@ -13,8 +13,13 @@ decision before anything can be built.
 
 # Summary — session of 2026-08-12
 
-**Ten issues closed, one partially. `main` is green at 283 tests, lint clean,
-coverage 79.18%. Nothing is half-finished.**
+**Ten issues closed, one partially, plus a follow-up session. `main` is green at
+311 tests, lint clean. Nothing is half-finished.**
+
+> **Follow-up (same day):** added `sentinel validate-config` as a pre-deploy
+> gate, and **reversed the refuse-to-start-on-a-bad-config decision** I made in
+> G-12 — it turned an upgrade into an outage. Full write-up at the bottom of
+> this file; the short version is in "Read these first" below.
 
 ## Read these first
 
@@ -33,6 +38,13 @@ coverage 79.18%. Nothing is half-finished.**
      the truth.
 3. **I pushed a red `main` once** (`609fe1d`), for about two minutes. Own
      section below. It surfaced a real one-millisecond defect, which is fixed.
+4. **A rejected rules config no longer stops the service starting.** I had it
+   refuse; that was wrong for the upgrade case, which is the one that actually
+   happens. It now runs on the settings that validate, defaults for the rest,
+   and raises a CRITICAL operator page. Fail-fast moved to
+   **`sentinel validate-config <path>`** — run it on the server before you
+   deploy. Writing the test for it also found a trap: routing was falling back
+   to *no channels*, which would have detected perfectly and told nobody.
 
 ## What was closed
 
@@ -111,6 +123,9 @@ Not because the buildable work ran out — **#54 is next and is ready to start**
 I stopped because starting an issue that size risked leaving it half-finished,
 which is worse than a clean handover. Everything committed is complete,
 tested and revertable as a single unit per issue.
+
+*(The follow-up session after this one added `validate-config` and reversed the
+fail-closed startup decision — see the last section of this file.)*
 
 ---
 
