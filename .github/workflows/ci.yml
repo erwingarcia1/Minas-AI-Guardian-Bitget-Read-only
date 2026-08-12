@@ -81,4 +81,41 @@ jobs:
       # the floor when it improves - so a decision this suite pins today cannot
       # quietly stop being pinned tomorrow.
       - name: Decision-point mutation score
+        id: mutation
         run: scripts/mutation-check.sh --check
+
+      # A weekly job whose failure sits unread in the Actions tab is the
+      # ten-hours-of-red problem with a longer fuse. Filing an issue is the one
+      # notification path that needs no secrets and reaches a human through
+      # normal repo notifications - and it leaves a record that outlives the
+      # 90-day log retention.
+      #
+      # Deliberately NOT routed through the operator alerting channel (#53):
+      # that lives inside the running service and needs the database and the
+      # channel credentials, neither of which a CI runner has or should have.
+      - name: Open an issue when the floor breaks
+        if: failure()
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          existing=$(gh issue list --state open --label "mutation-floor" \
+            --json number --jq '.[0].number // empty')
+          body=$(printf '%s\n' \
+            "The weekly decision-point mutation run scored below the floor in" \
+            "\`scripts/mutation-floor.txt\`." \
+            "" \
+            "That means a decision this suite used to pin, it no longer does -" \
+            "some change removed a test's grip on a comparison, a boolean, or a" \
+            "continue/break without any test going red." \
+            "" \
+            "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
+            "Commit: ${{ github.sha }}" \
+            "" \
+            "Reproduce locally with \`scripts/mutation-check.sh\` - the survivor" \
+            "list is printed in full.")
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "$body"
+          else
+            gh issue create --title "Mutation score dropped below the floor" \
+              --label "mutation-floor,epic-10-reliability,priority: p2" --body "$body"
+          fi

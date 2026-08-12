@@ -20,7 +20,8 @@
 # unrestricted survival rate is the worst in the codebase (62.7%). Its
 # mutations are evidence-key and message changes, which matter because
 # `dispatch._dedup_key` reads `evidence["order_id"]`. Cover that module by
-# hand; this script will not do it for you.
+# hand - tracked as issue #65. This script will not do it for you, and the
+# floor below says nothing about that file either way.
 #
 # ## mutmut invocation quirks, found the hard way
 #

@@ -217,7 +217,8 @@ mutants at all. `detectors/withdrawal.py` is the case — a straight-line
 `Detection` builder whose unrestricted survival rate is the worst in the
 codebase (62.7%), and which this tool reports nothing for. Its mutations are
 evidence-key and message changes, and those matter because
-`dispatch._dedup_key` reads `evidence["order_id"]`. Cover it by hand.
+`dispatch._dedup_key` reads `evidence["order_id"]`. Cover it by hand — tracked
+as **#65**. The floor says nothing about that file either way.
 
 The mutmut invocation quirks (whole-package `source_paths`, newline-separated
 test selection, the cached `mutants/` copy, unstable mutant numbering) are
