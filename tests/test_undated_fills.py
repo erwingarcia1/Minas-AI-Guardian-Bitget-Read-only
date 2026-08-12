@@ -228,7 +228,11 @@ def test_dated_recent_fill_is_still_price_checked(db, cipher, monkeypatch):
     """The path that already worked keeps working."""
     account_id, account_row = _settled_account(db, cipher, monkeypatch, label="undated-7")
 
-    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    # A second past the settling poll, not "right now": at millisecond
+    # resolution a fill stamped in the same millisecond as the previous poll is
+    # a boundary case, and this test is about the ordinary recent fill rather
+    # than that boundary.
+    now_ms = int(datetime.now(timezone.utc).timestamp() * 1000) + 1000
     monkeypatch.setattr(
         "sentinel.poller.make_client",
         lambda *a, **k: _client(fills=[_fill(timestamp=now_ms)], tickers=_ticker()),

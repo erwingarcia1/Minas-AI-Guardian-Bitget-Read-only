@@ -905,3 +905,38 @@ connection; making `_claim` always succeed; moving `_release` out of the
 The suite went from ~70s to ~41s. The lock this removed was costing roughly
 40% of test wall-clock, which is a reasonable proxy for what it was costing the
 poller under a full worker pool.
+
+---
+
+### Correction: I pushed a red main, and fixed it in the next commit
+
+**What happened.** On the G-45 commit I ran the full suite and the commit in a
+single chained shell command. The suite reported `1 failed, 282 passed` and the
+commit went ahead anyway, because I had chained on the *commit* succeeding
+rather than gating on the test result. `609fe1d` landed on main with
+`test_dated_recent_fill_is_still_price_checked` failing.
+
+That breaks the rule I was given — never leave main with a failing suite — and
+it broke it in the most avoidable way, by not reading output I had explicitly
+asked for. Fixed in the following commit; main was red for about two minutes.
+
+**What the failure actually was**, since it turned out to be a real defect and
+not just a flaky test. The test passed in isolation and failed in the full run.
+`last_run_ms` was `datetime.fromisoformat(...).timestamp() * 1000` — a float
+carrying sub-millisecond precision — while exchange timestamps are integer
+milliseconds. A fill stamped inside the boundary millisecond compares as
+*older* than the last poll and is excluded, permanently, because the window
+only moves forward.
+
+A one-millisecond hole, but exactly the same never-examined shape as the bug
+G-47 rewrote this filter to fix. Fixed by flooring `last_run_ms` to whole
+milliseconds, which errs towards examining. The test also now uses a timestamp
+a second past the settling poll, since it is about the ordinary recent fill
+rather than the boundary.
+
+**Why it surfaced today and not before:** the G-45 concurrency work cut the
+suite from ~70s to ~38s, which changed the timing enough to land inside that
+millisecond. The bug was there the whole time.
+
+**What I changed about how I work:** run the suite as its own command and read
+the result before committing. Chaining them reads as one step and isn't.

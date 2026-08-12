@@ -286,7 +286,13 @@ class AccountPoller:
         # record_seen_withdrawal already makes for an undated withdrawal.
         last_run_ms = None
         if last_run_iso:
-            last_run_ms = datetime.fromisoformat(last_run_iso).timestamp() * 1000
+            # Floored to whole milliseconds, because exchange timestamps are
+            # integer ms. Comparing an int against a float carrying sub-ms
+            # precision drops a fill stamped inside the boundary millisecond -
+            # a one-millisecond hole, but the same silently-never-examined
+            # shape as the bug this filter was rewritten to fix (G-47). Erring
+            # towards examining is the safe direction here.
+            last_run_ms = int(datetime.fromisoformat(last_run_iso).timestamp() * 1000)
 
         recent_fills = []
         for fill in fills:
