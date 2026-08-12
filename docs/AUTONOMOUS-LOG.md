@@ -1305,3 +1305,98 @@ now. Caught because I read the failure rather than assuming the code was wrong.
 tolerance drifting back to zero, a new SPEC setting with no declared fallback,
 and the readers no longer consulting the registry — each red-lighting only its
 own guard. Full suite green at 319.
+
+---
+
+## Task 3 · Sweep: tested but never wired
+
+Two call sites were found unpinned while building the last change. Asked to
+check every alarm, health check and detector the same way — by deleting the call
+site and seeing whether anything fails.
+
+### Method
+
+A script that blanks each `for detection in detect_x(...)` call site in turn
+(replacing the iterable with `[]`, so the loop still runs and nothing else
+changes), runs the **whole** suite, records pass/fail, and restores. Passing
+means nothing anywhere noticed the detector had stopped being called.
+
+### Result: 8 of 12 detectors were unpinned
+
+| Detector | Was pinned? |
+| --- | --- |
+| `detect_new_withdrawals` | yes |
+| `detect_unseen_address` | yes |
+| `detect_off_market_fills` | yes |
+| `detect_quantity_drop` | yes |
+| `detect_withdrawal_burst` | **no** |
+| `detect_baseline_drift` | **no** |
+| `detect_new_pair_activity` | **no** |
+| `detect_fee_anomaly` | **no** |
+| `detect_new_transfer_route` | **no** |
+| `detect_permission_state_change` | **no** |
+| `detect_tamper` | **no** |
+| `detect_unreachable` | **no** |
+
+Every one of the eight has thorough unit tests for *how it decides*. None had a
+test that anything *asks it*. Deleting the call for `detect_tamper` — the
+detector that notices the monitoring key itself has been revoked — left the
+suite entirely green.
+
+The four that were pinned were pinned by accident: they happen to be the ones
+the end-to-end integration tests exercise, because those tests were written
+about withdrawals and thefts. Nobody chose which detectors were covered.
+
+### Fix
+
+`tests/test_detector_wiring.py`: one test per previously-unpinned detector,
+each driving the real poller with input that detector should fire on and
+asserting its rule comes out. They deliberately assert almost nothing about
+*how* each detector decides — that is well covered elsewhere, and duplicating it
+here would make these tests fail for reasons that have nothing to do with
+wiring.
+
+Re-ran the sweep afterwards: **unpinned: none.**
+
+### The other half — calls that could kill a thread
+
+Two found, both in `engine.py`, both with the same consequence: the process
+stays up, the dashboard keeps serving, the metrics endpoint keeps answering,
+and nothing is polled ever again.
+
+1. **`_scheduler_loop` read the poll interval outside the guard.** That read
+   goes through `RulesConfig`, which touches the filesystem and re-parses YAML,
+   so it *can* fail. If it did, the scheduler thread would die and no work
+   would ever be queued again. Now inside `_scheduler_pass`, which cannot
+   raise.
+2. **The worker's own error handler could throw.**
+   `self.breakers.for_account(...).record_failure()` runs *because* something
+   already went wrong, and it sat inside the `except` rather than under its own
+   guard — so a failure there escaped the handler whose entire job is stopping
+   one bad account from killing a worker. A pool that loses workers one at a
+   time ends up polling nothing, with no single moment where anything looks
+   broken. Now guarded, with `task_done()` in an inner `finally` so the queue's
+   accounting can't be left wrong either.
+
+The worker test drives the real `_worker_loop` on a real thread and asserts it
+takes a *second* task after the first one poisons it. "The thread is still
+alive" is the actual guarantee, and the synchronous drain used by other tests
+does not have it.
+
+### What I take from this
+
+The pattern is now three-for-three across this codebase: **testing what a
+component decides, and never testing that anything asks it.** It produces suites
+that look thorough and pin half of what their names promise. Coverage does not
+show it — every one of these detectors was "covered" — because coverage counts
+lines executed, and a unit test executes the detector's lines without the
+caller's.
+
+The cheap check is the one used here: delete the call, run everything, and see
+whether the suite notices.
+
+### Verification
+
+10 tests, written first. The detector sweep re-run end to end (12 call sites ×
+full suite). Two further mutations on the thread guards, each red-lighting only
+its own test. Full suite green at 329.

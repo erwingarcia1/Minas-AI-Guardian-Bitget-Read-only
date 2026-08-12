@@ -14,6 +14,7 @@ from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
 from sentinel.poller import AccountPoller
 from sentinel.ratelimit import RateLimiters
+from sentinel.rules_schema import default_for
 
 logger = logging.getLogger("sentinel.engine")
 
@@ -141,10 +142,27 @@ class Engine:
 
     def _scheduler_loop(self) -> None:
         while not self._stop.is_set():
-            started = time.monotonic()
-            self._scheduler_tick()
-            fast_interval = self._rules.get_seconds("polling", "fast_loop_seconds", default=45)
-            self._stop.wait(max(1.0, fast_interval - (time.monotonic() - started)))
+            self._stop.wait(self._scheduler_pass())
+
+    def _scheduler_pass(self) -> float:
+        """One pass, returning how long to sleep before the next. Never raises.
+
+        The interval read is inside the guard, not just the work. It goes
+        through `RulesConfig`, which touches the filesystem and re-parses YAML -
+        so it can fail, and if it did outside a handler the scheduler thread
+        would die and nothing would ever be queued again. Every account would
+        stop being polled while the process stayed up, the dashboard kept
+        serving, and the metrics endpoint kept answering. Total silence
+        presented as health, which is the failure mode this whole codebase keeps
+        being audited for."""
+        started = time.monotonic()
+        self._scheduler_tick()
+        try:
+            fast_interval = self._rules.get_seconds("polling", "fast_loop_seconds")
+        except Exception as exc:  # noqa: BLE001 - a bad interval must not stop scheduling
+            logger.error("could not read the poll interval (%s) - using the built-in default", exc)
+            fast_interval = float(default_for("polling", "fast_loop_seconds") or 45)
+        return max(1.0, fast_interval - (time.monotonic() - started))
 
     def _scheduler_tick(self) -> None:
         """One pass of the scheduler's housekeeping: queue the due work, run
@@ -265,10 +283,21 @@ class Engine:
                     breaker.record_success()
             except Exception as exc:  # noqa: BLE001 - one task must never kill a worker
                 logger.error("task failed account=%d kind=%s: %s", task.account_id, task.kind, exc)
-                self.breakers.for_account(task.account_id).record_failure()
+                # Guarded in its own right: this runs *because* something already
+                # went wrong, and a failure here would escape the handler that
+                # exists to stop one bad account killing a worker. A pool that
+                # silently loses workers one at a time ends up polling nothing.
+                try:
+                    self.breakers.for_account(task.account_id).record_failure()
+                except Exception as breaker_exc:  # noqa: BLE001
+                    logger.error("breaker update failed for account %d: %s", task.account_id, breaker_exc)
             finally:
-                self._release(task.account_id, task.kind)
-                self._queue.task_done()
+                try:
+                    self._release(task.account_id, task.kind)
+                finally:
+                    # Last statement in the finally, so a failure above cannot
+                    # leave the queue's unfinished-task count wrong forever.
+                    self._queue.task_done()
 
     def _consecutive_failures(self, account_id: int) -> int:
         with self._db.cursor() as cur:
