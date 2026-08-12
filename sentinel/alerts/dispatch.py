@@ -54,6 +54,7 @@ def dispatch(
     account_label: str,
     detection: Detection,
     cooldown_minutes: dict[str, int],
+    rule_cooldowns: dict[str, int] | None = None,
 ) -> int | None:
     """Sends `detection` to the channels registered for its severity, unless
     an alert with the same dedup key already fired within the cooldown
@@ -61,7 +62,14 @@ def dispatch(
     alert was actually sent (so downstream delivery logs can reference it),
     or None when it was deduped away."""
     dedup_key = _dedup_key(account_id, detection)
-    cooldown = timedelta(minutes=cooldown_minutes.get(detection.severity, 60))
+    # A per-rule override beats the severity default. Severity answers "how
+    # urgent is this"; some rules also need "and how often may it repeat",
+    # which is a different question. `account_unreachable` is the case that
+    # forced it: at HIGH's 30 minutes a broken key would page twice an hour
+    # until fixed, which trains a customer to ignore it, and with no repeat at
+    # all an unwatched account looks fine forever (G-6).
+    minutes = (rule_cooldowns or {}).get(detection.rule, cooldown_minutes.get(detection.severity, 60))
+    cooldown = timedelta(minutes=minutes)
     now = datetime.now(timezone.utc)
 
     with db.cursor() as cur:

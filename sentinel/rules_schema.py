@@ -139,6 +139,7 @@ SPEC: dict = {
         # operator is entitled to make.
         "cooldown_minutes": {sev: NON_NEGATIVE for sev in SEVERITIES},
         "escalation_unacknowledged_minutes": POSITIVE,
+        "unreachable_repeat_minutes": POSITIVE,
         "sms_cooldown_minutes": NON_NEGATIVE,
         "sms_critical_overrides_optout": _boolean(),
     },
@@ -226,6 +227,7 @@ DEFAULTS: dict = {
         },
         "cooldown_minutes": {"CRITICAL": 15, "HIGH": 30, "MEDIUM": 720, "LOW": 1440},
         "escalation_unacknowledged_minutes": 15,
+        "unreachable_repeat_minutes": 1440,
         "sms_cooldown_minutes": 30,
         "sms_critical_overrides_optout": True,
     },

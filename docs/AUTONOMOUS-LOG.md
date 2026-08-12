@@ -1991,3 +1991,65 @@ Cross-referenced on #37 so whoever builds the drill harness builds one that
 covers both paths. Two bespoke drill mechanisms would be two things to maintain
 and two things that can silently stop running — which is the failure these
 issues exist to prevent, reproduced in the tool that prevents it.
+
+---
+
+## Tier 1 · G-6 (#11) — the customer is warned when a connection breaks
+
+The detector already existed. What happened to its finding did not work.
+
+**`account_unreachable` fired at MEDIUM, and MEDIUM routes to `digest` only.**
+So the alert that says a customer has stopped being monitored waited for a daily
+digest — sent by a host crontab that `docs/deployment.md` itself warns "fails
+silently every day and the digest never sends". An account could go unwatched
+indefinitely and the customer's first hint would be a digest that never arrived.
+
+That is criterion 4 inverted: silence looking exactly like safety.
+
+### What changed
+
+- **HIGH, not MEDIUM.** Reaches the customer in minutes rather than tomorrow.
+- **The message says what to do**, split by cause. A rejected key is theirs to
+  re-issue; an unreachable exchange is not, and telling them to replace a
+  working key would be wrong advice. The split does *not* change severity —
+  either way they are not being watched, which is what the alert is about.
+- **Repeats daily** via a per-rule cooldown. Severity answers "how urgent";
+  some rules also need "how often may this repeat", which is a different
+  question. At HIGH's 30 minutes a broken key pages twice an hour until fixed;
+  with no repeat, an unwatched account looks fine forever.
+- **Shown where the account appears** — a `NOT BEING WATCHED` pill on the ops
+  dashboard, a plain statement on the member portal. Both derive from the same
+  counters the alert fires on, via the same declared threshold, so the page and
+  the alert cannot disagree.
+
+### The defect the mutation check found
+
+Removing `auth_failures` from the poller's call broke **no test**, and chasing
+why turned up something worse: **auth failures never reached this detector at
+all.** They go through `_handle_auth_failure`, which fires the tamper signal and
+returns. So G-6's stated case — *"the softer case — an expired or deleted key"* —
+could never produce the actionable alert the issue exists for. The customer got
+"possible tamper", CRITICAL, and nothing telling them their key needed
+replacing.
+
+Both now fire from that path. They answer different questions — tamper is
+attribution, this is coverage — and neither replaces the other.
+
+### And a vacuous test of my own
+
+`test_it_repeats_while_the_connection_is_still_broken` dispatched twice in a row
+and asserted the second was suppressed. HIGH's 30-minute cooldown suppresses an
+immediate repeat just as well as the daily one does, so the test could not tell
+them apart and passed with the per-rule lookup deleted. Fixed by backdating the
+stored alert two hours — inside the daily cadence, well outside 30 minutes.
+
+Third time this session a test has passed for the wrong reason and been caught
+by mutation rather than by review. The pattern in all three: **asserting an
+outcome that both the right and wrong implementations produce.**
+
+### Verification
+
+10 tests, written first, 7 red. Four mutations — severity back to MEDIUM,
+per-rule cooldown ignored, auth path skipping the coverage check, and
+`auth_failures` not passed — each red-lighting only its own guard. Full suite
+green at 405.

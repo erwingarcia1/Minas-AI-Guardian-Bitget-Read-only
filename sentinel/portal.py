@@ -311,8 +311,10 @@ def _render_member_account(db: Database, email: str, account_id: int) -> str | N
         "polled continuously for fund movement &amp; config drift</span>"
         f'<span class="meta">last check {_ts(last_ok)}</span></div>'
         if fresh and acct["status"] == "active" else
-        '<div class="check"><span class="ic warn">!</span><span class="txt"><b>Monitoring paused or delayed</b> — '
-        "the Minas team has been notified</span></div>"
+        '<div class="check"><span class="ic warn">!</span><span class="txt"><b>This account is NOT being watched</b> — '
+        "movements on it are not currently being detected. Minas has been alerted and is "
+        "restoring access; if we asked you for a new API key, that is what this is."
+        "</span></div>"
     )
     posture = (
         '<div class="card"><div class="card-head"><h2>Security posture</h2></div><div class="checks">'

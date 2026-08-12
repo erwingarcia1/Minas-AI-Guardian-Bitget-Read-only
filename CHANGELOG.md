@@ -38,6 +38,27 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   back to every configured channel, loudly.
 
 ### Fixed
+- **The customer is told when the Guardian loses access to their account
+  (G-6, #11).** The detector existed; what happened to its finding didn't work.
+  `account_unreachable` fired at **MEDIUM, and MEDIUM routes to `digest` only** —
+  so "your account has stopped being watched" waited for a daily digest sent by
+  a host crontab that `docs/deployment.md` itself warns *"fails silently every
+  day and the digest never sends"*. That is the issue's fourth criterion
+  inverted: silence looking exactly like safety. Now HIGH, so it reaches the
+  customer within minutes; the message states plainly that the account is **not
+  being watched** and what to do, split by cause — a rejected key is theirs to
+  re-issue, an unreachable exchange is not, and telling them to replace a
+  working key would be wrong advice. It repeats **daily** while unresolved via a
+  new per-rule cooldown, because HIGH's 30 minutes would page twice an hour
+  until fixed and no repeat at all leaves an unwatched account looking fine
+  forever. And the state is shown where the account appears: a **NOT BEING
+  WATCHED** pill on the ops dashboard and a plain statement on the member
+  portal, both derived from the same counters the alert fires on so the page and
+  the alert cannot disagree. Also fixed: auth failures went through a path that
+  fired only the *tamper* signal and never checked reachability, so G-6's actual
+  case — an expired or deleted key — could never produce the actionable alert
+  this issue exists for. Both now fire; tamper answers "is this an attack", this
+  answers "are you covered".
 - **A poll that dies partway no longer reports itself as a success (#59).**
   `last_success_at` was stamped the moment the exchange fetches returned, with
   **nine detector invocations still to run**, and `consecutive_failures` was

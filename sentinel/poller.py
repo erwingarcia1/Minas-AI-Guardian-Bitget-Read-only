@@ -158,7 +158,15 @@ class AccountPoller:
             sev: self._rules.get_int("alerting", "cooldown_minutes", sev)
             for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW")
         }
-        alert_id = dispatch(self._db, self._channels, account_id, label, detection, cooldowns)
+        rule_cooldowns = {
+            # Repeats daily while unresolved: silence must never look like
+            # safety, and a half-hourly repeat is its own kind of silence.
+            "account_unreachable": self._rules.get_int("alerting", "unreachable_repeat_minutes"),
+        }
+        alert_id = dispatch(
+            self._db, self._channels, account_id, label, detection, cooldowns,
+            rule_cooldowns=rule_cooldowns,
+        )
         if alert_id is not None:
             if self._metrics is not None:
                 self._metrics.alert_sent(detection.severity)
@@ -519,6 +527,19 @@ class AccountPoller:
         threshold = self._rules.get_int("detectors", "tamper", "consecutive_auth_failures_threshold", default=2)
         for detection in detect_tamper(failures, threshold):
             self._emit(account_id, label, detection)
+
+        # An account whose key is rejected is just as unwatched as one whose
+        # exchange is down, and G-6's case - an expired or deleted key - arrives
+        # here rather than through the generic path. Tamper answers "is this an
+        # attack"; this answers "are you covered", and the customer needs the
+        # second one to know their key must be replaced. Both fire: they say
+        # different things and neither replaces the other.
+        unreachable_threshold = self._rules.get_int(
+            "detectors", "heartbeat", "consecutive_failures_threshold", default=5
+        )
+        for detection in detect_unreachable(failures, unreachable_threshold, auth_failures=failures):
+            self._emit(account_id, label, detection)
+
         if self._metrics is not None:
             self._metrics.poll_failed(auth=True)
         logger.warning("auth/permission failure for %s (%d consecutive): %s", label, failures, exc)
@@ -527,7 +548,8 @@ class AccountPoller:
         failures = state.get("consecutive_failures", 0) + 1
         _update_poll_state(self._db, account_id, consecutive_failures=failures)
         threshold = self._rules.get_int("detectors", "heartbeat", "consecutive_failures_threshold", default=5)
-        for detection in detect_unreachable(failures, threshold):
+        auth_failures = state.get("consecutive_auth_failures", 0)
+        for detection in detect_unreachable(failures, threshold, auth_failures=auth_failures):
             self._emit(account_id, label, detection)
         if self._metrics is not None:
             self._metrics.poll_failed(auth=False)

@@ -19,6 +19,7 @@ from sentinel.operators import (
     session_secret,
 )
 from sentinel.passwords import LoginThrottle
+from sentinel.rules_schema import default_for
 
 logger = logging.getLogger("sentinel.dashboard")
 
@@ -231,6 +232,18 @@ def _status_pill(status: str) -> str:
     return f'<span class="pill {cls}">{html.escape(status.replace("_", " "))}</span>'
 
 
+def _watch_cell(row, threshold: int) -> str:
+    """Whether this account is actually being watched right now (G-6).
+
+    "The account shows as 'not being watched' everywhere it appears" - and the
+    dashboard is one of those places. Derived from the same counters the alert
+    fires on, so the page and the alert cannot disagree."""
+    failures = (row["consecutive_failures"] or 0) + (row["consecutive_auth_failures"] or 0)
+    if failures >= threshold:
+        return '<span class="pill s-tamper">NOT BEING WATCHED</span>'
+    return '<span class="pill s-active">watched</span>'
+
+
 def _fail_cell(n: int) -> str:
     return f'<span class="fail">{n}</span>' if n else '<span class="zero">0</span>'
 
@@ -271,6 +284,15 @@ def _unprotected_banner() -> str:
         "<code>sentinel operator add &lt;username&gt;</code> and this page will require a "
         "sign-in.</div>"
     )
+
+
+def _watch_threshold(rules) -> int:
+    """The heartbeat threshold, from config when we have it and from the
+    declared default otherwise - never a literal, so the dashboard and the
+    detector cannot drift apart."""
+    if rules is not None:
+        return rules.get_int("detectors", "heartbeat", "consecutive_failures_threshold")
+    return int(default_for("detectors", "heartbeat", "consecutive_failures_threshold") or 5)
 
 
 def _rules_banner(rules) -> str:
@@ -325,6 +347,7 @@ def _render(db: Database, rules=None) -> str:
         f"<td class='mono'>{html.escape((r['exchange'] if 'exchange' in r.keys() else 'bitget') or 'bitget')}</td>"
         f"<td class='mono'>{_account_type_label(r['topology'])}</td><td>{_status_pill(r['status'])}</td>"
         f"<td class='mono'>{_ts(r['last_success_at'])}</td>"
+        f"<td>{_watch_cell(r, _watch_threshold(rules))}</td>"
         f"<td>{_fail_cell(r['consecutive_failures'] or 0)}</td>"
         f"<td>{_fail_cell(r['consecutive_auth_failures'] or 0)}</td></tr>"
         for r in accounts
@@ -360,7 +383,7 @@ def _render(db: Database, rules=None) -> str:
         f'<div class="foot">{high_24h} high · {medlow_24h} med/low</div></div></div>'
         '<section><div class="card"><div class="card-head"><h2>Accounts</h2>'
         f'<span class="count">{total} total</span></div><table><thead><tr><th>Account</th><th>Exchange</th>'
-        "<th>Account type</th><th>Status</th><th>Last success</th><th>Failures</th><th>Auth</th></tr></thead>"
+        "<th>Account type</th><th>Status</th><th>Watched</th><th>Last success</th><th>Failures</th><th>Auth</th></tr></thead>"
         f"<tbody>{account_rows}</tbody></table></div></section>"
         '<section><div class="card"><div class="card-head"><h2>Recent alerts</h2>'
         '<span class="count">latest 50</span></div><table><thead><tr><th>Time</th><th>Account</th>'
