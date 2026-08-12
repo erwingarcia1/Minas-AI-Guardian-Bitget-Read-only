@@ -30,6 +30,7 @@ from decimal import Decimal
 import pytest
 
 from sentinel.config import RulesConfig
+from sentinel.rules_schema import default_for
 
 GOOD = """
 polling:
@@ -91,9 +92,9 @@ def test_a_bad_threshold_is_rejected_when_the_file_is_read(rules_path):
     assert rules.is_valid is False
     assert "tolerance_pct" in rules.validation_error
     assert "0,5" in rules.validation_error
-    assert rules.get("detectors", "quantity_drop", "tolerance_pct") is None, (
-        "the rejected value reached a reader"
-    )
+    assert rules.get("detectors", "quantity_drop", "tolerance_pct") == default_for(
+        "detectors", "quantity_drop", "tolerance_pct"
+    ), "the rejected value reached a reader instead of the declared fallback"
 
 
 def test_startup_with_a_bad_config_reports_it_and_does_not_use_the_value(rules_path):
@@ -115,7 +116,9 @@ def test_malformed_yaml_is_reported_and_nothing_from_it_is_used(rules_path):
 
     assert rules.is_valid is False
     assert "YAML" in rules.validation_error
-    assert rules.get("detectors", "quantity_drop", "tolerance_pct") is None
+    assert rules.get("detectors", "quantity_drop", "tolerance_pct") == default_for(
+        "detectors", "quantity_drop", "tolerance_pct"
+    )
 
 
 # --- a bad edit while running must not stop monitoring -----------------------
@@ -241,7 +244,9 @@ def test_a_value_that_breaks_its_own_formula_is_rejected(rules_path, original, b
     # reaches the detector anyway is not a rejection - a mutation that kept the
     # reporting and dropped the pruning passed every one of these cases before
     # this line existed.
-    assert rules.get(*path) is None, f"the rejected {setting} was still served to readers"
+    assert rules.get(*path) == default_for(*path), (
+        f"the rejected {setting} was served to readers instead of its declared fallback"
+    )
 
 
 def test_detection_keeps_running_after_a_bad_edit(db, cipher, rules_path, monkeypatch):

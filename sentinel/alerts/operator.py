@@ -41,14 +41,6 @@ logger = logging.getLogger("sentinel.alerts.operator")
 # Telegram thread that also carries customer alerts.
 OPERATOR_LABEL = "MINAS-OPS"
 
-# Defaults if operator_alerting is absent from rules.yaml. Deliberately wider
-# than the customer-side cooldowns: those are tuned for a flapping detection on
-# one account, where re-firing quickly matters. An operator page reports a
-# condition that persists until someone fixes it, so re-sending every 15
-# minutes produces noise rather than urgency. Hot-reloadable like everything
-# else - see docs/DECISIONS-NEEDED.md if these want revisiting alongside the
-# escalation ladder.
-_DEFAULT_COOLDOWNS = {"CRITICAL": 30, "HIGH": 60, "MEDIUM": 240, "LOW": 720}
 
 
 def _now() -> datetime:
@@ -88,10 +80,7 @@ class OperatorAlerter:
         self._rules = rules
 
     def _cooldown(self, severity: str) -> timedelta:
-        minutes = self._rules.get_int(
-            "operator_alerting", "cooldown_minutes", severity,
-            default=_DEFAULT_COOLDOWNS.get(severity, 60),
-        )
+        minutes = self._rules.get_int("operator_alerting", "cooldown_minutes", severity)
         return timedelta(minutes=minutes)
 
     def page(

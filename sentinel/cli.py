@@ -18,6 +18,7 @@ from sentinel.config import RulesConfig
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
 from sentinel.onboarding import OnboardingRejected, onboard_account
+from sentinel.rules_schema import default_for
 
 logger = logging.getLogger("sentinel.cli")
 
@@ -86,24 +87,6 @@ def _build_named_channels() -> dict[str, object]:
     return named
 
 
-# Used when a severity has no usable routing - because the section is missing,
-# or because it was pruned as invalid and the process is running degraded.
-#
-# This exists because `default=[]` is a trap here in a way it isn't for a
-# threshold. A missing tolerance falls back to a number; a missing routing table
-# falls back to *no channels*, so alerts are stored, deduped, and delivered
-# nowhere. That is a silent total failure of the product, reachable from a
-# single mistyped line, and it is worse than anything the schema validation was
-# added to prevent. Falling back to every configured channel is noisy in the
-# worst case and correct in the important one.
-_FALLBACK_ROUTING = {
-    "CRITICAL": ["telegram", "telegram_team", "sms", "email"],
-    "HIGH": ["telegram", "telegram_team", "email"],
-    "MEDIUM": ["digest"],
-    "LOW": ["digest"],
-}
-
-
 def build_channels(rules: RulesConfig) -> dict[str, list]:
     """severity -> [channel objects], from alerting.routing in rules.yaml.
     'digest' entries are intentionally skipped here: MEDIUM/LOW alerts are
@@ -114,7 +97,7 @@ def build_channels(rules: RulesConfig) -> dict[str, list]:
     for severity in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
         routed = rules.get("alerting", "routing", severity, default=None)
         if not routed:
-            routed = _FALLBACK_ROUTING[severity]
+            routed = default_for("alerting", "routing", severity) or []
             logger.error(
                 "no usable alert routing for %s - falling back to %s. An alert with no "
                 "channel is an alert that is never delivered.",
@@ -148,7 +131,7 @@ def build_operator_channels(rules: RulesConfig) -> dict[str, list]:
         if not routed:
             # Same trap as the customer routing above, and worse here: the
             # page this drops would be the one telling us the config is broken.
-            routed = _FALLBACK_ROUTING[severity]
+            routed = default_for("operator_alerting", "routing", severity) or []
             logger.error(
                 "no usable operator routing for %s - falling back to %s", severity, ", ".join(routed)
             )

@@ -162,6 +162,101 @@ SPEC: dict = {
 }
 
 
+# What each setting does when it is absent - because it was never configured,
+# or because it was configured wrongly and pruned.
+#
+# The rule: **an absent setting behaves exactly as the shipped config/rules.yaml
+# says it should.** Anything else is a silent behaviour change, and it is the
+# worst kind, because the setting is gone - there is no line to read and no diff
+# to review. A test pins every entry here against the shipped file, and another
+# requires every setting in SPEC to appear here, so adding a setting forces the
+# question to be answered rather than left to whatever a reader happens to pass.
+#
+# That drift is not hypothetical. `alerting.routing` fell back to `[]`, which is
+# not a value but the absence of one: alerts stored, deduped, delivered nowhere.
+# `alerting.cooldown_minutes` fell back to a flat 60 against a shipped CRITICAL
+# of 15, quadrupling how long a repeat CRITICAL stayed suppressed. And
+# `quantity_drop.tolerance_pct` was read with no default at all, so it landed on
+# the getter's own Decimal("0") - alerting on every dust movement, which buries a
+# real alert as thoroughly as silence does.
+DEFAULTS: dict = {
+    "polling": {
+        "fast_loop_seconds": 45,
+        "slow_loop_seconds": 600,
+        "jitter_seconds": 10,
+    },
+    "workers": {"pool_size": 8},
+    "rate_limits": {
+        "per_account_rps": 5,
+        "per_account_burst": 10,
+        "egress_ip_rps": 60,
+        "egress_ip_burst": 100,
+    },
+    "circuit_breaker": {
+        "failure_threshold": 3,
+        "base_backoff_seconds": 60,
+        "max_backoff_seconds": 3600,
+    },
+    "detectors": {
+        "quantity_drop": {
+            "tolerance_pct": Decimal("0.5"),
+            "tolerance_absolute": Decimal("0.00000001"),
+            "explanation_grace_seconds": 60,
+        },
+        "tamper": {"consecutive_auth_failures_threshold": 2},
+        "heartbeat": {"consecutive_failures_threshold": 5},
+        "withdrawal_burst": {"window_minutes": 60, "min_count": 3},
+        "off_market": {"max_deviation_pct": Decimal("10")},
+        "fee_anomaly": {
+            "multiplier": Decimal("5"),
+            "min_fee_floor": Decimal("1"),
+            "ema_alpha": Decimal("0.2"),
+        },
+        "transfers": {"max_coins_per_cycle": 5},
+    },
+    "alerting": {
+        # Not [] - see the note above. An absent routing table must still reach
+        # a human; the alternative is a system that detects perfectly and tells
+        # nobody.
+        "routing": {
+            "CRITICAL": ["telegram", "telegram_team", "sms", "email"],
+            "HIGH": ["telegram", "telegram_team", "email"],
+            "MEDIUM": ["digest"],
+            "LOW": ["digest"],
+        },
+        "cooldown_minutes": {"CRITICAL": 15, "HIGH": 30, "MEDIUM": 720, "LOW": 1440},
+        "escalation_unacknowledged_minutes": 15,
+        "sms_cooldown_minutes": 30,
+        "sms_critical_overrides_optout": True,
+    },
+    "operator_alerting": {
+        "routing": {
+            "CRITICAL": ["telegram", "telegram_team", "sms", "email"],
+            "HIGH": ["telegram", "telegram_team", "email"],
+            "MEDIUM": ["telegram_team"],
+            "LOW": ["telegram_team"],
+        },
+        "cooldown_minutes": {"CRITICAL": 30, "HIGH": 60, "MEDIUM": 240, "LOW": 720},
+        "untimestamped_window_seconds": 900,
+        "untimestamped_consecutive_windows": 2,
+    },
+    "triage": {"enabled": False, "model": "claude-opus-4-8", "max_events": 50},
+}
+
+
+def default_for(*path):
+    """The declared fallback for a setting, or None if there isn't one.
+
+    Consulted by `RulesConfig`'s readers when the caller passes no explicit
+    default, so a call site cannot quietly invent its own."""
+    node = DEFAULTS
+    for key in path:
+        if not isinstance(node, dict) or key not in node:
+            return None
+        node = node[key]
+    return node
+
+
 def _suggest(key: str, candidates) -> str:
     """Points at the key the operator probably meant. A misspelling is the
     common case here, so naming the near-match turns a rejection into a fix."""

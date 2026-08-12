@@ -154,7 +154,7 @@ class AccountPoller:
         if self._metrics is not None:
             self._metrics.detection_fired(detection.rule, detection.severity)
         cooldowns = {
-            sev: self._rules.get_int("alerting", "cooldown_minutes", sev, default=60)
+            sev: self._rules.get_int("alerting", "cooldown_minutes", sev)
             for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW")
         }
         alert_id = dispatch(self._db, self._channels, account_id, label, detection, cooldowns)
@@ -486,6 +486,6 @@ def run_forever(db: Database, cipher: CredentialCipher, rules: RulesConfig, chan
                 poller.run_slow_loop(account_row)
                 last_slow_loop[account_id] = now
 
-        jitter = rules.get_seconds("polling", "jitter_seconds", default=0)
+        jitter = rules.get_seconds("polling", "jitter_seconds")
         fast_interval = rules.get_seconds("polling", "fast_loop_seconds", default=45)
         time.sleep(fast_interval + random.uniform(0, jitter))

@@ -1231,3 +1231,77 @@ useful mutation is not *remove the feature* — it is **remove the specific
 property the test claims to pin**, one property at a time. A test suite can be
 100% mutation-killed against a coarse revert while pinning half of what its
 names promise.
+
+---
+
+## Task 2 · Sweep: defaults that silently disable
+
+`build_channels` fell back to `[]` for `alerting.routing`, where "fall back to
+the default" meant *no channels* rather than a safe value. Asked to audit every
+`rules.get(..., default=X)` for the same shape.
+
+### The criterion I used
+
+Not "is this default sensible" — that invites opinion. Instead: **does the
+fallback behave exactly as the shipped `config/rules.yaml` says it should?**
+Anything else is a silent behaviour change, and it is the worst kind, because
+the setting is missing: there is no line to read and no diff to review.
+
+### The list (26 settings)
+
+| Setting | Fallback | Verdict |
+| --- | --- | --- |
+| `alerting.routing` | `[]` → no channels | **switch-off** (fixed previously) |
+| `operator_alerting.routing` | `[]` → no channels | **switch-off** (fixed previously) |
+| `alerting.cooldown_minutes.*` | flat `60` vs 15/30/720/1440 | **unsafe, quieter** |
+| `quantity_drop.tolerance_pct` | implicit `0` vs `0.5` | **unsafe, noisier** |
+| `quantity_drop.tolerance_absolute` | implicit `0` vs `1e-8` | **unsafe, noisier** |
+| `polling.jitter_seconds` (sequential runner) | `0` vs `10` | cosmetic |
+| *(20 others)* | — | agree with the shipped config |
+
+**The cooldowns are the one I'd have missed by eye.** A flat 60 looks like a
+reasonable number. Against a shipped CRITICAL of 15 it quadruples how long a
+repeat CRITICAL stays suppressed — quieter, on the severity where quieter is
+worst, and only visible by putting the two lists side by side.
+
+**The tolerances fail in the opposite direction and are still wrong.** Both were
+read with *no default argument at all*, so they landed on `get_decimal`'s own
+`Decimal("0")`. Zero tolerance alerts on every dust movement and rounding
+artefact. That is fail-loud in direction, which is why it survived review — but
+an alert storm buries a real alert exactly as thoroughly as silence does, so it
+is a switch-off by another route.
+
+### The fix: a registry, not three patches
+
+Patching three call sites would have left the class intact. `rules_schema.DEFAULTS`
+now declares what every setting does when absent, and `RulesConfig`'s readers
+consult it when the caller passes no explicit default — so a call site can no
+longer invent its own. An explicit `default=` still wins; a caller that passes
+one means it.
+
+Two tests give it teeth:
+
+- **every entry in `DEFAULTS` must equal the shipped value** — the drift guard,
+  and the one that would have caught all four;
+- **every leaf in `SPEC` must appear in `DEFAULTS`** — so adding a setting
+  forces someone to answer "and what if it's missing?", which is precisely the
+  question nobody answered for `tolerance_pct`.
+
+Loudness is applied where it belongs. Falling back to the shipped default is
+*designed* behaviour and logs nothing — it would be noise on every unconfigured
+install. Falling back for `routing` still logs ERROR, because that one means
+degraded delivery rather than a documented value.
+
+### One thing worth flagging
+
+The first version of the drift test reported a false mismatch:
+`Decimal("0.00000001")` renders as `1E-8`, and I was comparing strings. A test
+whose entire job is to be believed cannot cry wolf, so it compares numerically
+now. Caught because I read the failure rather than assuming the code was wrong.
+
+### Verification
+
+8 tests, written first. Four mutations — cooldowns drifting back to a flat 60,
+tolerance drifting back to zero, a new SPEC setting with no declared fallback,
+and the readers no longer consulting the registry — each red-lighting only its
+own guard. Full suite green at 319.

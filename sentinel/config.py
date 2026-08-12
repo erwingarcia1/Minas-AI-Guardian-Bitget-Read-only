@@ -9,9 +9,13 @@ from typing import Any
 
 import yaml
 
-from sentinel.rules_schema import prune_invalid, validate
+from sentinel.rules_schema import default_for, prune_invalid, validate
 
 logger = logging.getLogger("sentinel.config")
+
+# Distinguishes "no default passed" from "default=None passed on purpose", so
+# the registry only fills a gap the caller left open.
+_UNSET = object()
 
 
 class RulesConfigError(ValueError):
@@ -176,23 +180,44 @@ class RulesConfig:
 
     # --- readers ------------------------------------------------------------
 
-    def get(self, *keys: str, default: Any = None) -> Any:
+    def get(self, *keys: str, default: Any = _UNSET) -> Any:
+        """The configured value, or what this setting does when absent.
+
+        With no explicit `default`, the fallback comes from
+        `rules_schema.DEFAULTS` rather than from whatever the call site happened
+        to pass. That indirection is the fix for a whole class of bug: a code
+        default that has drifted from the shipped `config/rules.yaml` means an
+        install with the setting *missing* behaves differently from one with it
+        present at its documented value, for no reason anyone chose - and since
+        the setting is missing, there is no line to read and no diff to review.
+
+        Three had drifted when this was introduced. `alerting.routing` fell back
+        to `[]`, which is the absence of a value rather than a value: alerts
+        stored, deduped, delivered nowhere. `alerting.cooldown_minutes` fell back
+        to a flat 60 against a shipped CRITICAL of 15. And the quantity-drop
+        tolerances were read with no default at all, landing on `Decimal("0")` -
+        alerting on every dust movement, which buries a real alert as thoroughly
+        as silence does.
+
+        An explicit `default` still wins: a caller that passes one means it."""
         self.reload()
         node: Any = self._data
         for key in keys:
             if not isinstance(node, dict) or key not in node:
-                return default
+                return default_for(*keys) if default is _UNSET else default
             node = node[key]
         return node
 
-    def get_seconds(self, *keys: str, default: float = 0.0) -> float:
+    def get_seconds(self, *keys: str, default: Any = _UNSET) -> float:
         value = self.get(*keys, default=default)
-        return float(value)
+        return float(value) if value is not None else 0.0
 
-    def get_int(self, *keys: str, default: int = 0) -> int:
+    def get_int(self, *keys: str, default: Any = _UNSET) -> int:
         value = self.get(*keys, default=default)
-        return int(value)
+        return int(value) if value is not None else 0
 
-    def get_decimal(self, *keys: str, default: Decimal = Decimal("0")) -> Decimal:
+    def get_decimal(self, *keys: str, default: Any = _UNSET) -> Decimal:
         value = self.get(*keys, default=default)
+        if value is None:
+            return Decimal("0")
         return value if isinstance(value, Decimal) else Decimal(str(value))
