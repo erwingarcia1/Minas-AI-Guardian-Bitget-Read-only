@@ -1,22 +1,27 @@
-"""The rules `scripts/audit_issue_status.py` recommends a label by.
+"""The one rule `scripts/audit_issue_status.py` enforces.
 
-The definition it enforces (CONTRIBUTING.md) is about the *current state of the
-feature*, not the state it was in when the backlog was written and not whether
-the issue is closed:
+The status label describes the current state of the feature, and its meanings
+(CONTRIBUTING.md) are deliberately loose about completeness:
 
-    built      every acceptance criterion met, tested, nothing left
-    partial    works, but some criteria remain
-    broken     a defect exists in it right now
+    built      the core exists and works; criteria may remain
+    partial    exists but materially incomplete
+    broken     an active defect exists in it right now
     not-built  doesn't exist yet
 
-Two consequences drive almost every rule below. A **closed issue labelled
-broken is a contradiction** unless the defect genuinely still exists. And
-**unticked criteria are incompatible with `built`** in either direction —
-including on open issues, which is where the old label description ("core is
-built, may still have unchecked criteria") had let fifteen of them drift.
+Which leaves exactly one mechanical rule worth enforcing: **a closed issue must
+be `built`.** Anything else on a closed issue is drift — most often a
+`Closes #N` trailer, which closes an issue without touching its labels, leaving
+a fixed defect still labelled `broken`.
 
-The script recommends. It applies only the recommendations that have evidence
-behind them, and only under `--apply`.
+Everything else is deliberately *not* checked:
+
+- **Open issues are ignored entirely.** An open issue already means work
+  remains, so built-vs-partial on one carries no decision. Flagging them would
+  make `partial` the default and destroy the signal that matters, which is
+  `broken` — something is wrong *now*.
+- **Acceptance criteria are not consulted.** Under these meanings unticked
+  criteria do not contradict `built`, so counting them produced noise rather
+  than findings.
 """
 
 from __future__ import annotations
@@ -44,104 +49,64 @@ def _evidence(commits=1, ci="success", tests=True, open_blockers=(), sha="abc123
             "open_blockers": list(open_blockers)}
 
 
-# --- the only case it may act on ---------------------------------------------
+# --- the rule -----------------------------------------------------------------
 
-def test_a_finished_closed_issue_is_recommended_built():
-    label, reason, actionable = recommend(_issue(), _evidence())
+def test_a_closed_issue_not_labelled_built_is_drift():
+    label, reason, actionable = recommend(_issue(labels=["status: broken"]), _evidence())
     assert label == "status: built"
     assert actionable is True
-    assert "broken" in reason  # says what it is moving away from
+    assert "broken" in reason
 
 
-def test_it_is_a_no_op_when_the_label_is_already_right():
-    label, _, actionable = recommend(_issue(labels=["status: built"]), _evidence())
+def test_a_closed_partial_is_drift_too():
+    label, _, actionable = recommend(_issue(labels=["status: partial"]), _evidence())
+    assert label == "status: built"
+    assert actionable is True
+
+
+def test_a_closed_built_issue_is_not_drift():
+    label, reason, actionable = recommend(_issue(labels=["status: built"]), _evidence())
+    assert label is None
+    assert actionable is False
+    assert "already correct" in reason
+
+
+def test_a_closed_built_issue_is_fine_even_if_its_ci_run_failed():
+    """CI history gates *promotion*, not an issue already at the target state.
+    Three closures landed inside a red window caused by an unrelated defect;
+    re-flagging them forever would be noise, and the work was verified
+    separately."""
+    label, _, actionable = recommend(
+        _issue(labels=["status: built"]), _evidence(ci="failure")
+    )
     assert label is None
     assert actionable is False
 
 
-# --- unticked criteria are incompatible with built, in both directions -------
-
-def test_a_closed_issue_with_unticked_criteria_is_not_built():
-    """Either the work is incomplete or nobody updated the issue. The script
-    cannot tell which, so it recommends `partial` and refuses to act."""
-    label, reason, actionable = recommend(
-        _issue(labels=["status: built"], body="- [x] a\n- [ ] b\n- [ ] c"), _evidence()
+def test_unticked_criteria_on_a_closed_issue_are_not_drift():
+    """`built` means the core exists and works; criteria may remain. Counting
+    them here produced noise rather than findings."""
+    label, _, actionable = recommend(
+        _issue(labels=["status: built"], body="- [ ] a\n- [ ] b"), _evidence()
     )
-    assert label == "status: partial"
+    assert label is None
     assert actionable is False
-    assert "2" in reason
 
 
-def test_an_open_issue_labelled_built_with_unticked_criteria_is_partial():
-    """The direction the old label description hid. `built` means every
-    criterion met; an open issue with criteria outstanding is `partial` by
-    definition, regardless of how much of it works."""
-    label, reason, actionable = recommend(
-        _issue(state="open", state_reason=None, labels=["status: built"],
-               body="- [x] a\n- [ ] b"), _evidence()
-    )
-    assert label == "status: partial"
-    assert actionable is False
-    assert "1" in reason
+# --- what it deliberately ignores --------------------------------------------
+
+def test_open_issues_are_ignored_whatever_their_label():
+    for current in ("status: built", "status: partial", "status: broken", "status: not-built"):
+        label, reason, actionable = recommend(
+            _issue(state="open", state_reason=None, labels=[current],
+                   body="- [x] a\n- [ ] b"), _evidence()
+        )
+        assert label is None, f"{current} on an open issue should not be drift"
+        assert actionable is False
+        assert "open" in reason.lower()
 
 
-def test_an_open_issue_with_every_criterion_ticked_is_flagged_not_promoted():
-    """All criteria met but still open is a question for a human - it may be
-    finished and unclosed, or the criteria may be incomplete."""
-    label, reason, actionable = recommend(
-        _issue(state="open", state_reason=None, labels=["status: partial"]), _evidence()
-    )
-    assert actionable is False
-    assert "open" in reason.lower()
-
-
-# --- a closed issue labelled broken is a contradiction -----------------------
-
-def test_a_closed_broken_issue_with_no_commit_is_flagged_not_promoted():
-    """Closed is a claim; a commit on main is evidence. Without one there is
-    nothing to say the defect was actually fixed."""
-    label, reason, actionable = recommend(_issue(), _evidence(commits=0))
-    assert actionable is False
-    assert "commit" in reason.lower()
-
-
-def test_a_failing_ci_run_blocks_the_recommendation():
-    """A commit landed does not mean it landed green. The ten-hour red-CI
-    window is exactly the state this must not rubber-stamp."""
-    label, reason, actionable = recommend(_issue(), _evidence(ci="failure", sha="deadbee"))
-    assert actionable is False
-    assert "ci" in reason.lower()
-    assert "deadbee" in reason, "name the commit, so it can be checked rather than taken on trust"
-
-
-def test_unknown_ci_is_reported_but_does_not_block():
-    """Check runs expire. Absence of a result is not evidence of failure, so it
-    is surfaced rather than treated as one."""
-    label, reason, actionable = recommend(_issue(), _evidence(ci=None))
-    assert label == "status: built"
-    assert actionable is True
-    assert "ci unknown" in reason.lower()
-
-
-def test_no_test_referencing_the_issue_is_reported_but_does_not_block():
-    """Test discovery is a grep for the issue and G-number in tests/. Plenty of
-    real work is covered by tests that never name it, so this informs rather
-    than decides."""
-    label, reason, actionable = recommend(_issue(), _evidence(tests=False))
-    assert label == "status: built"
-    assert actionable is True
-    assert "no test" in reason.lower()
-
-
-def test_an_open_blocker_blocks_the_recommendation():
-    """"Nothing left" cannot be true while something this issue depends on is
-    still open."""
-    label, reason, actionable = recommend(_issue(), _evidence(open_blockers=[54]))
-    assert actionable is False
-    assert "#54" in reason
-
-
-# --- closures that were never work -------------------------------------------
+# --- guards on acting ---------------------------------------------------------
 
 def test_a_not_planned_closure_is_never_recommended_built():
     """GitHub's "closed without doing it". Marking that built puts a lie in the
@@ -152,15 +117,44 @@ def test_a_not_planned_closure_is_never_recommended_built():
     assert "not planned" in reason.lower()
 
 
-def test_a_closed_issue_with_no_status_label_is_flagged():
+def test_no_commit_reports_the_drift_but_will_not_act_on_it():
+    """Closed is a claim; a commit on main is evidence. The label is still
+    wrong, so it is reported - but nothing auto-changes on no evidence."""
+    label, reason, actionable = recommend(_issue(), _evidence(commits=0))
+    assert label == "status: built"
+    assert actionable is False
+    assert "commit" in reason.lower()
+
+
+def test_a_failed_ci_run_blocks_acting_on_a_promotion():
+    label, reason, actionable = recommend(_issue(), _evidence(ci="failure", sha="deadbee"))
+    assert label == "status: built"
+    assert actionable is False
+    assert "deadbee" in reason, "name the commit, so it can be checked rather than taken on trust"
+
+
+def test_an_open_blocker_blocks_acting():
+    label, reason, actionable = recommend(_issue(), _evidence(open_blockers=[54]))
+    assert label == "status: built"
+    assert actionable is False
+    assert "#54" in reason
+
+
+def test_a_closed_issue_with_no_status_label_is_reported():
     label, reason, actionable = recommend(_issue(labels=["epic-02-watching-the-account"]), _evidence())
     assert actionable is False
     assert "no status label" in reason.lower()
 
 
+def test_unknown_ci_is_noted_but_does_not_block():
+    label, reason, actionable = recommend(_issue(), _evidence(ci=None))
+    assert label == "status: built"
+    assert actionable is True
+    assert "ci unknown" in reason.lower()
+
+
 # --- drift accounting ---------------------------------------------------------
 
-def test_drift_is_any_recommendation_at_all():
+def test_drift_is_any_row_at_all():
     assert audit.has_drift([("#1", "status: built", True)]) is True
-    assert audit.has_drift([("#1", "status: partial", False)]) is True
     assert audit.has_drift([]) is False

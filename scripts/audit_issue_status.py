@@ -79,62 +79,64 @@ def blocker_refs(body: str) -> list[int]:
 def recommend(issue: dict, evidence: dict) -> tuple[str | None, str, bool]:
     """(recommended label or None, reason, safe to apply).
 
-    Conservative by construction: the failure that matters is asserting
-    something is built when it is not, so every ambiguous case returns
-    `actionable=False` and goes to a person.
+    One rule: a **closed** issue must be `status: built`. Anything else on a
+    closed issue is drift - usually a `Closes #N` trailer, which closes an issue
+    without touching its labels and leaves a fixed defect labelled `broken`.
+
+    Open issues are ignored entirely, and acceptance criteria are not consulted.
+    An open issue already means work remains, so built-vs-partial on one carries
+    no decision; flagging them would make `partial` the default and drown the
+    signal that matters, which is `broken` - something is wrong *now*. And under
+    these label meanings unticked criteria do not contradict `built`.
+
+    Drift is reported whether or not it can be acted on. The evidence gates
+    below decide only whether `--apply` may touch it, never whether the label is
+    wrong.
     """
     labels = issue.get("labels") or []
     status = [label for label in labels if label.startswith(STATUS_PREFIX)]
     current = status[0] if status else None
-    closed = issue.get("state") == "closed"
-    open_boxes = unticked_count(issue.get("body", ""))
 
-    if closed and issue.get("state_reason") == "not_planned":
-        return None, "closed as not planned - never work, so no status change follows", False
+    if issue.get("state") != "closed":
+        return None, "open - no rule applies to an open issue's status", False
+
+    if issue.get("state_reason") == "not_planned":
+        return None, "closed as not planned - never work, so it never becomes built", False
 
     if not status:
-        return None, "no status label at all - needs one before it can be audited", False
-
-    # Unticked criteria settle it on their own, in both directions.
-    if open_boxes:
-        if current == BUILT:
-            return PARTIAL, (
-                f"labelled built with {open_boxes} criteria unticked - either the work is "
-                f"incomplete or the issue was never updated, and this cannot tell which"
-            ), False
-        return None, f"{open_boxes} criteria unticked - consistent with '{current}'", False
-
-    if not closed:
-        return None, (
-            f"open with every criterion ticked and labelled '{current}' - worth a look: "
-            f"finished but unclosed, or criteria that don't capture what's left"
-        ), False
-
-    # Closed, completed, every box ticked. Now weigh the evidence.
-    notes = []
-    if evidence.get("commits", 0) == 0:
-        return None, "closed with all criteria ticked but no commit on main references it", False
-    if evidence.get("ci") == "failure":
-        return None, (
-            f"CI failed on {evidence.get('sha', 'the closing commit')} - verify the work "
-            f"separately before trusting the closure"
-        ), False
-    if evidence.get("open_blockers"):
-        refs = ", ".join(f"#{n}" for n in evidence["open_blockers"])
-        return None, f"names {refs} as a blocker, still open - 'nothing left' cannot be true", False
-
-    if evidence.get("ci") is None:
-        notes.append("CI unknown (check runs expire)")
-    if not evidence.get("tests"):
-        notes.append("no test names this issue")
+        return None, "closed with no status label at all - needs one, but which is a judgement", False
 
     if current == BUILT:
         return None, "already correct", False
 
+    # Closed and not built: the label is wrong. What follows only decides
+    # whether the script may fix it unattended.
+    if evidence.get("commits", 0) == 0:
+        return BUILT, (
+            f"closed but labelled '{current}', and no commit on main references it - "
+            f"nothing says the work landed"
+        ), False
+    if evidence.get("ci") == "failure":
+        return BUILT, (
+            f"closed but labelled '{current}'; CI failed on {evidence.get('sha', 'its commit')} - "
+            f"verify the work before trusting the closure"
+        ), False
+    if evidence.get("open_blockers"):
+        refs = ", ".join(f"#{n}" for n in evidence["open_blockers"])
+        return BUILT, (
+            f"closed but labelled '{current}', and names {refs} as a blocker, still open"
+        ), False
+
+    notes = []
+    if evidence.get("ci") is None:
+        notes.append("CI unknown (check runs expire)")
+    if not evidence.get("tests"):
+        notes.append("no test names this issue")
     suffix = f"; {', '.join(notes)}" if notes else ""
+
     return BUILT, (
-        f"closed as completed, all criteria ticked, {evidence['commits']} commit(s) on main"
-        f"{suffix} - currently '{current}'"
+        f"closed but labelled '{current}' - {evidence['commits']} commit(s) on main, "
+        f"CI clean{suffix}"
     ), True
 
 
@@ -247,9 +249,8 @@ def needs_evidence(issue: dict) -> bool:
         return False
     if issue.get("state_reason") == "not_planned":
         return False
-    if not [x for x in (issue.get("labels") or []) if x.startswith(STATUS_PREFIX)]:
-        return False
-    return unticked_count(issue.get("body", "")) == 0
+    status = [x for x in (issue.get("labels") or []) if x.startswith(STATUS_PREFIX)]
+    return bool(status) and BUILT not in status
 
 
 def build_evidence(issue: dict, states: dict[int, str]) -> dict:
@@ -282,10 +283,10 @@ def main() -> int:
         label, reason, actionable = recommend(issue, evidence)
         current = next((label_ for label_ in issue["labels"]
                         if label_.startswith(STATUS_PREFIX)), "(none)")
-        if label is None and not reason.startswith(("already correct", f"{unticked_count(issue['body'])} criteria unticked")):
-            rows.append((issue, current, "—", reason, False))
-            recommendations.append((issue["number"], None, False))
-        elif label is not None:
+        if label is None:
+            # Not drift: open, already correct, or deliberately never built.
+            continue
+        if label is not None:
             rows.append((issue, current, label, reason, actionable))
             recommendations.append((issue["number"], label, actionable))
             if actionable and args.apply:

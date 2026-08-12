@@ -1896,3 +1896,47 @@ exits non-zero so it can be wired into the pre-commit work (#62) if that lands.
 10 tests on the classifier, written first, covering each refusal separately —
 wontfix, no commit reference, unticked criteria, missing status label, and an
 already-built issue that still has unticked boxes. Full suite green at 392.
+
+---
+
+## Status-label definition, corrected
+
+I proposed a definition where `built` meant *every acceptance criterion met*.
+The user rejected it, and was right to. Recording the reasoning because it is
+better than mine and it is the kind of thing that gets re-litigated:
+
+**An open issue already means work remains**, so `built` vs `partial` on one
+carries no decision — a distinction with nothing hanging on it. The distinction
+that *does* matter is **`broken`**: something is wrong right now. That is the
+label you filter on, and it only stays useful while the others stay quiet.
+
+My definition would have reclassified 15 of the open backlog to `partial`,
+making `partial` the default and destroying its signal along with `broken`'s. I
+had spotted the 15 and read them as drift; they were the definition working as
+intended, and the label description ("core is built — may still have unchecked
+criteria") was already correct. I proposed changing the description to match my
+definition, which was backwards.
+
+**The one rule that survives: a closed issue must be `built`.** Anything else on
+a closed issue is a contradiction — most often produced mechanically, since a
+`Closes #N` trailer closes an issue without touching its labels.
+
+### What came out of the script
+
+- Direction A narrowed to that single rule. Open issues are now ignored
+  entirely.
+- **The acceptance-criteria check is gone.** Under these meanings unticked
+  criteria don't contradict `built`, so counting them produced noise rather than
+  findings — including on closed issues, where it had previously blocked three
+  correct promotions until I ticked boxes by hand.
+- CI history now gates *promotion* only, never an issue already at the target
+  state. The three closures that landed inside the red window (#49, #54, #57)
+  were correct; re-flagging them on every run forever would be noise, and the
+  red was the unrelated `monotonic()`/uptime defect.
+
+Net effect: 18 rows of "findings" became 0, and the ones that disappeared were
+the ones that were never findings. A checker that reports things nobody will act
+on trains people to skip its output, which is the same failure as not having it.
+
+**Process note taken:** "add the command in a script" was not approval to run it
+with `--apply`. Report-only means report-only until asked.

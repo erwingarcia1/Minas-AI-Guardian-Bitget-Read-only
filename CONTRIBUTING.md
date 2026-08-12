@@ -95,30 +95,38 @@ any long-lived host and false on a runner. Use `None` for "never happened", not
 ## Status labels
 
 The `status:` label describes the **current state of the feature** — not the
-state it was in when the backlog was written, and not whether the issue is
-closed.
+state it was in when the backlog was written.
 
 | Label | Means |
 |---|---|
-| `status: built` | Every acceptance criterion met, tested, nothing left |
-| `status: partial` | Works, but some criteria remain |
-| `status: broken` | A defect exists in it **right now** |
+| `status: built` | The core exists and works; criteria may remain |
+| `status: partial` | Exists but materially incomplete |
+| `status: broken` | An **active defect** exists in it right now |
 | `status: not-built` | Doesn't exist yet |
 
-Two things follow directly, and both had drifted before this was written down:
+### Why `built` is deliberately loose about completeness
 
-- **A closed issue labelled `broken` is a contradiction**, unless the defect
-  genuinely still exists. Closing an issue with a `Closes #N` trailer closes it
-  without touching its labels, so issues fixed by a commit kept the status they
-  were filed with.
-- **Unticked criteria are incompatible with `built`**, on open issues as much as
-  closed ones. The label previously read "core is built — may still have
-  unchecked criteria", which is a different claim; fifteen open issues are
-  labelled `built` with criteria outstanding and are `partial` under this
-  definition.
+An **open** issue already means work remains. So `built` vs `partial` on an open
+issue carries no decision — it's a distinction with nothing hanging on it.
 
-Closing an issue is not itself a reason to change its label. A `not_planned`
-closure never becomes `built`.
+The distinction that *does* matter is **`broken`**: something is wrong right
+now. That's the label to filter on, and it only stays useful while the others
+stay quiet. Tightening `built` to mean "every criterion ticked" would reclassify
+most of the open backlog to `partial`, making `partial` the default and
+destroying its signal along with `broken`'s.
+
+### The one rule worth enforcing
+
+**A closed issue must be `built`.** Anything else on a closed issue is drift.
+
+The common cause is mechanical: closing an issue with a `Closes #N` commit
+trailer closes it **without touching its labels**, so an issue whose defect was
+fixed by a commit keeps sitting at `broken` — which, on a closed issue, is a
+contradiction.
+
+Acceptance criteria are **not** part of this. Under the meanings above, unticked
+criteria don't contradict `built`, so counting them produces noise rather than
+findings.
 
 ### Auditing it
 
@@ -127,15 +135,13 @@ scripts/audit-issue-status.sh            # report; changes nothing; exit 1 on dr
 scripts/audit-issue-status.sh --apply    # also apply the evidenced recommendations
 ```
 
-Per issue it checks whether every checkbox is ticked, whether a commit on `main`
-references it and CI passed on that commit, whether any test names it, and
-whether anything it calls a blocker is still open.
+It looks only at closed issues. Drift is reported whether or not it can be acted
+on; the evidence checks — a commit on `main` references it, CI passed on that
+commit, nothing it names as a blocker is still open — decide only whether
+`--apply` may fix it unattended. Rows without a `*` need a person.
 
-It **cannot** check whether the code does what the criteria claim — nothing
-mechanical can — so it recommends rather than decides, and `--apply` touches
-only recommendations with evidence behind them. Rows without a `*` need a
-person.
+A `not_planned` closure never becomes `built`; marking a wontfix as built is the
+most likely way a script like this does real damage.
 
-It will never tick a checkbox for you. A tick is a claim that a criterion is
-met; a script that ticked boxes to make itself pass would destroy the signal it
-exists to raise.
+It cannot check whether the code does what the criteria claim. Nothing
+mechanical can, so it recommends rather than decides.
