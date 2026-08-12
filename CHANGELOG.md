@@ -14,6 +14,20 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Fixed
+- **The second contact can actually use the portal (G-21, #25).** A secondary
+  alert email could be recorded and was already receiving alerts, but the
+  portal was primary-only in both directions, so the second pair of eyes could
+  be told something was wrong and then look nothing up. `member_accounts` — the
+  single isolation boundary every portal query goes through — matched
+  `alert_email` alone, so a secondary contact signed in to an empty portal; and
+  the ops dashboard's "Generate portal password" card read only `alert_email`,
+  so there was no way to issue them a password at all. Both contacts now get
+  their own row on that card and their own credential (generating one never
+  provisions the other), and the boundary matches either contact **per row** —
+  being someone's secondary contact confers nothing over their other accounts.
+  An empty lookup now returns nothing instead of reaching the query, since
+  accounts saved through a form with the field left blank store `''` and
+  `lower('') = ''` would have matched every one of them.
 - **A mistyped threshold is rejected loudly instead of stopping detection
   (G-12, #16).** `config/rules.yaml` is now validated against a declared schema
   (`sentinel/rules_schema.py`) before it is allowed to take effect. Previously a

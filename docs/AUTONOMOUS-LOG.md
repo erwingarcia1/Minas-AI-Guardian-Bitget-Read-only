@@ -381,3 +381,86 @@ and successfully polled while nothing was examined. `latest_balance_snapshot_at`
 already documents a version of this trap for its own purposes. It is worth
 knowing that the dashboard's healthiest-looking column is the weakest claim on
 the page.
+
+---
+
+### G-21 (#25) · The second contact couldn't sign in to the portal
+
+**Root cause — primary-only in both directions.** A secondary alert email could
+be recorded and was already being alerted (`_account_contact` reads it, and
+criterion 1 was correctly ticked). But:
+
+1. `member_accounts` filtered on `lower(a.alert_email) = ?` alone. That
+   function's own docstring calls it "THE isolation boundary: all portal
+   queries go through the ids returned here" — so a secondary contact who had a
+   password would sign in successfully to a portal showing zero accounts.
+2. `_portal_access_card` read only `alert_email`, so the operator had no way to
+   *issue* the secondary contact a password in the first place.
+
+Either one alone is enough to make the criterion false, which is why both are
+in the fix. The second is the one the issue doesn't mention and the one I'd
+have missed by reading only `portal.py`.
+
+The shape is the same as G-11's: the record survives one gate and dies at
+another, and the two gates live in different files.
+
+#### Judgment calls
+
+**Widening the isolation boundary, carefully.** This is the most
+security-sensitive change of the session — `member_accounts` is what stops one
+customer seeing another's account. The match is per row (`alert_email` OR
+`alert_email_secondary` on *that account*), so being someone's secondary
+contact grants exactly that account and nothing else they own. There is a test
+for precisely that (`test_a_secondary_only_contact_is_not_given_the_primarys_
+other_accounts`) alongside one asserting an unrelated email still sees nothing.
+
+**The empty-email guard is a real hole, not defensiveness.** Accounts saved
+through a form with the second contact left blank store `''` rather than NULL.
+Under the new OR clause, `lower('') = ''` is *true* — so a lookup with an empty
+email would have returned every account in the fleet with a blank secondary.
+`member_accounts` now returns `[]` before reaching the query. Found by writing
+`test_an_empty_email_matches_nothing` before the fix, which is the argument for
+writing the boundary tests first.
+
+**The contact selector names a column, so it is never interpolated from input.**
+It resolves through a fixed `PORTAL_CONTACTS` map, and an unrecognised value is
+a 400 rather than a fall-back to the primary — quietly defaulting would hand
+one person a credential meant for another. Tested with `nonsense`,
+`alert_email` (a real column name) and `../primary`. An *absent* selector still
+means the primary, so the form as it posted before this change keeps working.
+
+**Criterion 3 was already true, and I asserted it rather than assuming it.**
+"Can view alerts but not change settings or remove accounts" holds because the
+member portal has no mutating routes at all — `/login` and `/logout` are the
+only POSTs and neither touches an account. That is a property satisfied by an
+*absence*, which is exactly the kind that stops holding without anyone
+noticing. So the test signs in as the secondary contact and POSTs to seven
+plausible mutating paths (`/settings`, `/accounts/1/delete`, `/contacts`,
+`/thresholds`, …), requiring 404/405/403 on each, then asserts the accounts
+table is untouched. It is written to fail the day someone adds a member-facing
+settings form — which is the point, per the standing instruction to write tests
+that catch a thing silently breaking rather than tests that it works today.
+
+#### Verification
+
+- 14 tests in `tests/test_secondary_contact_portal.py`, written first, 9
+  failing for the right reason.
+- Mutation check per layer again:
+  - reverting the `member_accounts` OR clause → 4 red (all the "can see it"
+    tests)
+  - reverting the provisioning half → 5 red (all the "can be given a password"
+    tests)
+  - the isolation tests stay green under both, which is what you want: they
+    describe a property neither change was supposed to alter.
+- Full suite green: 241 passed.
+
+#### Surprising
+
+The generated portal password is scoped to an *email*, not to an account —
+`set_member_password(db, email, …)` writes one `portal_members` row, and
+`member_accounts` then returns every account that email is a contact on. So
+"Generate portal password" on account A also grants that person account B if
+they are a contact there too. That is coherent and is what the card's "covers
+every account under this email" copy said, but it means the button is not
+scoped the way its placement on a single account's page suggests. Nothing to
+fix for this issue; worth knowing before anyone builds per-account sharing.

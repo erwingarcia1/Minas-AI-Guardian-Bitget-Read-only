@@ -124,14 +124,28 @@ def check_member_login(db: Database, email: str, password: str) -> bool:
 
 
 def member_accounts(db: Database, email: str) -> list:
-    """Every account owned by this member. THE isolation boundary: all portal
-    queries go through the ids returned here."""
+    """Every account this member is a contact on. THE isolation boundary: all
+    portal queries go through the ids returned here.
+
+    Matches the secondary contact as well as the primary (G-21). The second
+    pair of eyes is alerted about an account, so it can look that account up -
+    and only that account: being someone's secondary contact confers nothing
+    over their other accounts, because the match is per-row.
+
+    An empty lookup returns nothing rather than falling through to the query.
+    `alert_email_secondary` is '' on accounts saved through a form that left it
+    blank, and `lower('') = ''` would otherwise hand a caller with no email
+    every account in the fleet."""
+    normalized = normalize_email(email)
+    if not normalized:
+        return []
     with db.cursor() as cur:
         cur.execute(
             "SELECT a.*, p.last_success_at, p.consecutive_failures, p.consecutive_auth_failures "
             "FROM accounts a LEFT JOIN poll_state p ON p.account_id = a.id "
-            "WHERE lower(a.alert_email) = ? ORDER BY a.label",
-            (normalize_email(email),),
+            "WHERE lower(a.alert_email) = ? OR lower(a.alert_email_secondary) = ? "
+            "ORDER BY a.label",
+            (normalized, normalized),
         )
         return cur.fetchall()
 

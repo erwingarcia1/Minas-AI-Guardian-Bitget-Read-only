@@ -330,26 +330,53 @@ def _check(ok: str, text: str, meta: str = "", meta_is_html: bool = False) -> st
     return f'<div class="check">{icon}<span class="txt">{text}</span>{meta_html}</div>'
 
 
-def _portal_access_card(db: Database, account_id: int, email: str | None) -> str:
-    """Ops-side management of the member-portal login for this customer's
-    email. The generated password is displayed exactly once."""
-    if not email:
-        inner = ('<div class="det"><span class="desc">No email on file — add a customer email '
-                 "to enable member-portal access.</span></div>")
-        return ('<section><div class="card"><div class="card-head"><h2>Member portal access</h2>'
-                "</div>" + inner + "</div></section>")
+# The contact selector names a column, so it is resolved from this fixed map
+# and never interpolated. Absent means the primary, which is what the form
+# posted before there was a choice to make.
+PORTAL_CONTACTS = {
+    "primary": ("alert_email", "Primary contact"),
+    "secondary": ("alert_email_secondary", "Second contact"),
+}
+
+
+def _portal_access_row(db: Database, account_id: int, email: str | None, contact: str, title: str) -> str:
     from sentinel.portal import member_exists
 
-    status = ("login active" if member_exists(db, email) else "no login yet")
-    label = "Reset portal password" if member_exists(db, email) else "Generate portal password"
-    inner = (
-        f'<div class="det"><span class="desc">Member login for <b>{html.escape(email)}</b> — '
-        f"covers every account under this email · {status}</span></div>"
-        f'<form method="post" action="/portal-access" style="padding:0 22px 18px">'
+    if not email or not email.strip():
+        return (f'<div class="det"><span class="desc">{title}: no email on file — '
+                "add one to enable member-portal access.</span></div>")
+    exists = member_exists(db, email)
+    status = "login active" if exists else "no login yet"
+    label = "Reset portal password" if exists else "Generate portal password"
+    return (
+        f'<div class="det"><span class="desc">{title} — <b>{html.escape(email)}</b> · {status}</span></div>'
+        f'<form method="post" action="/portal-access" style="padding:0 22px 14px">'
         f'<input type="hidden" name="account_id" value="{account_id}">'
+        f'<input type="hidden" name="contact" value="{contact}">'
         f'<button class="submit" type="submit">{label}</button> '
-        '<span class="hint">shown once — hand it to the member securely</span></form>'
+        '<span class="hint">shown once — hand it to them securely</span></form>'
     )
+
+
+def _portal_access_card(db: Database, account_id: int, email: str | None,
+                        email_secondary: str | None = None) -> str:
+    """Ops-side management of the member-portal logins for this customer.
+    The generated password is displayed exactly once.
+
+    Both contacts get their own row (G-21). Before this the card read only
+    `alert_email`, so a second contact could be recorded and alerted and then
+    never issued a password — which is half of why they couldn't sign in. They
+    are separate credentials for separate people, so generating one never
+    provisions the other."""
+    if not (email and email.strip()) and not (email_secondary and email_secondary.strip()):
+        inner = ('<div class="det"><span class="desc">No email on file — add a customer email '
+                 "to enable member-portal access.</span></div>")
+    else:
+        inner = _portal_access_row(db, account_id, email, "primary", "Primary contact")
+        if email_secondary and email_secondary.strip():
+            inner += _portal_access_row(
+                db, account_id, email_secondary, "secondary", "Second contact"
+            )
     return ('<section><div class="card"><div class="card-head"><h2>Member portal access</h2>'
             '<span class="count">read-only member view</span></div>' + inner + "</div></section>")
 
@@ -514,7 +541,7 @@ def _render_account(db: Database, account_id: int, notice_html: str = "") -> str
         '<div class="card"><div class="card-head"><h2>Alerts</h2><span class="count">latest 20</span></div>'
         f'<table><thead><tr><th>Time</th><th>Sev</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div>'
         "</section>"
-        + _portal_access_card(db, account_id, f("alert_email"))
+        + _portal_access_card(db, account_id, f("alert_email"), f("alert_email_secondary"))
     )
     return _page(nav, body, refresh=False)
 
@@ -722,12 +749,23 @@ def serve_dashboard(
                 aid = int((form.get("account_id", ["0"])[0]))
             except ValueError:
                 aid = 0
+            # Which contact this password is for. Absent means the primary,
+            # which is what the form posted before there was a choice. Unknown
+            # values are refused rather than defaulted: the value selects a
+            # column, and quietly falling back to the primary would hand one
+            # person a credential meant for another.
+            contact = (form.get("contact", ["primary"])[0] or "primary").strip()
+            if contact not in PORTAL_CONTACTS:
+                self._send(b"unknown contact", 400)
+                return
+            column, title = PORTAL_CONTACTS[contact]
+
             with db.cursor() as cur:
-                cur.execute("SELECT alert_email FROM accounts WHERE id = ?", (aid,))
+                cur.execute(f"SELECT {column} AS contact_email FROM accounts WHERE id = ?", (aid,))
                 row = cur.fetchone()
-            email = (row["alert_email"] if row else None) or ""
+            email = (row["contact_email"] if row else None) or ""
             if not email.strip():
-                self._send(b"account not found or has no email", 404)
+                self._send(f"account not found or has no {title.lower()} email".encode(), 404)
                 return
 
             import secrets as _secrets
@@ -736,9 +774,9 @@ def serve_dashboard(
 
             password = _secrets.token_urlsafe(12)
             set_member_password(db, email, password)
-            logger.info("portal password generated for account %d", aid)
+            logger.info("portal password generated for account %d (%s contact)", aid, contact)
             notice = (
-                '<div class="banner ok">✓ Member portal password for '
+                f'<div class="banner ok">✓ Member portal password — {html.escape(title)}, '
                 f"<b>{html.escape(email.strip().lower())}</b>: <code>{html.escape(password)}</code>"
                 " — copy it now, it is shown only once.</div>"
             )
