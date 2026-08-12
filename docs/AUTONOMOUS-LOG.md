@@ -1845,3 +1845,54 @@ the outcome. #14 is now closable honestly.
 7 tests, written first, 6 red. Two mutations — success stamped before the
 detectors again, and a dead cycle swallowed rather than counted — each
 red-lighting only its own guards. Full suite green at 382.
+
+
+---
+
+## Closed-issue status audit
+
+Asked to check every closed issue whose status label wasn't `built`. Three had
+drifted, and the cause is mechanical rather than a judgement lapse: **a
+`Closes #N` commit trailer closes an issue without touching its labels.** The
+issues I closed by hand got updated; the ones GitHub closed for me didn't.
+
+- **#55** and **#59** sat `status: broken` after being fixed, with **4 and 5
+  acceptance criteria still unticked**. Anyone reading #59 saw a closed issue
+  with every box empty, which reads like abandonment rather than completion.
+- **#14** sat `status: partial` — correct when I set it, stale the moment #59
+  closed its blocker.
+
+### The script, and what it refuses to do
+
+`scripts/audit_issue_status.py`. The whole risk is in what it is willing to
+promote, so the classifier is conservative by construction. It promotes only
+when the issue is closed **as completed** (not `not_planned`), **a commit on
+`main` references it**, and **every checkbox is ticked**.
+
+The refusal that matters: **it will not tick a checkbox.** A tick is a claim
+that a criterion is met and nothing in a script can verify that. A script that
+ticked boxes to make itself pass would destroy the exact signal that caught
+this drift — and unticked boxes on a closed issue are genuinely ambiguous
+between "incomplete" and "nobody updated it".
+
+That played out on the first run: it promoted #14 and **refused** #55 and #59,
+naming the unticked criteria. I verified those against the code and tests, ticked
+them as the human step with the evidence recorded on each issue, and re-ran —
+at which point it promoted them. The workflow is self-correcting rather than
+self-approving.
+
+Also refused by design: `not_planned` closures. Marking a wontfix as built is
+the single most likely way a script like this does real damage.
+
+### Not wired into CI
+
+Deliberately. CI would then depend on the issue tracker being reachable and on
+a token with issue-write scope, which is a lot of new failure surface on the
+build. It is a periodic command, documented in `CONTRIBUTING.md`, and `--check`
+exits non-zero so it can be wired into the pre-commit work (#62) if that lands.
+
+### Verification
+
+10 tests on the classifier, written first, covering each refusal separately —
+wontfix, no commit reference, unticked criteria, missing status label, and an
+already-built issue that still has unticked boxes. Full suite green at 392.

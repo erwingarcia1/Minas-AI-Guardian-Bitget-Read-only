@@ -90,3 +90,25 @@ runner with fewer cores, and at least one real defect has been found only there:
 check is really asking "has this machine been up that long?" — which is true on
 any long-lived host and false on a runner. Use `None` for "never happened", not
 `0`.
+
+
+## Keeping issue status honest
+
+Closing an issue with a `Closes #N` commit trailer closes it **without touching
+its labels**, so an issue finished by a commit keeps whatever `status:` it was
+filed with. Three had drifted before anyone looked — two sat `status: broken`
+long after being fixed.
+
+```bash
+python3 scripts/audit_issue_status.py            # report, changes nothing
+python3 scripts/audit_issue_status.py --fix      # promote the safe ones
+python3 scripts/audit_issue_status.py --check    # exit 1 if anything is stale
+```
+
+It promotes to `status: built` only when the issue is closed *as completed*, at
+least one commit on `main` references it, and every acceptance-criteria checkbox
+is ticked. Everything else is printed for a human with the reason.
+
+It will **not** tick a checkbox for you. A tick is a claim that a criterion is
+met, and nothing in a script can verify that — one that ticked boxes to make
+itself pass would destroy the signal it exists to raise.
