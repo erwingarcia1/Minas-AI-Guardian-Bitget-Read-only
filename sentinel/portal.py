@@ -173,6 +173,18 @@ def set_member_password(db: Database, email: str, password: str, *,
             "updated_at = excluded.updated_at",
             (email, hash_password(password), now, now),
         )
+    # Recorded here rather than at the call sites, so no route that sets a
+    # password can forget to leave a trace (G-32, #36). Guarded for the same
+    # reason `notify` is: a customer resetting in a panic must not be left
+    # locked out because the audit write failed. A failure that swallows the
+    # record is logged as an error, because a silently missing audit row is
+    # the thing this project keeps finding.
+    try:
+        from sentinel.events import record_member_security_event
+
+        record_member_security_event(db, email, "member_password_changed")
+    except Exception as exc:  # noqa: BLE001 - the password change is the point
+        logger.error("could not record the password change for %s: %s", email, exc)
     if notify is not None:
         try:
             notify(email)
@@ -569,6 +581,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     nav = (
         f'<span class="live">{html.escape(email)}</span>'
         '<a class="live" href="/alerts">Alert history</a>'
+        '<a class="live" href="/activity">Account activity</a>'
         '<a class="live" href="/security">Security</a>'
         '<form method="post" action="/logout" style="margin:0">'
         '<button class="live" type="submit" style="cursor:pointer;font-family:inherit">Sign out</button></form>'
@@ -662,6 +675,119 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
     )
     nav = '<a class="live" href="/">← Your accounts</a>'
     return _page(body, nav)
+
+
+# --- account activity (G-32, #36) --------------------------------------------
+
+def account_activity(db: Database, account_ids: list[int], limit: int = 200):
+    """Administrative changes on these accounts, newest first.
+
+    Filtered to `ADMIN_EVENT_TYPES` rather than showing the whole event log:
+    this page answers "has anybody changed how my account is watched or
+    reached", and a customer scrolling past ten thousand detector rows to find
+    one contact change is a customer who will not find it.
+
+    Read-only, like everything in this module. The record's integrity is a
+    property of the writer - `events` is append-only and the application
+    issues no UPDATE or DELETE against it - not something a viewer enforces."""
+    if not account_ids:
+        return []
+    from sentinel.events import ADMIN_EVENT_TYPES
+
+    account_marks = ",".join("?" for _ in account_ids)
+    type_marks = ",".join("?" for _ in ADMIN_EVENT_TYPES)
+    with db.cursor() as cur:
+        cur.execute(
+            f"SELECT e.id, e.account_id, e.event_type, e.payload_json, e.actor, e.created_at, "
+            f"ac.label FROM events e JOIN accounts ac ON ac.id = e.account_id "
+            f"WHERE e.account_id IN ({account_marks}) AND e.event_type IN ({type_marks}) "
+            f"ORDER BY e.created_at DESC, e.id DESC LIMIT ?",
+            [*account_ids, *ADMIN_EVENT_TYPES, limit],
+        )
+        return cur.fetchall()
+
+
+def _activity_detail(event_type: str, payload: dict) -> str:
+    """What actually changed, in words, from the recorded payload.
+
+    Every branch reads a value the row carries. Nothing here infers or
+    reconstructs: this page is the one a customer reads when deciding whether
+    somebody else has their account, and a plausible sentence the record does
+    not support is worse than a blank cell."""
+    def shown(value) -> str:
+        return html.escape(str(value)) if value not in (None, "") else "none"
+
+    if event_type == "alert_contact_updated":
+        parts = []
+        if payload.get("email_from") != payload.get("email_to"):
+            parts.append(f"email {shown(payload.get('email_from'))} → "
+                         f"{shown(payload.get('email_to'))}")
+        if payload.get("phone_from") != payload.get("phone_to"):
+            parts.append(f"phone {shown(payload.get('phone_from'))} → "
+                         f"{shown(payload.get('phone_to'))}")
+        return "; ".join(parts)
+    if event_type == "sms_alerts_changed":
+        return f"SMS alerts {'on' if payload.get('to') else 'off'}"
+    if event_type == "member_portal_password_generated":
+        return f"issued for {shown(payload.get('email'))}"
+    if event_type in ("member_password_changed", "member_two_factor_enabled",
+                      "member_two_factor_disabled"):
+        return f"login {shown(payload.get('login'))}"
+    if event_type == "customer_added":
+        return f"{shown(payload.get('exchange'))} · {shown(payload.get('topology'))}"
+    return ""
+
+
+def _render_activity(db: Database, email: str) -> str:
+    """Who has touched this member's accounts, and when (G-32).
+
+    An empty page says the record is empty, not that nothing happened -
+    those are the same sentence to a reader and very different facts, and this
+    product has already shipped one bug where an absence was rendered as
+    reassurance."""
+    from sentinel.events import ADMIN_EVENT_LABELS
+
+    accounts = member_accounts(db, email)
+    rows = account_activity(db, [r["id"] for r in accounts])
+
+    def _actor_cell(actor) -> str:
+        if actor:
+            return f"<td>{html.escape(actor)}</td>"
+        # An unattributed row is a finding, not a blank. The same reasoning as
+        # the `actor` column on config_changes: a change nobody can be named
+        # for is exactly what somebody reading this page is looking for.
+        return "<td class='ack-no'>not attributed</td>"
+
+    body_rows = "".join(
+        f"<tr><td class='mono'>{_ts(r['created_at'])}</td>"
+        f"<td class='lbl'>{html.escape(r['label'])}</td>"
+        f"<td>{html.escape(ADMIN_EVENT_LABELS.get(r['event_type'], r['event_type']))}</td>"
+        f"<td class='rule'>{_activity_detail(r['event_type'], _payload(r['payload_json']))}</td>"
+        f"{_actor_cell(r['actor'])}</tr>"
+        for r in rows
+    ) or ("<tr><td colspan=5 class='empty'>Nothing recorded — no changes to your "
+          "accounts or your login have been made since monitoring began</td></tr>")
+
+    body = (
+        '<section><div class="card"><div class="card-head"><h2>Who has touched your accounts</h2>'
+        f'<span class="count">{len(rows)} change(s)</span></div>'
+        '<div class="det"><span class="desc">Every change to how your accounts are watched or '
+        "reached, including the ones Minas makes. Detections are not listed here — they are on "
+        '<a class="acctlink" href="/alerts">your alert history</a>. This record is append-only: '
+        "entries are never edited or removed, by us or by anybody else.</span></div>"
+        "<table><thead><tr><th>Time</th><th>Account</th><th>Change</th><th>Detail</th>"
+        "<th>Who</th></tr></thead>"
+        f"<tbody>{body_rows}</tbody></table></div></section>"
+    )
+    return _page(body, '<a class="live" href="/">← Your accounts</a>')
+
+
+def _payload(payload_json: str | None) -> dict:
+    try:
+        loaded = json.loads(payload_json or "{}")
+    except ValueError:
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
 
 
 # --- alert history (G-31, #35) -----------------------------------------------
@@ -1386,6 +1512,8 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             elif path == "/alerts":
                 qs = parse_qs(urlparse(self.path).query)
                 self._send(_render_alert_history(db, email, qs).encode())
+            elif path == "/activity":
+                self._send(_render_activity(db, email).encode())
             elif path == "/alerts.csv":
                 qs = parse_qs(urlparse(self.path).query)
                 self._send(

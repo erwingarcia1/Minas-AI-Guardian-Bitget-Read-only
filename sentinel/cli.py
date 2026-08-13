@@ -587,33 +587,71 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
     --alert-email/--alert-phone to set; pass --clear to remove both. Pass
     --sms-alerts on|off to toggle the member's SMS notification preference
     (CRITICAL alerts may still page per alerting.sms_critical_overrides_optout)."""
+    from sentinel.events import append_event, notify_alert_destination_change
+
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    # (event_type, payload) rows to write once the UPDATE has landed. Where
+    # the alerts about an account go is a setting whose silent change is an
+    # attack (redirect the alerts, then drain the account), so every actual
+    # change leaves an event row the customer can read (G-32, #36). Only
+    # diffs are recorded: re-running the command with the same values is not
+    # a change and must not manufacture one in a forensic log.
+    changes: list[tuple[str, dict]] = []
     with db.cursor() as cur:
-        cur.execute("SELECT id FROM accounts WHERE label = ?", (args.label,))
-        if cur.fetchone() is None:
+        cur.execute(
+            "SELECT id, alert_email, alert_phone, sms_alerts_enabled FROM accounts WHERE label = ?",
+            (args.label,),
+        )
+        before = cur.fetchone()
+        if before is None:
             print(f"no account labeled '{args.label}'", file=sys.stderr)
             return 1
+        account_id = before["id"]
         now = datetime.now(timezone.utc).isoformat()
         # getattr: tests (and older callers) build the Namespace by hand
         # without the newer optional flag.
         sms_alerts = getattr(args, "sms_alerts", None)
+        preference_only = False
         if sms_alerts is not None:
+            enabled = 1 if sms_alerts == "on" else 0
             cur.execute(
                 "UPDATE accounts SET sms_alerts_enabled = ?, updated_at = ? WHERE label = ?",
-                (1 if sms_alerts == "on" else 0, now, args.label),
+                (enabled, now, args.label),
             )
+            if enabled != before["sms_alerts_enabled"]:
+                changes.append(("sms_alerts_changed",
+                                {"from": bool(before["sms_alerts_enabled"]),
+                                 "to": bool(enabled)}))
         if args.clear:
             email, phone = None, None
         elif args.alert_email is None and args.alert_phone is None and sms_alerts is not None:
             # Preference-only update: leave the stored destinations untouched.
-            print(f"sms alerts for '{args.label}': {sms_alerts}")
-            return 0
+            preference_only = True
         else:
             email, phone = args.alert_email, args.alert_phone
-        cur.execute(
-            "UPDATE accounts SET alert_email = ?, alert_phone = ?, updated_at = ? WHERE label = ?",
-            (email, phone, now, args.label),
-        )
+        if not preference_only:
+            cur.execute(
+                "UPDATE accounts SET alert_email = ?, alert_phone = ?, updated_at = ? WHERE label = ?",
+                (email, phone, now, args.label),
+            )
+            if (email, phone) != (before["alert_email"], before["alert_phone"]):
+                changes.append(("alert_contact_updated",
+                                {"email_from": before["alert_email"], "email_to": email,
+                                 "phone_from": before["alert_phone"], "phone_to": phone}))
+    for event_type, payload in changes:
+        # actor=None is the truth here: the CLI runs on the server and carries
+        # no operator identity. The unattributed row IS the record - see the
+        # actor note on `config_changes` in schema.sql for the same reasoning.
+        append_event(db, account_id, event_type, "LOW", payload, actor=None)
+        if event_type == "alert_contact_updated":
+            # The address being removed loses sight of this account the moment
+            # the change lands, so the record of it never reaches them. See
+            # notify_alert_destination_change.
+            notify_alert_destination_change(
+                db, args.label, payload["email_from"], payload["email_to"])
+    if preference_only:
+        print(f"sms alerts for '{args.label}': {sms_alerts}")
+        return 0
     suffix = f" sms_alerts={sms_alerts}" if sms_alerts is not None else ""
     print(f"contact for '{args.label}': email={email or '-'} phone={phone or '-'}{suffix}")
     return 0

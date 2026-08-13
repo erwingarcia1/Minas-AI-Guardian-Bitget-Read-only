@@ -716,5 +716,107 @@
    "tests/test_portal_alert_history.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "#36 ATTACK read another customer's settings history: the activity query drops the account scope",
+  "file": "sentinel/portal.py",
+  "old": "            f\"WHERE e.account_id IN ({account_marks}) AND e.event_type IN ({type_marks}) \"",
+  "new": "            f\"WHERE 1=1 AND e.event_type IN ({type_marks}) \"",
+  "tests": [
+   "tests/test_portal_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#36 an unattributed change renders as a blank cell instead of saying so",
+  "file": "sentinel/portal.py",
+  "old": "        return \"<td class='ack-no'>not attributed</td>\"",
+  "new": "        return \"<td></td>\"",
+  "tests": [
+   "tests/test_portal_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#36 a settings change leaves no audit row: cmd_set_contact records nothing",
+  "file": "sentinel/cli.py",
+  "old": "                changes.append((\"alert_contact_updated\",",
+  "new": "                _ignored = ((\"alert_contact_updated\",",
+  "tests": [
+   "tests/test_portal_activity.py",
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#36 re-running set-contact with unchanged values manufactures a change in the forensic log",
+  "file": "sentinel/cli.py",
+  "old": "            if (email, phone) != (before[\"alert_email\"], before[\"alert_phone\"]):",
+  "new": "            if True:",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#36 ATTACK redirect the alerts quietly: the old address is not told",
+  "file": "sentinel/events.py",
+  "old": "    if not old_email or old_email == new_email:\n        return",
+  "new": "    return",
+  "tests": [
+   "tests/test_portal_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#36 the destination-change notice goes to the NEW address instead of the one being removed",
+  "file": "sentinel/events.py",
+  "old": "            _PlainNotice(message), account_label, [old_email], [],",
+  "new": "            _PlainNotice(message), account_label, [new_email], [],",
+  "tests": [
+   "tests/test_portal_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#36 a login change is recorded against one account instead of every account it opens",
+  "file": "sentinel/events.py",
+  "old": "    for account in member_accounts(db, email):",
+  "new": "    for account in member_accounts(db, email)[:1]:",
+  "tests": [
+   "tests/test_portal_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#36 setting a password leaves no trace: the choke-point record is removed",
+  "file": "sentinel/portal.py",
+  "old": "        record_member_security_event(db, email, \"member_password_changed\")",
+  "new": "        pass",
+  "tests": [
+   "tests/test_portal_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#36 turning two-factor off leaves no trace: the choke-point record is removed",
+  "file": "sentinel/twofactor.py",
+  "old": "    _record_change(db, kind, subject, \"member_two_factor_disabled\")",
+  "new": "    pass",
+  "tests": [
+   "tests/test_portal_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#36 the audit write is not guarded: a failed record breaks the password change it records",
+  "file": "sentinel/portal.py",
+  "old": "    except Exception as exc:  # noqa: BLE001 - the password change is the point\n        logger.error(\"could not record the password change for %s: %s\", email, exc)",
+  "new": "    except ZeroDivisionError as exc:\n        logger.error(\"could not record the password change for %s: %s\", email, exc)",
+  "tests": [
+   "tests/test_portal_activity.py",
+   "tests/test_password_reset.py"
+  ],
+  "expect": "killed"
  }
 ]

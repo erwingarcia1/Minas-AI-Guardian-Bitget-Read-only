@@ -40,6 +40,115 @@ def append_event(
         return cur.lastrowid
 
 
+# Event types that are a change to how an account is watched or reached, as
+# opposed to something a detector saw. `/activity` in the portal shows exactly
+# these (G-32, #36): a customer asking "who has touched my account" is asking
+# about settings and administration, and mixing detections in would bury the
+# one page where an unauthorised change is supposed to stand out.
+#
+# A allowlist rather than a denylist of detector rules. Detector rules are
+# added often and this list is not, so a denylist would silently start showing
+# every new detection here - and a page that fills with noise is a page nobody
+# reads, which is how an unauthorised change goes unnoticed.
+ADMIN_EVENT_TYPES = (
+    "customer_added",
+    "alert_contact_updated",
+    "sms_alerts_changed",
+    "member_portal_password_generated",
+    "member_password_changed",
+    "member_two_factor_enabled",
+    "member_two_factor_disabled",
+)
+
+# How each reads to a customer. The dashboard shows event_type; this page is
+# read by somebody deciding whether to phone their exchange, so it says what
+# happened in words.
+ADMIN_EVENT_LABELS = {
+    "customer_added": "Account added to monitoring",
+    "alert_contact_updated": "Alert destination changed",
+    "sms_alerts_changed": "SMS alert preference changed",
+    "member_portal_password_generated": "Portal password issued by Minas",
+    "member_password_changed": "Portal password changed",
+    "member_two_factor_enabled": "Two-factor turned on",
+    "member_two_factor_disabled": "Two-factor turned off",
+}
+
+
+def notify_alert_destination_change(db: Database, account_label: str,
+                                    old_email: str | None, new_email: str | None) -> None:
+    """Tell the OLD address that the alerts have been redirected (G-32, #36).
+
+    This is the one settings change the activity page cannot show the person
+    who most needs it. Portal scope is the contact email, so the moment the
+    destination changes, the previous contact stops seeing that account at all
+    - including the record of the change that removed them. An attacker who
+    redirects the alerts silently removes the evidence from the only page
+    built to reveal it.
+
+    So the notice goes to the address being removed, the way the
+    password-change tripwire does. Not a receipt: it is the last message that
+    address will ever get about this account, and it is sent precisely because
+    somebody may not have authorised it.
+
+    Guarded like every other notice on a change path: a mail failure is logged,
+    never raised. The change has already happened, and an exception here would
+    make a dead SMTP server look like a failed settings update."""
+    if not old_email or old_email == new_email:
+        return
+    from sentinel.alerts.base import AlertMessage
+    from sentinel.alerts.contact import ContactRouter
+    from sentinel.portal import _PlainNotice
+
+    destination = new_email or "no email address"
+    message = AlertMessage(
+        account_label=account_label,
+        rule="alert_destination_changed",
+        severity="LOW",
+        confidence="n/a",
+        message=(
+            f"The alert destination for '{account_label}' was changed from {old_email} to "
+            f"{destination}. Alerts about this account will no longer be sent to this address, "
+            f"and this address can no longer see the account in the Minas portal.\n\n"
+            f"If you did not ask for this, contact Minas immediately - redirecting the alerts "
+            f"is what somebody does before moving the funds."
+        ),
+        evidence={},
+    )
+    try:
+        ContactRouter(db=db).send(
+            _PlainNotice(message), account_label, [old_email], [],
+        )
+    except Exception as exc:  # noqa: BLE001 - the change has already happened
+        logger.error("could not send the destination-change notice to %s: %s", old_email, exc)
+
+
+def record_member_security_event(db: Database, email: str, event_type: str,
+                                 payload: dict | None = None) -> int:
+    """Record a change to a member's LOGIN against every account that login
+    opens. Returns the number of rows written (G-32, #36).
+
+    A password change or a second factor being removed is not a change to an
+    account, and it is the single most useful line on "who has touched my
+    account" - it is what an attacker does after getting in and before doing
+    anything else. `events.account_id` is NOT NULL because the log is
+    per-account, so this fans out rather than relaxing the schema: one row per
+    account the login reaches, which is also the honest scope, since that is
+    exactly what the change affects.
+
+    Nothing is written when the address opens no accounts. A login with no
+    accounts has nowhere to record this, and inventing a row would be
+    inventing an account."""
+    from sentinel.portal import member_accounts
+
+    written = 0
+    for account in member_accounts(db, email):
+        append_event(db, account["id"], event_type, "LOW",
+                     {**(payload or {}), "login": (email or "").strip().lower()},
+                     actor=(email or "").strip().lower())
+        written += 1
+    return written
+
+
 def record_config_changes(db: Database, changes, actor: str | None = None) -> int:
     """One row per changed threshold (G-12, #16). Returns the number written.
 

@@ -113,7 +113,29 @@ def confirm_enrolment(db: Database, cipher, kind: str, subject: str, code: str) 
             [(kind, subject, hash_recovery_code(c), now) for c in codes],
         )
     logger.info("two-factor enabled for %s %s", kind, subject)
+    _record_change(db, kind, subject, "member_two_factor_enabled")
     return codes
+
+
+def _record_change(db: Database, kind: str, subject: str, event_type: str) -> None:
+    """Leave an audit row on every account this login opens (G-32, #36).
+
+    Here rather than in the HTTP handler, on the same reasoning as
+    `set_member_password`: a record written by the caller is a record the next
+    caller forgets. An operator subject writes nothing - an operator username
+    is not an account contact - which is correct, not a silent failure:
+    operator 2FA is not a change to any customer's account.
+
+    Guarded. The second factor has already changed by the time this runs, and
+    an exception here would report a failure that did not happen."""
+    if kind != MEMBER:
+        return
+    try:
+        from sentinel.events import record_member_security_event
+
+        record_member_security_event(db, subject, event_type)
+    except Exception as exc:  # noqa: BLE001 - the change has already happened
+        logger.error("could not record %s for %s: %s", event_type, subject, exc)
 
 
 def is_enabled(db: Database, kind: str, subject: str) -> bool:
@@ -200,6 +222,7 @@ def disable(db: Database, cipher, kind: str, subject: str, code: str, notify=Non
         cur.execute("DELETE FROM totp_recovery_codes WHERE subject_kind = ? AND subject = ?",
                     (kind, subject))
     logger.warning("two-factor DISABLED for %s %s", kind, subject)
+    _record_change(db, kind, subject, "member_two_factor_disabled")
     if notify is not None:
         try:
             notify(subject)
