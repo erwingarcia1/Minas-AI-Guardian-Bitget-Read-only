@@ -32,6 +32,34 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   distinguishes two withdrawals.
 
 ### Added
+- **Every incident has its own page (G-25, #29).** `/incident?id=N` in the
+  member portal: what was detected, when, on which account, the balances as
+  they were **at the time**, the full evidence, and a
+  detection → notification → acknowledgement timeline. Linked from every alert
+  row.
+
+  The page is evidence — a customer hands it to an exchange, an insurer or the
+  police — so the constraint that shaped it is what it is *allowed to claim*.
+  An alert with `delivered_to = 0` was detected and reached nobody (#57), and
+  the page says exactly that rather than rendering it as "notified" because a
+  row exists. Undoing that distinction in the one document where it matters
+  most would be the worst thing this page could do. An unacknowledged incident
+  says "not acknowledged" rather than omitting the stage, because an absent
+  row reads as an unfinished page rather than as a fact.
+
+  Balances come from the snapshots either side of the alert, never the current
+  balance: the reader is reconstructing a past state.
+
+  **Export is the browser's print-to-PDF**, with print styles, not a generated
+  file. A PDF library is a new dependency in a security product, server-side
+  rendering drifts from what the customer actually saw, and the browser's own
+  footer carries the URL and a timestamp — better provenance for evidence than
+  a document we composed ourselves.
+
+  **Not built:** the "what to do next" wording. That is advice with
+  consequences and the wording is the whole of it — logged as decision 9.
+
+### Added
 - **Group A of the logged-and-swallowed sweep now pages (#58).** Three
   conditions, chosen on one test: is this *permanent for the life of the
   process* or *the last resort*, rather than a transient the next cycle

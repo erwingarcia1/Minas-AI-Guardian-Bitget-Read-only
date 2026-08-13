@@ -4,6 +4,7 @@ import base64
 import hashlib
 import hmac
 import html
+import json
 import logging
 import secrets
 import threading
@@ -365,7 +366,8 @@ def _render_home(db: Database, email: str, rules=None) -> str:
         f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
         f"<td class='lbl'>{html.escape(r['label'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
-        f"<td class='rule'>{html.escape(r['rule'])}</td>"
+        f"<td class='rule'><a class='acctlink' href='/incident?id={int(r['id'])}'>"
+        f"{html.escape(r['rule'])} ›</a></td>"
         f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules)}</tr>"
         for r in alerts
     ) or "<tr><td colspan=5 class='empty'>No alerts — all quiet</td></tr>"
@@ -451,7 +453,8 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
     alert_rows = "".join(
         f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
-        f"<td class='rule'>{html.escape(r['rule'])}</td>"
+        f"<td class='rule'><a class='acctlink' href='/incident?id={int(r['id'])}'>"
+        f"{html.escape(r['rule'])} ›</a></td>"
         f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules)}</tr>"
         for r in alerts
     ) or "<tr><td colspan=4 class='empty'>No alerts — all quiet</td></tr>"
@@ -474,6 +477,155 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
         f"<table><thead><tr><th>Time</th><th>Sev</th><th>Rule</th><th>Reviewed</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
     )
     nav = '<a class="live" href="/">← Your accounts</a>'
+    return _page(body, nav)
+
+
+def _incident_balances(db: Database, account_id: int, sent_at: str) -> tuple[list, list]:
+    """The two balance snapshots either side of the alert.
+
+    Deliberately not "the current balance". The reader of this page is
+    reconstructing a past state, usually for somebody else - an exchange, an
+    insurer, the police - and today's number in that document is actively
+    misleading."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT coin, quantity, snapshot_at FROM balance_snapshots "
+            "WHERE account_id = ? AND snapshot_at <= ? "
+            "AND snapshot_at = (SELECT MAX(snapshot_at) FROM balance_snapshots "
+            "                   WHERE account_id = ? AND snapshot_at <= ?) ORDER BY coin",
+            (account_id, sent_at, account_id, sent_at),
+        )
+        before = cur.fetchall()
+        cur.execute(
+            "SELECT coin, quantity, snapshot_at FROM balance_snapshots "
+            "WHERE account_id = ? AND snapshot_at > ? "
+            "AND snapshot_at = (SELECT MIN(snapshot_at) FROM balance_snapshots "
+            "                   WHERE account_id = ? AND snapshot_at > ?) ORDER BY coin",
+            (account_id, sent_at, account_id, sent_at),
+        )
+        after = cur.fetchall()
+    return list(before), list(after)
+
+
+def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
+    """One incident, as a document (G-25, #29).
+
+    This is the most detailed view of an account in the product - balances,
+    destination addresses, exact timings - and it exists to be handed to
+    somebody else. So it is scoped through `member_accounts` like everything
+    else here, and it returns None for another member's incident and for one
+    that does not exist alike.
+
+    What it must never do is claim more than the record supports. In
+    particular an alert with `delivered_to = 0` was detected and reached
+    nobody (#57), and rendering that as "notified" because a row exists would
+    undo that distinction in the one document where it matters most."""
+    account_ids = [r["id"] for r in member_accounts(db, email)]
+    if not account_ids:
+        return None
+    marks = ",".join("?" for _ in account_ids)
+    with db.cursor() as cur:
+        cur.execute(
+            f"SELECT a.*, ac.label, ac.exchange FROM alerts a "
+            f"JOIN accounts ac ON ac.id = a.account_id "
+            f"WHERE a.id = ? AND a.account_id IN ({marks})",
+            [alert_id, *account_ids],
+        )
+        alert = cur.fetchone()
+    if alert is None:
+        return None
+
+    try:
+        evidence = json.loads(alert["evidence_json"] or "{}")
+    except ValueError:
+        evidence = {}
+    before, after = _incident_balances(db, alert["account_id"], alert["sent_at"])
+
+    delivered = alert["delivered_to"] or 0
+    if delivered > 0:
+        notified = (
+            f"<b>Notified</b> — sent to {delivered} channel(s)"
+        )
+        notified_cls = "ok"
+    else:
+        # The #57 fact, stated rather than softened.
+        notified = (
+            "<b>Not delivered</b> — this alert was detected and recorded but "
+            "<b>reached nobody</b>. No notification was successfully sent."
+        )
+        notified_cls = "warn"
+
+    if alert["acknowledged_at"]:
+        acknowledged = (
+            f"<b>Acknowledged</b> — by {html.escape(alert['acknowledged_by'] or 'unknown')} "
+            f"at {_ts(alert['acknowledged_at'])}"
+        )
+        ack_cls = "ok"
+    else:
+        acknowledged = "<b>Not acknowledged</b> — nobody has confirmed seeing this alert."
+        ack_cls = "warn"
+
+    steps = "".join(
+        f'<div class="check"><span class="ic {cls}">{"✓" if cls == "ok" else "!"}</span>'
+        f'<span class="txt">{text}</span><span class="meta">{when}</span></div>'
+        for cls, text, when in (
+            ("ok", f"<b>Detected</b> — {html.escape(alert['message'])}", _ts(alert["sent_at"])),
+            (notified_cls, notified, _ts(alert["sent_at"])),
+            (ack_cls, acknowledged, _ts(alert["acknowledged_at"]) if alert["acknowledged_at"] else "—"),
+        )
+    )
+
+    def _balance_rows(rows, when_label):
+        if not rows:
+            return f"<tr><td colspan=3 class='empty'>No snapshot {when_label} this alert</td></tr>"
+        return "".join(
+            f"<tr><td class='lbl'>{html.escape(r['coin'])}</td>"
+            f"<td class='mono'>{html.escape(str(r['quantity']))}</td>"
+            f"<td class='mono'>{_ts(r['snapshot_at'])}</td></tr>"
+            for r in rows
+        )
+
+    evidence_rows = "".join(
+        f"<tr><td class='lbl'>{html.escape(str(k))}</td>"
+        f"<td class='mono'>{html.escape(str(v))}</td></tr>"
+        for k, v in sorted(evidence.items())
+    ) or "<tr><td colspan=2 class='empty'>No structured evidence recorded</td></tr>"
+
+    body = (
+        '<section><div class="card"><div class="card-head">'
+        f'<h2>Incident #{int(alert["id"])} — {html.escape(alert["rule"])}</h2>'
+        f'<span class="count"><span class="pill sev-{alert["severity"]}">{alert["severity"]}</span>'
+        "</span></div>"
+        '<dl class="dl">'
+        f"<dt>Account</dt><dd>{html.escape(alert['label'])}</dd>"
+        f"<dt>Exchange</dt><dd>{html.escape(alert['exchange'] or 'bitget')}</dd>"
+        f"<dt>Detected at</dt><dd>{_ts(alert['sent_at'])}</dd>"
+        f"<dt>Confidence</dt><dd>{html.escape(alert['confidence'] or '')}</dd>"
+        f"<dt>What we saw</dt><dd>{html.escape(alert['message'])}</dd>"
+        "</dl></div></section>"
+
+        '<section><div class="card"><div class="card-head"><h2>Timeline</h2>'
+        '<span class="count">detection → notification → acknowledgement</span></div>'
+        f'<div class="checks">{steps}</div></div></section>'
+
+        '<section><div class="cols">'
+        '<div class="card"><div class="card-head"><h2>Balances before</h2></div>'
+        "<table><thead><tr><th>Coin</th><th>Quantity</th><th>Snapshot</th></tr></thead>"
+        f"<tbody>{_balance_rows(before, 'before')}</tbody></table></div>"
+        '<div class="card"><div class="card-head"><h2>Balances after</h2></div>'
+        "<table><thead><tr><th>Coin</th><th>Quantity</th><th>Snapshot</th></tr></thead>"
+        f"<tbody>{_balance_rows(after, 'after')}</tbody></table></div>"
+        "</div></section>"
+
+        '<section><div class="card"><div class="card-head"><h2>Evidence</h2>'
+        '<span class="count">as recorded at detection</span></div>'
+        f"<table><tbody>{evidence_rows}</tbody></table></div></section>"
+    )
+    nav = (
+        f'<a class="live" href="/account?id={int(alert["account_id"])}">‹ Back to account</a>'
+        '<button class="live noprint" type="button" onclick="window.print()" '
+        'style="cursor:pointer;font-family:inherit">Print / Save as PDF</button>'
+    )
     return _page(body, nav)
 
 
@@ -550,6 +702,17 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             if path == "/":
                 self._send(_render_home(db, email, rules).encode())
+            elif path == "/incident":
+                qs = parse_qs(urlparse(self.path).query)
+                try:
+                    alert_id = int(qs.get("id", ["0"])[0])
+                except ValueError:
+                    alert_id = 0
+                page = _render_incident(db, email, alert_id)
+                if page is None:
+                    self._send(_render_not_found().encode(), 404)
+                else:
+                    self._send(page.encode())
             elif path == "/account":
                 qs = parse_qs(urlparse(self.path).query)
                 try:

@@ -101,6 +101,22 @@ _STYLE = """
                background:var(--panel-2); color:var(--txt); }
   .snoozed { font-size:12px; color:var(--muted); }
   .fail { color:var(--high); font-weight:600; } .zero { color:var(--faint); }
+  /* An incident page is handed to an exchange, an insurer or the police, so it
+     has to survive being printed. Export is the browser's own print-to-PDF
+     rather than a generated file: a PDF library is a new dependency in a
+     security product, server-side rendering drifts from what the customer
+     actually saw, and the browser's footer carries the URL and a timestamp -
+     better provenance for evidence than a document we composed ourselves. */
+  @media print {
+    :root { --bg:#fff; --panel:#fff; --panel-2:#fff; --txt:#111; --muted:#444;
+            --faint:#666; --line:#bbb; --line-soft:#ddd; }
+    body { background:#fff !important; color:#111; }
+    .wrap { max-width:none; padding:0; }
+    .noprint, .nav form, .ackbtn, .snoozesel { display:none !important; }
+    .card { border:1px solid #bbb; break-inside:avoid; }
+    .kpi::after, .dot { display:none; }
+    a { color:#111; text-decoration:none; }
+  }
   .empty { padding:34px; text-align:center; color:var(--faint); font-size:13px; }
   footer { margin-top:28px; text-align:center; color:var(--faint); font-size:11.5px; }
   a.acctlink { color:var(--txt); text-decoration:none; font-weight:550; }

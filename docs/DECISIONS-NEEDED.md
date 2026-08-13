@@ -378,6 +378,51 @@ answer needed from real usage rather than from this file.
 
 ---
 
+## 9. What an incident page tells a customer to do next (G-25, #29)
+
+The incident page is built and shipped — one page per incident, the
+detection → notification → acknowledgement timeline, balances as they were at
+the time, and print-to-PDF export. **Three of the four criteria are done.**
+
+The fourth is not engineering. "It states in plain words what to do next
+(revoke the key, contact the exchange, move funds)" is advice with
+consequences, and the wording *is* the deliverable.
+
+### Why I did not write it
+
+Every candidate sentence commits us to something:
+
+- **"Revoke your API key."** Almost always right, and it destroys the
+  attacker's access — and ours. Monitoring stops at the moment the customer
+  most needs it, and a customer in a panic will not be reading about how to
+  issue a replacement.
+- **"Move your funds."** Moving funds during an active compromise can hand the
+  attacker a fresh destination to watch, and a customer moving to a wallet
+  they set up in a hurry is a second incident waiting to happen.
+- **"Contact the exchange."** Safe, and nearly useless on its own without
+  telling them what to ask for. Which reference do they quote? Do they ask for
+  a withdrawal freeze? That is exchange-specific.
+- **Saying nothing** leaves a page that describes a theft and offers no next
+  step, which is its own kind of failure.
+
+There is also a liability dimension I am not in a position to weigh. Advice
+that is followed and goes badly is different from advice that was never given.
+
+### What is needed
+
+The literal text, per severity or per rule, and a decision on whether it is
+advice ("consider") or instruction ("do this now"). Once there is text, wiring
+it in is an hour: the page already has the slot.
+
+### Recommendation
+
+Start with the narrowest true thing and expand later: for a CRITICAL
+withdrawal-path alert, name the exchange's own support route and the reference
+to quote, and say plainly that Minas monitors and does not act. Leave "revoke"
+and "move funds" out until there is a considered position on both.
+
+---
+
 ## Not a decision, but needs saying: #16's remaining criterion
 
 G-12's third criterion — "threshold changes are recorded, showing **who**

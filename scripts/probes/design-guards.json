@@ -295,5 +295,41 @@
   "tests": [
    "tests/test_operator_page_sweep.py"
   ]
+ },
+ {
+  "name": "#29: the incident page ignores the member's account scope",
+  "file": "sentinel/portal.py",
+  "old": "            f\"WHERE a.id = ? AND a.account_id IN ({marks})\",\n            [alert_id, *account_ids],",
+  "new": "            \"WHERE a.id = ?\",\n            [alert_id],",
+  "tests": [
+   "tests/test_incident_page.py"
+  ]
+ },
+ {
+  "name": "#29: an undelivered alert is rendered as notified",
+  "file": "sentinel/portal.py",
+  "old": "    if delivered > 0:\n        notified = (",
+  "new": "    if delivered >= 0:\n        notified = (",
+  "tests": [
+   "tests/test_incident_page.py"
+  ]
+ },
+ {
+  "name": "#29: the 'before' snapshot is picked from after the alert (today's balance)",
+  "file": "sentinel/portal.py",
+  "old": "\"                   WHERE account_id = ? AND snapshot_at <= ?) ORDER BY coin\",",
+  "new": "\"                   WHERE account_id = ? AND snapshot_at >= ?) ORDER BY coin\",",
+  "tests": [
+   "tests/test_incident_page.py"
+  ]
+ },
+ {
+  "name": "#29: an unacknowledged incident omits the stage instead of stating it",
+  "file": "sentinel/portal.py",
+  "old": "        acknowledged = \"<b>Not acknowledged</b> \u2014 nobody has confirmed seeing this alert.\"",
+  "new": "        acknowledged = \"&nbsp;\"",
+  "tests": [
+   "tests/test_incident_page.py"
+  ]
  }
 ]
