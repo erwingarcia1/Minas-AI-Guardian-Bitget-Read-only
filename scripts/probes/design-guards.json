@@ -502,5 +502,123 @@
   "tests": [
    "tests/test_password_reset.py"
   ]
+ },
+ {
+  "name": "#32 ATTACK replay a seen code: the used step is not recorded",
+  "file": "sentinel/twofactor.py",
+  "old": "            cur.execute(\"UPDATE totp_enrolments SET last_used_step = ? WHERE id = ?\",\n                        (step, row[\"id\"]))",
+  "new": "            pass",
+  "tests": [
+   "tests/test_twofactor.py"
+  ]
+ },
+ {
+  "name": "#32 ATTACK replay the previous step: only the exact step is blocked",
+  "file": "sentinel/totp.py",
+  "old": "        if last_used_step is not None and step <= last_used_step:",
+  "new": "        if last_used_step is not None and step == last_used_step:",
+  "tests": [
+   "tests/test_totp.py"
+  ]
+ },
+ {
+  "name": "#32 ATTACK guess within a wide window: the skew is widened",
+  "file": "sentinel/totp.py",
+  "old": "SKEW_STEPS = 1",
+  "new": "SKEW_STEPS = 5",
+  "tests": [
+   "tests/test_totp.py"
+  ]
+ },
+ {
+  "name": "#32 ATTACK read the secret from the database: it is stored in clear",
+  "file": "sentinel/twofactor.py",
+  "old": "            (kind, subject, cipher.encrypt(secret), _now()),",
+  "new": "            (kind, subject, secret, _now()),",
+  "tests": [
+   "tests/test_twofactor.py"
+  ]
+ },
+ {
+  "name": "#32 ATTACK turn 2FA off with a stolen session: no code required",
+  "file": "sentinel/twofactor.py",
+  "old": "    if not check_second_factor(db, cipher, kind, subject, code):\n        return False",
+  "new": "    if False:\n        return False",
+  "tests": [
+   "tests/test_twofactor.py"
+  ]
+ },
+ {
+  "name": "#32 ATTACK re-enrol over live 2FA to an attacker's phone",
+  "file": "sentinel/twofactor.py",
+  "old": "        if row is not None and row[\"confirmed\"]:\n            raise ValueError(\"two-factor is already enabled; disable it first\")",
+  "new": "        pass",
+  "tests": [
+   "tests/test_twofactor.py"
+  ]
+ },
+ {
+  "name": "#32 ATTACK reuse a recovery code: it is not consumed",
+  "file": "sentinel/twofactor.py",
+  "old": "        cur.execute(\"UPDATE totp_recovery_codes SET used_at = ? WHERE id = ?\", (_now(), row[\"id\"]))",
+  "new": "        pass",
+  "tests": [
+   "tests/test_twofactor.py"
+  ]
+ },
+ {
+  "name": "#32 recovery codes are cleared on confirm (defence in depth, unreachable today - disable() already clears them)",
+  "file": "sentinel/twofactor.py",
+  "old": "            \"DELETE FROM totp_recovery_codes WHERE subject_kind = ? AND subject = ?\",\n            (kind, subject),\n        )\n        cur.executemany(",
+  "new": "            \"SELECT 1 WHERE ? IS NOT NULL AND ? IS NOT NULL\",\n            (kind, subject),\n        )\n        cur.executemany(",
+  "tests": [
+   "tests/test_twofactor.py"
+  ],
+  "expect": "survived"
+ },
+ {
+  "name": "#32 ATTACK sign in with an unconfirmed enrolment",
+  "file": "sentinel/twofactor.py",
+  "old": "    if row is None or not row[\"confirmed\"]:\n        return False",
+  "new": "    if row is None:\n        return False",
+  "tests": [
+   "tests/test_twofactor.py"
+  ]
+ },
+ {
+  "name": "#32 an operator is allowed to disable two-factor",
+  "file": "sentinel/twofactor.py",
+  "old": "    if kind == OPERATOR:",
+  "new": "    if False:",
+  "tests": [
+   "tests/test_twofactor.py"
+  ]
+ },
+ {
+  "name": "#32 an unenrolled operator can complete a sign-in",
+  "file": "sentinel/operators.py",
+  "old": "    an optional one.\"\"\"\n    return True",
+  "new": "    an optional one.\"\"\"\n    from sentinel.twofactor import OPERATOR, is_enabled\n\n    return is_enabled(db, OPERATOR, username)",
+  "tests": [
+   "tests/test_twofactor.py"
+  ]
+ },
+ {
+  "name": "#32 a malformed secret is treated as valid",
+  "file": "sentinel/totp.py",
+  "old": "    return raw or None",
+  "new": "    return raw or b'x'",
+  "tests": [
+   "tests/test_totp.py"
+  ]
+ },
+ {
+  "name": "#32 the code comparison is not constant-time",
+  "file": "sentinel/totp.py",
+  "old": "        if hmac.compare_digest(_code_for_step(key, step), candidate):",
+  "new": "        if _code_for_step(key, step) == candidate:",
+  "tests": [
+   "tests/test_totp.py"
+  ]
  }
 ]

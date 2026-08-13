@@ -32,6 +32,43 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   distinguishes two withdrawals.
 
 ### Added
+- **Two-factor authentication (G-28, #32).** RFC 6238 TOTP on `hmac` and
+  `hashlib` — **no new dependency**. This is the module that decides whether
+  somebody gets into the thing protecting a customer's exchange accounts, and
+  a supply-chain dependency inside the authentication path of a security
+  product is a worse trade than forty lines of HMAC.
+
+  Built against a written list of attacks, each with a probe that breaks the
+  guard and confirms a test dies:
+
+  - **Replay.** A code is valid for up to ninety seconds — long enough for
+    somebody who read it over a shoulder or found it in a proxy log.
+    `verify_code` returns the *step* it matched, the caller stores it, and
+    every step at or below it is then refused. Blocking only the exact code
+    would leave the skew tolerance as a replay window.
+  - **A widened window.** ±1 step, and `SKEW_STEPS` is a constant rather than
+    a parameter — a call site that could widen it eventually will.
+  - **Reading the secret.** Encrypted at rest with the same cipher as exchange
+    API keys.
+  - **Turning it off with a stolen session.** Disabling requires a current
+    code — proof of possession, not proof of a cookie — and emails the owner.
+    2FA that whoever holds the session can remove protects nothing an attacker
+    cannot undo in one click.
+  - **Re-enrolling over live 2FA**, which would be a reset with no proof of
+    possession. Refused while a confirmed enrolment exists.
+  - **Locking the customer out during enrolment.** The secret is stored so it
+    can be scanned, but 2FA is not *in force* until a code has verified.
+  - **Recovery codes**, which bypass the second factor and are therefore worth
+    what the password is: 48 bits, hashed at rest, single-use, and retired
+    when the secret they were printed against is.
+
+  **Operator 2FA is not optional.** Both halves: an enrolled operator cannot
+  disable it, and `operator_login_requires_code` returns True regardless of
+  enrolment, so an *unenrolled* operator cannot complete a sign-in either.
+  Without the second half, "operators must have 2FA" would be satisfied by
+  nobody ever enrolling.
+
+### Added
 - **Customers can reset a forgotten password (G-29, #33).** `/forgot` and
   `/reset` in the member portal, linked from the sign-in page.
 

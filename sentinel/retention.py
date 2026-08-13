@@ -76,6 +76,11 @@ KEEP_LATEST_PER_ACCOUNT: dict[str, tuple[str, str]] = {
 # identity and configuration (deleting a row removes a person or a setting), and
 # state tables that hold exactly one row per account.
 NEVER_PRUNE = frozenset({
+    # Deleting an enrolment silently turns 2FA OFF for that person, and
+    # deleting a recovery code silently removes their way back in. Both are
+    # current state, not history (#32).
+    "totp_enrolments",
+    "totp_recovery_codes",
     "accounts",
     "poll_state",
     "known_addresses",     # a pruned address is a "never seen before" CRITICAL

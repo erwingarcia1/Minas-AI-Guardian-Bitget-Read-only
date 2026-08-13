@@ -159,6 +159,19 @@ def check_member_login(db: Database, email: str, password: str) -> bool:
     return True
 
 
+def member_login_requires_code(db: Database, email: str) -> bool:
+    """True when this member has confirmed two-factor.
+
+    A separate call from `check_member_login` on purpose. Folding the second
+    factor into the password check would make it something a login route
+    inherits without deciding; keeping it separate means any route that issues
+    a session has to answer this question explicitly, and a route that forgets
+    is a route that fails a test (#32)."""
+    from sentinel.twofactor import MEMBER, is_enabled
+
+    return is_enabled(db, MEMBER, normalize_email(email))
+
+
 def member_accounts(db: Database, email: str) -> list:
     """Every account this member is a contact on. THE isolation boundary: all
     portal queries go through the ids returned here.

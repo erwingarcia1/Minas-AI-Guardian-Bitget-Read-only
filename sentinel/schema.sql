@@ -331,3 +331,46 @@ CREATE TABLE IF NOT EXISTS password_resets (
 );
 CREATE INDEX IF NOT EXISTS idx_password_resets_hash ON password_resets(token_hash);
 CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(email, expires_at);
+
+-- Two-factor enrolment, for members and operators alike (G-28, #32).
+--
+-- `subject_kind` + `subject` rather than a foreign key, because operators and
+-- portal members are deliberately separate tables reached through separate
+-- logins - an operator is not a customer with extra rights - and one 2FA
+-- mechanism serving both must not quietly join them.
+--
+-- `encrypted_secret`, never the plaintext. The shared secret is a credential
+-- exactly as much as an exchange API key is, and it is encrypted with the same
+-- cipher: a database read must not yield a working authenticator.
+--
+-- `last_used_step` is replay protection. A TOTP code is valid for up to ninety
+-- seconds, which is long enough for somebody who read it over a shoulder;
+-- recording the last accepted step makes each one usable exactly once.
+CREATE TABLE IF NOT EXISTS totp_enrolments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_kind TEXT NOT NULL CHECK (subject_kind IN ('member', 'operator')),
+    subject TEXT NOT NULL,
+    encrypted_secret TEXT NOT NULL,
+    -- 0 while enrolling. A secret is stored before it is confirmed so the
+    -- customer can scan it, but 2FA is not IN FORCE until they have proved
+    -- they can produce a code - otherwise a mis-scanned QR locks them out of
+    -- the thing protecting their exchange accounts.
+    confirmed INTEGER NOT NULL DEFAULT 0,
+    last_used_step INTEGER,
+    created_at TEXT NOT NULL,
+    confirmed_at TEXT,
+    UNIQUE(subject_kind, subject)
+);
+
+-- Single-use codes that bypass the second factor. Hashed, because they are
+-- worth exactly as much as the password.
+CREATE TABLE IF NOT EXISTS totp_recovery_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_kind TEXT NOT NULL CHECK (subject_kind IN ('member', 'operator')),
+    subject TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_recovery_lookup
+    ON totp_recovery_codes(subject_kind, subject, used_at);
