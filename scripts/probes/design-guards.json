@@ -223,5 +223,50 @@
   "tests": [
    "tests/test_unidentifiable_withdrawal.py"
   ]
+ },
+ {
+  "name": "#58: escalation pages even when a channel delivered (page fatigue)",
+  "file": "sentinel/alerts/escalation.py",
+  "old": "        if delivered > 0 or self._operator_alerter is None:",
+  "new": "        if self._operator_alerter is None:",
+  "tests": [
+   "tests/test_operator_page_sweep.py"
+  ]
+ },
+ {
+  "name": "#58: escalation with zero channels is treated as nothing to do",
+  "file": "sentinel/alerts/escalation.py",
+  "old": "            delivered = 0\n            for channel in self._channels:",
+  "new": "            delivered = 0 if self._channels else 1\n            for channel in self._channels:",
+  "tests": [
+   "tests/test_operator_page_sweep.py"
+  ]
+ },
+ {
+  "name": "#58: routing problems collected but never read by cmd_run",
+  "file": "sentinel/cli.py",
+  "old": "    channels = build_channels(rules, problems=routing_problems)",
+  "new": "    channels = build_channels(rules)",
+  "tests": [
+   "tests/test_operator_page_sweep.py"
+  ]
+ },
+ {
+  "name": "#58: a missing contact provider pages on every alert, not once",
+  "file": "sentinel/alerts/contact.py",
+  "old": "        if key in self._warned:\n            return\n        self._warned.add(key)",
+  "new": "        self._warned.add(key)",
+  "tests": [
+   "tests/test_operator_page_sweep.py"
+  ]
+ },
+ {
+  "name": "#58: any OperationalError treated as an already-applied migration",
+  "file": "sentinel/db.py",
+  "old": "    return \"duplicate column name\" in str(exc).lower()",
+  "new": "    return True",
+  "tests": [
+   "tests/test_operator_page_sweep.py"
+  ]
  }
 ]

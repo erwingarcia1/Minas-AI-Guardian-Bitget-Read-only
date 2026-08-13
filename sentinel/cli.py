@@ -88,7 +88,7 @@ def _build_named_channels() -> dict[str, object]:
     return named
 
 
-def build_channels(rules: RulesConfig) -> dict[str, list]:
+def build_channels(rules: RulesConfig, problems: list | None = None) -> dict[str, list]:
     """severity -> [channel objects], from alerting.routing in rules.yaml.
     'digest' entries are intentionally skipped here: MEDIUM/LOW alerts are
     stored (dedup still applies) and delivered by the `sentinel digest`
@@ -104,6 +104,8 @@ def build_channels(rules: RulesConfig) -> dict[str, list]:
                 "channel is an alert that is never delivered.",
                 severity, ", ".join(routed),
             )
+            if problems is not None:
+                problems.append({"kind": "fallback", "channel": None, "severity": severity})
         resolved = []
         for name in routed:
             if name == "digest":
@@ -111,6 +113,13 @@ def build_channels(rules: RulesConfig) -> dict[str, list]:
             channel = named.get(str(name))
             if channel is None:
                 logger.warning("channel '%s' routed for %s but not configured (missing env vars)", name, severity)
+                # Collected rather than paged from here: the operator alerter
+                # is constructed *from* the channels this function returns, so
+                # paging inside it would need the thing being built. The caller
+                # pages once the alerter exists (#58, group A).
+                if problems is not None:
+                    problems.append({"kind": "unconfigured", "channel": str(name),
+                                     "severity": severity})
                 continue
             resolved.append(channel)
         channels[severity] = resolved
@@ -263,7 +272,8 @@ def cmd_run(args: argparse.Namespace) -> int:
         _env("SENTINEL_RULES_PATH", "./config/rules.yaml"),
         on_change=lambda changes: record_config_changes(db, changes),
     )
-    channels = build_channels(rules)
+    routing_problems: list = []
+    channels = build_channels(rules, problems=routing_problems)
 
     metrics = Metrics()
     metrics_port = int(_env("SENTINEL_METRICS_PORT", "9109"))
@@ -296,10 +306,43 @@ def cmd_run(args: argparse.Namespace) -> int:
             dashboard_host, dashboard_host, dashboard_port,
         )
 
-    escalation_minutes = rules.get_int("alerting", "escalation_unacknowledged_minutes", default=15)
-    escalator = Escalator(channels.get("CRITICAL", []), escalation_minutes)
-
     operator_alerter = OperatorAlerter(db, build_operator_channels(rules), rules)
+
+    # Routing problems are collected by build_channels above and paged here,
+    # once the alerter exists - it is built *from* those channels, so this
+    # cannot happen any earlier (#58, group A). A whole severity routed to a
+    # channel that was never configured is under-delivered for the entire run,
+    # and the log line it used to be is printed once into a file nobody reads.
+    for problem in routing_problems:
+        if problem["kind"] == "fallback":
+            operator_alerter.page(
+                rule="alert_routing_fell_back_to_defaults",
+                severity="HIGH",
+                message=(
+                    f"No usable alert routing is configured for {problem['severity']}, so the "
+                    f"built-in defaults are in use. Alerts of that severity are going wherever "
+                    f"the defaults point, which is not a choice anyone made for this deployment."
+                ),
+                evidence=problem,
+                dedup_scope=f"routing-fallback:{problem['severity']}",
+            )
+        else:
+            operator_alerter.page(
+                rule="alert_channel_routed_but_not_configured",
+                severity="HIGH",
+                message=(
+                    f"Channel '{problem['channel']}' is routed for {problem['severity']} alerts "
+                    f"but has no configuration, so it delivers nothing. Every {problem['severity']} "
+                    f"alert is under-delivered for as long as this process runs. Check the "
+                    f"environment variables for that channel."
+                ),
+                evidence=problem,
+                dedup_scope=f"{problem['channel']}:{problem['severity']}",
+            )
+
+    escalation_minutes = rules.get_int("alerting", "escalation_unacknowledged_minutes", default=15)
+    escalator = Escalator(channels.get("CRITICAL", []), escalation_minutes,
+                          operator_alerter=operator_alerter)
 
     engine = Engine(
         db, cipher, rules, channels, metrics=metrics, escalator=escalator,

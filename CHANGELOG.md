@@ -31,7 +31,40 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   nothing had pinned that the derived identity introduced to fix G-11 actually
   distinguishes two withdrawals.
 
+### Added
+- **Group A of the logged-and-swallowed sweep now pages (#58).** Three
+  conditions, chosen on one test: is this *permanent for the life of the
+  process* or *the last resort*, rather than a transient the next cycle
+  retries. A page for every entry in that issue would train an operator to
+  ignore the channel, which is the same outcome as not paging at all.
+
+  **Escalation reached nobody** — CRITICAL, and the only entry with a real
+  claim on it. Escalation is what happens when a CRITICAL goes unacknowledged;
+  there is nothing after it. Only on *zero* channels delivering: one dead
+  channel alongside a working one is degraded, not uninformed.
+
+  **A channel routed for a severity but never configured** — HIGH, at startup.
+  Every alert of that severity is under-delivered for the whole run. Also pages
+  when routing *falls back to defaults*, which is arguably worse: the alerts go
+  somewhere nobody chose.
+
+  **A contact channel set on an account with no provider** — HIGH, once per
+  channel per process. Every alert that account should receive through it
+  silently never happens.
+
+  Deliberately **not** paged, and commented so the next sweep doesn't
+  re-litigate it: per-event delivery failures. One bounced email is noise; a
+  rising rate is a broken SMTP config, which is a metric-and-alarm shape.
+
 ### Fixed
+- **A genuinely failed migration no longer looks like a no-op (#58, group D).**
+  Every migration ran under `contextlib.suppress(sqlite3.OperationalError)`
+  because re-adding an existing column raises — but so does a renamed table, a
+  locked database, or a typo in the DDL. Those were indistinguishable, so a
+  database that had not actually migrated started the service anyway and every
+  query against the new shape failed somewhere far from the cause. Only
+  "duplicate column name" is a no-op now; anything else stops the process.
+
 - **A withdrawal we cannot identify no longer disappears quietly (#67).** When
   an exchange sends a withdrawal with neither an `id`/`txid` nor a timestamp,
   its derived identity is a digest of coin, amount, address, tag, network and

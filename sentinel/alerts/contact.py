@@ -31,11 +31,12 @@ class ContactRouter:
       - a CRITICAL alert with no phone on file is logged and recorded so the
         dashboard can nudge the operator to capture one."""
 
-    def __init__(self, db=None, rules=None) -> None:
+    def __init__(self, db=None, rules=None, operator_alerter=None) -> None:
         self._db = db
         self._rules = rules
         self._smtp = self._smtp_config()
         self._warned: set[str] = set()
+        self._operator_alerter = operator_alerter
 
     @staticmethod
     def _smtp_config() -> dict | None:
@@ -52,9 +53,35 @@ class ContactRouter:
         return None
 
     def _warn_once(self, key: str, msg: str) -> None:
-        if key not in self._warned:
-            self._warned.add(key)
-            logger.warning(msg)
+        """A missing provider is not a transient (#58, group A).
+
+        The per-event failures on this path - one email bounced, one SMS
+        rejected - are deliberately left as log lines: one is noise, and a
+        rising rate is a metric-and-alarm shape rather than a page. This is the
+        other kind. A contact channel that is *set on the account* but has no
+        provider configured means every alert that account should ever receive
+        through it silently does not happen, for the life of the process. It is
+        permanent, it is a configuration mistake somebody can fix in a minute,
+        and until now it was one log line at the moment of the first
+        undelivered alert.
+
+        Paged once per process, on the same key that suppresses the log."""
+        if key in self._warned:
+            return
+        self._warned.add(key)
+        logger.warning(msg)
+        if self._operator_alerter is None:
+            return
+        self._operator_alerter.page(
+            rule="contact_channel_has_no_provider",
+            severity="HIGH",
+            message=(
+                f"A customer contact channel is configured on at least one account but has no "
+                f"provider set, so those alerts are not being delivered: {msg}"
+            ),
+            evidence={"channel": key},
+            dedup_scope=key,
+        )
 
     # --- SMS delivery log ----------------------------------------------------
 
