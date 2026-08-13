@@ -185,6 +185,10 @@ class ContactRouter:
             confidence=detection.confidence,
             message=detection.message,
             evidence=detection.evidence,
+            # Account notices (password reset, destination change) carry their
+            # whole meaning in `message` and must render it verbatim; a
+            # detection must not, because that text embeds addresses.
+            notice=getattr(detection, "is_notice", False),
         )
 
         if emails:
@@ -199,6 +203,7 @@ class ContactRouter:
                     EmailChannel(
                         self._smtp["host"], self._smtp["port"], self._smtp["username"],
                         self._smtp["password"], self._smtp["sender"], emails,
+                        audience="customer",
                     ).send(alert)
                 except Exception as exc:  # noqa: BLE001 - delivery failure must not stall detection
                     # Stays a log line, decided in the #58 sweep. One bounced

@@ -11,8 +11,9 @@ def _detection():
 class _RecEmail:
     instances = []
 
-    def __init__(self, host, port, user, pw, sender, recipients):
+    def __init__(self, host, port, user, pw, sender, recipients, *, audience="operator"):
         self.recipients = recipients
+        self.audience = audience
         _RecEmail.instances.append(self)
 
     def send(self, alert):
@@ -53,6 +54,15 @@ def test_sends_to_primary_and_secondary_email(monkeypatch):
     r.send(_detection(), "acct", ["a@x.com", "b@x.com"], [])
     assert len(_RecEmail.instances) == 1
     assert _RecEmail.instances[0].recipients == ["a@x.com", "b@x.com"]
+
+
+def test_per_account_email_uses_the_customer_template(monkeypatch):
+    """The audience is the whole guard against posting rule names, confidence
+    and raw evidence to a customer. Asserted here rather than only on the
+    rendering, because this is the wiring that decides which one is used."""
+    r = _router(monkeypatch)
+    r.send(_detection(), "acct", ["a@x.com"], [])
+    assert _RecEmail.instances[0].audience == "customer"
 
 
 def test_sends_sms_to_all_phones_in_one_channel(monkeypatch):

@@ -918,5 +918,23 @@
    "tests/test_account_notices.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "notices: ContactRouter stops reading the flag, so the reset link never reaches the wire",
+  "file": "sentinel/alerts/contact.py",
+  "old": "            notice=getattr(detection, \"is_notice\", False),",
+  "new": "            notice=False,",
+  "tests": [
+   "tests/test_customer_email_template.py"
+  ]
+ },
+ {
+  "name": "customer email: the operator template goes to customers, taking evidence with it",
+  "file": "sentinel/alerts/email.py",
+  "old": "        msg.set_content(alert.render_customer() if customer else alert.render())",
+  "new": "        msg.set_content(alert.render())",
+  "tests": [
+   "tests/test_customer_email_template.py"
+  ]
  }
 ]

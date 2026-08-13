@@ -163,6 +163,36 @@ common path is agreed.
 the balances, detection → notification → acknowledgement. Only the advice block
 is blocked. Say the word and I'll build the page with the advice block stubbed.
 
+### Update 2026-08-13: one defect in the shipped text fixed, the wording still open
+
+The alert runbook (`sentinel.alerts.base.runbook`) said, as step 2, *"revoke/
+rotate the API key(s) on this account"*. **The Guardian's own key is one of
+those keys.** It is read-only and cannot move funds, so revoking it takes
+nothing away from an attacker; what it does is switch the monitoring off at the
+moment it matters most — and silently, because nobody connects "I revoked my
+keys" with "I am no longer being watched". A frightened customer revoking
+everything is the likely reading, not an edge case.
+
+That is a safety defect rather than a phrasing preference, so it was fixed
+without waiting for this decision: step 2 now says to revoke keys you do not
+recognise, states that the Guardian's key is read-only, and says plainly that
+revoking everything leaves the account unwatched until a new key is issued. It
+closes with a link to the portal to check whether monitoring is still running.
+
+**This does not close decision 3.** Still owned by legal/comms, unchanged:
+
+- whether the text is advice ("consider") or instruction ("do this now");
+- "contact Bitget support" and "freeze the account" — the liability wording;
+- how certain any of it may sound, given a detection is evidence, not proof;
+- whether it should vary per rule.
+
+The runbook is now a single function so that review has one place to land, and
+the customer-facing gating (CRITICAL/HIGH only) is separate from the wording.
+There is still **no self-serve page for replacing a revoked key** — onboarding
+is operator-driven — so the link points at the portal front door rather than a
+flow that does not exist. That page is worth building before this advice gets
+much traffic.
+
 ---
 
 ## 4. Alert channel defaults and quiet hours — blocks #24 (G-20)
