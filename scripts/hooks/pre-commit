@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# Lint before a commit is created. Milliseconds, so there is no reason not to.
+#
+# The SUITE is not here - it is in pre-push. #62 suggested pre-commit for both,
+# on the reasoning that ~40s was acceptable. It is now over two minutes, and a
+# hook people disable protects nothing. Splitting them keeps the fast check on
+# every commit and the slow one at the last moment before it can affect anyone
+# else, which is the point at which red CI actually starts costing.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+RUFF=ruff; [ -x .venv/bin/ruff ] && RUFF=.venv/bin/ruff
+command -v "$RUFF" >/dev/null 2>&1 || [ -x "$RUFF" ] || {
+  echo "pre-commit: ruff not found - skipping lint. Install dev deps: pip install -e '.[dev]'" >&2
+  exit 0
+}
+
+# Honest about scope: this lints the working tree, not the staged snapshot.
+# With unstaged changes present the two differ, and a hook that quietly checked
+# something other than what is being committed would be worse than no hook.
+if ! git diff --quiet; then
+  echo "pre-commit: note - you have unstaged changes, so this lints your WORKING TREE," >&2
+  echo "            not exactly what is being committed." >&2
+fi
+
+"$RUFF" check sentinel tests

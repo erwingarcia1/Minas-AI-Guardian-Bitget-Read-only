@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+# The full suite, at the last moment before a commit can affect anyone else.
+#
+# CI ran red on main for ten hours across about ten pushes and nobody noticed.
+# The standing rule - check `gh run list --limit 1` after every push - closes
+# the detection gap and depends on a human remembering. This closes the
+# prevention gap and does not.
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+PY=python3; [ -x .venv/bin/python ] && PY=.venv/bin/python
+RUFF=ruff; [ -x .venv/bin/ruff ] && RUFF=.venv/bin/ruff
+
+echo "pre-push: ruff + full suite (bypass with --no-verify if you must)"
+"$RUFF" check sentinel tests
+"$PY" -m pytest -q

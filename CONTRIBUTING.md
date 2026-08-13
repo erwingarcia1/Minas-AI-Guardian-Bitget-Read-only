@@ -75,6 +75,38 @@ Full procedure, region notes, and the DB-migration recipe:
 GitHub and production stay in lockstep.
 
 
+## Before pushing
+
+Install the hooks once, per clone:
+
+```bash
+scripts/install-hooks.sh
+```
+
+- **pre-commit** — `ruff check sentinel tests`. Milliseconds. It lints the
+  *working tree*, and says so when you have unstaged changes, because a hook
+  that quietly checked something other than what you are committing would be
+  worse than no hook.
+- **pre-push** — ruff plus the full suite. Over two minutes, which is why it is
+  not on every commit: a hook people disable protects nothing. Pre-push is the
+  last moment before a commit can cost anyone else anything, which is exactly
+  where a slow check belongs.
+
+Bypass with `--no-verify` when you genuinely need to. It is possible on
+purpose — a hook that blocks an urgent fix gets uninstalled — and it is never
+silent.
+
+The hooks are deliberately not the `pre-commit` tool. That would buy hook
+management at the price of a dev dependency managing its own tool environments,
+for two hooks running two commands that are already dependencies. What actually
+mattered from that suggestion — that a clone does not silently have no hooks —
+is covered by the installer and this section. What a hook manager would *not*
+have given us is `tests/test_git_hooks.py`, which fails if the hooks and CI ever
+check different things: a hook that drifts narrower than CI goes on passing
+while it stops protecting anything, and teaches people that `--no-verify` is
+the normal way to commit.
+
+
 ## After pushing
 
 Check the run. A red CI is a stop condition — don't start the next piece of
