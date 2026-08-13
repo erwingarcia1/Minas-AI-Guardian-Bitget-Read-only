@@ -218,6 +218,7 @@ def onboard_account(
     passphrase: str,
     exchange: str = "bitget",
     actor: str | None = None,
+    operator_alerter=None,
     alert_email: str | None = None,
     alert_phone: str | None = None,
     customer_name: str | None = None,
@@ -273,7 +274,30 @@ def onboard_account(
 
     from sentinel.baseline import seed_baseline  # local import avoids a module cycle
 
-    seed_baseline(db, account_id, client)
+    # An account whose history could not be fully seeded is not broken, but it
+    # WILL false-positive later on activity the customer has always had - and
+    # nothing distinguished it from an account that started complete (#58,
+    # group C). Recorded as an event so it is attached to the account forever,
+    # not only to whatever log file was open at onboarding.
+    gaps = seed_baseline(db, account_id, client)
+    for gap in gaps:
+        append_event(
+            db, account_id, "baseline_seed_incomplete", "HIGH", gap, actor=actor,
+        )
+    if gaps and operator_alerter is not None:
+        operator_alerter.page(
+            rule="account_onboarded_with_partial_baseline",
+            severity="HIGH",
+            message=(
+                f"{label} was onboarded but {len(gaps)} part(s) of its history could not be "
+                f"read from the exchange. The account is monitored, but detectors that compare "
+                f"against history will raise false positives on activity this customer has "
+                f"always had. Re-run the seed once the exchange endpoint is working."
+            ),
+            evidence={"account_label": label, "gaps": gaps},
+            account_id=account_id,
+            dedup_scope=f"onboard:{label}",
+        )
 
     # The act of onboarding is itself something a person did, and until G-50
     # it left no trace at all - no event row, so no "who added this customer".

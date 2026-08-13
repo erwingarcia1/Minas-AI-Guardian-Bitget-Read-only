@@ -56,6 +56,22 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   re-litigate it: per-event delivery failures. One bounced email is noise; a
   rising rate is a broken SMTP config, which is a metric-and-alarm shape.
 
+- **An account onboarded with a partial baseline is now visible (#58, group
+  C).** Seeding trading and transfer history is best-effort on purpose — a
+  broken exchange endpoint should not block onboarding, and that is unchanged.
+  But the consequence lands later and on the customer: an account seeded
+  without its trading history false-positives on `never_touched_pair_activity`
+  for pairs they have always traded, and nothing distinguished it from an
+  account that started complete.
+
+  The gap is now recorded as a `baseline_seed_incomplete` event **on the
+  account**, so months later the reason is attached to the thing being
+  investigated rather than to whatever log file was open at the time — and
+  paged, because it is fixable now by re-seeding. `sentinel onboard` prints it
+  to stderr instead of paging: the operator who ran the command is standing in
+  front of the output, and paging someone about something they are currently
+  reading is how a channel gets muted.
+
 ### Fixed
 - **A genuinely failed migration no longer looks like a no-op (#58, group D).**
   Every migration ran under `contextlib.suppress(sqlite3.OperationalError)`

@@ -201,6 +201,11 @@ class ContactRouter:
                         self._smtp["password"], self._smtp["sender"], emails,
                     ).send(alert)
                 except Exception as exc:  # noqa: BLE001 - delivery failure must not stall detection
+                    # Stays a log line, decided in the #58 sweep. One bounced
+                    # email is noise - a wrong address, a full mailbox, a
+                    # greylisting retry. A *rising rate* is a broken SMTP
+                    # config, and that is metric-and-alarm shaped, not
+                    # page-shaped. Do not re-litigate this without the metric.
                     logger.warning("per-account email to %s failed: %s", emails, exc)
 
         if phones:
@@ -237,6 +242,10 @@ class ContactRouter:
         try:
             receipts = channel.send(alert)
         except Exception as exc:  # noqa: BLE001 - delivery failure must not stall detection
+            # Stays a log line for the same reason as the email path above
+            # (#58), and this one additionally leaves an `sms_deliveries` row
+            # with status='failed' - a queryable record, which is more than the
+            # email path has.
             logger.warning("per-account SMS to %s failed: %s", phones, exc)
             for phone in phones:
                 self._record_sms(

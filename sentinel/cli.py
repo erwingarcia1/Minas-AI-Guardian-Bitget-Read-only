@@ -186,6 +186,30 @@ def cmd_onboard(args: argparse.Namespace) -> int:
         return 1
 
     print(f"Onboarded '{result.label}' ({exchange}) as account id {result.account_id}")
+
+    # No operator alerter on this path, and deliberately none: the person who
+    # ran this command is standing in front of the output, and paging somebody
+    # about something they are currently reading is how a channel gets muted.
+    # But the gap must not be silent, so it is printed loudly here and recorded
+    # as a `baseline_seed_incomplete` event on the account either way (#58,
+    # group C).
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT payload_json FROM events WHERE account_id = ? "
+            "AND event_type = 'baseline_seed_incomplete'",
+            (result.account_id,),
+        )
+        gaps = [r["payload_json"] for r in cur.fetchall()]
+    if gaps:
+        print(
+            f"\nWARNING: {len(gaps)} part(s) of this account's history could not be read from "
+            f"the exchange. It is monitored, but detectors that compare against history will "
+            f"raise false positives on activity this customer has always had:",
+            file=sys.stderr,
+        )
+        for gap in gaps:
+            print(f"  {gap}", file=sys.stderr)
+        print("Re-onboard or re-seed once the exchange endpoint is working.", file=sys.stderr)
     return 0
 
 
@@ -287,25 +311,6 @@ def cmd_run(args: argparse.Namespace) -> int:
     dashboard_host = _env("SENTINEL_DASHBOARD_HOST", "127.0.0.1")
     # `rules` so the page can say when config/rules.yaml was rejected and the
     # thresholds in force are older than the file (G-12).
-    serve_dashboard(db, cipher, dashboard_port, host=dashboard_host, rules=rules)
-
-    from sentinel.portal import serve_portal
-
-    portal_port = int(_env("SENTINEL_PORTAL_PORT", "8391"))
-    portal_host = _env("SENTINEL_PORTAL_HOST", "127.0.0.1")
-    serve_portal(db, portal_port, host=portal_host, rules=rules)
-    logger.info(
-        "dashboard on %s:%d, member portal on %s:%d, metrics on %s:%d",
-        dashboard_host, dashboard_port, portal_host, portal_port, metrics_host, metrics_port,
-    )
-    if dashboard_host not in ("127.0.0.1", "localhost", "::1"):
-        logger.warning(
-            "ops dashboard is bound to %s, not loopback - it has no login of its own, "
-            "so anything that can reach %s:%d can add customers and read customer contact "
-            "details. Ensure a VPN, SSH tunnel or authenticating proxy is in front of it.",
-            dashboard_host, dashboard_host, dashboard_port,
-        )
-
     operator_alerter = OperatorAlerter(db, build_operator_channels(rules), rules)
 
     # Routing problems are collected by build_channels above and paged here,
@@ -339,6 +344,26 @@ def cmd_run(args: argparse.Namespace) -> int:
                 evidence=problem,
                 dedup_scope=f"{problem['channel']}:{problem['severity']}",
             )
+
+    serve_dashboard(db, cipher, dashboard_port, host=dashboard_host, rules=rules,
+                    operator_alerter=operator_alerter)
+
+    from sentinel.portal import serve_portal
+
+    portal_port = int(_env("SENTINEL_PORTAL_PORT", "8391"))
+    portal_host = _env("SENTINEL_PORTAL_HOST", "127.0.0.1")
+    serve_portal(db, portal_port, host=portal_host, rules=rules)
+    logger.info(
+        "dashboard on %s:%d, member portal on %s:%d, metrics on %s:%d",
+        dashboard_host, dashboard_port, portal_host, portal_port, metrics_host, metrics_port,
+    )
+    if dashboard_host not in ("127.0.0.1", "localhost", "::1"):
+        logger.warning(
+            "ops dashboard is bound to %s, not loopback - it has no login of its own, "
+            "so anything that can reach %s:%d can add customers and read customer contact "
+            "details. Ensure a VPN, SSH tunnel or authenticating proxy is in front of it.",
+            dashboard_host, dashboard_host, dashboard_port,
+        )
 
     escalation_minutes = rules.get_int("alerting", "escalation_unacknowledged_minutes", default=15)
     escalator = Escalator(channels.get("CRITICAL", []), escalation_minutes,

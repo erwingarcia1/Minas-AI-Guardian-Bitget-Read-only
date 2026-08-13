@@ -33,6 +33,7 @@ import sqlite3
 
 from sentinel.alerts.escalation import Escalator
 from sentinel.cli import build_channels
+from tests.fixtures.ccxt_responses import account_info_response
 
 
 class Broken:
@@ -286,3 +287,148 @@ def test_the_startup_routing_pages_are_wired_into_cmd_run():
     assert "build_channels(rules, problems=routing_problems)" in source
     assert "alert_channel_routed_but_not_configured" in source
     assert "operator_alerter=operator_alerter" in source  # escalator gets it too
+
+
+# --- group C: an account that started life with a partial baseline -----------
+
+
+def test_a_failed_history_seed_is_reported_to_the_caller(db, cipher, monkeypatch):
+    """The seeding failures are best-effort on purpose — a broken order-history
+    endpoint should not block onboarding. But the consequence lands *later* and
+    on the customer: an account seeded without its trading history
+    false-positives on `never_touched_pair_activity` for pairs they have always
+    traded, and the operator has no way to know this account started
+    incomplete.
+
+    So the failure is recorded and returned rather than swallowed. Onboarding
+    still succeeds — that decision was right and is unchanged."""
+    from unittest.mock import MagicMock
+
+    from sentinel.baseline import seed_baseline
+
+    client = MagicMock()
+    client.fetch_deposits.return_value = []
+    client.fetch_withdrawals.return_value = []
+    client.fetch_closed_orders.side_effect = RuntimeError("endpoint refused")
+    client.fetch_transfers.return_value = []
+    client.fetch_balance.return_value = {"total": {"BTC": 1.0}}
+    client.fetch_account_info.return_value = {}
+
+    from tests.conftest import make_account
+
+    account_id = make_account(db)
+    gaps = seed_baseline(db, account_id, client)
+
+    assert any(g["what"] == "closed_orders" for g in gaps), gaps
+
+
+def test_a_clean_seed_reports_no_gaps(db):
+    from unittest.mock import MagicMock
+
+    from sentinel.baseline import seed_baseline
+    from tests.conftest import make_account
+
+    client = MagicMock()
+    client.fetch_deposits.return_value = []
+    client.fetch_withdrawals.return_value = []
+    client.fetch_closed_orders.return_value = [{"symbol": "BTC/USDT"}]
+    client.fetch_transfers.return_value = []
+    client.fetch_balance.return_value = {"total": {"BTC": 1.0}}
+    client.fetch_account_info.return_value = {}
+
+    assert seed_baseline(db, make_account(db), client) == []
+
+
+def test_onboarding_with_a_partial_baseline_pages_and_records_it(db, cipher):
+    """The gap has to outlive the log file. It is recorded as an event on the
+    account — so months later, when that customer's `never_touched_pair`
+    alerts are being investigated, the reason is attached to the account —
+    *and* paged, because it is fixable now by re-running the seed."""
+    from unittest.mock import MagicMock
+
+    import sentinel.onboarding as onboarding_module
+
+    client = MagicMock()
+    client.fetch_deposits.return_value = []
+    client.fetch_withdrawals.return_value = []
+    client.fetch_closed_orders.side_effect = RuntimeError("endpoint refused")
+    client.fetch_transfers.return_value = []
+    client.fetch_balance.return_value = {"total": {"BTC": 1.0}}
+    client.fetch_account_info.return_value = account_info_response()
+    client.fetch_tickers.return_value = {}
+
+    original = onboarding_module.make_client
+    onboarding_module.make_client = lambda *a, **k: client
+    spy = _SpyAlerter()
+    try:
+        onboarding_module.onboard_account(
+            db, cipher, label="partial-1", topology="independent",
+            api_key="k", secret="s", passphrase="p", operator_alerter=spy,
+        )
+    finally:
+        onboarding_module.make_client = original
+
+    assert [c["rule"] for c in spy.calls] == ["account_onboarded_with_partial_baseline"]
+    with db.cursor() as cur:
+        cur.execute("SELECT event_type FROM events WHERE event_type = 'baseline_seed_incomplete'")
+        assert cur.fetchall(), "the gap left no permanent record on the account"
+
+
+def test_a_complete_onboarding_pages_nobody(db, cipher):
+    from unittest.mock import MagicMock
+
+    import sentinel.onboarding as onboarding_module
+
+    client = MagicMock()
+    client.fetch_deposits.return_value = []
+    client.fetch_withdrawals.return_value = []
+    client.fetch_closed_orders.return_value = [{"symbol": "BTC/USDT"}]
+    client.fetch_transfers.return_value = []
+    client.fetch_balance.return_value = {"total": {"BTC": 1.0}}
+    client.fetch_account_info.return_value = account_info_response()
+    client.fetch_tickers.return_value = {}
+
+    original = onboarding_module.make_client
+    onboarding_module.make_client = lambda *a, **k: client
+    spy = _SpyAlerter()
+    try:
+        onboarding_module.onboard_account(
+            db, cipher, label="complete-1", topology="independent",
+            api_key="k", secret="s", passphrase="p", operator_alerter=spy,
+        )
+    finally:
+        onboarding_module.make_client = original
+
+    assert spy.calls == []
+
+
+def test_the_partial_baseline_page_is_wired_at_both_onboarding_call_sites():
+    """`onboard_account` pages perfectly while neither caller passes an
+    alerter — which is this codebase's most-repeated defect, and the reason
+    every feature here gets a call-site test.
+
+    The dashboard's `/add` form is where onboarding happens in production, so
+    it must forward one. `cmd_onboard` deliberately does not: it is a one-shot
+    command run from a terminal, and the operator is standing in front of the
+    output. Paging a person about something they are currently reading is how
+    a channel gets muted."""
+    import inspect
+
+    from sentinel import cli, dashboard
+
+    dash = inspect.getsource(dashboard.serve_dashboard)
+    assert "operator_alerter=operator_alerter" in dash
+
+    run = inspect.getsource(cli.cmd_run)
+    # The alerter must be built before the dashboard it is handed to.
+    assert run.index("operator_alerter = OperatorAlerter") < run.index("serve_dashboard(")
+
+
+def test_the_one_shot_onboard_command_reports_gaps_on_stderr(db, cipher, capsys):
+    """The path with no alerter still has to say something. An operator running
+    `sentinel onboard` sees the incomplete seed in front of them."""
+    import inspect
+
+    from sentinel import cli
+
+    assert "baseline" in inspect.getsource(cli.cmd_onboard).lower()

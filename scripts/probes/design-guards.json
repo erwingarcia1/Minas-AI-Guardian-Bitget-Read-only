@@ -268,5 +268,32 @@
   "tests": [
    "tests/test_operator_page_sweep.py"
   ]
+ },
+ {
+  "name": "#58 group C: a failed history seed is swallowed again",
+  "file": "sentinel/baseline.py",
+  "old": "        gaps.append({\"what\": \"closed_orders\", \"error\": str(exc),",
+  "new": "        _ = ({\"what\": \"closed_orders\", \"error\": str(exc),",
+  "tests": [
+   "tests/test_operator_page_sweep.py"
+  ]
+ },
+ {
+  "name": "#58 group C: the dashboard onboards without forwarding an alerter",
+  "file": "sentinel/dashboard.py",
+  "old": "                    operator_alerter=operator_alerter,\n",
+  "new": "",
+  "tests": [
+   "tests/test_operator_page_sweep.py"
+  ]
+ },
+ {
+  "name": "#58 group C: the partial baseline leaves no permanent record",
+  "file": "sentinel/onboarding.py",
+  "old": "            db, account_id, \"baseline_seed_incomplete\", \"HIGH\", gap, actor=actor,",
+  "new": "            db, account_id, \"customer_added\", \"LOW\", gap, actor=actor,",
+  "tests": [
+   "tests/test_operator_page_sweep.py"
+  ]
  }
 ]

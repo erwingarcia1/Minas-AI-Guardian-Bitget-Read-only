@@ -735,7 +735,8 @@ def _render_result(label: str, exchange: str, account_id: int) -> str:
 
 
 def serve_dashboard(
-    db: Database, cipher: CredentialCipher, port: int, host: str = "127.0.0.1", rules=None
+    db: Database, cipher: CredentialCipher, port: int, host: str = "127.0.0.1", rules=None,
+    operator_alerter=None,
 ) -> ThreadingHTTPServer:
     """Internal ops page. Network-gated (Tailscale) — it has no login of its
     own by design. The /add form runs the same fail-closed read-only gate as
@@ -886,6 +887,7 @@ def serve_dashboard(
                 label = generate_unique_label(db, g("name"))
                 result = onboard_account(
                     db, cipher, actor=self._operator(),
+                    operator_alerter=operator_alerter,
                     label=label, topology=g("topology") or "independent",
                     exchange=g("exchange") or "bitget", api_key=g("api_key"), secret=g("secret"),
                     passphrase=g("passphrase"), customer_name=g("name"),
