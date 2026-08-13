@@ -6,10 +6,11 @@ import hmac
 import html
 import json
 import logging
+import os
 import secrets
 import threading
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
@@ -82,19 +83,53 @@ def normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
 
-def set_member_password(db: Database, email: str, password: str) -> None:
-    """Create or reset a member login. Called from the ops dashboard only -
-    members cannot self-register or self-reset."""
+RESET_TOKEN_MAX_TTL_SECONDS = 3600
+
+# A reset flow that accepts "a" turns a stolen link into a permanently weak
+# account. Length only: this is a minimum, not a composition policy, because
+# composition rules push people towards predictable substitutions and this
+# product has no business teaching bad habits to somebody who is already
+# locked out.
+MIN_PASSWORD_LENGTH = 12
+
+# Every /forgot response takes at least this long, whether or not the address
+# exists. See `_forgot`.
+_RESET_RESPONSE_FLOOR_SECONDS = 0.35
+
+
+def set_member_password(db: Database, email: str, password: str, *,
+                        invalidate_sessions: bool = True, notify=None) -> None:
+    """Create or reset a member login.
+
+    `invalidate_sessions` bumps `session_epoch`, which retires every cookie
+    ever issued to this member (#33). It defaults to True and callers should
+    leave it there: the ops dashboard's "Reset portal password" is the path
+    used when a customer phones in saying they have been compromised, and it
+    would be a poor joke if that were the one route that left the attacker's
+    session alive.
+
+    `notify` is called with the address after a successful change. It is the
+    tripwire, not a receipt - a change the owner did not make is the only
+    signal they will get that somebody else has their mailbox. It is called
+    LAST and guarded: a customer locked out with a dead SMTP server must not
+    stay locked out because the notification failed."""
     email = normalize_email(email)
     if not email:
         raise ValueError("member email is empty")
     now = datetime.now(timezone.utc).isoformat()
+    bump = "session_epoch = session_epoch + 1, " if invalidate_sessions else ""
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO portal_members (email, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?) "
-            "ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, updated_at = excluded.updated_at",
+            f"ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, {bump}"
+            "updated_at = excluded.updated_at",
             (email, hash_password(password), now, now),
         )
+    if notify is not None:
+        try:
+            notify(email)
+        except Exception as exc:  # noqa: BLE001 - the change is the point
+            logger.error("password-change notification to %s failed: %s", email, exc)
 
 
 def member_exists(db: Database, email: str) -> bool:
@@ -151,6 +186,77 @@ def member_accounts(db: Database, email: str) -> list:
         return cur.fetchall()
 
 
+def _token_hash(token: str) -> str:
+    """SHA-256, not scrypt. A reset token is 32 bytes of `secrets` output, so
+    there is no dictionary to attack and no work factor worth paying - the
+    hash exists to stop a database read yielding a working link, not to slow
+    a guesser down. Using scrypt here would cost a second per request for no
+    security this does not already have."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+def create_reset_token(db: Database, email: str, ttl_seconds: int = RESET_TOKEN_MAX_TTL_SECONDS):
+    """A single-use reset token, or None if that address has no login.
+
+    Returns None rather than raising for an unknown address, and does the same
+    work either way. "Which of these ten thousand addresses is a Minas
+    customer" must not be answerable with a stopwatch - and a Minas customer
+    is by definition somebody holding crypto worth monitoring. The login page
+    already burns a dummy scrypt hash for the same reason; this burns a real
+    token generation.
+
+    Issuing a token retires any earlier one for that address. A customer who
+    clicks "forgot password" three times otherwise has three standing bearer
+    credentials sitting in their mailbox, and the older ones are exactly what
+    somebody with brief mailbox access comes back for."""
+    email = normalize_email(email)
+    token = secrets.token_urlsafe(32)
+    now = datetime.now(timezone.utc)
+    # Capped, not trusted. "Expires within an hour" is a ceiling, and a caller
+    # passing a longer TTL - a convenience feature, a test, a mistake - must
+    # not be able to mint a link that outlives the promise.
+    ttl = min(int(ttl_seconds or 0), RESET_TOKEN_MAX_TTL_SECONDS)
+    expires_at = (now + timedelta(seconds=max(ttl, 0))).isoformat()
+
+    if not email or not member_exists(db, email):
+        return None
+
+    with db.cursor() as cur:
+        cur.execute(
+            "UPDATE password_resets SET used_at = ? WHERE email = ? AND used_at IS NULL",
+            (now.isoformat(), email),
+        )
+        cur.execute(
+            "INSERT INTO password_resets (email, token_hash, created_at, expires_at) "
+            "VALUES (?, ?, ?, ?)",
+            (email, _token_hash(token), now.isoformat(), expires_at),
+        )
+    return token
+
+
+def consume_reset_token(db: Database, token: str) -> str | None:
+    """The email this token belongs to, marking it used. None if it is unknown,
+    expired or already redeemed.
+
+    The address comes back from the *token record*, never from the form that
+    submitted it. Trusting a form field here would let anyone with any valid
+    token reset any account."""
+    if not token:
+        return None
+    now = datetime.now(timezone.utc).isoformat()
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id, email FROM password_resets WHERE token_hash = ? AND used_at IS NULL "
+            "AND expires_at > ?",
+            (_token_hash(token), now),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        cur.execute("UPDATE password_resets SET used_at = ? WHERE id = ?", (now, row["id"]))
+    return row["email"]
+
+
 # --- sessions (HMAC-signed cookie) -------------------------------------------
 
 def _session_secret(db: Database) -> bytes:
@@ -164,23 +270,37 @@ def _session_secret(db: Database) -> bytes:
         return secret
 
 
-def make_session_token(secret: bytes, email: str, now: float | None = None) -> str:
+def make_session_token(secret: bytes, email: str, now: float | None = None,
+                       epoch: int | None = None) -> str:
+    """`epoch` is the member's `session_epoch`, baked into the signed payload.
+
+    Sessions are stateless - there is no server-side record to delete - so
+    this is the only thing that can make an already-issued cookie stop
+    working. Bumping the stored epoch on a password change retires every
+    cookie ever issued to that member (#33)."""
     email_b64 = base64.urlsafe_b64encode(normalize_email(email).encode()).decode().rstrip("=")
     expires = int((now if now is not None else time.time()) + SESSION_TTL_SECONDS)
-    payload = f"{email_b64}.{expires}"
+    payload = f"{email_b64}.{expires}.{int(epoch or 1)}"
     sig = hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
     return f"{payload}.{sig}"
 
 
-def verify_session_token(secret: bytes, token: str, now: float | None = None) -> str | None:
-    """Returns the member email for a valid, unexpired token; None otherwise."""
+def verify_session_token(secret: bytes, token: str, now: float | None = None,
+                         epoch: int | None = None) -> str | None:
+    """Returns the member email for a valid, unexpired, current-epoch token.
+
+    A token whose epoch does not match the member's current one was issued
+    before a password change and is refused - that is what "resetting signs
+    out all other sessions" means when there is no session store."""
     try:
-        email_b64, expires_s, sig = token.split(".")
-        payload = f"{email_b64}.{expires_s}"
+        email_b64, expires_s, epoch_s, sig = token.split(".")
+        payload = f"{email_b64}.{expires_s}.{epoch_s}"
         expected = hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, expected):
             return None
         if int(expires_s) < (now if now is not None else time.time()):
+            return None
+        if epoch is not None and int(epoch_s) != int(epoch):
             return None
         pad = "=" * (-len(email_b64) % 4)
         return base64.urlsafe_b64decode(email_b64 + pad).decode()
@@ -331,7 +451,8 @@ def _render_login(error: str | None = None) -> str:
         '<div class="fld" style="margin-top:14px"><label>Password</label>'
         '<input type="password" name="password" required autocomplete="current-password"></div>'
         '<div class="actions"><button class="submit" type="submit">Sign in</button>'
-        '<span class="hint">Your access is provided by the Minas team.</span></div>'
+        '<span class="hint">Your access is provided by the Minas team. '
+        '<a class="acctlink" href="/forgot">Forgotten your password?</a></span></div>'
         "</form></div></div>"
     )
     return _page(body)
@@ -629,6 +750,130 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
     return _page(body, nav)
 
 
+_RESET_ACK = (
+    "If that address has a Minas AI Guardian login, a password-reset link is on "
+    "its way. The link works once and expires within an hour."
+)
+
+
+def _reset_url(token: str) -> str:
+    base = (os.environ.get("SENTINEL_PORTAL_URL") or "").strip().rstrip("/")
+    return f"{base}/reset?token={token}" if base else f"/reset?token={token}"
+
+
+def _send_reset_email(db: Database, address: str, token: str) -> None:
+    """The one place the plaintext token exists outside the customer's mailbox.
+
+    Guarded: a mail failure is logged, not raised. The alternative is a 500
+    that tells the sender their address is real, which is the enumeration leak
+    the whole flow is built to avoid."""
+    from sentinel.alerts.base import AlertMessage
+    from sentinel.alerts.contact import ContactRouter
+
+    url = _reset_url(token)
+    message = AlertMessage(
+        account_label="your Minas AI Guardian login",
+        rule="password_reset_requested",
+        severity="LOW",
+        confidence="n/a",
+        message=(
+            f"Someone asked to reset the password for {address}. Open this link to choose a "
+            f"new one: {url}\n\nIt works once and expires within an hour. If this was not you, "
+            f"you can ignore this email - your password has not changed."
+        ),
+        evidence={},
+    )
+    try:
+        ContactRouter(db=db).send(
+            _PlainNotice(message), "your Minas AI Guardian login", [address], [],
+        )
+    except Exception as exc:  # noqa: BLE001 - never leak existence through an error
+        logger.error("could not send the password-reset email: %s", exc)
+
+
+def _send_password_changed_email(db: Database, address: str) -> None:
+    """Sent on EVERY password change, including one the owner just made.
+
+    Not a receipt - a tripwire. A change the owner did not make is the only
+    signal they will get that somebody else has their mailbox, and the cost of
+    one extra email to the person who expected it is nothing against that."""
+    from sentinel.alerts.base import AlertMessage
+    from sentinel.alerts.contact import ContactRouter
+
+    message = AlertMessage(
+        account_label="your Minas AI Guardian login",
+        rule="password_changed",
+        severity="LOW",
+        confidence="n/a",
+        message=(
+            f"The password for {address} was just changed, and every other signed-in device "
+            f"has been signed out. If this was not you, contact Minas immediately - somebody "
+            f"else has access to this mailbox."
+        ),
+        evidence={},
+    )
+    ContactRouter(db=db).send(
+        _PlainNotice(message), "your Minas AI Guardian login", [address], [],
+    )
+
+
+class _PlainNotice:
+    """Adapts an AlertMessage to the `detection` shape ContactRouter expects.
+    These are account notices, not detections, so they carry no account id and
+    leave no `sms_deliveries` row."""
+
+    def __init__(self, alert):
+        self.rule = alert.rule
+        self.severity = alert.severity
+        self.confidence = alert.confidence
+        self.message = alert.message
+        self.evidence = alert.evidence
+
+
+def _render_forgot(notice: str | None = None) -> str:
+    """The request form, and the acknowledgement.
+
+    The acknowledgement is deliberately the same sentence whether or not the
+    address is a customer. A different wording, a different length or a
+    different status code all answer the question an attacker asked - and the
+    answer identifies somebody holding crypto worth monitoring (#33)."""
+    if notice:
+        inner = f'<div class="det"><span class="desc">{html.escape(notice)}</span></div>'
+    else:
+        inner = (
+            '<form class="addf" method="post" action="/forgot">'
+            '<div class="fld"><label>Email</label>'
+            '<input type="email" name="email" required autocomplete="email"></div>'
+            '<div class="actions"><button class="submit" type="submit">Send reset link</button>'
+            '<span class="hint">A single-use link that expires within an hour.</span></div>'
+            "</form>"
+        )
+    return _page(
+        '<div class="loginbox"><div class="card">'
+        '<div class="card-head"><h2>Reset your password</h2></div>' + inner +
+        '<div class="det"><span class="desc">'
+        '<a class="acctlink" href="/">‹ Back to sign in</a></span></div>'
+        "</div></div>"
+    )
+
+
+def _render_reset_form(token: str, error: str | None = None) -> str:
+    banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
+    return _page(
+        '<div class="loginbox">' + banner +
+        '<div class="card"><div class="card-head"><h2>Choose a new password</h2></div>'
+        '<form class="addf" method="post" action="/reset">'
+        f'<input type="hidden" name="token" value="{html.escape(token)}">'
+        '<div class="fld"><label>New password</label>'
+        '<input type="password" name="password" required autocomplete="new-password" '
+        f'minlength="{MIN_PASSWORD_LENGTH}"></div>'
+        '<div class="actions"><button class="submit" type="submit">Set password</button>'
+        f'<span class="hint">At least {MIN_PASSWORD_LENGTH} characters. '
+        "Setting a new password signs out every other device.</span></div>"
+        "</form></div></div>"
+    )
+
+
 def _render_not_found() -> str:
     return _page(
         '<section><div class="card"><div class="empty">Not found</div></div></section>',
@@ -679,11 +924,29 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             self.end_headers()
 
         def _session_email(self) -> str | None:
+            """The signed-in member, or None.
+
+            Checks the token's epoch against the member's current one on every
+            request. That lookup is the price of being able to sign somebody
+            out at all: without it a cookie issued before a password change
+            keeps working until it expires on its own, which is precisely the
+            window an attacker needs after a customer resets in a panic
+            (#33)."""
             cookie = self.headers.get("Cookie") or ""
             for part in cookie.split(";"):
                 name, _, value = part.strip().partition("=")
-                if name == SESSION_COOKIE and value:
-                    return verify_session_token(secret, value)
+                if name != SESSION_COOKIE or not value:
+                    continue
+                email = verify_session_token(secret, value)
+                if email is None:
+                    return None
+                with db.cursor() as cur:
+                    cur.execute("SELECT session_epoch FROM portal_members WHERE email = ?",
+                                (normalize_email(email),))
+                    row = cur.fetchone()
+                if row is None:
+                    return None  # the member was removed; the cookie is stale
+                return verify_session_token(secret, value, epoch=row["session_epoch"])
             return None
 
         def _client_ip(self) -> str:
@@ -697,7 +960,24 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             email = self._session_email()
             if email is None:
-                # Every unauthenticated GET lands on the login page.
+                # The two recovery routes are reachable without a session -
+                # that is the entire point of a recovery route.
+                if path == "/forgot":
+                    self._send(_render_forgot().encode())
+                    return
+                if path == "/reset":
+                    qs = parse_qs(urlparse(self.path).query)
+                    token = (qs.get("token") or [""])[0]
+                    # Validated on submit, not here: checking it now would burn
+                    # a single-use token just for rendering a form, and a
+                    # customer who reloads the page would be locked out by
+                    # their own browser.
+                    if token:
+                        self._send(_render_reset_form(token).encode())
+                    else:
+                        self._send(_render_login().encode())
+                    return
+                # Every other unauthenticated GET lands on the login page.
                 self._send(_render_login().encode())
                 return
             if path == "/":
@@ -726,6 +1006,81 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     self._send(page.encode())
             else:
                 self._send(_render_not_found().encode(), 404)
+
+        @staticmethod
+        def _pad_to(deadline: float) -> None:
+            remaining = deadline - time.monotonic()
+            if remaining > 0:
+                time.sleep(remaining)
+
+        def _forgot(self, form):
+            """Request a reset link (#33).
+
+            Throttled on the same limiter as login, per address and per IP.
+            Without it this endpoint sends mail to anyone, as fast as anyone
+            asks - a way to bury a real alert under a hundred reset emails, or
+            simply to make Minas a spam source."""
+            # Both paths are padded to the same floor before responding.
+            # Identical wording is not enough on its own: issuing a token
+            # writes twice and sends mail, and an unknown address does
+            # neither, so a stopwatch answers the question the wording
+            # refuses to. The floor is generous next to that difference and
+            # small next to a human.
+            #
+            # Residual, stated rather than hidden: a mail server slow enough
+            # to blow through the floor still leaks. Moving the send off this
+            # path entirely is the real fix and needs a queue.
+            deadline = time.monotonic() + _RESET_RESPONSE_FLOOR_SECONDS
+            address = normalize_email((form.get("email", [""])[0] or ""))
+            ip = self._client_ip()
+            if throttle.blocked(address) or throttle.blocked(ip):
+                logger.warning("reset request throttled for %s from %s", address or "<empty>", ip)
+                # Same acknowledgement even when throttled: "you are being
+                # rate limited" is itself a signal that this address is worth
+                # rate limiting.
+                self._pad_to(deadline)
+                self._send(_render_forgot(notice=_RESET_ACK).encode())
+                return
+            throttle.record_failure(address)
+            throttle.record_failure(ip)
+
+            token = create_reset_token(db, address)
+            if token:
+                logger.info("password reset requested for %s from %s", address, ip)
+                _send_reset_email(db, address, token)
+            else:
+                logger.info("password reset requested for an unknown address from %s", ip)
+            # One sentence, both paths, always 200, same elapsed time.
+            self._pad_to(deadline)
+            self._send(_render_forgot(notice=_RESET_ACK).encode())
+
+        def _reset(self, form):
+            """Redeem a reset link and set a new password (#33)."""
+            token = (form.get("token", [""])[0] or "")
+            password = form.get("password", [""])[0] or ""
+            if len(password) < MIN_PASSWORD_LENGTH:
+                self._send(_render_reset_form(
+                    token, error=f"Use at least {MIN_PASSWORD_LENGTH} characters.").encode())
+                return
+
+            address = consume_reset_token(db, token)
+            if address is None:
+                # Expired, already used, or never real. One message for all
+                # three: which one it was is not the customer's problem and is
+                # information an attacker would like.
+                self._send(_render_forgot(
+                    notice="That link is no longer valid. Request a new one.").encode())
+                return
+
+            set_member_password(db, address, password, invalidate_sessions=True,
+                                notify=lambda addr: _send_password_changed_email(db, addr))
+            logger.info("password reset completed for %s from %s", address, self._client_ip())
+            throttle.reset(address)
+            # No session issued. Setting a password proves control of the
+            # mailbox, not knowledge of the password, and signing them straight
+            # in would make the link itself a login - which is the thing the
+            # single-use expiry exists to limit.
+            self._redirect("/")
 
         def _acknowledge(self, form):
             """The portal's only member-facing write (G-22, #26).
@@ -810,6 +1165,14 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 )])
                 return
 
+            if path == "/forgot":
+                self._forgot(form)
+                return
+
+            if path == "/reset":
+                self._reset(form)
+                return
+
             if path == "/acknowledge":
                 self._acknowledge(form)
                 return
@@ -831,7 +1194,11 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             if email and password and check_member_login(db, email, password):
                 throttle.reset(email)
-                token = make_session_token(secret, email)
+                with db.cursor() as cur:
+                    cur.execute("SELECT session_epoch FROM portal_members WHERE email = ?", (email,))
+                    row = cur.fetchone()
+                token = make_session_token(secret, email,
+                                           epoch=row["session_epoch"] if row else 1)
                 logger.info("portal login ok for %s from %s", email, ip)
                 self._redirect("/", [(
                     "Set-Cookie",

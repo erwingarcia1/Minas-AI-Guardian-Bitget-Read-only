@@ -226,6 +226,7 @@ CREATE TABLE IF NOT EXISTS operators (
     display_name TEXT,
     password_hash TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+    session_epoch INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_login_at TEXT
@@ -246,6 +247,11 @@ CREATE TABLE IF NOT EXISTS portal_members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    -- Bumped on every password change. Baked into the session cookie and
+    -- checked on every request, so raising it retires every cookie ever issued
+    -- to this member. Sessions are stateless HMACs with nothing server-side to
+    -- delete, so this column IS "sign out all other sessions" (#33).
+    session_epoch INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_login_at TEXT
@@ -305,3 +311,23 @@ CREATE TABLE IF NOT EXISTS config_changes (
     changed_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_config_changes_time ON config_changes(changed_at);
+
+-- Single-use password-reset tokens (G-29, #33).
+--
+-- Only the HASH of the token is stored. A reset token is a bearer credential
+-- for as long as it lives - anyone holding it can take the account - so a
+-- database read, a backup or a stray log line must not yield a working link.
+-- The plaintext exists exactly once, in one email.
+--
+-- `used_at` rather than deletion, so a redeemed link is distinguishable from
+-- one that never existed when something needs investigating later.
+CREATE TABLE IF NOT EXISTS password_resets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_hash ON password_resets(token_hash);
+CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(email, expires_at);

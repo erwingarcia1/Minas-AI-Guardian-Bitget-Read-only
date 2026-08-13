@@ -403,5 +403,104 @@
   "tests": [
    "tests/test_portal_access_scope.py"
   ]
+ },
+ {
+  "name": "#33 ATTACK enumerate customers: unknown addresses return early",
+  "file": "sentinel/portal.py",
+  "old": "            self._pad_to(deadline)\n            self._send(_render_forgot(notice=_RESET_ACK).encode())",
+  "new": "            self._send(_render_forgot(notice=_RESET_ACK).encode())",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
+ },
+ {
+  "name": "#33 ATTACK steal a token from the database: plaintext is stored",
+  "file": "sentinel/portal.py",
+  "old": "            (email, _token_hash(token), now.isoformat(), expires_at),",
+  "new": "            (email, token, now.isoformat(), expires_at),",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
+ },
+ {
+  "name": "#33 ATTACK reuse a link: the token is not marked used",
+  "file": "sentinel/portal.py",
+  "old": "        cur.execute(\"UPDATE password_resets SET used_at = ? WHERE id = ?\", (now, row[\"id\"]))",
+  "new": "        pass",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
+ },
+ {
+  "name": "#33 ATTACK use an expired link: expiry is not checked",
+  "file": "sentinel/portal.py",
+  "old": "\"SELECT id, email FROM password_resets WHERE token_hash = ? AND used_at IS NULL \"\n            \"AND expires_at > ?\",",
+  "new": "\"SELECT id, email FROM password_resets WHERE token_hash = ? AND used_at IS NULL \"\n            \"AND expires_at > '1970' AND ? IS NOT NULL\",",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
+ },
+ {
+  "name": "#33 ATTACK mint a long-lived link: the TTL cap is removed",
+  "file": "sentinel/portal.py",
+  "old": "    ttl = min(int(ttl_seconds or 0), RESET_TOKEN_MAX_TTL_SECONDS)",
+  "new": "    ttl = int(ttl_seconds or 0)",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
+ },
+ {
+  "name": "#33 ATTACK keep a pre-compromise session: the epoch is not bumped",
+  "file": "sentinel/portal.py",
+  "old": "    bump = \"session_epoch = session_epoch + 1, \" if invalidate_sessions else \"\"",
+  "new": "    bump = \"\"",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
+ },
+ {
+  "name": "#33 ATTACK keep a pre-compromise session: the epoch is not checked",
+  "file": "sentinel/portal.py",
+  "old": "        if epoch is not None and int(epoch_s) != int(epoch):\n            return None",
+  "new": "        pass",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
+ },
+ {
+  "name": "#33 ATTACK reuse an old link found in a mailbox: earlier tokens stay live",
+  "file": "sentinel/portal.py",
+  "old": "            \"UPDATE password_resets SET used_at = ? WHERE email = ? AND used_at IS NULL\",\n            (now.isoformat(), email),",
+  "new": "            \"SELECT 1 WHERE ? IS NOT NULL AND ? IS NOT NULL\",\n            (now.isoformat(), email),",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
+ },
+ {
+  "name": "#33 ATTACK weak password from a stolen link: the minimum is dropped",
+  "file": "sentinel/portal.py",
+  "old": "            if len(password) < MIN_PASSWORD_LENGTH:",
+  "new": "            if False:",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
+ },
+ {
+  "name": "#33 the owner is never told their password changed",
+  "file": "sentinel/portal.py",
+  "old": "    if notify is not None:\n        try:\n            notify(email)",
+  "new": "    if False:\n        try:\n            notify(email)",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
+ },
+ {
+  "name": "#33 a failing notification blocks the reset",
+  "file": "sentinel/portal.py",
+  "old": "        except Exception as exc:  # noqa: BLE001 - the change is the point\n            logger.error(\"password-change notification to %s failed: %s\", email, exc)",
+  "new": "        except Exception:\n            raise",
+  "tests": [
+   "tests/test_password_reset.py"
+  ]
  }
 ]

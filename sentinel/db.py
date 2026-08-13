@@ -111,6 +111,13 @@ class Database:
             # recorded but deliberately not delivered. Distinct from
             # delivered_to = 0, which means we tried and reached nobody (#57).
             "ALTER TABLE alerts ADD COLUMN snoozed_until TEXT",
+            # Bumped whenever a member's password changes. Baked into every
+            # session cookie and checked on every request, so raising it
+            # retires every cookie ever issued to that member - the only way to
+            # "sign out all other sessions" when sessions are stateless HMACs
+            # with nothing server-side to delete (#33).
+            "ALTER TABLE portal_members ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE operators ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE events ADD COLUMN actor TEXT",
             "ALTER TABLE accounts ADD COLUMN exchange TEXT NOT NULL DEFAULT 'bitget'",
             "ALTER TABLE accounts ADD COLUMN alert_email TEXT",

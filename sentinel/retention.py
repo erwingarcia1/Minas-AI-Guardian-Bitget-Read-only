@@ -52,6 +52,11 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     # notice, on the same long window as `events` - an incident review asks
     # what the thresholds were at the time, not what they are now.
     "config_changes": ("changed_at", "config_changes_days"),
+    # Reset tokens live an hour; the RECORD that somebody reset a password at
+    # a given moment is forensic and lives as long as `events`. Pruning on
+    # `created_at` cannot delete a live token: the shortest expressible window
+    # is a day (0 means keep forever) and the longest token life is an hour.
+    "password_resets": ("created_at", "password_resets_days"),
     # Dedup state, not history. See the module docstring: too short and old
     # movements re-alert.
     "seen_withdrawals": ("first_seen_at", "dedup_days"),

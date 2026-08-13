@@ -31,6 +31,44 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   nothing had pinned that the derived identity introduced to fix G-11 actually
   distinguishes two withdrawals.
 
+### Added
+- **Customers can reset a forgotten password (G-29, #33).** `/forgot` and
+  `/reset` in the member portal, linked from the sign-in page.
+
+  A reset flow is an authentication bypass by design — it hands access to
+  someone who cannot prove who they are — so it is built against a written
+  list of attacks rather than against the four criteria:
+
+  - **Customer enumeration.** The response is one sentence, identical for a
+    known and an unknown address, and **both paths are padded to a common
+    timing floor**. Issuing a token writes twice and sends mail; an unknown
+    address does neither, and without equalisation a stopwatch answers the
+    question the wording refuses to. A Minas customer is by definition
+    somebody holding crypto worth monitoring.
+  - **Token theft from a database read, a backup or a log.** Only the SHA-256
+    of the token is stored. The plaintext exists once, in one email.
+  - **Reuse.** Single-use, one hour maximum, and the TTL is *capped* rather
+    than trusted — a caller passing a longer one cannot mint a link that
+    outlives the promise. Requesting a new link retires the old one, so a
+    mailbox does not accumulate standing bearer credentials.
+  - **Keeping a session obtained before the compromise was noticed.** New
+    `session_epoch` on `portal_members`, baked into every cookie and checked
+    on every request. Bumping it on a password change retires every cookie
+    ever issued to that member — including on the ops dashboard's reset, which
+    is the path used when a customer phones in compromised.
+  - **A silent password change.** Every change emails the owner. Not a
+    receipt — a tripwire. It is the only signal they will get that somebody
+    else has their mailbox, and it is guarded so a dead SMTP server cannot
+    leave a locked-out customer locked out.
+
+  The reset page renders identically for a valid and an invalid token:
+  validating on GET would burn a single-use token just to draw a form, and
+  would be an oracle for testing guesses without spending an attempt.
+
+  No session is issued on a successful reset. Setting a password proves
+  control of a mailbox, not knowledge of the password, and signing them
+  straight in would make the link a login.
+
 ### Changed
 - **The ops dashboard now says what a portal credential will open (#61).**
   The "Generate portal password" button sits on one account's page and read as
