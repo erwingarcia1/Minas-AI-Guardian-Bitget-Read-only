@@ -31,6 +31,22 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   nothing had pinned that the derived identity introduced to fix G-11 actually
   distinguishes two withdrawals.
 
+### Changed
+- **The ops dashboard now says what a portal credential will open (#61).**
+  The "Generate portal password" button sits on one account's page and read as
+  an action on that account. It is not — portal identity is the email, so the
+  credential opens every account that address is a contact on, including ones
+  the operator was not looking at.
+
+  The card now lists those accounts **by name, before the button**. Not a
+  generic caution: a warning shown every time is a warning nobody reads, so it
+  appears only when there is genuinely more than this account in scope.
+
+  The affordance is fixed; the *model* is unchanged and is logged as decision
+  10. Per-account credentials are a join table, a migration and a question
+  about what portal identity is — but nobody can now share three accounts
+  while believing they shared one.
+
 ### Added
 - **Escalation reaches the customer's own contacts, and tells Minas it
   happened (G-23, #27).** Two of that issue's four criteria; the *timings*

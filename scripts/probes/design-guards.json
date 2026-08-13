@@ -376,5 +376,32 @@
   "tests": [
    "tests/test_escalation_reach.py"
   ]
+ },
+ {
+  "name": "#61: the blast radius is never shown",
+  "file": "sentinel/dashboard.py",
+  "old": "    if others:\n        scope = (",
+  "new": "    if False:\n        scope = (",
+  "tests": [
+   "tests/test_portal_access_scope.py"
+  ]
+ },
+ {
+  "name": "#61: account labels reach the page unescaped",
+  "file": "sentinel/dashboard.py",
+  "old": "+ \", \".join(f\"<b>{html.escape(str(lbl))}</b>\" for lbl in reachable)",
+  "new": "+ \", \".join(f\"<b>{lbl}</b>\" for lbl in reachable)",
+  "tests": [
+   "tests/test_portal_access_scope.py"
+  ]
+ },
+ {
+  "name": "#61: a caution is shown even when only this account is affected",
+  "file": "sentinel/dashboard.py",
+  "old": "    others = [r for r in rows if r[\"id\"] != account_id]",
+  "new": "    others = rows",
+  "tests": [
+   "tests/test_portal_access_scope.py"
+  ]
  }
 ]

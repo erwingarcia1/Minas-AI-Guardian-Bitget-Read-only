@@ -477,7 +477,19 @@ PORTAL_CONTACTS = {
 
 
 def _portal_access_row(db: Database, account_id: int, email: str | None, contact: str, title: str) -> str:
-    from sentinel.portal import member_exists
+    """One contact's portal-credential row, with its blast radius spelled out.
+
+    The button sits on one account's page and reads as an action on that
+    account. It is not: portal identity is the email, so the credential opens
+    every account that address is a contact on. That gap between what a control
+    looks like it does and what it does is where mistakes come from (#61), and
+    it widened when G-21 let a secondary contact hold their own credential.
+
+    So the accounts are listed BEFORE the button, by name. Not a generic
+    caution - a caution shown every time is a caution nobody reads, which is
+    how the real ones get missed - but the actual list, and only when there is
+    more than this account in it."""
+    from sentinel.portal import member_accounts, member_exists
 
     if not email or not email.strip():
         return (f'<div class="det"><span class="desc">{title}: no email on file — '
@@ -485,8 +497,24 @@ def _portal_access_row(db: Database, account_id: int, email: str | None, contact
     exists = member_exists(db, email)
     status = "login active" if exists else "no login yet"
     label = "Reset portal password" if exists else "Generate portal password"
+
+    rows = member_accounts(db, email)
+    reachable = [r["label"] for r in rows]
+    others = [r for r in rows if r["id"] != account_id]
+    if others:
+        scope = (
+            '<div class="det"><span class="desc">This credential opens '
+            f'<b>{len(reachable)} account(s)</b>, not just this one: '
+            + ", ".join(f"<b>{html.escape(str(lbl))}</b>" for lbl in reachable)
+            + ". Portal identity is the email address, so anyone holding this password "
+              "sees every account that address is a contact on.</span></div>"
+        )
+    else:
+        scope = ""
+
     return (
         f'<div class="det"><span class="desc">{title} — <b>{html.escape(email)}</b> · {status}</span></div>'
+        + scope +
         f'<form method="post" action="/portal-access" style="padding:0 22px 14px">'
         f'<input type="hidden" name="account_id" value="{account_id}">'
         f'<input type="hidden" name="contact" value="{contact}">'

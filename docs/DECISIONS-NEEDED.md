@@ -423,6 +423,54 @@ and "move funds" out until there is a considered position on both.
 
 ---
 
+## 10. Should a portal credential be scoped to an account? (#61)
+
+The **affordance** is fixed and shipped: the ops dashboard now lists, by name,
+every account a portal credential will open, before the operator clicks. An
+operator can no longer share three accounts while believing they shared one.
+
+The **model** is unchanged, and changing it is your call.
+
+Today portal identity is the email address. One credential, and
+`member_accounts` returns every account that address is a contact on. It is
+coherent, and it is what a customer with several accounts probably wants.
+
+### The question
+
+Is "one person, one login, everything they are a contact on" the right model,
+or should a credential grant exactly the accounts someone chose?
+
+### Options
+
+1. **Keep it.** Now honest about its scope. No migration. A customer with four
+   accounts signs in once. The risk is that sharing access to one account is
+   always sharing access to all of them, and the only remedy is to remove the
+   person as a contact — which also stops their alerts.
+2. **Per-account grants.** A join table between `portal_members` and
+   `accounts`; a credential opens exactly what was granted. Correct, and a
+   migration. Existing members would need grants backfilled from their current
+   contact rows, which is mechanical.
+3. **Per-account credentials.** One password per (email, account). Most
+   isolated, worst to live with — four accounts means four passwords for one
+   person.
+
+### Recommendation
+
+**2, and not urgently.** It is the right model and the migration is
+backfillable, but the affordance fix removes the acute risk: nobody can now
+share more than they intended without being told. Do it when a customer
+actually asks for account-scoped access, not before — the cost of guessing
+wrong here is a data model that has to change again.
+
+### Why it becomes expensive later
+
+Once customers routinely have several accounts with shared contacts, changing
+the scoping model is a migration that touches live credentials. It is cheaper
+now than it will be, which is an argument for deciding early even if building
+late.
+
+---
+
 ## Not a decision, but needs saying: #16's remaining criterion
 
 G-12's third criterion — "threshold changes are recorded, showing **who**
