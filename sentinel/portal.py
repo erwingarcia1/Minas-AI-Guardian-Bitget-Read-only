@@ -1297,7 +1297,16 @@ def _send_password_changed_email(db: Database, address: str) -> None:
 class _PlainNotice:
     """Adapts an AlertMessage to the `detection` shape ContactRouter expects.
     These are account notices, not detections, so they carry no account id and
-    leave no `sms_deliveries` row."""
+    leave no `sms_deliveries` row.
+
+    `is_notice` says that in code rather than only in this docstring. A notice
+    carries its whole meaning in `message` - a reset link, the address the
+    alerts were moved to, the fact that a second factor was removed - so
+    anything that reformats a detection into a summary must render these
+    verbatim instead. Every notice in this module goes through this class, so
+    declaring it here is what stops the next one being added without it."""
+
+    is_notice = True
 
     def __init__(self, alert):
         self.rule = alert.rule

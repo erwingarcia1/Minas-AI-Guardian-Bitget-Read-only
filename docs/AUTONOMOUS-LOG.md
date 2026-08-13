@@ -2763,6 +2763,35 @@ Also: `.gitignore` matched `.env` exactly and not `.env.save`, and an untracked
 `.env.save` holding eleven real values was sitting in the root. One `git add
 -A` from being published. Widened to `.env.*`.
 
+**The history question is closed, not open:** `git log --all --diff-filter=A
+--name-only -- '.env*'` returns `.env.example` and nothing else, and
+`--diff-filter=A --all` catches a file added anywhere in history even if later
+deleted. No credential file has ever entered this repository. Nothing to
+rewrite and nothing to rotate — recorded explicitly because a lingering "we
+might have leaked credentials" note costs somebody an afternoon later.
+
+## A gap in my own class, found by somebody else reading it
+
+`_PlainNotice` in `sentinel/portal.py` adapts an account notice — a reset link,
+the two tripwires, the destination-change notice from #36 — into the shape
+`ContactRouter` expects. Its docstring said, in prose, "these are account
+notices, not detections". It did not say so in code.
+
+That was fine while nothing asked. Work now in flight to give customers a
+different email template asks exactly that question, via
+`getattr(detection, "is_notice", False)` — and every notice answered *false*,
+which renders it down the detection path and drops the `message` that is the
+entire content. A reset email with no link; a tripwire with no warning text.
+
+So `is_notice = True` is now declared on the adapter every notice in that
+module already goes through, with tests that assert the four **senders** carry
+it rather than that the attribute exists — a class attribute is trivially true
+and would prove nothing about the call sites. Two probes hold it.
+
+Worth naming the general shape: **a docstring is not an interface.** This one
+stated a property that mattered, correctly, for months, and the first piece of
+code to depend on it could not read it.
+
 ## State at the end
 
 `main` green after #35, #36 and #28. #68 is open and unstarted by me; a third

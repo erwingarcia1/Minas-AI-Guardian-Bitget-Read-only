@@ -898,5 +898,25 @@
    "tests/test_expected_activity.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "notices: the is_notice signal is dropped, so a reset email renders down the detection path and loses its link",
+  "file": "sentinel/portal.py",
+  "old": "    is_notice = True\n",
+  "new": "",
+  "tests": [
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "notices: the destination-change notice bypasses the adapter and is formatted as a detection",
+  "file": "sentinel/events.py",
+  "old": "            _PlainNotice(message), account_label, [old_email], [],",
+  "new": "            message, account_label, [old_email], [],",
+  "tests": [
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
  }
 ]
