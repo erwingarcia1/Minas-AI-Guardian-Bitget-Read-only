@@ -89,6 +89,10 @@ class Database:
             # Nullable on purpose (G-50): a detector firing has no person behind
             # it, and existing rows are not backfilled with a guess.
             "ALTER TABLE alerts ADD COLUMN acknowledged_by TEXT",
+            # Set when a customer had snoozed this alert, so it was detected and
+            # recorded but deliberately not delivered. Distinct from
+            # delivered_to = 0, which means we tried and reached nobody (#57).
+            "ALTER TABLE alerts ADD COLUMN snoozed_until TEXT",
             "ALTER TABLE events ADD COLUMN actor TEXT",
             "ALTER TABLE accounts ADD COLUMN exchange TEXT NOT NULL DEFAULT 'bitget'",
             "ALTER TABLE accounts ADD COLUMN alert_email TEXT",

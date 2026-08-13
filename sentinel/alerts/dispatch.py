@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 from sentinel.alerts.base import AlertChannel, AlertMessage
 from sentinel.db import Database
 from sentinel.detectors.base import Detection
+from sentinel.snooze import active_snooze
 
 logger = logging.getLogger("sentinel.alerts.dispatch")
 
@@ -85,6 +86,13 @@ def dispatch(
         if now - last_sent < cooldown:
             return None
 
+    # A live snooze withholds the delivery and nothing else: the detection has
+    # already run, and the alerts row below is written either way. The customer
+    # silenced their phone, not the monitoring - so the history a customer
+    # hands to an exchange still has the event in it, marked as silenced on
+    # request rather than missing.
+    snoozed_until = active_snooze(db, account_id, dedup_key)
+
     alert = AlertMessage(
         account_label=account_label,
         rule=detection.rule,
@@ -99,7 +107,7 @@ def dispatch(
     # `alerts` row at all, and threw far enough to abandon the rest of that
     # account's poll cycle (#57).
     delivered = 0
-    for channel in channels.get(detection.severity, []):
+    for channel in ([] if snoozed_until else channels.get(detection.severity, [])):
         try:
             channel.send(alert)
             delivered += 1
@@ -120,8 +128,8 @@ def dispatch(
             """
             INSERT INTO alerts
                 (account_id, rule, severity, dedup_key, message, evidence_json, confidence,
-                 sent_at, delivered_to)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 sent_at, delivered_to, snoozed_until)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 account_id,
@@ -133,6 +141,7 @@ def dispatch(
                 detection.confidence,
                 now.isoformat(),
                 delivered,
+                snoozed_until,
             ),
         )
         alert_id = cur.lastrowid

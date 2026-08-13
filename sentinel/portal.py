@@ -23,6 +23,7 @@ from sentinel.dashboard import (
 from sentinel.db import Database
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
 from sentinel.passwords import LoginThrottle
+from sentinel.snooze import SNOOZE_CHOICES, active_snoozes_for_accounts, snooze_alert
 
 logger = logging.getLogger("sentinel.portal")
 
@@ -208,21 +209,21 @@ def _page(body_html: str, nav_html: str = "") -> str:
     )
 
 
-def _member_alert_account(db: Database, alert_id: int, account_ids: list[int]) -> int | None:
-    """The account an alert belongs to, but only if it is one of this member's.
+def _member_alert(db: Database, alert_id: int, account_ids: list[int]):
+    """An alert row, but only if it is on one of this member's accounts.
     Returns None for someone else's alert and for one that doesn't exist — the
-    caller renders both as not-found, so a member cannot use acknowledgement to
-    discover that an alert id is in use."""
+    callers render both as not-found, so a member cannot use acknowledgement or
+    a snooze to discover that an alert id is in use."""
     if not account_ids:
         return None
     marks = ",".join("?" for _ in account_ids)
     with db.cursor() as cur:
         cur.execute(
-            f"SELECT account_id FROM alerts WHERE id = ? AND account_id IN ({marks})",
+            f"SELECT id, account_id, rule, dedup_key FROM alerts "
+            f"WHERE id = ? AND account_id IN ({marks})",
             [alert_id, *account_ids],
         )
-        row = cur.fetchone()
-    return row["account_id"] if row else None
+        return cur.fetchone()
 
 
 def acknowledge_alert_as_member(
@@ -281,7 +282,27 @@ def _time_to_acknowledge(sent_at: str | None, acknowledged_at: str | None) -> st
     return f"{seconds // 86400}d {(seconds % 86400) // 3600}h"
 
 
-def _ack_cell(row) -> str:
+def _snooze_control(row, snoozed_until: str | None) -> str:
+    """A snooze offer, or the silence already in force.
+
+    Shown only while the alert is unacknowledged: once someone has said they
+    have seen it, "stop telling me about this" is what acknowledgement already
+    means, and offering both invites silencing an alert nobody has looked at
+    twice."""
+    if snoozed_until:
+        return f"<div class='snoozed'>Snoozed until {_ts(snoozed_until)}</div>"
+    options = "".join(
+        f"<option value='{h}'>{h}h</option>" for h in SNOOZE_CHOICES
+    )
+    return (
+        "<form method='post' action='/snooze' style='margin:6px 0 0'>"
+        f"<input type='hidden' name='alert_id' value=\"{int(row['id'])}\">"
+        f"<select class='snoozesel' name='hours'>{options}</select>"
+        "<button class='ackbtn' type='submit'>Snooze</button></form>"
+    )
+
+
+def _ack_cell(row, snoozed_until: str | None = None) -> str:
     """The acknowledgement column: who and how long if it's done, a button if
     it isn't. One tap, from the row the alert is on."""
     if row["acknowledged_at"]:
@@ -292,7 +313,8 @@ def _ack_cell(row) -> str:
     return (
         "<td class='ack-no'><form method='post' action='/acknowledge' style='margin:0'>"
         f"<input type='hidden' name='alert_id' value=\"{int(row['id'])}\">"
-        "<button class='ackbtn' type='submit'>Acknowledge</button></form></td>"
+        "<button class='ackbtn' type='submit'>Acknowledge</button></form>"
+        f"{_snooze_control(row, snoozed_until)}</td>"
     )
 
 
@@ -321,12 +343,13 @@ def _render_home(db: Database, email: str) -> str:
         marks = ",".join("?" for _ in ids)
         with db.cursor() as cur:
             cur.execute(
-                f"SELECT al.id, al.sent_at, al.severity, al.rule, al.acknowledged_at, al.acknowledged_by, ac.label "
+                f"SELECT al.id, al.sent_at, al.severity, al.rule, al.acknowledged_at, al.acknowledged_by, al.dedup_key, ac.label "
                 f"FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
                 f"WHERE al.account_id IN ({marks}) ORDER BY al.sent_at DESC LIMIT 30",
                 ids,
             )
             alerts = cur.fetchall()
+    snoozed = active_snoozes_for_accounts(db, ids)
 
     account_rows = "".join(
         f"<tr><td><a class='acctlink' href='/account?id={r['id']}'>{html.escape(r['label'])} ›</a></td>"
@@ -342,7 +365,7 @@ def _render_home(db: Database, email: str) -> str:
         f"<td class='lbl'>{html.escape(r['label'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
         f"<td class='rule'>{html.escape(r['rule'])}</td>"
-        f"{_ack_cell(r)}</tr>"
+        f"{_ack_cell(r, snoozed.get(r['dedup_key']))}</tr>"
         for r in alerts
     ) or "<tr><td colspan=5 class='empty'>No alerts — all quiet</td></tr>"
 
@@ -382,11 +405,13 @@ def _render_member_account(db: Database, email: str, account_id: int) -> str | N
         )
         events = cur.fetchall()
         cur.execute(
-            "SELECT id, sent_at, severity, rule, acknowledged_at, acknowledged_by FROM alerts "
+            "SELECT id, sent_at, severity, rule, acknowledged_at, acknowledged_by, dedup_key "
+            "FROM alerts "
             "WHERE account_id = ? ORDER BY sent_at DESC LIMIT 20",
             (account_id,),
         )
         alerts = cur.fetchall()
+    snoozed = active_snoozes_for_accounts(db, [account_id])
 
     last_ok = acct["last_success_at"]
     now = datetime.now(timezone.utc)
@@ -426,7 +451,7 @@ def _render_member_account(db: Database, email: str, account_id: int) -> str | N
         f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
         f"<td class='rule'>{html.escape(r['rule'])}</td>"
-        f"{_ack_cell(r)}</tr>"
+        f"{_ack_cell(r, snoozed.get(r['dedup_key']))}</tr>"
         for r in alerts
     ) or "<tr><td colspan=4 class='empty'>No alerts — all quiet</td></tr>"
 
@@ -555,10 +580,11 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1") -> ThreadingH
                 return
 
             account_ids = [r["id"] for r in member_accounts(db, email)]
-            account_id = _member_alert_account(db, alert_id, account_ids)
-            if account_id is None:
+            alert = _member_alert(db, alert_id, account_ids)
+            if alert is None:
                 self._send(_render_not_found().encode(), 404)
                 return
+            account_id = alert["account_id"]
 
             if acknowledge_alert_as_member(db, alert_id, email, account_ids):
                 logger.info("portal: alert %d acknowledged by %s", alert_id, email)
@@ -566,6 +592,39 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1") -> ThreadingH
             # opening the same incident is the normal case. It redirects to the
             # same page, where the first acknowledgement is still shown.
             self._redirect(f"/account?id={account_id}")
+
+        def _snooze(self, form):
+            """Silence one alert for a while (G-26, #30).
+
+            Same isolation as `_acknowledge`, and the stakes are higher: that
+            one suppresses the escalation of an alert already delivered, this
+            one suppresses the delivery. The duration is not validated here -
+            `snooze_alert` clamps it and refuses a non-duration, because a form
+            field is a POST body and a POST body is whatever the sender
+            types."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            try:
+                alert_id = int((form.get("alert_id") or [""])[0])
+            except (TypeError, ValueError):
+                self._send(_render_not_found().encode(), 404)
+                return
+            try:
+                hours = float((form.get("hours") or ["0"])[0])
+            except (TypeError, ValueError):
+                hours = 0.0
+
+            account_ids = [r["id"] for r in member_accounts(db, email)]
+            alert = _member_alert(db, alert_id, account_ids)
+            if alert is None:
+                self._send(_render_not_found().encode(), 404)
+                return
+
+            snooze_alert(db, alert["account_id"], alert["dedup_key"], alert["rule"],
+                         hours, requested_by=normalize_email(email))
+            self._redirect(f"/account?id={alert['account_id']}")
 
         def do_POST(self):
             path = urlparse(self.path).path.rstrip("/")
@@ -587,6 +646,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1") -> ThreadingH
 
             if path == "/acknowledge":
                 self._acknowledge(form)
+                return
+
+            if path == "/snooze":
+                self._snooze(form)
                 return
 
             if path != "/login":

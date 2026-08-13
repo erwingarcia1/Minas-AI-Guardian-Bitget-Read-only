@@ -14,6 +14,38 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
+- **Customers can snooze a specific alert (G-26, #30).** New `snoozes` table,
+  a control on every unacknowledged alert row, and a check in `dispatch` that
+  withholds the delivery while a snooze is live.
+
+  Three properties keep this from being a way to turn the product off:
+
+  A snooze is keyed on the alert's **dedup key**, not its rule. Snoozing
+  "withdrawal to an unrecognised address" because you recognise *this* address
+  leaves the next one — to a different address, which is the case the rule
+  exists for — as loud as ever.
+
+  A snooze **always expires**. `expires_at` is NOT NULL and the duration is
+  clamped where the row is written rather than in the form, so the table cannot
+  represent a permanent mute even if every caller is wrong. A cap enforced only
+  in a dropdown is not a cap; the form is a POST that can be retyped.
+
+  A snooze **silences the phone, not the monitoring**. The detection still
+  runs, the `alerts` row is still written, and the portal still shows it —
+  marked `snoozed_until`, which is deliberately a different column from
+  `delivered_to = 0`. That one means we tried to tell someone and reached
+  nobody (#57); sharing it would turn every snooze into a false report of a
+  broken alert channel.
+
+  Escalation holds while a snooze is live and resumes when it expires — which
+  is what snoozes expiring is *for*.
+
+  **Left undecided:** whether a CRITICAL should be snoozable for the same 24
+  hours as everything else. The cap is derived from the digest cadence, which
+  is honest for a MEDIUM and an assumption for a CRITICAL. Logged as decision
+  8 in `docs/DECISIONS-NEEDED.md` with the concrete risk written out, rather
+  than picking a shorter number by feel.
+
 - **Customers can acknowledge their own alerts from the portal (G-22, #26).**
   Acknowledgement existed for operators (`sentinel acknowledge --as <name>`,
   #54) but there was no way for the person the alert is *about* to say they

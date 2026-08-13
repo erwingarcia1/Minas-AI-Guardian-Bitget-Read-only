@@ -2280,3 +2280,71 @@ tap is even worth as a record, which is a product decision and not mine.
 or a member email. Today they cannot collide meaningfully (operators are
 usernames, members are addresses) and the page each is shown on says which it
 is. If a third actor type ever appears, that column needs a role beside it.
+
+---
+
+## G-26 · Snooze (#30)
+
+Built, with one number deliberately left to the owner.
+
+### Why this one needed the most care
+
+Snooze is the only feature here whose *purpose* is to stop an alert reaching
+someone. Dedup and cooldown also suppress, but they suppress a repeat of
+something already delivered. A snooze suppresses a delivery outright, on
+request — and the request arrives at the exact moment a customer is least
+likely to be sure what is happening to their account.
+
+So the design is three properties rather than a feature:
+
+1. **Keyed on the alert, not the rule.** `dedup_key` already means "the same
+   underlying condition" — rule + evidence identity + account. Snoozing on
+   that key means the attacker's next withdrawal, to a different address, is a
+   different alert and stays loud. Keying on the rule would have silenced
+   exactly the thing the rule exists to catch, and would have looked correct.
+2. **Always expires.** `expires_at NOT NULL`, and the clamp is in
+   `snooze_alert` rather than in the form. The dropdown offers 1/4/24h; the
+   POST body is whatever the sender types.
+3. **Silences the phone, not the monitoring.** The detection runs, the row is
+   written, the portal shows it. `snoozed_until` is a separate column from
+   `delivered_to` on purpose — #57 established that `delivered_to = 0` means
+   "we tried and reached nobody", an operator-visible fault. A snooze is the
+   opposite: it worked as asked. One column for both would have made every
+   snooze look like a broken channel.
+
+Escalation holds while the snooze is live and resumes after. Ignoring the
+snooze would page the customer anyway and make the button a lie; suppressing
+escalation permanently would be the permanent mute this feature is not allowed
+to have.
+
+### What I did not decide
+
+A 24-hour cap on a CRITICAL is not something I can derive. The number I *can*
+derive is the digest cadence — no snooze outlives the next summary the customer
+receives — and that reasoning is honest for a MEDIUM. For a CRITICAL, the
+concrete case is: a customer recognises one leg of a drain, snoozes, and a
+continuing drain of the same coin produces the same dedup key and stays silent
+for the rest of the day. That is the feature working as specified, and it is
+also the worst sentence that could appear in an incident review.
+
+Picking a shorter CRITICAL cap by feel is choosing a security-relevant duration
+by guessing, which the working rules say to bring to the owner. Logged as
+decision 8 with four options and a recommendation (one hour, with
+page-the-operator-on-CRITICAL-snooze as the fast follow that actually removes
+the risk rather than shortening it). `MAX_SNOOZE_HOURS` is one line.
+
+### Surprises
+
+The retention coverage test from #60 failed the moment `snoozes` existed —
+"tables with no retention decision: {'snoozes'}". That guard was written three
+issues ago for exactly this and it is the first time it has fired on live work.
+Classified as prunable at 730 days: the *silence* lasts at most a day, the
+record of who asked for it lasts as long as the alert it silenced. Pruning on
+`created_at` is safe because no retention window shorter than the 24h cap is
+expressible — `days <= 0` means keep forever, so the shortest real window is a
+day.
+
+Seven mutations run against the new guards, all seven killed. The two most
+worth naming: keying the snooze on the rule instead of the dedup key, and
+returning early on a snooze instead of recording the alert. Both are the
+plausible shortcut a reviewer would wave through.

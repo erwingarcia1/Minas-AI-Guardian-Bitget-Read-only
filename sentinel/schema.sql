@@ -257,3 +257,26 @@ CREATE TABLE IF NOT EXISTS portal_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Customer-requested silences (G-26, #30). One row per snooze, keyed on the
+-- alert'"'"'s dedup_key rather than on its rule: snoozing "withdrawal to an
+-- unrecognised address" because you recognise THIS address must not silence
+-- the next one to a different address, which is the case the rule exists for.
+--
+-- `expires_at` is NOT NULL on purpose. There is no permanent mute, and the
+-- schema is where that is guaranteed - a cap enforced only in the form is not
+-- a cap, because the form is a POST that can be retyped.
+--
+-- Rows are kept after expiry. Who silenced an alarm, and until when, is a fact
+-- about a person and a time on an account that may later be the subject of an
+-- exchange dispute; it outlives the silence.
+CREATE TABLE IF NOT EXISTS snoozes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    dedup_key TEXT NOT NULL,
+    rule TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_snoozes_lookup ON snoozes(account_id, dedup_key, expires_at);

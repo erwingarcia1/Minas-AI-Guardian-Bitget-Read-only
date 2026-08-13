@@ -42,6 +42,12 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     "alerts": ("sent_at", "alerts_days"),
     "operator_pages": ("sent_at", "operator_pages_days"),
     "sms_deliveries": ("created_at", "sms_deliveries_days"),
+    # Who silenced which alarm and until when (#30). Forensic, like `events`:
+    # the silence lasts at most a day, the record of who asked for it lasts as
+    # long as the alert it silenced. Keyed on `created_at`, which is safe
+    # because no retention shorter than the 24h snooze cap is expressible -
+    # `days <= 0` means keep forever, so the shortest real window is a day.
+    "snoozes": ("created_at", "snoozes_days"),
     # Dedup state, not history. See the module docstring: too short and old
     # movements re-alert.
     "seen_withdrawals": ("first_seen_at", "dedup_days"),

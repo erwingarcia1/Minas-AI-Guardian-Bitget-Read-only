@@ -96,6 +96,10 @@ _STYLE = """
             border:1px solid var(--line); border-radius:6px;
             background:transparent; color:var(--txt); }
   .ackbtn:hover { border-color:var(--ok); color:var(--ok); }
+  .snoozesel { font:inherit; font-size:12px; margin-right:6px; padding:3px 6px;
+               border:1px solid var(--line); border-radius:6px;
+               background:var(--panel-2); color:var(--txt); }
+  .snoozed { font-size:12px; color:var(--muted); }
   .fail { color:var(--high); font-weight:600; } .zero { color:var(--faint); }
   .empty { padding:34px; text-align:center; color:var(--faint); font-size:13px; }
   footer { margin-top:28px; text-align:center; color:var(--faint); font-size:11.5px; }
