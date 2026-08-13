@@ -1,5 +1,70 @@
 # Autonomous work log
 
+> ## Session summary — 2026-08-13
+>
+> **Closed:** #66 (mutation survivors), #26 (acknowledge), #30 (snooze), #16
+> (threshold audit), #65 (withdrawal.py by hand), #58 (logged-and-swallowed
+> sweep), #33 (password reset), #32 (2FA), #40 (dashboard protected), #62 (git
+> hooks). **Partial:** #67, #29, #27, #61. **Planned, no code:** #43, #44.
+>
+> ### Numbers
+>
+> Suite 441 → 686 tests. Decision-point mutation score **60% → 92%**.
+> `withdrawal.py`, invisible to that score, went **67.8% → 0%** surviving
+> mutants measured separately. 75 standing design-guard probes, all landing.
+> CI green after every push.
+>
+> ### The three defects found, and what they had in common
+>
+> **#67** — two withdrawals with no reference and no timestamp collide, and the
+> second is dropped with no log, no metric and no page. **#58 group D** — every
+> migration ran under `suppress(OperationalError)`, so a renamed table was
+> indistinguishable from "column already exists" and a database that had not
+> migrated started the service anyway. **A falsy sentinel I wrote myself** — a
+> snooze cap of `0` read as "not configured", silently re-enabling suppression
+> an owner had turned off.
+>
+> Each looked like it worked. That is the whole pattern, and it is why the
+> tooling below matters more than any single fix.
+>
+> ### What I would tell someone arriving cold
+>
+> **Tests that assert an absence pass for the wrong reason.** Eight of mine did
+> this session, every one caught by a probe rather than by review: a wiring test
+> matching a variable name instead of an argument; a once-per-process guard that
+> was actually being deduped by a cooldown underneath it; a forged-token test
+> whose token was rejected by `split` before the signature check ran. Reading
+> them, they all look fine.
+>
+> **`scripts/mutation-probe.py` is the tool that found those.** It refuses to
+> believe a result until it has proved the source changed, because a `sed` that
+> matches nothing passes its tests — which is indistinguishable from a test
+> killing the mutant. That happened to me once before I built it.
+>
+> ### Blocked, and on what
+>
+> | Issue | Waiting on |
+> |---|---|
+> | #67 (half) | production frequency data — the counter now exists to collect it |
+> | #63, #37 | fire-drill and heartbeat cadence (decisions doc) |
+> | #27 (half) | G-23 escalation timings |
+> | #29 (¼) | decision 9 — "what to do next" wording |
+> | #61 (model) | decision 10 — per-account credentials |
+> | #43, #44 | decision 11 — provider, plans, prices, lapse behaviour |
+> | #24, #47 | channel defaults; retention periods |
+>
+> ### What I would do next if those were answered
+>
+> 1. **#67's other half** once there is a frequency — it is the only open p1.
+> 2. **Phase 4 is untouched and mostly buildable**: #35 (alert history), #36
+>    (who touched my account — the `events.actor` data already exists), #28
+>    (G-24 "that was me"), #38, #41, #46, #17. None are blocked; I ran out of
+>    session, not out of work.
+> 3. **#56** (move alarms to Alertmanager) is a real architectural question I
+>    did not open, because it deserves its own considered answer rather than a
+>    tired one.
+
+
 Running log of unattended work on the backlog. Newest session at the bottom
 until the run finishes, at which point a summary goes at the top.
 
