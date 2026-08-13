@@ -6,46 +6,62 @@ from dataclasses import dataclass
 
 
 def runbook() -> str:
-    """What to do if this was not you.
+    """What a customer can check, one step per line.
 
-    Step 2 is the one with teeth, and the old wording - "revoke/rotate the API
-    key(s) on this account" - was a safety defect rather than a phrasing
-    problem. The Guardian's key is one of the keys on that account. It is
-    read-only and cannot move money, so revoking it takes nothing away from an
-    attacker; what it does is switch the monitoring off at the moment it
-    matters most, silently, because nobody connects "I revoked my keys" with
-    "I am no longer being watched". Panic makes revoke-everything the likely
-    action, so the text has to separate their access from ours and say plainly
-    what removing ours costs.
+    Two properties, both learned from what the reading environment does to
+    this text rather than from how it reads on its own.
 
-    The rest of the wording is still not signed off: decision 3 (legal/comms)
-    owns "contact the exchange", "freeze", and how certain any of it may
-    sound. This function exists so that review has one place to land."""
-    return (
-        "Immediate actions: 1) Freeze the account in the Bitget app if you did "
-        "not authorize this. 2) Revoke any API key you do not recognise. Minas "
-        "AI Guardian's own key is read-only - it cannot withdraw or trade - so "
-        "revoking it takes nothing away from an attacker and stops the "
-        "monitoring instead. If you do revoke every key, this account stays "
-        "unwatched until a new Guardian key is issued. 3) Verify your "
-        "withdrawal address whitelist in the Bitget app. 4) Enable/verify 2FA "
-        "and Bitget's anti-phishing code. 5) Contact Bitget support if funds "
-        f"moved without your authorization. {monitoring_check_line()}"
-    )
+    **Every step carries its own condition.** Gmail's AI Overview summarised
+    the previous version as "You must immediately freeze account, revoke
+    unrecognized API keys" - it dropped the "if this was not you" preamble and
+    turned advice into an instruction we never gave. A conditional heading
+    followed by imperative steps does not survive being summarised, forwarded,
+    read aloud, or skimmed. So the hedge lives inside each sentence, where it
+    cannot be stripped without changing the sentence.
+
+    **Step 2 is the one with teeth.** The Guardian's key is one of the keys on
+    that account. It is read-only and cannot move money, so revoking it takes
+    nothing from an attacker and switches the monitoring off - silently,
+    because nobody connects "I revoked my keys" with "I am no longer watched".
+    Panic makes revoke-everything the likely action, so ours is named.
+
+    The numbered list holds only things to *do*. What happens if step 2 takes
+    our key with it is a consequence, not a sixth action, and numbering it as
+    one asked the reader to perform it. It sits below the list as a note.
+
+    Plain text, deliberately: HTML mail is the phishing norm, and a plain-text
+    security alert is harder to imitate convincingly. Multipart HTML+text is a
+    separate decision, not an implementation detail.
+
+    Wording is still not signed off - decision 3 (legal/comms) owns it."""
+    steps = [
+        "1. If you did not authorise this, freeze the account in the Bitget app.",
+        "2. If you see an API key you do not recognise, revoke it. Leave the Minas "
+        "AI Guardian key - it is read-only, and revoking it stops your monitoring "
+        "without slowing an attacker down.",
+        "3. If your withdrawal whitelist has an address you do not recognise, "
+        "remove it in the Bitget app.",
+        "4. If two-factor authentication or Bitget's anti-phishing code is off, "
+        "turn it on.",
+        "5. If funds moved without your authorisation, contact Bitget support.",
+    ]
+    return "\n\n".join(steps + [monitoring_note()])
 
 
-def monitoring_check_line() -> str:
-    """Where to confirm monitoring is still running after step 2.
+def monitoring_note() -> str:
+    """The consequence of step 2, sitting below the list rather than in it.
 
-    Points at the portal itself, not a deep link: there is no self-serve page
-    for replacing a revoked key (onboarding is operator-driven), and a runbook
-    that sends a frightened customer to a 404 is worse than one that sends
-    them to the front door."""
+    Points at the portal front door, not a deep link - there is no self-serve
+    page for replacing a revoked key (onboarding is operator-driven), and a
+    runbook that sends a frightened customer to a 404 is worse than one that
+    sends them somewhere real. Carries its own condition like every step, for
+    the same reason: read alone, it must still be about a thing that may not
+    have happened."""
     url = (os.environ.get("SENTINEL_PORTAL_URL") or "").strip().rstrip("/")
-    if url:
-        return f"Then check that monitoring is still running, and ask for a new key if it is not: {url}"
-    return ("Then sign in to Minas AI Guardian to check monitoring is still "
-            "running, and ask for a new key if it is not.")
+    tail = f" Check here and ask for a new key: {url}" if url else (
+        " Sign in to Minas AI Guardian to check, and ask us for a new key.")
+    return ("Note: if you revoked every key, this account is no longer "
+            "monitored until a new Guardian key is issued." + tail)
 
 # The runbook tells a frightened person to freeze an account and revoke keys.
 # It belongs on the alerts where that is the proportionate response and on no
@@ -170,14 +186,24 @@ class AlertMessage:
         if self.notice:
             return f"{self.message}\n\n--\n{_FOOTER}"
 
+        # Account first, headline second. The subject ends with the label, so
+        # a body opening with "headline (label)" put the same words twice in a
+        # row on screen - and when a label carries its own parenthetical it
+        # nested brackets on top of that. Leading with the account also reads
+        # better for a customer holding more than one.
+        headline = self.headline()
+        opener = f"{self.account_label} - {headline[0].lower()}{headline[1:]}."
         parts = [
-            f"{self.headline()} ({self.account_label}). {portal_action_line()}",
+            f"{opener} {portal_action_line()}",
             "",
             "We are telling you because it does not match how this account normally "
             "behaves. It may well be something you did - only you can say.",
         ]
         if self.severity in RUNBOOK_SEVERITIES:
-            parts += ["", f"If this was not you:\n{runbook()}"]
+            # A neutral heading, because the conditional now lives in each
+            # step. "If this was not you:" as a preamble is exactly what a
+            # summariser drops before turning the steps into instructions.
+            parts += ["", "What to check:", "", runbook()]
         parts += ["", "--", _FOOTER]
         return "\n".join(parts)
 

@@ -237,7 +237,7 @@ def test_a_detection_on_the_same_wire_leaves_its_evidence_behind(monkeypatch):
     assert "0xDEADBEEF" not in body
     assert "4.2 ETH" not in body
     assert "withdrawal_to_unseen_address" not in captured[0]["Subject"]
-    assert "A withdrawal went to an address" in body
+    assert "a withdrawal went to an address" in body
 
 
 def test_an_unmapped_notice_still_gets_a_human_subject():
@@ -273,10 +273,11 @@ def test_the_runbook_does_not_tell_a_customer_to_revoke_our_key_blind():
     their monitoring, at the one moment they need it."""
     text = runbook()
     assert "Revoke/rotate the API key(s)" not in text
-    assert "Revoke any API key you do not recognise" in text
+    assert "If you see an API key you do not recognise, revoke it" in text
     assert "read-only" in text
     # And it must say what revoking everything costs, not merely imply it.
-    assert "unwatched" in text
+    assert "stops your monitoring" in text
+    assert "no longer monitored" in text
 
 
 def test_the_runbook_says_where_to_check_the_monitoring_survived(monkeypatch):
@@ -288,4 +289,87 @@ def test_without_a_portal_url_the_runbook_still_names_the_step(monkeypatch):
     monkeypatch.delenv("SENTINEL_PORTAL_URL", raising=False)
     text = runbook()
     assert "http" not in text
-    assert "monitoring is still running" in text
+    assert "no longer monitored" in text
+    assert "ask us for a new key" in text
+
+
+# --- the runbook survives its reading environment ---------------------------
+
+
+def _blocks(text=None):
+    return (text or runbook()).split("\n\n")
+
+
+def _steps(text=None):
+    """The numbered actions, without the trailing note."""
+    return _blocks(text)[:-1]
+
+
+def test_every_step_carries_its_own_condition():
+    """Gmail's AI Overview summarised the previous version as "You must
+    immediately freeze account, revoke unrecognized API keys" - it dropped the
+    "if this was not you" preamble and turned advice into an instruction we
+    never gave. A conditional heading does not survive summarising, forwarding
+    or skimming, so each step has to hedge itself and read correctly alone."""
+    steps = _steps()
+    assert len(steps) == 5
+    for number, step in enumerate(steps, start=1):
+        assert step.startswith(f"{number}. If "), f"step {number} is not conditional: {step!r}"
+
+
+def test_the_monitoring_consequence_is_a_note_not_a_step():
+    """Steps 1-5 are things to do. What revoking every key costs is a
+    consequence of step 2, and numbering it asked the reader to perform it."""
+    note = _blocks()[-1]
+    assert note.startswith("Note: if you revoked every key,")
+    assert not note.startswith("6.")
+    # It still hedges itself - it is read alone as readily as any step.
+    assert "if you revoked every key" in note
+    # And nothing above it may be numbered 6.
+    assert "\n\n6. " not in f"\n\n{runbook()}"
+
+
+@pytest.mark.parametrize("severity", ["CRITICAL", "HIGH"])
+def test_no_conditional_preamble_carries_the_meaning(severity):
+    """The heading above the steps must be neutral. If it is doing the hedging,
+    the steps below it are unconditional imperatives again."""
+    body = _alert(severity=severity).render_customer()
+    assert "What to check:" in body
+    assert "If this was not you:" not in body
+
+
+def test_one_step_per_line_with_a_blank_line_between():
+    """It is read on a phone. A paragraph with inline 1) 2) 3) wraps into a
+    wall that nobody parses in a hurry."""
+    text = runbook()
+    for number in range(1, 6):
+        assert f"\n\n{number}. " in f"\n\n{text}"
+    # The old inline form must not creep back.
+    assert "1) " not in text
+    assert "Immediate actions:" not in text
+
+
+def test_the_runbook_is_plain_text():
+    """HTML mail is the phishing norm; a plain-text security alert is harder to
+    imitate convincingly. Multipart HTML+text would be a separate decision."""
+    body = _alert(severity="CRITICAL").render_customer()
+    for markup in ("<html", "<body", "<p>", "<br", "<a ", "<div", "</"):
+        assert markup not in body.lower()
+
+
+def test_the_account_label_is_not_repeated_in_the_opener():
+    """A label carrying its own parenthetical used to render as nested
+    brackets immediately after the subject said the same words."""
+    label = "Bitget Main (TEST - not a real detection)"
+    first = _alert(account_label=label).render_customer().splitlines()[0]
+    assert first.count(label) == 1
+    assert "))" not in first
+    assert first.startswith(f"{label} - ")
+
+
+def test_step_two_stays_short():
+    """Somebody frightened is skimming. The safety point has to survive, but
+    it was four sentences inside a numbered step."""
+    step_two = _steps()[1]
+    assert step_two.count(".") <= 3, f"step 2 has grown back: {step_two!r}"
+    assert len(step_two) < 220

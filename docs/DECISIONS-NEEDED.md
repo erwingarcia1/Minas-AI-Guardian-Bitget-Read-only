@@ -179,6 +179,38 @@ recognise, states that the Guardian's key is read-only, and says plainly that
 revoking everything leaves the account unwatched until a new key is issued. It
 closes with a link to the portal to check whether monitoring is still running.
 
+### Update 2026-08-13: the reading environment strips our hedging
+
+Worth having on the record before the advice-vs-instruction question is
+settled, because it changes what "advice" can even mean here.
+
+Gmail's AI Overview summarised our test alert as:
+
+> "You must immediately freeze account, revoke unrecognized API keys"
+
+The alert said no such thing. It carried a conditional heading — *"If this was
+not you:"* — followed by numbered steps written as imperatives. The summariser
+dropped the heading and kept the imperatives, converting advice we hedged into
+an instruction we never gave. A customer who reads only the summary — and on a
+phone, many will — receives a command from us.
+
+**The consequence for decision 3:** choosing "advice" wording is not enough,
+because a conditional *preamble* does not survive summarising, forwarding,
+screen-reading or skimming. The hedge has to be inside each sentence, where
+removing it would change the sentence rather than just drop a line.
+
+The runbook is now written that way — every step begins with its own "If…" and
+reads correctly in isolation — and a test pins it. That is a structural
+property, so it was fixed without waiting. **It does not decide the question**:
+whether these are "consider" or "do this now" is still yours, and the same
+hazard applies to any wording that replaces them. Whatever legal signs off has
+to survive being read one sentence at a time.
+
+Related: the alert is plain text on purpose. HTML mail is the phishing norm,
+and a plain-text security alert is harder to imitate convincingly. If multipart
+HTML+text is ever wanted, that is a decision with a phishing-surface argument
+attached, not a formatting preference.
+
 **This does not close decision 3.** Still owned by legal/comms, unchanged:
 
 - whether the text is advice ("consider") or instruction ("do this now");
@@ -192,21 +224,26 @@ the customer-facing gating (CRITICAL/HIGH only) is separate from the wording.
 ### The advice depends on a page that does not exist — #69
 
 There is still **no self-serve way for a customer to replace a revoked Guardian
-key.** Onboarding is operator-driven end to end, so the link in step 6 points
-at the portal front door rather than at a flow, and "ask us for a new key" is
-the entire recovery path. Filed as **#69** (epic-01, p2, Phase 3).
+key.** Onboarding is operator-driven end to end, so the link in the monitoring
+note points at the portal front door rather than at a flow, and "ask us for a
+new key" is the entire recovery path. Filed as **#69** (epic-01, p2, Phase 3).
 
-This is a dependency of decision 3 rather than a note beside it. Step 6 tells a
-customer, correctly, that revoking every key leaves the account unwatched —
+This is a dependency of decision 3 rather than a note beside it. The note tells
+a customer, correctly, that revoking every key leaves the account unwatched —
 and step 2 exists because we expect a frightened person to revoke everything.
 So the advice can put a customer into a state the product cannot recover from
 on its own, during a live incident, with the wait measured by whether an
 operator is awake.
 
 Whichever way the advice-versus-instruction question is settled, the wording of
-step 6 should be chosen knowing whether #69 exists by then: "ask us for a new
-key" is an honest sentence today and a poor one the moment there is a page that
-does it.
+that note should be chosen knowing whether #69 exists by then: "ask us for a
+new key" is an honest sentence today and a poor one the moment there is a page
+that does it.
+
+(This section was written when the monitoring consequence was step 6 of the
+numbered list. It is now a note below the list — items 1–5 are actions, and
+numbering a consequence among them asked the reader to perform it. Nothing
+above changes except where the sentence sits.)
 
 ---
 
