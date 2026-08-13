@@ -91,9 +91,13 @@ def test_an_escalation_that_reaches_nobody_pages_the_operator(db, rules):
                           operator_alerter=_alerter(db, rules)).check(db)
 
     assert escalated == 1  # still marked escalated: we tried
-    pages = _pages(db)
-    assert [p["rule"] for p in pages] == ["escalation_delivered_to_nobody"]
-    assert pages[0]["severity"] == "CRITICAL"
+    # Filtered to this page rather than asserting the whole list: an
+    # escalation ALSO pages `critical_alert_escalated` (#27), and a test that
+    # asserts on every page breaks whenever a neighbouring one is added, which
+    # teaches people to loosen assertions rather than read them.
+    nobody = [p for p in _pages(db) if p["rule"] == "escalation_delivered_to_nobody"]
+    assert len(nobody) == 1
+    assert nobody[0]["severity"] == "CRITICAL"
 
 
 def test_a_partly_working_escalation_pages_nobody(db, rules):
@@ -108,7 +112,7 @@ def test_a_partly_working_escalation_pages_nobody(db, rules):
               operator_alerter=_alerter(db, rules)).check(db)
 
     assert len(good.sent) == 1
-    assert _pages(db) == []
+    assert [p for p in _pages(db) if p["rule"] == "escalation_delivered_to_nobody"] == []
 
 
 def test_escalation_with_no_channels_at_all_pages(db, rules):
@@ -118,7 +122,7 @@ def test_escalation_with_no_channels_at_all_pages(db, rules):
 
     Escalator([], unacknowledged_minutes=15, operator_alerter=_alerter(db, rules)).check(db)
 
-    assert [p["rule"] for p in _pages(db)] == ["escalation_delivered_to_nobody"]
+    assert "escalation_delivered_to_nobody" in {p["rule"] for p in _pages(db)}
 
 
 def test_escalation_still_works_without_an_alerter(db, rules):

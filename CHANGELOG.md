@@ -32,6 +32,30 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   distinguishes two withdrawals.
 
 ### Added
+- **Escalation reaches the customer's own contacts, and tells Minas it
+  happened (G-23, #27).** Two of that issue's four criteria; the *timings*
+  remain the product decision it is blocked on.
+
+  Escalation went to the **global** severity channels — the same ones the
+  original alert used. So an unacknowledged CRITICAL re-fired down exactly the
+  path that had already failed to get a response, and the customer's own email
+  and phone, including the secondary contact G-21 exists to provide, never saw
+  it. Escalation that repeats the unanswered channel is not escalation.
+
+  It now also goes through `ContactRouter` to both the primary and secondary
+  contacts, guarded on its own so a failing SMTP cannot take the global
+  escalation down with it (#57's rule).
+
+  And every escalation pages an operator, not only the ones that fail to
+  deliver. `escalation_delivered_to_nobody` is about our machinery breaking;
+  `critical_alert_escalated` is about the customer not answering a CRITICAL for
+  the full window. Both are worth knowing, and both fire when both are true.
+
+  `Engine` now accepts a `ContactRouter` rather than building one privately —
+  a private one could not be given to the escalator, and could not carry the
+  operator alerter it needs for #58's missing-provider page.
+
+### Added
 - **Every incident has its own page (G-25, #29).** `/incident?id=N` in the
   member portal: what was detected, when, on which account, the balances as
   they were **at the time**, the full evidence, and a

@@ -9,23 +9,45 @@ from sentinel.db import Database
 logger = logging.getLogger("sentinel.escalation")
 
 
+class _EscalationDetection:
+    """Adapts an escalation `AlertMessage` to the shape `ContactRouter.send`
+    expects. The rule name keeps its ESCALATION prefix on purpose: someone
+    reading this needs to know it is the second time, or it is
+    indistinguishable from the message they already ignored."""
+
+    def __init__(self, alert: AlertMessage):
+        self.rule = alert.rule
+        self.severity = alert.severity
+        self.confidence = alert.confidence
+        self.message = alert.message
+        self.evidence = alert.evidence
+
+
 class Escalator:
     """Re-fires CRITICAL alerts that nobody acknowledged within the
     configured window. Acknowledge with: sentinel ack <alert_id>."""
 
     def __init__(self, channels: list[AlertChannel], unacknowledged_minutes: int,
-                 operator_alerter=None):
+                 operator_alerter=None, contact_router=None):
         self._channels = channels
         self._window = timedelta(minutes=unacknowledged_minutes)
         # Optional: a deployment with no operator paging configured is worse
         # off, not broken. See `_page_if_nobody_heard`.
         self._operator_alerter = operator_alerter
+        # The customer's OWN contacts, primary and secondary (G-21, #27).
+        # Without this, escalation re-fired down the same global channels the
+        # original alert used - the path that has already failed to get a
+        # response - and the second pair of eyes never saw it. Escalation that
+        # repeats the unanswered channel is not escalation.
+        self._contact_router = contact_router
 
     def check(self, db: Database) -> int:
         cutoff = (datetime.now(timezone.utc) - self._window).isoformat()
         with db.cursor() as cur:
             cur.execute(
-                "SELECT a.id, a.rule, a.severity, a.message, a.confidence, ac.label "
+                "SELECT a.id, a.rule, a.severity, a.message, a.confidence, a.account_id, "
+                "ac.label, ac.alert_email, ac.alert_phone, ac.alert_email_secondary, "
+                "ac.alert_phone_secondary "
                 "FROM alerts a JOIN accounts ac ON ac.id = a.account_id "
                 "WHERE a.severity = 'CRITICAL' AND a.acknowledged_at IS NULL "
                 "AND a.escalated_at IS NULL AND a.sent_at < ? "
@@ -60,6 +82,8 @@ class Escalator:
                     delivered += 1
                 except Exception as exc:  # noqa: BLE001 - escalation must try every channel
                     logger.error("escalation channel failed: %s", exc)
+            self._reach_the_customers_own_contacts(row, alert)
+            self._page_escalated(row)
             self._page_if_nobody_heard(delivered, row)
             with db.cursor() as cur:
                 cur.execute(
@@ -68,6 +92,53 @@ class Escalator:
                 )
             escalated += 1
         return escalated
+
+    def _reach_the_customers_own_contacts(self, row, alert) -> None:
+        """Deliver the escalation to the account's own email and phone,
+        primary and secondary (#27).
+
+        Guarded on its own, on the same rule as everything else on a delivery
+        path (#57): the router reaching the customer's address and the global
+        channels reaching whatever else is configured are two independent
+        deliveries, and losing both because one raised is the failure this
+        codebase keeps having."""
+        if self._contact_router is None:
+            return
+        emails = [row["alert_email"], row["alert_email_secondary"]]
+        phones = [row["alert_phone"], row["alert_phone_secondary"]]
+        if not any(emails) and not any(phones):
+            return
+        try:
+            self._contact_router.send(
+                _EscalationDetection(alert), row["label"], emails, phones,
+                account_id=row["account_id"], alert_id=row["id"],
+            )
+        except Exception as exc:  # noqa: BLE001 - one path must not cost the other
+            logger.error("escalation to the account's own contacts failed: %s", exc)
+
+    def _page_escalated(self, row) -> None:
+        """Minas is told that an escalation happened at all (#27).
+
+        Distinct from `escalation_delivered_to_nobody`, which is about our
+        machinery failing. This one is about the *customer*: a CRITICAL has
+        gone unanswered for the whole window, which is worth an operator's
+        attention whether or not the escalation message left the building.
+        Both fire when both are true."""
+        if self._operator_alerter is None:
+            return
+        self._operator_alerter.page(
+            rule="critical_alert_escalated",
+            severity="HIGH",
+            message=(
+                f"CRITICAL alert #{row['id']} ({row['rule']}) on {row['label']} was not "
+                f"acknowledged and has been escalated. The customer has not responded to a "
+                f"CRITICAL for the full escalation window."
+            ),
+            evidence={"original_alert_id": row["id"], "rule": row["rule"],
+                      "account_label": row["label"]},
+            account_id=row["account_id"],
+            dedup_scope=f"escalated:{row['id']}",
+        )
 
     def _page_if_nobody_heard(self, delivered: int, row) -> None:
         """The strongest entry in the #58 sweep, and the only one with a real

@@ -46,6 +46,7 @@ class Engine:
         metrics=None,
         escalator=None,
         operator_alerter=None,
+        contact_router=None,
     ):
         self._db = db
         self._cipher = cipher
@@ -106,9 +107,20 @@ class Engine:
         )
         from sentinel.alerts.contact import ContactRouter
 
+        # Accepted rather than constructed here, so the SAME router serves the
+        # poller and the escalator and so it carries the operator alerter it
+        # needs to report a channel with no provider (#58). Constructing one
+        # privately meant the escalator could not have the customer's own
+        # contacts (#27) and this one could never page.
+        #
+        # The fallback below keeps other callers working, but a caller that
+        # uses it gets a SECOND router - and `_warn_once` is per instance, so
+        # "this channel has no provider" would page once per router rather
+        # than once per process. Pass one in.
         self._poller = AccountPoller(
             db, cipher, rules, channels, limiter=self.limiters, metrics=metrics,
-            contact_router=ContactRouter(db=db, rules=rules),
+            contact_router=contact_router or ContactRouter(
+                db=db, rules=rules, operator_alerter=operator_alerter),
             operator_alerter=operator_alerter,
         )
         self._last_slow: dict[int, float] = {}

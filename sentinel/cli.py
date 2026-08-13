@@ -281,6 +281,7 @@ def _print_degraded_warning() -> None:
 
 def cmd_run(args: argparse.Namespace) -> int:
     _setup_logging()
+    from sentinel.alerts.contact import ContactRouter
     from sentinel.alerts.operator import OperatorAlerter
     from sentinel.dashboard import serve_dashboard
     from sentinel.engine import Engine
@@ -365,13 +366,20 @@ def cmd_run(args: argparse.Namespace) -> int:
             dashboard_host, dashboard_host, dashboard_port,
         )
 
+    # One router, shared. The escalator needs it to reach the customer's own
+    # contacts (#27) and it needs the alerter to report a channel with no
+    # provider (#58); a privately-constructed one inside Engine could do
+    # neither.
+    contact_router = ContactRouter(db=db, rules=rules, operator_alerter=operator_alerter)
+
     escalation_minutes = rules.get_int("alerting", "escalation_unacknowledged_minutes", default=15)
     escalator = Escalator(channels.get("CRITICAL", []), escalation_minutes,
-                          operator_alerter=operator_alerter)
+                          operator_alerter=operator_alerter,
+                          contact_router=contact_router)
 
     engine = Engine(
         db, cipher, rules, channels, metrics=metrics, escalator=escalator,
-        operator_alerter=operator_alerter,
+        operator_alerter=operator_alerter, contact_router=contact_router,
     )
     engine.run()
     return 0

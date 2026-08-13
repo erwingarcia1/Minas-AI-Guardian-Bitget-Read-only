@@ -331,5 +331,50 @@
   "tests": [
    "tests/test_incident_page.py"
   ]
+ },
+ {
+  "name": "#27: escalation never reaches the customer's own contacts",
+  "file": "sentinel/alerts/escalation.py",
+  "old": "            self._reach_the_customers_own_contacts(row, alert)\n",
+  "new": "",
+  "tests": [
+   "tests/test_escalation_reach.py"
+  ]
+ },
+ {
+  "name": "#27: only the primary contact is escalated to, not the secondary",
+  "file": "sentinel/alerts/escalation.py",
+  "old": "        emails = [row[\"alert_email\"], row[\"alert_email_secondary\"]]\n        phones = [row[\"alert_phone\"], row[\"alert_phone_secondary\"]]",
+  "new": "        emails = [row[\"alert_email\"]]\n        phones = [row[\"alert_phone\"]]",
+  "tests": [
+   "tests/test_escalation_reach.py"
+  ]
+ },
+ {
+  "name": "#27: a raising contact router takes the global escalation down with it",
+  "file": "sentinel/alerts/escalation.py",
+  "old": "        except Exception as exc:  # noqa: BLE001 - one path must not cost the other\n            logger.error(\"escalation to the account's own contacts failed: %s\", exc)",
+  "new": "        except Exception:\n            raise",
+  "tests": [
+   "tests/test_escalation_reach.py"
+  ]
+ },
+ {
+  "name": "#27: nobody is told that an escalation happened",
+  "file": "sentinel/alerts/escalation.py",
+  "old": "            self._page_escalated(row)\n",
+  "new": "",
+  "tests": [
+   "tests/test_escalation_reach.py"
+  ]
+ },
+ {
+  "name": "#27: the escalator is constructed without a contact router",
+  "file": "sentinel/cli.py",
+  "old": "                          contact_router=contact_router)",
+  "new": "                          )",
+  "tests": [
+   "tests/test_escalation_reach.py"
+  ]
  }
 ]
