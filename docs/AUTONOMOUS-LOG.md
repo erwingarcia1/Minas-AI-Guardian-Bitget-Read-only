@@ -2630,3 +2630,147 @@ ran, and the poll correctly detected nothing. The test failed for a reason that
 had nothing to do with the code. A harness that pre-seeds the state the test is
 about will keep producing that shape of confusion, so the split is commented
 where it lives.
+
+---
+
+# Session of 2026-08-13 (evening) — Phase 4: #35, #36, #28
+
+Three issues closed from the phase the previous summary called "untouched and
+mostly buildable". It was. None of the three was blocked, and each turned up
+something the issue did not mention.
+
+## Three sessions in one checkout
+
+This session started by colliding with another one. We both implemented #35 in
+`sentinel/portal.py` within minutes of each other; the file briefly held two
+complete alert-history implementations, one of which shadowed the other's
+`_history_filters` by name. Resolved by agreement — the other session removed
+its copy and handed the run over.
+
+Later a **third** session turned out to be editing `sentinel/alerts/` at the
+same time. I found its work mid-edit, in a state that left
+`tests/test_contact_router.py` red, and mistook it for the second session's.
+By the time I asked, it had already fixed itself. I did not touch those files.
+
+Worth recording as a fact about the setup rather than a mistake anyone made:
+**several agents editing one working tree is a lost-update race with no lock,
+and a red test may belong to somebody else's half-finished edit.** Two
+consequences learned the hard way:
+
+- The pre-push hook runs the suite against the **working tree**, not against
+  the commits being pushed. It can go red — or green — for reasons that have
+  nothing to do with what you are pushing. `git push` still only sends commits,
+  so nothing foreign gets published; the risk is a false gate in both
+  directions.
+- Before believing an unexpected failure is yours, check whose it is.
+  `git status`, file mtimes and `ListAgents` answer it in under a minute.
+
+If you run several sessions on one checkout again, give them disjoint files up
+front.
+
+## #35 · Alert history
+
+`/alerts` with filters, `/alerts.csv` for export. Two decisions worth the ink:
+
+**A filter that cannot be understood selects nothing, never everything.** The
+inviting implementation degrades garbage to "no filter" — it feels forgiving,
+and it shows the complete list under a heading claiming a selection. Same
+inversion as the falsy snooze cap, applied to a forensic record. The member
+scope stays an `IN (...)` list inside the query and filters narrow within it,
+so an account id from another customer intersects to nothing rather than
+escaping.
+
+**The CSV defangs formula cells.** The person opening the export is
+investigating an attacker whose withdrawal address can be `=HYPERLINK(...)`.
+And it is not paginated: half a spreadsheet handed to an exchange is worse than
+none.
+
+## #36 · Who has touched my account, and the thing that page cannot show
+
+Most settings changes were recorded nowhere. `sentinel set-contact` could
+rewrite where a customer's alerts go and leave a log line on a box the customer
+cannot read. Recording now sits at the choke points — `set_member_password`,
+`twofactor.confirm_enrolment`/`disable`, `cmd_set_contact` — because a record
+written by the caller is a record the next caller forgets.
+
+**The finding, which a test surfaced and I would not have predicted:**
+changing the alert email hides that change from the person it was taken from.
+Portal scope *is* the contact email, so redirecting the destination removes the
+previous contact's sight of the account along with the record of the change
+that removed them. An attacker who redirects the alerts silently removes the
+evidence from the only page built to reveal it.
+
+I did not widen the portal's scoping to fix it — that is decision 10 and not
+mine to make. The address being removed now gets a notice instead, on the same
+reasoning as the password-change tripwire: the last message it will ever
+receive about that account, sent precisely because nobody may have authorised
+it. Both behaviours are pinned by tests kept side by side so the limit stays
+visible rather than folded away.
+
+Criterion 3 ("cannot be edited or deleted") is not demonstrable by any test of
+a page, so it is checked in the writer: no `UPDATE` or `DELETE` against
+`events` anywhere in `sentinel/` except `retention.py`.
+
+## #28 · "That was me"
+
+The only signal this product can collect about whether its detectors are right,
+from the only person who can know. Three decisions:
+
+**It does not suppress anything.** The tempting version makes "that was me"
+stop the alert too — it reads as helpful, and it is how a customer would
+describe what they want. It would also be one reassuring click turning a
+detector off on the account of somebody who has just said they are not worried.
+A probe holds this.
+
+**It does not claim precision it does not have.** An unmarked alert is
+unjudged, not correct, and most alerts are judged by nobody. A ratio over all
+alerts would let a quiet week of no one looking read as a detector improving —
+the same "absence rendered as reassurance" this log is full of. So the metric
+counts confirmed false positives and `judged_counts` returns its population
+rather than a rate. The operator view shows "3 of 4", never "75%".
+
+**The mark reaches the incident page**, which is the document handed to an
+exchange. It must not describe as a theft something the owner has already
+called their own trading.
+
+An existing test refused to let the new table exist without a retention window.
+That test was written for exactly this and it worked.
+
+## #68 · What running the tests actually does on your machine
+
+`sentinel.cli.main()` calls `load_dotenv()`, and two tests invoke `main()`. So
+running the suite on a machine with a real `.env` loads **every production
+credential into the process for the rest of the run**, and later tests behave as
+if configured. Reproduced: a real SMTP server answered `535` during
+`test_password_reset.py`, and the `/forgot` timing-equality test — the one
+guarding "a stopwatch must not reveal whether an address is a customer" —
+measured 3.07s against 0.35s.
+
+The test was right. What it was reporting was not a regression in the padding
+but that the environment under test was not the environment the padding was
+written for.
+
+**It fails only on a developer's machine with real credentials, and never on
+CI**, which has no `.env`. That inversion — invisible exactly where it is
+dangerous — is why it is p2 and not housekeeping.
+
+Found while chasing what looked like an ordinary flake. Confirmed pre-existing
+by stashing this session's work and reproducing it at the previous commit,
+which is the step worth copying: **before believing your change caused a
+failure, or that it didn't, check.**
+
+Also: `.gitignore` matched `.env` exactly and not `.env.save`, and an untracked
+`.env.save` holding eleven real values was sitting in the root. One `git add
+-A` from being published. Widened to `.env.*`.
+
+## State at the end
+
+`main` green after #35, #36 and #28. #68 is open and unstarted by me; a third
+session had a conftest fix for it in the working tree when I finished, which is
+theirs to land.
+
+Phase 4 still has #38 (system status), #41 (operator alert triage), #46 (delete
+my data, blocked on decision 6) and #17 (per-customer thresholds) open, none of
+them blocked on a decision except #46. #56 — moving alarms to Alertmanager —
+is still the architectural question nobody has opened, and still deserves a
+considered answer rather than a tired one.
