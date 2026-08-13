@@ -61,6 +61,16 @@
 #
 # The floor is set below the measured score to leave room for exactly these:
 # it is a ratchet against decisions *becoming* unpinned, not a target to reach.
+#
+# ## Guards that mutmut cannot generate
+#
+# Design guards - "the account scope is inside the UPDATE", "a failed audit
+# write must not stop the reload", "attribution is required once operators
+# exist" - have no operator to flip, so nothing here covers them. Those are
+# probed by hand with `scripts/mutation-probe.py`, which refuses to believe a
+# result until it has proved the source actually changed. A hand-written
+# mutation that fails to apply passes its tests, which is indistinguishable
+# from a test killing it; that tool exists because this one cannot help.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -124,6 +134,18 @@ KILLED=$(tr '\r' '\n' < "$LOG" | grep -cE "^🎉" || true)
 SURVIVED=$(wc -l < /tmp/mutation-survivors.txt)
 TOTAL=$((KILLED + SURVIVED))
 [ "$TOTAL" -eq 0 ] && { echo "no mutants ran - check $LOG" >&2; exit 2; }
+
+# A selected mutant that never ran is counted nowhere, and a score computed
+# over the ones that did looks exactly like a score over all of them - the same
+# trap as a hand-written mutation that fails to apply (see
+# scripts/mutation-probe.py). A stale name from a regeneration, or a mutmut
+# version that quietly skips what it cannot parse, would otherwise raise the
+# score by shrinking the denominator.
+if [ "$TOTAL" -ne "${#MUTANTS[@]}" ]; then
+  echo "selected ${#MUTANTS[@]} mutants but only $TOTAL ran - the score would be" >&2
+  echo "computed over a subset and read as if it covered all of them. Check $LOG." >&2
+  exit 2
+fi
 SCORE=$(( KILLED * 100 / TOTAL ))
 
 echo

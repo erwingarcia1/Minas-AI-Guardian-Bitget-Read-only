@@ -223,3 +223,31 @@ as **#65**. The floor says nothing about that file either way.
 The mutmut invocation quirks (whole-package `source_paths`, newline-separated
 test selection, the cached `mutants/` copy, unstable mutant numbering) are
 documented at the top of the script so nobody rediscovers them.
+
+### Hand-written probes, and why they need a tool
+
+```bash
+scripts/mutation-probe.py scripts/probes/design-guards.json
+```
+
+mutmut can only mutate what it can parse an operator out of. It cannot express
+"the account scope is inside the `UPDATE`", "a failed audit write must not stop
+the reload", or "attribution is required once operators exist" — design guards
+with no operator to flip. Those get broken by hand instead.
+
+**Never do that with an ad-hoc `sed`.** A pattern that doesn't match, or a
+replacement whose indentation is off by four spaces, changes nothing — and an
+unchanged file passes its tests, which is indistinguishable from a test killing
+the mutant. That is the same failure this whole section exists to prevent, one
+level up: an absence of evidence read as evidence. It has already happened here
+once.
+
+`mutation-probe.py` refuses to run tests until it has proved the file on disk
+changed, requires the pattern to match exactly once, and **fails the run** if
+any probe didn't land. `expect: "survived"` marks a probe you have decided is
+an equivalent mutation; it then fails if a test ever starts killing it, which
+means the equivalence claim has stopped being true.
+
+`scripts/mutation-check.sh` now also fails when fewer mutants ran than were
+selected — a mutant that never ran shrinks the denominator and raises the score
+by not existing.
