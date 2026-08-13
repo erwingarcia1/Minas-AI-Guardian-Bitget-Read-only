@@ -936,5 +936,23 @@
   "tests": [
    "tests/test_customer_email_template.py"
   ]
+ },
+ {
+  "name": "runbook: a step loses its own condition, so a summariser turns advice into an instruction",
+  "file": "sentinel/alerts/base.py",
+  "old": "        \"1. If you did not authorise this, freeze the account in the Bitget app.\",",
+  "new": "        \"1. Freeze the account in the Bitget app.\",",
+  "tests": [
+   "tests/test_customer_email_template.py"
+  ]
+ },
+ {
+  "name": "runbook: the monitoring consequence goes back into the numbered list as an action",
+  "file": "sentinel/alerts/base.py",
+  "old": "    return (\"Note: if you revoked every key, this account is no longer \"",
+  "new": "    return (\"6. If you revoked every key, this account is no longer \"",
+  "tests": [
+   "tests/test_customer_email_template.py"
+  ]
  }
 ]
