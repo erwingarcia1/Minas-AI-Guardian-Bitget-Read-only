@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import base64
+import csv
 import hashlib
 import hmac
 import html
+import io
 import json
 import logging
 import os
@@ -12,7 +14,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import parse_qs, urlparse
+from urllib.parse import parse_qs, urlencode, urlparse
 
 from sentinel.dashboard import (
     _LOCAL_TIME_SCRIPT,
@@ -559,13 +561,14 @@ def _render_home(db: Database, email: str, rules=None) -> str:
         "<th>Status</th><th>Last check</th></tr></thead>"
         f"<tbody>{account_rows}</tbody></table></div></section>"
         '<section><div class="card"><div class="card-head"><h2>Your recent alerts</h2>'
-        '<span class="count">latest 30</span></div>'
+        '<span class="count">latest 30 · <a class="acctlink" href="/alerts">full history ›</a></span></div>'
         "<table><thead><tr><th>Time</th><th>Account</th><th>Severity</th><th>Rule</th>"
         "<th>Acknowledged</th></tr></thead>"
         f"<tbody>{alert_rows}</tbody></table></div></section>"
     )
     nav = (
         f'<span class="live">{html.escape(email)}</span>'
+        '<a class="live" href="/alerts">Alert history</a>'
         '<a class="live" href="/security">Security</a>'
         '<form method="post" action="/logout" style="margin:0">'
         '<button class="live" type="submit" style="cursor:pointer;font-family:inherit">Sign out</button></form>'
@@ -659,6 +662,221 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
     )
     nav = '<a class="live" href="/">← Your accounts</a>'
     return _page(body, nav)
+
+
+# --- alert history (G-31, #35) -----------------------------------------------
+
+_SEVERITIES = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+_HISTORY_PAGE_SIZE = 200
+
+
+def alert_history_rows(db: Database, account_ids: list[int], *,
+                       account: int | None = None, severity: str | None = None,
+                       date_from: str | None = None, date_to: str | None = None,
+                       limit: int | None = None, offset: int = 0):
+    """Alerts on this member's accounts, newest first, optionally narrowed.
+    Returns (rows, total): one page and how many matched in all.
+
+    The member scope is the IN(...) list, and every filter narrows WITHIN it:
+    an `account` value that is not on the list intersects to nothing rather
+    than being ignored. Ignoring an unrecognised filter would show everything
+    under a heading that claims a selection - the same quiet inversion this
+    project keeps finding elsewhere, done to a forensic record.
+
+    Dates arrive as YYYY-MM-DD. `date(?, '+1 day')` makes the "to" day
+    inclusive; on garbage it yields NULL and the comparison matches nothing.
+    Same rule throughout: a filter that cannot be understood selects nothing,
+    never everything."""
+    if not account_ids:
+        return [], 0
+    marks = ",".join("?" for _ in account_ids)
+    where = [f"al.account_id IN ({marks})"]
+    params: list = list(account_ids)
+    if account is not None:
+        where.append("al.account_id = ?")
+        params.append(account)
+    if severity:
+        where.append("al.severity = ?")
+        params.append(severity)
+    if date_from:
+        where.append("al.sent_at >= ?")
+        params.append(date_from)
+    if date_to:
+        where.append("al.sent_at < date(?, '+1 day')")
+        params.append(date_to)
+    clause = " AND ".join(where)
+    with db.cursor() as cur:
+        cur.execute(f"SELECT COUNT(*) AS n FROM alerts al WHERE {clause}", params)
+        total = cur.fetchone()["n"]
+        sql = (
+            "SELECT al.id, al.sent_at, al.severity, al.rule, al.message, al.confidence, "
+            "al.delivered_to, al.acknowledged_at, al.acknowledged_by, ac.label "
+            "FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
+            # id breaks ties: two alerts in the same second must not swap
+            # places between the page and the export.
+            f"WHERE {clause} ORDER BY al.sent_at DESC, al.id DESC"
+        )
+        if limit is not None:
+            sql += " LIMIT ? OFFSET ?"
+            params = [*params, limit, offset]
+        cur.execute(sql, params)
+        rows = cur.fetchall()
+    return rows, total
+
+
+def _history_filters(qs) -> dict:
+    """The submitted filter values, cleaned but not second-guessed."""
+    def one(key: str) -> str:
+        return (qs.get(key) or [""])[0].strip()
+
+    account: int | None = None
+    if one("account"):
+        try:
+            account = int(one("account"))
+        except ValueError:
+            # No account has id -1, so an unparseable id selects nothing -
+            # the dates rule, applied here by hand.
+            account = -1
+    return {
+        "account": account,
+        "severity": one("severity"),
+        "from": one("from"),
+        "to": one("to"),
+    }
+
+
+def _history_query_string(f: dict) -> str:
+    """The current filters as a query string, for the CSV link and paging."""
+    pairs = [(k, v) for k, v in (
+        ("account", f["account"] if f["account"] is not None else ""),
+        ("severity", f["severity"]), ("from", f["from"]), ("to", f["to"]),
+    ) if v not in ("", None)]
+    return urlencode(pairs)
+
+
+def _render_alert_history(db: Database, email: str, qs) -> str:
+    """The searchable history (G-31): every alert, filters, incident links.
+
+    A record, not a control surface: acknowledgement is shown as fact but the
+    buttons live on the pages where the alert is being dealt with. This page
+    answers "what has happened on my accounts", and the incident link is one
+    click away for anything that needs acting on."""
+    accounts = member_accounts(db, email)
+    ids = [r["id"] for r in accounts]
+    f = _history_filters(qs)
+    try:
+        page = max(1, int((qs.get("page") or ["1"])[0]))
+    except ValueError:
+        page = 1
+    rows, total = alert_history_rows(
+        db, ids, account=f["account"], severity=f["severity"],
+        date_from=f["from"], date_to=f["to"],
+        limit=_HISTORY_PAGE_SIZE, offset=(page - 1) * _HISTORY_PAGE_SIZE,
+    )
+
+    account_options = '<option value="">All accounts</option>' + "".join(
+        f'<option value="{r["id"]}"{" selected" if f["account"] == r["id"] else ""}>'
+        f'{html.escape(r["label"])}</option>'
+        for r in accounts
+    )
+    severity_options = '<option value="">All severities</option>' + "".join(
+        f'<option value="{s}"{" selected" if f["severity"] == s else ""}>{s}</option>'
+        for s in _SEVERITIES
+    )
+    query = _history_query_string(f)
+    filter_form = (
+        '<form method="get" action="/alerts" class="addf" '
+        'style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
+        f'<div class="fld"><label>Account</label><select name="account">{account_options}</select></div>'
+        f'<div class="fld"><label>Severity</label><select name="severity">{severity_options}</select></div>'
+        f'<div class="fld"><label>From</label><input type="date" name="from" value="{html.escape(f["from"])}"></div>'
+        f'<div class="fld"><label>To</label><input type="date" name="to" value="{html.escape(f["to"])}"></div>'
+        '<button class="submit" type="submit">Filter</button>'
+        f'<a class="acctlink" href="/alerts.csv{"?" + query if query else ""}">Download CSV ↓</a>'
+        "</form>"
+    )
+
+    def _ack_text(r) -> str:
+        if r["acknowledged_at"]:
+            who = html.escape(r["acknowledged_by"] or "—")
+            return f"<td class='ack-yes'>✓ {who} · {_ts(r['acknowledged_at'])}</td>"
+        return "<td class='ack-no'>not acknowledged</td>"
+
+    alert_rows = "".join(
+        f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
+        f"<td class='lbl'>{html.escape(r['label'])}</td>"
+        f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
+        f"<td class='rule'><a class='acctlink' href='/incident?id={int(r['id'])}'>"
+        f"{html.escape(r['rule'])} ›</a></td>"
+        f"{_ack_text(r)}</tr>"
+        for r in rows
+    ) or "<tr><td colspan=5 class='empty'>No alerts match</td></tr>"
+
+    def _page_link(p: int, label: str) -> str:
+        amp = "&" if query else ""
+        return f"<a class='acctlink' href='/alerts?{query}{amp}page={p}'>{label}</a>"
+
+    pager = ""
+    if total > _HISTORY_PAGE_SIZE:
+        parts = []
+        if page > 1:
+            parts.append(_page_link(page - 1, "‹ Newer"))
+        if page * _HISTORY_PAGE_SIZE < total:
+            parts.append(_page_link(page + 1, "Older ›"))
+        pager = ("<div class='det'><span class='desc'>"
+                 + " · ".join(parts) + "</span></div>")
+
+    body = (
+        '<section><div class="card"><div class="card-head"><h2>Alert history</h2>'
+        f'<span class="count">{total} alert(s)</span></div>'
+        + filter_form +
+        "<table><thead><tr><th>Time</th><th>Account</th><th>Severity</th><th>Rule</th>"
+        "<th>Acknowledged</th></tr></thead>"
+        f"<tbody>{alert_rows}</tbody></table>{pager}</div></section>"
+    )
+    return _page(body, '<a class="live" href="/">← Your accounts</a>')
+
+
+def _csv_defang(value) -> str:
+    """A cell that cannot become a formula.
+
+    A spreadsheet treats a leading =, +, -, @ or tab as code, and this export
+    exists to be opened in one - by exactly the person an =HYPERLINK() in an
+    attacker-influenced field would be aimed at. The quote prefix costs one
+    character of cosmetics on those cells; leaving it off costs whatever the
+    formula does on the customer's machine."""
+    text = "" if value is None else str(value)
+    if text[:1] in ("=", "+", "-", "@", "\t"):
+        return "'" + text
+    return text
+
+
+def _alert_history_csv(db: Database, email: str, qs) -> bytes:
+    """The same history as /alerts, honouring the same filters, every matching
+    row - the export is not paginated, because half a spreadsheet is worse
+    than none."""
+    ids = [r["id"] for r in member_accounts(db, email)]
+    f = _history_filters(qs)
+    rows, _total = alert_history_rows(
+        db, ids, account=f["account"], severity=f["severity"],
+        date_from=f["from"], date_to=f["to"],
+    )
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow([
+        "alert_id", "time_utc", "account", "severity", "rule", "what_we_saw",
+        "confidence", "channels_delivered", "acknowledged_at", "acknowledged_by",
+    ])
+    for r in rows:
+        writer.writerow([
+            r["id"], r["sent_at"], _csv_defang(r["label"]), r["severity"],
+            _csv_defang(r["rule"]), _csv_defang(r["message"]),
+            _csv_defang(r["confidence"]), r["delivered_to"],
+            r["acknowledged_at"] or "", _csv_defang(r["acknowledged_by"]),
+        ])
+    # utf-8-sig: the BOM is what makes Excel read UTF-8 as UTF-8 instead of
+    # mojibake-ing every non-ASCII account label.
+    return buf.getvalue().encode("utf-8-sig")
 
 
 def _incident_balances(db: Database, account_id: int, sent_at: str) -> tuple[list, list]:
@@ -1085,9 +1303,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
         return urlparse(origin).netloc == (handler.headers.get("Host") or "")
 
     class Handler(BaseHTTPRequestHandler):
-        def _send(self, body: bytes, status: int = 200, extra_headers: list[tuple[str, str]] | None = None):
+        def _send(self, body: bytes, status: int = 200, extra_headers: list[tuple[str, str]] | None = None,
+                  content_type: str = "text/html; charset=utf-8"):
             self.send_response(status)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
@@ -1164,6 +1383,17 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             if path == "/":
                 self._send(_render_home(db, email, rules).encode())
+            elif path == "/alerts":
+                qs = parse_qs(urlparse(self.path).query)
+                self._send(_render_alert_history(db, email, qs).encode())
+            elif path == "/alerts.csv":
+                qs = parse_qs(urlparse(self.path).query)
+                self._send(
+                    _alert_history_csv(db, email, qs),
+                    content_type="text/csv; charset=utf-8",
+                    extra_headers=[("Content-Disposition",
+                                    'attachment; filename="minas-alert-history.csv"')],
+                )
             elif path == "/incident":
                 qs = parse_qs(urlparse(self.path).query)
                 try:

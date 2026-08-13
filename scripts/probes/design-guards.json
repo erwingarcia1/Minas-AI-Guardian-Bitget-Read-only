@@ -676,5 +676,45 @@
   "tests": [
    "tests/test_portal_two_factor_login.py"
   ]
+ },
+ {
+  "name": "#35 ATTACK escape the member scope: the history query drops the IN list",
+  "file": "sentinel/portal.py",
+  "old": "where = [f\"al.account_id IN ({marks})\"]",
+  "new": "where = [\"1=1\"]",
+  "tests": [
+   "tests/test_portal_alert_history.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#35 an unparseable account filter degrades to 'no filter' and shows everything",
+  "file": "sentinel/portal.py",
+  "old": "            account = -1",
+  "new": "            account = None",
+  "tests": [
+   "tests/test_portal_alert_history.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#35 ATTACK CSV defang removed: formula cells reach the spreadsheet live",
+  "file": "sentinel/portal.py",
+  "old": "if text[:1] in (\"=\", \"+\", \"-\", \"@\", \"\\t\"):",
+  "new": "if False:",
+  "tests": [
+   "tests/test_portal_alert_history.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#35 the export paginates: only the first page leaves the building",
+  "file": "sentinel/portal.py",
+  "old": "    rows, _total = alert_history_rows(\n        db, ids, account=f[\"account\"], severity=f[\"severity\"],\n        date_from=f[\"from\"], date_to=f[\"to\"],\n    )",
+  "new": "    rows, _total = alert_history_rows(\n        db, ids, account=f[\"account\"], severity=f[\"severity\"],\n        date_from=f[\"from\"], date_to=f[\"to\"],\n        limit=_HISTORY_PAGE_SIZE,\n    )",
+  "tests": [
+   "tests/test_portal_alert_history.py"
+  ],
+  "expect": "killed"
  }
 ]
