@@ -185,6 +185,55 @@ rotation procedure before enforcing it.
   DB is useless to a thief without the master key, but you still need it to
   restore service.
 
+## Email authentication (SPF, DKIM, DMARC)
+
+Alerts are sent through Resend from `minastrade.com`. The DNS side is set up
+and verified: DKIM at `resend._domainkey`, SPF on the `send.` subdomain, and a
+custom return path so bounces are handled.
+
+**Why this matters more here than for most products.** We train customers to
+act on an email that says their funds may be moving. A forged one is close to a
+perfect phishing lure against exactly the people we have taught to respond
+quickly, and the whole defence is that a forgery cannot authenticate as us.
+
+Two gaps, both open:
+
+**1. DMARC reports go nowhere we read.** The current record is
+
+```
+v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=mailto:dmarc_rua@onsecureserver.net;
+```
+
+`onsecureserver.net` is the registrar's address, not ours, so we have no
+visibility into who is sending as our domain. Change `rua` to a mailbox we
+monitor — a dedicated one, since the reports are bulky XML sent daily by every
+receiving provider:
+
+```
+v=DMARC1; p=quarantine; adkim=r; aspf=r; rua=mailto:dmarc@minastrade.com; fo=1;
+```
+
+**2. The policy is `quarantine`, not `reject`.** Quarantine means a forgery
+lands in spam, where a customer can still find it and act on it. Reject means
+it is refused at the door. The ramp, in order:
+
+1. Point `rua` at a mailbox we read (above).
+2. Watch reports for **at least two weeks** — long enough to catch monthly
+   senders such as invoicing or a newsletter tool.
+3. Confirm every legitimate source passes: today that is Resend (alerts) and
+   Microsoft 365 via GoDaddy (`include:secureserver.net`, human mail).
+4. Only then move `p=quarantine` → `p=reject`.
+
+Do not skip step 2. Moving to `reject` while a legitimate sender still fails
+alignment means that sender's mail is silently refused, and the failure looks
+like "the customer never replied" rather than like a DNS problem.
+
+**Note the coupling:** the root domain's SPF (`include:secureserver.net -all`)
+does *not* include Resend. That is correct only while Resend sends from the
+`send.` subdomain via the custom return path. If that return path is ever
+turned off, SPF hard-fails immediately — and under `p=reject` the alerts stop
+being delivered at all rather than landing in spam.
+
 ## Alibaba Cloud specifics (alternative path)
 
 - ECS instance + EIP; security group allows nothing inbound except SSH from
