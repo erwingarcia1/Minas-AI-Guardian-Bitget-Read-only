@@ -213,12 +213,25 @@ the coverage floor: set from measured reality, never lowered, raised whenever it
 improves.
 
 **Known blind spot:** a module with no conditionals produces no decision-point
-mutants at all. `detectors/withdrawal.py` is the case — a straight-line
-`Detection` builder whose unrestricted survival rate is the worst in the
-codebase (62.7%), and which this tool reports nothing for. Its mutations are
-evidence-key and message changes, and those matter because
-`dispatch._dedup_key` reads `evidence["order_id"]`. Cover it by hand — tracked
-as **#65**. The floor says nothing about that file either way.
+mutants at all, and the silence reads like coverage. `detectors/withdrawal.py`
+is the case — a straight-line `Detection` builder on the CRITICAL money-leaving
+path. Its mutations are evidence-key and message changes, which the restricted
+run discards as cosmetic and which are nothing of the kind: `dispatch._dedup_key`
+reads `evidence["order_id"]` to decide whether two withdrawals are one.
+
+Covered by hand under **#65**, and measured with `scripts/mutation-module.sh`,
+which runs an *unrestricted* mutation score over a single module:
+
+```bash
+scripts/mutation-module.sh sentinel/detectors/withdrawal.py \
+    tests/test_detectors_withdrawal.py tests/test_withdrawal_evidence.py \
+    tests/test_dispatch.py tests/test_detector_wiring.py
+```
+
+59 mutants: **40 survived (67.8%) before, 0 survived (0.0%) after**. The
+decision-point floor did not move and cannot — it counts mutants this module
+does not produce. Use this script when auditing one file deeply; it is manual
+by design and not in CI.
 
 The mutmut invocation quirks (whole-package `source_paths`, newline-separated
 test selection, the cached `mutants/` copy, unstable mutant numbering) are

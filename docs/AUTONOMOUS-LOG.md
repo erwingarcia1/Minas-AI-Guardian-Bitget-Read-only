@@ -2441,3 +2441,76 @@ One probe legitimately survived: after the zero-cap guard was added, the earlier
 `hours <= 0` check became redundant. That is dead code, not a missing test, so
 the fix was to collapse the two guards rather than to write a test for an
 unreachable branch.
+
+---
+
+## #65 · withdrawal.py by hand
+
+The module the tooling cannot see, on the path where money leaves.
+
+### How I measured it
+
+`scripts/mutation-module.sh` (new) runs an **unrestricted** mutation score over
+one module against a chosen test selection — every mutant mutmut generates, not
+just decision points. Same mutant set before and after, so the numbers compare:
+
+| | mutants | survived | rate |
+|---|---|---|---|
+| before — `test_detectors_withdrawal.py` alone | 59 | 40 | **67.8%** |
+| after — plus `test_withdrawal_evidence.py` | 59 | 0 | **0.0%** |
+
+The decision-point floor did not move and cannot: `withdrawal.py` has no
+conditionals, so it produces none of the mutants that floor counts. That is the
+whole reason this issue existed — the silence read like coverage.
+
+### The method, since the tool could not supply one
+
+Field by field down the evidence dict, asking what a wrong or missing value
+costs. That framing is what produced the tests; the table is in the test file's
+docstring.
+
+`order_id` is the consequential one. `_dedup_key` **skips** evidence fields
+that are None, so an empty `order_id` does not fail — it silently *widens* the
+dedup identity to coin plus address. Two withdrawals become one alert and the
+second is suppressed for a full CRITICAL cooldown. That is G-11's shape, and
+G-11's fix was to put a derived identity in that field. Nothing had ever pinned
+that the derived identity actually distinguishes two withdrawals, which is the
+only reason it is there.
+
+### A defect found, filed not fixed: #67
+
+Two withdrawals with **no reference and no timestamp** collide. The digest
+falls back to coin, amount, address, tag, network, type, timestamp — with the
+timestamp also absent, two separate withdrawals of the same amount to the same
+address share one identity, and `record_seen_withdrawal` swallows the second.
+Nothing logs it, nothing counts it, no operator page. I checked `identity.py`,
+`baseline.py` and `poller.py`.
+
+`withdrawal_identity`'s docstring already describes this and calls it a format
+breakage "an operator should be looking at directly". Nobody is looking at it.
+A documented silent failure is still a silent failure — the documentation is
+not a notification.
+
+And the framing understates it. The docstring reasons about *accidental*
+collision. But coin, amount and address are exactly what an attacker draining
+an account in equal instalments to one destination repeats. It is not a
+coincidence to estimate, it is a pattern to expect.
+
+Filed as #67, p1, Phase 1. **Not fixed here**: the fix is in
+`identity.py`/`baseline.py`, outside #65's scope, and the sensible options
+trade against each other (option 2 stops the collision and can reintroduce
+repeat-paging). Marked in the suite with a `strict=True` xfail so fixing it
+turns the test red — which is the signal to delete the marker. A docstring
+comment would not have done that.
+
+### Both mutation scripts aborted on a perfect score
+
+`grep` exits 1 when it matches nothing. The survivor list is a grep. Under
+`set -o pipefail` the run died at exactly the moment every mutant was killed,
+printing no number at all.
+
+Latent in `mutation-check.sh` since I wrote it, and it would have fired the
+first time any run reached 100%. Found only because this module was the first
+to get there. Worth remembering: the failure mode of a measurement tool is
+often the extreme of its own scale, which is the one case nobody writes a test
+for.

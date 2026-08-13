@@ -129,7 +129,11 @@ echo "Decision-point mutants: ${#MUTANTS[@]}"
 
 LOG=$(mktemp)
 "$MUTMUT" run --max-children 6 "${MUTANTS[@]}" > "$LOG" 2>&1 || true
-tr '\r' '\n' < "$LOG" | grep -E "^🙁" | sed 's/^🙁 //' | sort > /tmp/mutation-survivors.txt
+# `|| true` because grep exits 1 on no match, and no match here means zero
+# survivors - a perfect score. Under `set -o pipefail` that aborted the run
+# just as it succeeded completely, so this gate would have failed on the one
+# result nobody would think to test for.
+{ tr '\r' '\n' < "$LOG" | grep -E "^🙁" || true; } | sed 's/^🙁 //' | sort > /tmp/mutation-survivors.txt
 KILLED=$(tr '\r' '\n' < "$LOG" | grep -cE "^🎉" || true)
 SURVIVED=$(wc -l < /tmp/mutation-survivors.txt)
 TOTAL=$((KILLED + SURVIVED))

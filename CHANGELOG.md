@@ -14,6 +14,30 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
+- **`detectors/withdrawal.py` covered by hand (#65).** The CRITICAL
+  money-leaving path, and the module the automated mutation check is
+  structurally blind to: it has no conditionals, so it produces no
+  decision-point mutants and the silence read like coverage.
+
+  Unrestricted mutation score over the module alone, via the new
+  `scripts/mutation-module.sh`: **59 mutants, 40 surviving (67.8%) before, 0
+  surviving (0.0%) after.** The automated floor did not move and cannot.
+
+  The tests work down the evidence dict field by field, asking what a wrong or
+  missing value costs. `order_id` is the one that matters: `_dedup_key` skips
+  evidence fields that are `None`, so an empty `order_id` silently *widens* the
+  dedup identity rather than failing — two withdrawals become one alert and the
+  second is suppressed for a whole CRITICAL cooldown. That is G-11's shape, and
+  nothing had pinned that the derived identity introduced to fix G-11 actually
+  distinguishes two withdrawals.
+
+### Fixed
+- **Both mutation scripts aborted on a perfect score.** `grep` exits 1 when it
+  matches nothing, and "nothing" here is the survivor list — so under
+  `set -o pipefail` the run died at exactly the moment every mutant was killed,
+  printing no number. Found by being the first module to reach zero.
+
+### Added
 - **Snooze caps are per severity (G-26, #30, decision 8 answered).** CRITICAL
   1 hour, HIGH 4 hours, MEDIUM and LOW 24 hours, in
   `alerting.snooze_cap_hours`.
