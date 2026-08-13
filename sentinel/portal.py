@@ -23,7 +23,7 @@ from sentinel.dashboard import (
 from sentinel.db import Database
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
 from sentinel.passwords import LoginThrottle
-from sentinel.snooze import SNOOZE_CHOICES, active_snoozes_for_accounts, snooze_alert
+from sentinel.snooze import active_snoozes_for_accounts, snooze_alert, snooze_choices
 
 logger = logging.getLogger("sentinel.portal")
 
@@ -219,7 +219,7 @@ def _member_alert(db: Database, alert_id: int, account_ids: list[int]):
     marks = ",".join("?" for _ in account_ids)
     with db.cursor() as cur:
         cur.execute(
-            f"SELECT id, account_id, rule, dedup_key FROM alerts "
+            f"SELECT id, account_id, rule, dedup_key, severity FROM alerts "
             f"WHERE id = ? AND account_id IN ({marks})",
             [alert_id, *account_ids],
         )
@@ -282,7 +282,7 @@ def _time_to_acknowledge(sent_at: str | None, acknowledged_at: str | None) -> st
     return f"{seconds // 86400}d {(seconds % 86400) // 3600}h"
 
 
-def _snooze_control(row, snoozed_until: str | None) -> str:
+def _snooze_control(row, snoozed_until: str | None, rules=None) -> str:
     """A snooze offer, or the silence already in force.
 
     Shown only while the alert is unacknowledged: once someone has said they
@@ -291,9 +291,10 @@ def _snooze_control(row, snoozed_until: str | None) -> str:
     twice."""
     if snoozed_until:
         return f"<div class='snoozed'>Snoozed until {_ts(snoozed_until)}</div>"
-    options = "".join(
-        f"<option value='{h}'>{h}h</option>" for h in SNOOZE_CHOICES
-    )
+    choices = snooze_choices(row["severity"], rules)
+    if not choices:
+        return ""  # a zero cap: this severity cannot be snoozed
+    options = "".join(f"<option value='{h}'>{h}h</option>" for h in choices)
     return (
         "<form method='post' action='/snooze' style='margin:6px 0 0'>"
         f"<input type='hidden' name='alert_id' value=\"{int(row['id'])}\">"
@@ -302,7 +303,7 @@ def _snooze_control(row, snoozed_until: str | None) -> str:
     )
 
 
-def _ack_cell(row, snoozed_until: str | None = None) -> str:
+def _ack_cell(row, snoozed_until: str | None = None, rules=None) -> str:
     """The acknowledgement column: who and how long if it's done, a button if
     it isn't. One tap, from the row the alert is on."""
     if row["acknowledged_at"]:
@@ -314,7 +315,7 @@ def _ack_cell(row, snoozed_until: str | None = None) -> str:
         "<td class='ack-no'><form method='post' action='/acknowledge' style='margin:0'>"
         f"<input type='hidden' name='alert_id' value=\"{int(row['id'])}\">"
         "<button class='ackbtn' type='submit'>Acknowledge</button></form>"
-        f"{_snooze_control(row, snoozed_until)}</td>"
+        f"{_snooze_control(row, snoozed_until, rules)}</td>"
     )
 
 
@@ -335,7 +336,7 @@ def _render_login(error: str | None = None) -> str:
     return _page(body)
 
 
-def _render_home(db: Database, email: str) -> str:
+def _render_home(db: Database, email: str, rules=None) -> str:
     accounts = member_accounts(db, email)
     ids = [r["id"] for r in accounts]
     alerts = []
@@ -365,7 +366,7 @@ def _render_home(db: Database, email: str) -> str:
         f"<td class='lbl'>{html.escape(r['label'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
         f"<td class='rule'>{html.escape(r['rule'])}</td>"
-        f"{_ack_cell(r, snoozed.get(r['dedup_key']))}</tr>"
+        f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules)}</tr>"
         for r in alerts
     ) or "<tr><td colspan=5 class='empty'>No alerts — all quiet</td></tr>"
 
@@ -389,7 +390,7 @@ def _render_home(db: Database, email: str) -> str:
     return _page(body, nav)
 
 
-def _render_member_account(db: Database, email: str, account_id: int) -> str | None:
+def _render_member_account(db: Database, email: str, account_id: int, rules=None) -> str | None:
     """Account detail, only if this account belongs to the member. Returns
     None (rendered as not-found) otherwise - existence is never revealed."""
     rows = {r["id"]: r for r in member_accounts(db, email)}
@@ -451,7 +452,7 @@ def _render_member_account(db: Database, email: str, account_id: int) -> str | N
         f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
         f"<td class='rule'>{html.escape(r['rule'])}</td>"
-        f"{_ack_cell(r, snoozed.get(r['dedup_key']))}</tr>"
+        f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules)}</tr>"
         for r in alerts
     ) or "<tr><td colspan=4 class='empty'>No alerts — all quiet</td></tr>"
 
@@ -485,7 +486,8 @@ def _render_not_found() -> str:
 
 # --- server ------------------------------------------------------------------
 
-def serve_portal(db: Database, port: int, host: str = "127.0.0.1") -> ThreadingHTTPServer:
+def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
+                 rules=None) -> ThreadingHTTPServer:
     """Customer-facing member portal.
 
     Unlike the ops dashboard this one has its own login and is *meant* to be
@@ -547,14 +549,14 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1") -> ThreadingH
                 self._send(_render_login().encode())
                 return
             if path == "/":
-                self._send(_render_home(db, email).encode())
+                self._send(_render_home(db, email, rules).encode())
             elif path == "/account":
                 qs = parse_qs(urlparse(self.path).query)
                 try:
                     aid = int(qs.get("id", ["0"])[0])
                 except ValueError:
                     aid = 0
-                page = _render_member_account(db, email, aid)
+                page = _render_member_account(db, email, aid, rules)
                 if page is None:
                     self._send(_render_not_found().encode(), 404)
                 else:
@@ -623,7 +625,8 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1") -> ThreadingH
                 return
 
             snooze_alert(db, alert["account_id"], alert["dedup_key"], alert["rule"],
-                         hours, requested_by=normalize_email(email))
+                         hours, requested_by=normalize_email(email),
+                         severity=alert["severity"], rules=rules)
             self._redirect(f"/account?id={alert['account_id']}")
 
         def do_POST(self):

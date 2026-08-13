@@ -2405,3 +2405,39 @@ suite that caught it. Assert the mutation landed before believing the result.
 `settings_diff` compares stringified values on purpose. The two sides come from
 separate YAML loads, so `Decimal("15")` and `Decimal("15.0")` are the same
 threshold and must not read as a change.
+
+---
+
+## Decision 8 answered: per-severity snooze caps
+
+CRITICAL 1h, HIGH 4h, MEDIUM/LOW 24h, in `alerting.snooze_cap_hours` and fully
+wired — `serve_portal` takes `rules` and passes it to `snooze_alert`, with a
+test pinning that call site, because a config value the code never reads is the
+same defect as no config.
+
+### Two bugs found while building it, both by my own tests and probes
+
+**A falsy sentinel, in code I had just written.** `if configured:` made a cap of
+`0` — "this severity cannot be snoozed", which is a legitimate setting —
+indistinguishable from "not configured", so it silently fell back to the
+built-in one-hour cap and re-enabled the suppression an owner had turned off.
+Fifth instance of this pattern in this codebase, and the first one I have
+caught in my own code before committing rather than after. `is not None`.
+
+**A `0h` button.** With a zero cap, `snooze_choices` fell through its
+`or (cap,)` fallback and offered a duration of zero — a control that submits
+and is then refused, which is worse than no control. Found because a stale
+probe forced me to look at that function again.
+
+### The probe tool paid for itself immediately
+
+21 standing probes in `scripts/probes/design-guards.json`, covering the guards
+mutmut structurally cannot express. On the first full run one probe reported
+**DID NOT LAND** — it referenced comment text I had just rewritten. Under the
+old `sed` approach that would have printed as a pass. Chasing it is what
+surfaced the `0h` button.
+
+One probe legitimately survived: after the zero-cap guard was added, the earlier
+`hours <= 0` check became redundant. That is dead code, not a missing test, so
+the fix was to collapse the two guards rather than to write a test for an
+unreachable branch.

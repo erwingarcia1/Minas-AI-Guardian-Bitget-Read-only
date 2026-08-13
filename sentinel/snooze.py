@@ -35,23 +35,72 @@ from sentinel.db import Database
 
 logger = logging.getLogger("sentinel.snooze")
 
-# The longest any snooze may run. 24 hours because that is the digest cadence:
-# no snooze outlives the next summary the customer receives, so a silenced
-# alert cannot pass out of view entirely without at least one scheduled moment
-# where the account is reported on again.
+# The longest a snooze may run, per severity (decision 8, answered
+# 2026-08-13). Overridable under `alerting.snooze_cap_hours`.
 #
-# Whether a CRITICAL should be snoozable for the same length as a LOW is a
-# product decision, not an engineering one, and is logged in
-# docs/DECISIONS-NEEDED.md rather than guessed at here.
-MAX_SNOOZE_HOURS = 24
+# The reasoning, because the numbers are meaningless without it: acknowledging
+# already stops escalation and already says "I have seen this". A snooze only
+# suppresses *repeats*, so the only legitimate reason to suppress repeats of a
+# CRITICAL is that you are dealing with it right now - which is a short window
+# by definition. A drain unfolds over minutes to hours, so a 24-hour CRITICAL
+# snooze is long enough for the rest of one to finish in silence. Re-snoozing
+# costs one tap and forces a fresh decision, which is the right friction to put
+# in front of continuing to ignore a CRITICAL.
+#
+# The 24 on MEDIUM and LOW is the digest cadence: no snooze outlives the next
+# summary the customer receives.
+SNOOZE_CAP_HOURS = {"CRITICAL": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 24}
 
-# Offered in the portal. Kept short deliberately: the useful snooze is "I am on
-# the phone to the exchange right now", not "leave me alone until tomorrow".
-SNOOZE_CHOICES = (1, 4, MAX_SNOOZE_HOURS)
+# A severity this code does not recognise gets the *shortest* cap, not the
+# longest. For a feature whose purpose is suppression, the only safe direction
+# to fail in is towards less of it.
+UNKNOWN_SEVERITY_CAP_HOURS = min(SNOOZE_CAP_HOURS.values())
+
+# Still the ceiling over every severity - the "no permanent mute" bound.
+MAX_SNOOZE_HOURS = max(SNOOZE_CAP_HOURS.values())
+
+# Durations offered in the portal, filtered by the severity's cap. Offering a
+# 24h option on a CRITICAL that would be silently clamped to 1h tells the
+# customer something untrue about what they just did.
+_OFFERED_HOURS = (1, 4, 24)
+
+
+def cap_hours(severity: str | None, rules=None) -> float:
+    """The ceiling for this severity. `rules` overrides the built-in table so
+    the caps are tunable without a deploy (G-12) and every change to them is
+    recorded against a name (#16)."""
+    if rules is not None and severity:
+        # `is not None`, not truthiness. A configured cap of 0 means "this
+        # severity cannot be snoozed at all" - decision 8's option 3 - and
+        # `if configured:` would read that deliberate zero as "not set" and
+        # hand back the built-in cap instead. That is the falsy-sentinel
+        # pattern in CONTRIBUTING.md, and it would silently re-enable exactly
+        # the suppression an owner had turned off.
+        configured = rules.get("alerting", "snooze_cap_hours", severity, default=None)
+        if configured is not None:
+            return float(configured)
+    if severity not in SNOOZE_CAP_HOURS:
+        return float(UNKNOWN_SEVERITY_CAP_HOURS)
+    return float(SNOOZE_CAP_HOURS[severity])
+
+
+def snooze_choices(severity: str | None, rules=None) -> tuple:
+    """Durations worth offering for this severity - never more than its cap,
+    and never empty."""
+    cap = cap_hours(severity, rules)
+    if cap <= 0:
+        # This severity cannot be snoozed. Empty, not `(0,)` - the `or (cap,)`
+        # fallback below exists so an unusually small cap still offers itself,
+        # and without this guard it would dutifully offer a "0h" button that
+        # `snooze_alert` then refuses.
+        return ()
+    offered = tuple(h for h in _OFFERED_HOURS if h <= cap)
+    return offered or (cap,)
 
 
 def snooze_alert(
-    db: Database, account_id: int, dedup_key: str, rule: str, hours: float, requested_by: str
+    db: Database, account_id: int, dedup_key: str, rule: str, hours: float, requested_by: str,
+    severity: str | None = None, rules=None,
 ):
     """Record a snooze and return its row, or None if `hours` isn't a duration.
 
@@ -60,9 +109,21 @@ def snooze_alert(
     honour, and letting it through writes a row that is already expired -
     harmless today, and exactly the sort of already-in-the-past row that reads
     as a mute the moment some comparison is written the other way round."""
-    if hours is None or hours <= 0:
+    try:
+        hours = min(float(hours), cap_hours(severity, rules))
+    except (TypeError, ValueError):
         return None
-    hours = min(float(hours), MAX_SNOOZE_HOURS)
+    if hours <= 0:
+        # Two ways to land here, both refusals. The customer asked for no time
+        # at all - "snooze for zero hours" is not a request worth honouring -
+        # or this severity's configured cap is 0, meaning it cannot be snoozed
+        # (decision 8's option 3). Either way, returning None says so, rather
+        # than writing a row that expired the instant it was created. An
+        # already-expired snooze is harmless today and reads as a mute the
+        # moment some comparison is written the other way round.
+        logger.info("snooze refused: %s on account %d, %s hours at %s",
+                    rule, account_id, hours, severity or "unknown severity")
+        return None
     now = datetime.now(timezone.utc)
     expires_at = (now + timedelta(hours=hours)).isoformat()
     with db.cursor() as cur:
@@ -73,8 +134,8 @@ def snooze_alert(
         )
         snooze_id = cur.lastrowid
     logger.info(
-        "snooze: %s on account %d silenced by %s until %s",
-        rule, account_id, requested_by, expires_at,
+        "snooze: %s (%s) on account %d silenced by %s until %s",
+        rule, severity or "unknown severity", account_id, requested_by, expires_at,
     )
     with db.cursor() as cur:
         cur.execute("SELECT * FROM snoozes WHERE id = ?", (snooze_id,))

@@ -138,6 +138,9 @@ SPEC: dict = {
         # Zero cooldown means never suppress a repeat — noisy, but a choice an
         # operator is entitled to make.
         "cooldown_minutes": {sev: NON_NEGATIVE for sev in SEVERITIES},
+        # Longest a customer may silence each severity (#30, decision 8).
+        # 0 means that severity cannot be snoozed at all.
+        "snooze_cap_hours": {sev: NON_NEGATIVE for sev in SEVERITIES},
         "escalation_unacknowledged_minutes": POSITIVE,
         "unreachable_repeat_minutes": POSITIVE,
         "sms_cooldown_minutes": NON_NEGATIVE,
@@ -241,6 +244,7 @@ DEFAULTS: dict = {
             "LOW": ["digest"],
         },
         "cooldown_minutes": {"CRITICAL": 15, "HIGH": 30, "MEDIUM": 720, "LOW": 1440},
+        "snooze_cap_hours": {"CRITICAL": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 24},
         "escalation_unacknowledged_minutes": 15,
         "unreachable_repeat_minutes": 1440,
         "sms_cooldown_minutes": 30,

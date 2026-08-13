@@ -333,66 +333,48 @@ one you should assume is broken.
 
 ---
 
-## 8. How long may a customer silence a CRITICAL? (G-26, #30)
+## 8. How long may a customer silence a CRITICAL? — **ANSWERED 2026-08-13**
 
-Snooze is built and shipped. The mechanism is decided and safe: a snooze is
-keyed on the specific alert rather than the rule, expires without exception,
-and withholds only the delivery — the detection still runs and the alert still
-appears in the portal. What is **not** decided is whether a CRITICAL should be
-snoozable for as long as everything else.
+**Answer: CRITICAL 1 hour, HIGH 4 hours, MEDIUM and LOW 24 hours.** Shipped.
 
-Today every severity shares one cap of 24 hours. That number is derived rather
-than picked: it is the digest cadence, so no snooze outlives the next summary
-the customer receives. That derivation is honest for a MEDIUM. For a CRITICAL
-it is an assumption I am not entitled to make.
+### The reasoning, recorded because the numbers are meaningless without it
 
-### The concrete risk
+Acknowledging already stops escalation and already says "I have seen this". A
+snooze only suppresses **repeats**. So the only legitimate reason to suppress
+repeats of a CRITICAL is that you are dealing with it *right now* — which is a
+short window by definition.
 
-A customer sees "BTC balance dropped by 4 and only 1 is explained", recognises
-it as their own transfer, and snoozes for 24 hours. The dedup key includes the
-coin, so a drop in a *different* coin still alerts, and a withdrawal to a
-*different* address still alerts. But a continuing drain of the same coin
-produces the same key — and stays silent for the rest of the day.
+A drain unfolds over minutes to hours. At 24 hours, a CRITICAL snooze is long
+enough for the rest of one to finish in silence. Re-snoozing costs one tap and
+forces a fresh decision, which is the right friction to put in front of
+continuing to ignore a CRITICAL.
 
-That is the feature working exactly as specified. It is also the single worst
-sentence that could appear in an incident review.
+The 24 on MEDIUM and LOW keeps the original derivation: it is the digest
+cadence, so no snooze outlives the next summary the customer receives.
 
-### Options
+### Where it lives
 
-1. **Leave it at 24 hours for every severity.** Simplest, and it trusts the
-   customer's own judgement about their own account — which is, after all,
-   the premise of the button.
-2. **A shorter cap for CRITICAL** (one hour, say) with the longer cap for
-   everything else. Matches how the feature is actually used: the useful
-   snooze on a CRITICAL is "I am on the phone to the exchange right now", not
-   "leave me alone until tomorrow".
-3. **CRITICAL cannot be snoozed at all.** Acknowledgement already exists for
-   "I have seen this", and it already stops escalation. Under this option a
-   customer can stop the *repeat* but never the *first* delivery of the most
-   serious class.
-4. **Snooze a CRITICAL, but page the operator** when one is snoozed. Keeps
-   the customer's control and removes the silence-with-nobody-watching
-   property. Costs an operator page per snooze.
+`alerting.snooze_cap_hours` in `config/rules.yaml`, so the caps are tunable
+without a deploy (G-12) and every change to them is now recorded against a name
+(#16). `sentinel/snooze.py` carries the same table as the built-in fallback.
 
-### Recommendation
+A configured cap of **0** means that severity cannot be snoozed at all — option
+3 from the original writeup, still available without a code change. That
+required care: 0 is a falsy value standing for a real decision, so the lookup
+uses `is not None` rather than truthiness. Read the other way, a deliberate
+zero looks like "not set" and the built-in one-hour cap comes back, silently
+re-enabling the suppression the owner had turned off. That is the falsy-sentinel
+pattern in CONTRIBUTING.md, and it is pinned by a probe.
 
-**2, at one hour, with 4 as a fast follow.** A CRITICAL snooze is a
-minutes-to-an-hour action by its nature, and a cap that matches how the thing
-is really used costs the customer nothing. Option 4 is the one that actually
-removes the risk rather than shortening it, but it needs the operator paging
-volume to be understood first.
+An unrecognised severity gets the **shortest** cap, not the longest: for a
+feature whose purpose is suppression, the only safe direction to fail in is
+towards less of it.
 
-I did not implement 2 unilaterally: picking a shorter number for CRITICAL is
-choosing a security-relevant duration by feel, which is exactly the case the
-working rules say to bring here instead of guessing. The cap lives in
-`sentinel/snooze.py` as `MAX_SNOOZE_HOURS` and moving it is a one-line change
-once the number is chosen.
+### Still open, smaller
 
-### Also undecided, smaller
-
-The durations offered in the dropdown are 1h / 4h / 24h. Same species of
-question as G-23's escalation timings, and same answer needed from real usage
-rather than from this file.
+The durations offered in the dropdown are 1h / 4h / 24h, filtered by the
+severity's cap. Same species of question as G-23's escalation timings, and same
+answer needed from real usage rather than from this file.
 
 ---
 

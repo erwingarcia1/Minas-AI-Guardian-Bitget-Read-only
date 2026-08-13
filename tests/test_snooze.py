@@ -281,3 +281,144 @@ def test_a_snooze_records_who_asked_for_it_and_until_when(db):
     assert row["rule"] == "withdrawal_initiated"
     assert datetime.fromisoformat(row["expires_at"]) > datetime.now(timezone.utc)
     assert datetime.fromisoformat(row["created_at"]) <= datetime.now(timezone.utc)
+
+
+# --- the cap depends on how bad the thing is (decision 8) ----------------------
+
+
+@pytest.mark.parametrize("severity,cap", [
+    ("CRITICAL", 1), ("HIGH", 4), ("MEDIUM", 24), ("LOW", 24),
+])
+def test_the_cap_is_per_severity(db, severity, cap):
+    """Acknowledge already stops escalation and says "I have seen this". A
+    snooze only suppresses repeats, and the only legitimate reason to suppress
+    repeats of a CRITICAL is that you are dealing with it *right now* — which
+    is a short window by definition.
+
+    A drain unfolds over minutes to hours. At 24 hours a CRITICAL snooze is
+    long enough for the rest of one to finish in silence. Re-snoozing costs one
+    tap and forces a fresh decision, which is the right friction to put in
+    front of continuing to ignore a CRITICAL."""
+    account_id = make_account(db)
+    before = datetime.now(timezone.utc)
+
+    row = snooze_alert(db, account_id, "k", "withdrawal_initiated",
+                       hours=24 * 3650, requested_by="alice@example.com", severity=severity)
+
+    expires = datetime.fromisoformat(row["expires_at"])
+    assert expires <= before + timedelta(hours=cap) + timedelta(seconds=5)
+    # And the cap is not silently the same for everything: a CRITICAL snooze
+    # must be strictly shorter than a MEDIUM one.
+    if severity == "CRITICAL":
+        assert expires < before + timedelta(hours=2)
+
+
+def test_an_unknown_severity_gets_the_shortest_cap(db):
+    """A severity this code does not recognise is not a reason to grant the
+    longest silence available. Failing towards *less* suppression is the only
+    safe direction for a feature whose purpose is suppression."""
+    account_id = make_account(db)
+    before = datetime.now(timezone.utc)
+
+    row = snooze_alert(db, account_id, "k", "some_rule",
+                       hours=24, requested_by="alice@example.com", severity="WEIRD")
+
+    assert datetime.fromisoformat(row["expires_at"]) <= before + timedelta(hours=1, seconds=5)
+
+
+def test_a_duration_within_the_cap_is_honoured_exactly(db):
+    """The cap is a ceiling, not a setting. Asking for one hour on a MEDIUM
+    gives one hour, not 24."""
+    account_id = make_account(db)
+    before = datetime.now(timezone.utc)
+
+    row = snooze_alert(db, account_id, "k", "abnormal_fee_spend",
+                       hours=1, requested_by="alice@example.com", severity="MEDIUM")
+
+    expires = datetime.fromisoformat(row["expires_at"])
+    assert timedelta(minutes=59) <= expires - before <= timedelta(hours=1, seconds=5)
+
+
+def test_the_portal_offers_no_duration_beyond_the_severitys_cap(db):
+    """The dropdown is not the enforcement — `snooze_alert` is — but offering a
+    24h option on a CRITICAL that will be silently clamped to 1h tells the
+    customer something untrue about what they just did."""
+    from sentinel.snooze import snooze_choices
+
+    assert max(snooze_choices("CRITICAL")) <= 1
+    assert max(snooze_choices("HIGH")) <= 4
+    assert max(snooze_choices("MEDIUM")) <= 24
+    assert snooze_choices("WEIRD") == snooze_choices("CRITICAL")
+
+
+class _Caps:
+    """Minimal stand-in for RulesConfig.get, so these tests exercise the real
+    lookup rather than a mock that agrees with whatever the code does."""
+
+    def __init__(self, table):
+        self._table = table
+
+    def get(self, *keys, default=None):
+        if keys[:2] == ("alerting", "snooze_cap_hours"):
+            return self._table.get(keys[2], default)
+        return default
+
+
+def test_a_configured_cap_of_zero_means_that_severity_cannot_be_snoozed(db):
+    """A cap of 0 is decision 8's option 3 — "CRITICAL cannot be snoozed at
+    all" — and it is a legitimate thing for an owner to set.
+
+    It is also a falsy value standing for a real decision, which is the bug
+    pattern this codebase has shipped five times. Read with `if configured:`
+    the deliberate zero looks like "not set" and the built-in one-hour cap
+    comes back, silently re-enabling the suppression the owner turned off. The
+    lookup uses `is not None` for exactly that reason."""
+    from sentinel.snooze import cap_hours
+
+    account_id = make_account(db)
+    rules = _Caps({"CRITICAL": 0})
+
+    assert cap_hours("CRITICAL", rules) == 0
+    assert snooze_alert(db, account_id, "k", "r", hours=4, requested_by="a@b.c",
+                        severity="CRITICAL", rules=rules) is None
+    assert active_snooze(db, account_id, "k") is None
+    # HIGH is unaffected: a zero on one severity is not a zero on all of them.
+    assert snooze_alert(db, account_id, "k2", "r", hours=4, requested_by="a@b.c",
+                        severity="HIGH", rules=rules) is not None
+
+
+def test_a_severity_that_cannot_be_snoozed_offers_no_button(db):
+    """With a zero cap there is nothing to offer, and the fallback that keeps
+    an unusually small cap selectable must not turn that into a "0h" button —
+    a control that submits and is then refused is worse than no control."""
+    from sentinel.snooze import snooze_choices
+
+    assert snooze_choices("CRITICAL", _Caps({"CRITICAL": 0})) == ()
+    # The fallback still works for a small but real cap.
+    assert snooze_choices("CRITICAL", _Caps({"CRITICAL": 0.5})) == (0.5,)
+
+
+def test_the_configured_cap_beats_the_built_in_table(db):
+    """The caps live in `alerting.snooze_cap_hours` so they are tunable without
+    a deploy (G-12) and every change to them is recorded against a name (#16).
+    A config value the code ignores is the same defect as no config."""
+    from sentinel.snooze import cap_hours
+
+    assert cap_hours("CRITICAL") == 1
+    assert cap_hours("CRITICAL", _Caps({"CRITICAL": 2})) == 2
+    # An unconfigured severity still falls back to the table, not to zero.
+    assert cap_hours("HIGH", _Caps({"CRITICAL": 2})) == 4
+
+
+def test_the_portal_passes_its_rules_to_the_snooze_path():
+    """The wiring, pinned. `cap_hours` can read config perfectly while
+    `serve_portal` never passes `rules` through — and every test above still
+    passes while the shipped config does nothing."""
+    import inspect
+
+    from sentinel import cli, portal
+
+    assert "rules" in inspect.signature(portal.serve_portal).parameters
+    assert "rules=rules" in inspect.getsource(cli.cmd_run)
+    handler = inspect.getsource(portal.serve_portal)
+    assert "rules=rules" in handler  # reaches snooze_alert, not just the signature

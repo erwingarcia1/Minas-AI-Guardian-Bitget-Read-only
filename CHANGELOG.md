@@ -14,6 +14,23 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
+- **Snooze caps are per severity (G-26, #30, decision 8 answered).** CRITICAL
+  1 hour, HIGH 4 hours, MEDIUM and LOW 24 hours, in
+  `alerting.snooze_cap_hours`.
+
+  Acknowledging already stops escalation and already says "I have seen this"; a
+  snooze only suppresses *repeats*. The only legitimate reason to suppress
+  repeats of a CRITICAL is that you are dealing with it right now — a short
+  window by definition. A drain unfolds over minutes to hours, so at 24 hours a
+  CRITICAL snooze was long enough for the rest of one to finish in silence.
+  Re-snoozing costs one tap and forces a fresh decision.
+
+  A configured cap of `0` means that severity cannot be snoozed at all. The
+  lookup reads it with `is not None` rather than truthiness — a deliberate zero
+  read as "not set" would hand back the built-in cap and silently re-enable
+  the suppression an owner had turned off. An unrecognised severity gets the
+  **shortest** cap, not the longest.
+
 - **Threshold changes are recorded, with a name where there is one (G-12,
   #16).** The last criterion on #16, blocked since March on there being no
   operator identities; #54 unblocked it.
