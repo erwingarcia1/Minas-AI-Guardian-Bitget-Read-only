@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any
 
 from sentinel.db import Database
+
+logger = logging.getLogger("sentinel.events")
 
 
 class _DecimalEncoder(json.JSONEncoder):
@@ -35,3 +38,28 @@ def append_event(
             (account_id, event_type, severity, json.dumps(payload, cls=_DecimalEncoder), now, actor),
         )
         return cur.lastrowid
+
+
+def record_config_changes(db: Database, changes, actor: str | None = None) -> int:
+    """One row per changed threshold (G-12, #16). Returns the number written.
+
+    `actor` is the operator who made the change where the change came through a
+    path that carries an identity, and None where it did not. A file edited on
+    a server carries no identity, and `None` is the truthful answer - see the
+    note on `config_changes` in schema.sql for why it is not filled in."""
+    now = datetime.now(timezone.utc).isoformat()
+    rows = [(setting, before, after, actor, now) for setting, before, after in changes]
+    if not rows:
+        return 0
+    with db.cursor() as cur:
+        cur.executemany(
+            "INSERT INTO config_changes (setting, old_value, new_value, actor, changed_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
+    for setting, before, after in changes:
+        logger.info(
+            "config change: %s %s -> %s (%s)",
+            setting, before, after, actor or "unattributed - edited on disk",
+        )
+    return len(rows)

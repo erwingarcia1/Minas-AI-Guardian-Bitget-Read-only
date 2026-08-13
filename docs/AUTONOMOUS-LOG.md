@@ -2348,3 +2348,60 @@ Seven mutations run against the new guards, all seven killed. The two most
 worth naming: keying the snooze on the rule instead of the dedup key, and
 returning early on a snooze instead of recording the alert. Both are the
 plausible shortcut a reviewer would wave through.
+
+---
+
+## G-12 · Threshold changes are recorded (#16, final criterion)
+
+Blocked since the issue was written, on there being nobody to attribute a
+change to. #54 landed operator identities, so this came unblocked — an example
+of the "decisions made under a constraint should be revisited when the
+constraint lifts" pattern actually paying out.
+
+### Two paths, and the honest one is the interesting one
+
+`sentinel set-threshold --as <operator>` is attributable. A `vi` edit is not.
+Both are recorded; only the first can say who.
+
+I deliberately did **not** try to attribute disk edits. The options were all
+bad: the process owner (says a person acted when a cron might have),
+`"system"` (same lie, wearing a hat), or a heuristic pairing a recent CLI
+invocation with the next reload (guesswork, in an audit trail). `actor` is
+NULL, and "this threshold changed and we cannot say who" is a finding worth
+surfacing rather than a hole worth filling.
+
+### Schema judgment call
+
+`events` was the obvious home, and it has an `actor` column already. But
+`events.account_id` is `NOT NULL`, and a threshold is fleet-wide — it belongs
+to no customer. Making that column nullable in SQLite means rebuilding the
+table, and that table is the append-only forensic log every baseline and every
+piece of alert evidence derives from. Rebuilding it to avoid creating a small
+new table is the wrong trade, and it is also the "migration that isn't
+reversible" case in the working rules. New `config_changes` table.
+
+### The guard I'm most glad about
+
+The `on_change` callback is wrapped in a bare `except` that logs and continues.
+Without it, a database hiccup while recording an audit line would leave the
+process running thresholds *older than the file* — which is precisely the G-12
+failure this whole issue exists to prevent, reintroduced through the logging of
+it. There is a test for it, and it was the third mutation I ran.
+
+### Ordering inside set-threshold
+
+The audit row is written **before** the file. A crash between the two leaves a
+recorded change that did not take effect — visible, and harmless because the
+next reload finds no diff. The other order leaves an unrecorded change that
+did, which is the thing the criterion exists to prevent.
+
+### Notes
+
+Six mutations, six killed — after one of them turned out to be a no-op because
+my replacement string had the wrong indentation and silently matched nothing.
+Worth writing down: a mutation that doesn't apply looks exactly like a test
+suite that caught it. Assert the mutation landed before believing the result.
+
+`settings_diff` compares stringified values on purpose. The two sides come from
+separate YAML loads, so `Decimal("15")` and `Decimal("15.0")` are the same
+threshold and must not read as a change.

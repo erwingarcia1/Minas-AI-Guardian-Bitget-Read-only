@@ -48,6 +48,10 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     # because no retention shorter than the 24h snooze cap is expressible -
     # `days <= 0` means keep forever, so the shortest real window is a day.
     "snoozes": ("created_at", "snoozes_days"),
+    # Threshold changes (#16). History of what this product was tuned to
+    # notice, on the same long window as `events` - an incident review asks
+    # what the thresholds were at the time, not what they are now.
+    "config_changes": ("changed_at", "config_changes_days"),
     # Dedup state, not history. See the module docstring: too short and old
     # movements re-alert.
     "seen_withdrawals": ("first_seen_at", "dedup_days"),

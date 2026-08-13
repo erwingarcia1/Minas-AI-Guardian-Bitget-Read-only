@@ -14,6 +14,38 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
+- **Threshold changes are recorded, with a name where there is one (G-12,
+  #16).** The last criterion on #16, blocked since March on there being no
+  operator identities; #54 unblocked it.
+
+  A detection threshold is the difference between an alert and silence, so an
+  unrecorded threshold change is an unrecorded change to *what this product
+  notices*. Take `polling.fast_loop_seconds` from 45 to 3600 and the account is
+  effectively unwatched while every dashboard still reads healthy.
+
+  Two paths, deliberately distinguishable:
+
+  `sentinel set-threshold --as <operator> <setting> <value>` changes one
+  threshold attributably. It validates against the schema **before** writing —
+  a bad value on disk means the service falls back to defaults for that whole
+  section until somebody notices, which is the G-12 failure with an extra step,
+  and this command would have been the thing that caused it.
+
+  An edit made directly to `rules.yaml` is caught by the reload diff and
+  recorded with **no actor**. That is not a gap waiting to be filled: nobody
+  can say who edited a file on a server, and writing in the process owner or
+  `system` would make the log claim a person acted. An unattributed threshold
+  change is itself the finding.
+
+  New `config_changes` table rather than rows in `events`, whose `account_id`
+  is `NOT NULL` — a threshold is fleet-wide and belongs to no customer, and
+  relaxing that column means rebuilding the forensic log.
+
+  The recorder is wrapped so that a failure to write the audit line can never
+  stop the reload. Running thresholds older than the file is the exact failure
+  G-12 exists to prevent, and reintroducing it through the logging of it would
+  be a poor joke.
+
 - **Customers can snooze a specific alert (G-26, #30).** New `snoozes` table,
   a control on every unacknowledged alert row, and a check in `dispatch` that
   withholds the delivery while a snooze is live.

@@ -280,3 +280,28 @@ CREATE TABLE IF NOT EXISTS snoozes (
     expires_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_snoozes_lookup ON snoozes(account_id, dedup_key, expires_at);
+
+-- Threshold changes (G-12, #16). A detection threshold is the difference
+-- between an alert and silence, so an unrecorded threshold change is an
+-- unrecorded change to what this product notices: take tolerance_pct from 1 to
+-- 50 and the account stops being watched in the only way that matters while
+-- every dashboard still reads healthy.
+--
+-- Deliberately NOT a row in `events`: that table is per-account and its
+-- account_id is NOT NULL, and a threshold is fleet-wide - it belongs to no
+-- customer. Relaxing that column would mean rebuilding the forensic log, which
+-- is not a migration worth doing to avoid a table.
+--
+-- `actor` is NULLABLE and means "we cannot say who". An edit made directly to
+-- rules.yaml on a server has no identity attached to it, and filling the column
+-- in with the process owner or 'system' would make the log claim a person
+-- acted. An unattributed threshold change is itself the finding.
+CREATE TABLE IF NOT EXISTS config_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    setting TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    actor TEXT,
+    changed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_config_changes_time ON config_changes(changed_at);

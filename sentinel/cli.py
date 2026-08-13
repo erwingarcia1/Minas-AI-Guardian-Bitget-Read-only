@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import getpass
 import json
 import logging
@@ -250,11 +251,18 @@ def cmd_run(args: argparse.Namespace) -> int:
     from sentinel.alerts.operator import OperatorAlerter
     from sentinel.dashboard import serve_dashboard
     from sentinel.engine import Engine
+    from sentinel.events import record_config_changes
     from sentinel.metrics import Metrics
 
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     cipher = CredentialCipher()
-    rules = RulesConfig(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+    # Threshold changes go into the audit trail (G-12, #16). Wired here rather
+    # than inside RulesConfig so the config layer stays free of the database -
+    # it is constructed and validated before there is one.
+    rules = RulesConfig(
+        _env("SENTINEL_RULES_PATH", "./config/rules.yaml"),
+        on_change=lambda changes: record_config_changes(db, changes),
+    )
     channels = build_channels(rules)
 
     metrics = Metrics()
@@ -355,6 +363,85 @@ def cmd_ack(args: argparse.Namespace) -> int:
         return 0
     print(f"alert {args.alert_id} not found or already acknowledged", file=sys.stderr)
     return 1
+
+
+def cmd_set_threshold(args: argparse.Namespace) -> int:
+    """Change one threshold, attributably (G-12, #16).
+
+    The point of this command is not convenience - editing the YAML is easier -
+    it is that an edit made through here carries a name and an edit made with
+    `vi` cannot. Both are recorded; only this one can say who.
+
+    It writes the value and lets the running service pick the change up through
+    the normal mtime reload, rather than reaching into a process it does not
+    own. The audit row is written here, before the file, so a crash between the
+    two leaves a recorded change that did not take effect - visible and
+    harmless - rather than an unrecorded change that did."""
+    import yaml
+
+    from sentinel.config import _to_decimal_leaves, settings_diff
+    from sentinel.events import record_config_changes
+    from sentinel.operators import is_active_operator, list_operators, operator_count
+    from sentinel.rules_schema import validate
+
+    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    actor = getattr(args, "as_operator", None)
+    if operator_count(db) > 0:
+        if not actor:
+            names = ", ".join(o["username"] for o in list_operators(db) if o["status"] == "active")
+            print(
+                f"--as <operator> is required: a threshold change is recorded against a "
+                f"name. Active operators: {names or '(none active)'}",
+                file=sys.stderr,
+            )
+            return 2
+        if not is_active_operator(db, actor):
+            print(f"'{actor}' is not an active operator", file=sys.stderr)
+            return 2
+    elif actor:
+        print("no operator accounts exist - create one with `sentinel operator add`", file=sys.stderr)
+        return 2
+
+    path = Path(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+    try:
+        before = yaml.safe_load(path.read_text()) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        print(f"cannot read {path}: {exc}", file=sys.stderr)
+        return 1
+
+    segments = args.setting.split(".")
+    if len(segments) < 2:
+        print("setting must be dotted, e.g. polling.fast_loop_seconds", file=sys.stderr)
+        return 2
+
+    after = copy.deepcopy(before)
+    node = after
+    for segment in segments[:-1]:
+        node = node.setdefault(segment, {})
+        if not isinstance(node, dict):
+            print(f"{args.setting}: '{segment}' is a value, not a section", file=sys.stderr)
+            return 2
+    node[segments[-1]] = yaml.safe_load(args.value)
+
+    problems = validate(_to_decimal_leaves(after))
+    if problems:
+        # Refused here rather than written and rejected on reload. A bad value
+        # written to disk means the service runs on defaults for that section
+        # until someone notices, which is the G-12 failure with an extra step.
+        for problem in problems:
+            print(f"rejected: {problem}", file=sys.stderr)
+        return 2
+
+    changes = settings_diff(before, after)
+    if not changes:
+        print(f"{args.setting} is already {args.value}")
+        return 0
+
+    record_config_changes(db, changes, actor=actor)
+    path.write_text(yaml.safe_dump(after, sort_keys=False, default_flow_style=False))
+    for setting, old, new in changes:
+        print(f"{setting}: {old} -> {new}" + (f" (by {actor})" if actor else ""))
+    return 0
 
 
 def cmd_operator(args: argparse.Namespace) -> int:
@@ -530,6 +617,13 @@ def main() -> None:
     ack_parser.add_argument("--as", dest="as_operator", help="Operator acknowledging this alert")
     ack_parser.add_argument("alert_id", type=int)
     ack_parser.set_defaults(func=cmd_ack)
+
+    set_threshold_parser = sub.add_parser(
+        "set-threshold", help="Change one detection threshold, recorded against an operator")
+    set_threshold_parser.add_argument("--as", dest="as_operator", help="Operator making this change")
+    set_threshold_parser.add_argument("setting", help="Dotted path, e.g. polling.fast_loop_seconds")
+    set_threshold_parser.add_argument("value")
+    set_threshold_parser.set_defaults(func=cmd_set_threshold)
 
     triage_parser = sub.add_parser("triage", help="Print an AI incident narrative for an account's recent events")
     triage_parser.add_argument("--label", required=True)
