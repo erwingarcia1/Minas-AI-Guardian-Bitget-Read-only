@@ -32,6 +32,26 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   distinguishes two withdrawals.
 
 ### Added
+- **Two-step sign-in and a member security page (G-28, #32).** `/security` in
+  the portal: turn two-factor on, see the recovery codes once, turn it off
+  again with a current code.
+
+  Sign-in is now two steps when 2FA is on. A correct password issues **no
+  session cookie** — only a short-lived signed *pending* token proving that
+  this browser presented a correct password moments ago. The session comes
+  after the code. If a cookie were issued at step one the second factor would
+  be decoration.
+
+  The pending token is deliberately not interchangeable with a session: it is
+  signed over a different context, expires in minutes rather than hours, and
+  the email comes from the token rather than from the form — reading it from a
+  form field would let anyone reaching the endpoint name whichever account they
+  liked.
+
+  Failed codes count on the same throttle as failed passwords. Six digits is a
+  million guesses, and an endpoint that accepts them as fast as they arrive is
+  not a second factor.
+
 - **Two-factor authentication (G-28, #32).** RFC 6238 TOTP on `hmac` and
   `hashlib` — **no new dependency**. This is the module that decides whether
   somebody gets into the thing protecting a customer's exchange accounts, and

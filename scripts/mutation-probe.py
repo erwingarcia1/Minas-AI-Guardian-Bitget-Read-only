@@ -45,8 +45,10 @@ expectation.
 """
 from __future__ import annotations
 
+import atexit
 import json
 import shutil
+import signal
 import subprocess
 import sys
 import tempfile
@@ -92,6 +94,29 @@ def main(argv: list[str]) -> int:
     probes = json.loads(Path(argv[1]).read_text())
     results, failures = [], 0
 
+    # A probe run that is killed - a timeout, a Ctrl-C, a CI cancel - must not
+    # leave mutated source on disk. The per-probe `finally` covers an
+    # exception; it does not cover SIGTERM, and a half-applied probe left in a
+    # working tree is a booby trap that looks like a real edit. It has already
+    # happened once here: `if len(password) < MIN` was found sitting in the
+    # tree as `if False` after a killed run.
+    _in_flight: dict[Path, Path] = {}
+
+    def _restore_all(*_args):
+        for target, backup in list(_in_flight.items()):
+            try:
+                shutil.copy2(backup, target)
+            except OSError:
+                print(f"WARNING: could not restore {target} from {backup}", file=sys.stderr)
+        _in_flight.clear()
+
+    atexit.register(_restore_all)
+    for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        try:
+            signal.signal(sig, lambda *a: (_restore_all(), sys.exit(130)))
+        except (ValueError, OSError):
+            pass  # not the main thread, or the platform lacks it
+
     with tempfile.TemporaryDirectory() as backup_dir:
         for index, probe in enumerate(probes, 1):
             name = probe.get("name") or f"probe {index}"
@@ -99,6 +124,7 @@ def main(argv: list[str]) -> int:
             expect = probe.get("expect", "killed")
             backup = Path(backup_dir) / f"{index}-{path.name}"
             shutil.copy2(path, backup)
+            _in_flight[path] = backup
 
             try:
                 _apply(path, probe["old"], probe["new"])
@@ -107,6 +133,7 @@ def main(argv: list[str]) -> int:
                 print(f"  DID NOT LAND  {name}: {exc}")
                 failures += 1
                 shutil.copy2(backup, path)
+                _in_flight.pop(path, None)
                 results.append((name, "did-not-land"))
                 continue
 
@@ -120,6 +147,7 @@ def main(argv: list[str]) -> int:
                 outcome = "timeout"
             finally:
                 shutil.copy2(backup, path)
+                _in_flight.pop(path, None)
 
             ok = outcome == expect
             failures += 0 if ok else 1

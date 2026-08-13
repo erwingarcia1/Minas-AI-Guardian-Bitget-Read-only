@@ -353,7 +353,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     portal_port = int(_env("SENTINEL_PORTAL_PORT", "8391"))
     portal_host = _env("SENTINEL_PORTAL_HOST", "127.0.0.1")
-    serve_portal(db, portal_port, host=portal_host, rules=rules)
+    serve_portal(db, portal_port, host=portal_host, rules=rules, cipher=cipher)
     logger.info(
         "dashboard on %s:%d, member portal on %s:%d, metrics on %s:%d",
         dashboard_host, dashboard_port, portal_host, portal_port, metrics_host, metrics_port,

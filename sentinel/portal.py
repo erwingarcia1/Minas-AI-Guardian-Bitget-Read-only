@@ -26,6 +26,8 @@ from sentinel.db import Database
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
 from sentinel.passwords import LoginThrottle
 from sentinel.snooze import active_snoozes_for_accounts, snooze_alert, snooze_choices
+from sentinel.twofactor import MEMBER as TWOFACTOR_MEMBER
+from sentinel.twofactor import check_second_factor
 
 logger = logging.getLogger("sentinel.portal")
 
@@ -95,6 +97,50 @@ MIN_PASSWORD_LENGTH = 12
 # Every /forgot response takes at least this long, whether or not the address
 # exists. See `_forgot`.
 _RESET_RESPONSE_FLOOR_SECONDS = 0.35
+
+# How long a half-finished sign-in may sit in a browser. It carries a proof
+# that a correct password was presented, so it is measured in minutes rather
+# than in the session lifetime - a tab left open on a shared machine should not
+# still be one code away from an account at the end of the day.
+PENDING_TTL_SECONDS = 300
+
+
+def _pending_now() -> float:
+    """Indirected so a test can move time without touching the clock the rest
+    of the process reads."""
+    return time.time()
+
+
+def make_pending_token(secret: bytes, email: str) -> str:
+    """Proof that this browser presented a correct password moments ago, and
+    nothing else (#32).
+
+    Deliberately NOT a session token and deliberately not interchangeable with
+    one: it is signed over a different context string, so a pending token
+    presented as a cookie verifies as nothing. Otherwise the two-step flow
+    would just rename the session and hand it over a step early."""
+    email_b64 = base64.urlsafe_b64encode(normalize_email(email).encode()).decode().rstrip("=")
+    expires = int(_pending_now() + PENDING_TTL_SECONDS)
+    payload = f"pending.{email_b64}.{expires}"
+    sig = hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
+
+
+def verify_pending_token(secret: bytes, token: str) -> str | None:
+    try:
+        context, email_b64, expires_s, sig = token.split(".")
+        if context != "pending":
+            return None
+        payload = f"pending.{email_b64}.{expires_s}"
+        if not hmac.compare_digest(sig, hmac.new(secret, payload.encode(),
+                                                 hashlib.sha256).hexdigest()):
+            return None
+        if int(expires_s) < _pending_now():
+            return None
+        pad = "=" * (-len(email_b64) % 4)
+        return base64.urlsafe_b64decode(email_b64 + pad).decode()
+    except (ValueError, TypeError):
+        return None
 
 
 def set_member_password(db: Database, email: str, password: str, *,
@@ -520,6 +566,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     )
     nav = (
         f'<span class="live">{html.escape(email)}</span>'
+        '<a class="live" href="/security">Security</a>'
         '<form method="post" action="/logout" style="margin:0">'
         '<button class="live" type="submit" style="cursor:pointer;font-family:inherit">Sign out</button></form>'
     )
@@ -804,6 +851,33 @@ def _send_reset_email(db: Database, address: str, token: str) -> None:
         logger.error("could not send the password-reset email: %s", exc)
 
 
+def _send_two_factor_disabled_email(db: Database, address: str) -> None:
+    """Sent whenever two-factor is removed.
+
+    The same reasoning as the password-change notice: a change the owner did
+    not make is the only signal they will get. Removing a second factor is if
+    anything the more important of the two, because it is what an attacker
+    does *after* getting in and *before* doing anything else."""
+    from sentinel.alerts.base import AlertMessage
+    from sentinel.alerts.contact import ContactRouter
+
+    message = AlertMessage(
+        account_label="your Minas AI Guardian login",
+        rule="two_factor_disabled",
+        severity="LOW",
+        confidence="n/a",
+        message=(
+            f"Two-factor authentication was just turned off for {address}. If this was not "
+            f"you, somebody else has access to this login - sign in, turn two-factor back on, "
+            f"and change your password immediately."
+        ),
+        evidence={},
+    )
+    ContactRouter(db=db).send(
+        _PlainNotice(message), "your Minas AI Guardian login", [address], [],
+    )
+
+
 def _send_password_changed_email(db: Database, address: str) -> None:
     """Sent on EVERY password change, including one the owner just made.
 
@@ -887,6 +961,101 @@ def _render_reset_form(token: str, error: str | None = None) -> str:
     )
 
 
+def _render_code_prompt(pending: str, error: str | None = None) -> str:
+    """Step two. The password has been accepted; the session has not been
+    issued."""
+    banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
+    return _page(
+        '<div class="loginbox">' + banner +
+        '<div class="card"><div class="card-head"><h2>Two-factor code</h2></div>'
+        '<form class="addf" method="post" action="/login-code">'
+        f'<input type="hidden" name="pending" value="{html.escape(pending)}">'
+        '<div class="fld"><label>Code from your authenticator app</label>'
+        '<input type="text" name="code" required autocomplete="one-time-code" '
+        'inputmode="numeric" autofocus></div>'
+        '<div class="actions"><button class="submit" type="submit">Sign in</button>'
+        '<span class="hint">Or enter one of your recovery codes.</span></div>'
+        "</form></div></div>"
+    )
+
+
+def _render_security(db: Database, email: str, *, secret: str | None = None,
+                     codes: list | None = None, error: str | None = None,
+                     notice: str | None = None) -> str:
+    """The member's own security page: turn two-factor on, or off (#32).
+
+    Recovery codes are rendered exactly once, at the moment they are created.
+    They are stored hashed, so this is genuinely the only time they can be
+    shown - which is why the page says so rather than offering a "show again"
+    link that could not work."""
+    from sentinel.twofactor import MEMBER as _MEMBER
+    from sentinel.twofactor import is_enabled, remaining_recovery_codes
+
+    banner = ""
+    if error:
+        banner = f'<div class="banner err">✕ {html.escape(error)}</div>'
+    elif notice:
+        banner = f'<div class="banner ok">✓ {html.escape(notice)}</div>'
+
+    if codes:
+        body = (
+            '<div class="card"><div class="card-head"><h2>Save your recovery codes</h2></div>'
+            '<div class="det"><span class="desc">Each code works <b>once</b> and lets you sign '
+            "in if you lose your phone. They are stored hashed, so this is the only time they "
+            "can be shown — write them down or put them in a password manager now.</span></div>"
+            '<div class="det"><span class="desc mono">'
+            + "<br>".join(html.escape(c) for c in codes)
+            + "</span></div></div>"
+        )
+    elif secret:
+        uri = _twofactor_uri(secret, email)
+        body = (
+            '<div class="card"><div class="card-head"><h2>Set up two-factor</h2></div>'
+            '<div class="det"><span class="desc">Add this to your authenticator app, then enter '
+            "a code to switch it on. Two-factor is not active until you do — if the code never "
+            "works, nothing has changed and you can still sign in.</span></div>"
+            f'<div class="det"><span class="desc mono">{html.escape(secret)}</span></div>'
+            f'<div class="det"><span class="desc mono">{html.escape(uri)}</span></div>'
+            '<form class="addf" method="post" action="/security/2fa/confirm">'
+            '<div class="fld"><label>Code from your app</label>'
+            '<input type="text" name="code" required inputmode="numeric" autofocus></div>'
+            '<div class="actions"><button class="submit" type="submit">Turn on two-factor</button>'
+            "</div></form></div>"
+        )
+    elif is_enabled(db, _MEMBER, email):
+        left = remaining_recovery_codes(db, _MEMBER, email)
+        body = (
+            '<div class="card"><div class="card-head"><h2>Two-factor is on</h2>'
+            f'<span class="count">{left} recovery code(s) left</span></div>'
+            '<div class="det"><span class="desc">Turning it off needs a current code from your '
+            "app or a recovery code. We will email you when it happens — if you get that email "
+            "and it was not you, somebody else is in your account.</span></div>"
+            '<form class="addf" method="post" action="/security/2fa/disable">'
+            '<div class="fld"><label>Current code</label>'
+            '<input type="text" name="code" required inputmode="numeric"></div>'
+            '<div class="actions"><button class="submit" type="submit">Turn off two-factor</button>'
+            "</div></form></div>"
+        )
+    else:
+        body = (
+            '<div class="card"><div class="card-head"><h2>Two-factor is off</h2></div>'
+            '<div class="det"><span class="desc">Your Minas login is what protects the alerts '
+            "about your exchange accounts. Adding a second factor means a stolen password is "
+            "not enough on its own.</span></div>"
+            '<form class="addf" method="post" action="/security/2fa/start">'
+            '<div class="actions"><button class="submit" type="submit">Set up two-factor</button>'
+            "</div></form></div>"
+        )
+    return _page(f'<section>{banner}{body}</section>',
+                 '<a class="live" href="/">‹ Back</a>')
+
+
+def _twofactor_uri(secret: str, email: str) -> str:
+    from sentinel.totp import provisioning_uri
+
+    return provisioning_uri(secret, email)
+
+
 def _render_not_found() -> str:
     return _page(
         '<section><div class="card"><div class="empty">Not found</div></div></section>',
@@ -897,7 +1066,7 @@ def _render_not_found() -> str:
 # --- server ------------------------------------------------------------------
 
 def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
-                 rules=None) -> ThreadingHTTPServer:
+                 rules=None, cipher=None) -> ThreadingHTTPServer:
     """Customer-facing member portal.
 
     Unlike the ops dashboard this one has its own login and is *meant* to be
@@ -1006,6 +1175,8 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     self._send(_render_not_found().encode(), 404)
                 else:
                     self._send(page.encode())
+            elif path == "/security":
+                self._send(_render_security(db, email).encode())
             elif path == "/account":
                 qs = parse_qs(urlparse(self.path).query)
                 try:
@@ -1025,6 +1196,109 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             remaining = deadline - time.monotonic()
             if remaining > 0:
                 time.sleep(remaining)
+
+        def _twofactor(self, path, form):
+            """Enrol in, confirm or remove two-factor (#32).
+
+            Session-scoped: the subject is the signed-in member, never a form
+            field. A form-supplied identity here would let anyone with a
+            session enrol - or disable - two-factor on somebody else's
+            login."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            if cipher is None:
+                self._send(_render_security(
+                    db, email, error="Two-factor is unavailable on this deployment.").encode())
+                return
+
+            from sentinel.twofactor import MEMBER as _MEMBER
+            from sentinel.twofactor import begin_enrolment, confirm_enrolment
+            from sentinel.twofactor import disable as disable_2fa
+
+            code = form.get("code", [""])[0] or ""
+            if path.endswith("/start"):
+                try:
+                    secret, _uri = begin_enrolment(db, cipher, _MEMBER, email)
+                except ValueError as exc:
+                    self._send(_render_security(db, email, error=str(exc)).encode())
+                    return
+                self._send(_render_security(db, email, secret=secret).encode())
+                return
+
+            if path.endswith("/confirm"):
+                codes = confirm_enrolment(db, cipher, _MEMBER, email, code)
+                if codes is None:
+                    # Nothing changed. Re-showing the setup page would need the
+                    # secret again, and re-generating one would silently swap
+                    # what the customer just scanned - so send them back to
+                    # start deliberately.
+                    self._send(_render_security(
+                        db, email,
+                        error="That code was not accepted. Start again and re-scan.").encode())
+                    return
+                logger.info("two-factor enabled for member %s", email)
+                self._send(_render_security(db, email, codes=codes).encode())
+                return
+
+            if path.endswith("/disable"):
+                ok = disable_2fa(db, cipher, _MEMBER, email, code,
+                                 notify=lambda addr: _send_two_factor_disabled_email(db, addr))
+                if not ok:
+                    self._send(_render_security(
+                        db, email, error="That code was not accepted. Two-factor is still on.").encode())
+                    return
+                logger.warning("two-factor disabled for member %s", email)
+                self._send(_render_security(
+                    db, email, notice="Two-factor is off. We have emailed you about it.").encode())
+                return
+
+            self._send(_render_not_found().encode(), 404)
+
+        def _login_code(self, form):
+            """Step two of a two-factor sign-in (#32).
+
+            The email comes from the *signed pending token*, never from the
+            form. Reading it from a form field would let anyone who can reach
+            this endpoint name whichever account they liked and supply a code
+            for their own enrolment."""
+            pending = form.get("pending", [""])[0] or ""
+            code = form.get("code", [""])[0] or ""
+            email = verify_pending_token(secret, pending)
+            ip = self._client_ip()
+            if email is None:
+                # Expired, forged, or a session token presented in its place.
+                logger.warning("two-factor step 2 with an invalid pending token from %s", ip)
+                self._send(_render_login(error="That sign-in expired. Please start again.").encode())
+                return
+
+            if throttle.blocked(email) or throttle.blocked(ip):
+                logger.warning("two-factor throttled for %s from %s", email, ip)
+                self._send(_render_login(error="Too many attempts — try again later.").encode(), 429)
+                return
+
+            if cipher is None or not check_second_factor(db, cipher, TWOFACTOR_MEMBER, email, code):
+                # Counted on the same limiter as passwords. Six digits is a
+                # million guesses, and an endpoint that accepts them as fast as
+                # they arrive is not a second factor.
+                throttle.record_failure(email)
+                throttle.record_failure(ip)
+                logger.warning("two-factor code rejected for %s from %s", email, ip)
+                self._send(_render_code_prompt(pending, error="That code was not accepted.").encode())
+                return
+
+            throttle.reset(email)
+            with db.cursor() as cur:
+                cur.execute("SELECT session_epoch FROM portal_members WHERE email = ?", (email,))
+                row = cur.fetchone()
+            token = make_session_token(secret, email, epoch=row["session_epoch"] if row else 1)
+            logger.info("portal login complete for %s from %s", email, ip)
+            self._redirect("/", [(
+                "Set-Cookie",
+                f"{SESSION_COOKIE}={token}; Max-Age={SESSION_TTL_SECONDS}; Path=/; HttpOnly; "
+                f"Secure; SameSite=Lax",
+            )])
 
         def _forgot(self, form):
             """Request a reset link (#33).
@@ -1178,6 +1452,14 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 )])
                 return
 
+            if path.startswith("/security/2fa/"):
+                self._twofactor(path, form)
+                return
+
+            if path == "/login-code":
+                self._login_code(form)
+                return
+
             if path == "/forgot":
                 self._forgot(form)
                 return
@@ -1207,6 +1489,13 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             if email and password and check_member_login(db, email, password):
                 throttle.reset(email)
+                if member_login_requires_code(db, email):
+                    # No cookie. A correct password buys a pending token and
+                    # nothing else - if a session were issued here the second
+                    # factor would be decoration (#32).
+                    logger.info("portal login step 1 ok for %s from %s, awaiting code", email, ip)
+                    self._send(_render_code_prompt(make_pending_token(secret, email)).encode())
+                    return
                 with db.cursor() as cur:
                     cur.execute("SELECT session_epoch FROM portal_members WHERE email = ?", (email,))
                     row = cur.fetchone()

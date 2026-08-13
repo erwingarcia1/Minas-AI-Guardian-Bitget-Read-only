@@ -620,5 +620,61 @@
   "tests": [
    "tests/test_totp.py"
   ]
+ },
+ {
+  "name": "#32 ATTACK skip the second factor: a session is issued on the password alone",
+  "file": "sentinel/portal.py",
+  "old": "                if member_login_requires_code(db, email):",
+  "new": "                if False:",
+  "tests": [
+   "tests/test_portal_two_factor_login.py"
+  ]
+ },
+ {
+  "name": "#32 the pending context string is defence in depth - the payload shapes already differ, so a swapped token fails the signature anyway",
+  "file": "sentinel/portal.py",
+  "old": "        if context != \"pending\":\n            return None",
+  "new": "        pass",
+  "tests": [
+   "tests/test_portal_two_factor_login.py"
+  ],
+  "expect": "survived"
+ },
+ {
+  "name": "#32 ATTACK forge a pending token: the signature is not checked",
+  "file": "sentinel/portal.py",
+  "old": "        if not hmac.compare_digest(sig, hmac.new(secret, payload.encode(),\n                                                 hashlib.sha256).hexdigest()):\n            return None",
+  "new": "        pass",
+  "tests": [
+   "tests/test_portal_two_factor_login.py"
+  ]
+ },
+ {
+  "name": "#32 ATTACK reuse a stale pending token: expiry is not checked",
+  "file": "sentinel/portal.py",
+  "old": "        if int(expires_s) < _pending_now():\n            return None",
+  "new": "        pass",
+  "tests": [
+   "tests/test_portal_two_factor_login.py"
+  ]
+ },
+ {
+  "name": "#32 ATTACK brute-force the code: 2FA attempts are not throttled",
+  "file": "sentinel/portal.py",
+  "old": "                throttle.record_failure(email)\n                throttle.record_failure(ip)\n                logger.warning(\"two-factor code rejected for %s from %s\", email, ip)",
+  "new": "                logger.warning(\"two-factor code rejected for %s from %s\", email, ip)",
+  "tests": [
+   "tests/test_portal_two_factor_login.py",
+   "tests/test_portal.py"
+  ]
+ },
+ {
+  "name": "#32 ATTACK act on another member: the security routes trust a form field",
+  "file": "sentinel/portal.py",
+  "old": "            email = self._session_email()\n            if email is None:\n                self._send(_render_login().encode())\n                return\n            if cipher is None:",
+  "new": "            email = self._session_email() or (form.get(\"email\", [\"\"])[0] or \"\")\n            if not email:\n                self._send(_render_login().encode())\n                return\n            if cipher is None:",
+  "tests": [
+   "tests/test_portal_two_factor_login.py"
+  ]
  }
 ]
