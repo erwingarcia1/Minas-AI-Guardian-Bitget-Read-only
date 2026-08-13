@@ -416,8 +416,46 @@ def _render(db: Database, rules=None) -> str:
         '<span class="count">latest 50</span></div><table><thead><tr><th>Time</th><th>Account</th>'
         f"<th>Severity</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
         + _operator_pages_section(db)
+        + _expected_activity_section(db)
     )
     return _page(nav, body)
+
+
+def _expected_activity_section(db: Database) -> str:
+    """What customers keep telling us was their own activity (G-24, #28).
+
+    The third criterion, and the one that makes the feature worth having: a
+    single "that was me" is a customer being polite about one withdrawal; the
+    same rule marked repeatedly is a detector firing on how somebody trades.
+
+    Shown with its denominator. "Marked 3 times" says nothing without "out of
+    how many" - 3 of 4 is a rule to fix, 3 of 900 is a customer who once
+    recognised three of their own transfers, and a bare count or a bare
+    percentage would render those identically."""
+    from sentinel.expected import patterns
+
+    rows = patterns(db, limit=20)
+    if not rows:
+        return ""
+    body = ""
+    for r in rows:
+        total = r["alerts_total"] or 0
+        share = f"{r['marks']} of {total}" if total else f"{r['marks']}"
+        # A rule whose alerts are mostly marked is the finding; flagged rather
+        # than left for somebody to divide in their head.
+        loud = total and r["marks"] / total >= 0.5 and r["marks"] >= 3
+        flag = ' <span class="fail" title="most of this rule\'s alerts on this account were marked as expected">mostly marked</span>' if loud else ""
+        body += (
+            f'<tr><td class="rule">{html.escape(r["rule"])}{flag}</td>'
+            f'<td>{_dd(r["label"])}</td><td class="mono">{share}</td>'
+            f'<td class="mono">{_ts(r["last_marked_at"])}</td></tr>'
+        )
+    return (
+        '<section><div class="card"><div class="card-head"><h2>Marked as expected activity</h2>'
+        '<span class="count">what customers keep saying was them · top 20</span></div>'
+        '<table><thead><tr><th>Rule</th><th>Account</th><th>Marked</th><th>Last</th>'
+        f"</tr></thead><tbody>{body}</tbody></table></div></section>"
+    )
 
 
 def _operator_pages_section(db: Database) -> str:

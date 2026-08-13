@@ -287,6 +287,42 @@ CREATE TABLE IF NOT EXISTS snoozes (
 );
 CREATE INDEX IF NOT EXISTS idx_snoozes_lookup ON snoozes(account_id, dedup_key, expires_at);
 
+-- "That was me" (G-24, #28). A customer telling us an alert was their own
+-- activity.
+--
+-- A separate table rather than a column on `alerts`, for the same reason
+-- `snoozes` is: the value of this data is the PATTERN. One row per marking,
+-- keeping every one, is what lets an operator see that a customer has said
+-- "that was me" to the same rule eleven times - which is a statement about the
+-- rule, not about the customer. A column would hold only the latest fact and
+-- would erase exactly the history that makes it useful.
+--
+-- Kept after the alert ages out of usefulness for the same reason snoozes are
+-- kept: who said a movement on their account was expected, and when, is a fact
+-- that may later matter in a dispute with an exchange.
+--
+-- What this deliberately does NOT do is suppress anything. Marking is a claim
+-- about one alert that already fired; it does not silence the rule, the
+-- account or the next alert. Suppression is what `snoozes` is for, it is
+-- bounded and it expires - and folding "this was expected" into "stop telling
+-- me" would let one reassuring click turn a detector off indefinitely.
+CREATE TABLE IF NOT EXISTS expected_activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id INTEGER NOT NULL REFERENCES alerts(id),
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    rule TEXT NOT NULL,
+    dedup_key TEXT NOT NULL,
+    note TEXT,
+    marked_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    -- One mark per alert per person. A customer clicking twice has not told us
+    -- anything twice, and counting it as two would inflate the very pattern an
+    -- operator reads to judge a rule.
+    UNIQUE(alert_id, marked_by)
+);
+CREATE INDEX IF NOT EXISTS idx_expected_account ON expected_activity(account_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_expected_rule ON expected_activity(rule, created_at);
+
 -- Threshold changes (G-12, #16). A detection threshold is the difference
 -- between an alert and silence, so an unrecorded threshold change is an
 -- unrecorded change to what this product notices: take tolerance_pct from 1 to

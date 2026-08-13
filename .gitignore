@@ -7,6 +7,10 @@ venv/
 .coverage
 htmlcov/
 .env
+# `.env` alone does not match `.env.save`, `.env.bak` or `.env.local`, and a
+# backup copy of a credential file is still a credential file (#68).
+.env.*
+!.env.example
 *.db
 *.db-journal
 sentinel_data/

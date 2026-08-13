@@ -25,6 +25,7 @@ from sentinel.dashboard import (
     _ts,
 )
 from sentinel.db import Database
+from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
 from sentinel.passwords import LoginThrottle
 from sentinel.snooze import active_snoozes_for_accounts, snooze_alert, snooze_choices
@@ -497,19 +498,48 @@ def _snooze_control(row, snoozed_until: str | None, rules=None) -> str:
     )
 
 
-def _ack_cell(row, snoozed_until: str | None = None, rules=None) -> str:
+def _expected_control(row, marked: bool) -> str:
+    """"That was me" (G-24, #28).
+
+    Offered next to acknowledgement rather than instead of it, because they say
+    different things: acknowledging is "I have seen this", marking is "this was
+    my own activity and the detector was wrong". Conflating them would lose the
+    only signal a customer can give us about whether a rule is any good.
+
+    Shown once. A second click tells us nothing new, and the row saying
+    "you marked this" is the answer to the question the button asks."""
+    if marked:
+        return "<div class='snoozed'>You marked this as your own activity</div>"
+    return (
+        "<form method='post' action='/expected' style='margin:6px 0 0'>"
+        f"<input type='hidden' name='alert_id' value=\"{int(row['id'])}\">"
+        "<input class='snoozesel' type='text' name='note' maxlength='500' "
+        "placeholder='Optional note'>"
+        "<button class='ackbtn' type='submit'>That was me</button></form>"
+    )
+
+
+def _ack_cell(row, snoozed_until: str | None = None, rules=None,
+              marked: bool = False) -> str:
     """The acknowledgement column: who and how long if it's done, a button if
-    it isn't. One tap, from the row the alert is on."""
+    it isn't. One tap, from the row the alert is on.
+
+    "That was me" stays available after acknowledgement. The order people
+    actually do this in is acknowledge first, in a hurry, and recognise their
+    own activity a minute later - and the recognition is the half we most want
+    recorded."""
     if row["acknowledged_at"]:
         who = html.escape(row["acknowledged_by"] or "—")
         elapsed = _time_to_acknowledge(row["sent_at"], row["acknowledged_at"])
         suffix = f" · {elapsed}" if elapsed else ""
-        return f"<td class='ack-yes'>✓ {who}{suffix}</td>"
+        return (f"<td class='ack-yes'>✓ {who}{suffix}"
+                f"{_expected_control(row, marked)}</td>")
     return (
         "<td class='ack-no'><form method='post' action='/acknowledge' style='margin:0'>"
         f"<input type='hidden' name='alert_id' value=\"{int(row['id'])}\">"
         "<button class='ackbtn' type='submit'>Acknowledge</button></form>"
-        f"{_snooze_control(row, snoozed_until, rules)}</td>"
+        f"{_snooze_control(row, snoozed_until, rules)}"
+        f"{_expected_control(row, marked)}</td>"
     )
 
 
@@ -546,6 +576,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
             )
             alerts = cur.fetchall()
     snoozed = active_snoozes_for_accounts(db, ids)
+    marked = marked_alert_ids(db, ids)
 
     account_rows = "".join(
         f"<tr><td><a class='acctlink' href='/account?id={r['id']}'>{html.escape(r['label'])} ›</a></td>"
@@ -562,7 +593,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
         f"<td class='rule'><a class='acctlink' href='/incident?id={int(r['id'])}'>"
         f"{html.escape(r['rule'])} ›</a></td>"
-        f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules)}</tr>"
+        f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules, int(r['id']) in marked)}</tr>"
         for r in alerts
     ) or "<tr><td colspan=5 class='empty'>No alerts — all quiet</td></tr>"
 
@@ -612,6 +643,7 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
         )
         alerts = cur.fetchall()
     snoozed = active_snoozes_for_accounts(db, [account_id])
+    marked = marked_alert_ids(db, [account_id])
 
     last_ok = acct["last_success_at"]
     now = datetime.now(timezone.utc)
@@ -652,7 +684,7 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
         f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
         f"<td class='rule'><a class='acctlink' href='/incident?id={int(r['id'])}'>"
         f"{html.escape(r['rule'])} ›</a></td>"
-        f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules)}</tr>"
+        f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules, int(r['id']) in marked)}</tr>"
         for r in alerts
     ) or "<tr><td colspan=4 class='empty'>No alerts — all quiet</td></tr>"
 
@@ -1090,14 +1122,28 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         acknowledged = "<b>Not acknowledged</b> — nobody has confirmed seeing this alert."
         ack_cls = "warn"
 
+    timeline = [
+        ("ok", f"<b>Detected</b> — {html.escape(alert['message'])}", _ts(alert["sent_at"])),
+        (notified_cls, notified, _ts(alert["sent_at"])),
+        (ack_cls, acknowledged, _ts(alert["acknowledged_at"]) if alert["acknowledged_at"] else "—"),
+    ]
+    # A customer saying "that was me" is part of this incident's record, and
+    # this page is the document handed to an exchange or an insurer. Leaving it
+    # off would let a document describe a theft the account's owner had already
+    # said was their own trading (G-24, #28).
+    for mark in marks_for_alert(db, alert["id"]):
+        note = f" — “{html.escape(mark['note'])}”" if mark["note"] else ""
+        timeline.append((
+            "ok",
+            f"<b>Marked as expected activity</b> by {html.escape(mark['marked_by'])}"
+            f"{note}",
+            _ts(mark["created_at"]),
+        ))
+
     steps = "".join(
         f'<div class="check"><span class="ic {cls}">{"✓" if cls == "ok" else "!"}</span>'
         f'<span class="txt">{text}</span><span class="meta">{when}</span></div>'
-        for cls, text, when in (
-            ("ok", f"<b>Detected</b> — {html.escape(alert['message'])}", _ts(alert["sent_at"])),
-            (notified_cls, notified, _ts(alert["sent_at"])),
-            (ack_cls, acknowledged, _ts(alert["acknowledged_at"]) if alert["acknowledged_at"] else "—"),
-        )
+        for cls, text, when in timeline
     )
 
     def _balance_rows(rows, when_label):
@@ -1410,7 +1456,7 @@ def _render_not_found() -> str:
 # --- server ------------------------------------------------------------------
 
 def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
-                 rules=None, cipher=None) -> ThreadingHTTPServer:
+                 rules=None, cipher=None, metrics=None) -> ThreadingHTTPServer:
     """Customer-facing member portal.
 
     Unlike the ops dashboard this one has its own login and is *meant* to be
@@ -1758,6 +1804,47 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             # same page, where the first acknowledgement is still shown.
             self._redirect(f"/account?id={account_id}")
 
+        def _expected(self, form):
+            """"That was me" (G-24, #28).
+
+            Same isolation as `_acknowledge` and `_snooze`: the alert is looked
+            up inside the member's own accounts, and every failure renders the
+            same not-found page, so poking at ids cannot map another
+            customer's alert volume.
+
+            Unlike a snooze this changes nothing about what the product
+            watches or delivers. It records a judgement, which is why it is
+            safe to make it one click - and why it must never grow into a
+            suppression: the customer clicking it is telling us about the
+            past, not asking for silence."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            try:
+                alert_id = int((form.get("alert_id") or [""])[0])
+            except (TypeError, ValueError):
+                self._send(_render_not_found().encode(), 404)
+                return
+
+            account_ids = [r["id"] for r in member_accounts(db, email)]
+            alert = _member_alert(db, alert_id, account_ids)
+            if alert is None:
+                self._send(_render_not_found().encode(), 404)
+                return
+
+            note = (form.get("note") or [""])[0]
+            first = mark_expected(db, alert_id, alert["account_id"], alert["rule"],
+                                  alert["dedup_key"], marked_by=normalize_email(email),
+                                  note=note)
+            # Counted once per alert per person, matching the table's
+            # uniqueness: a customer clicking twice has not found two false
+            # positives, and counting it twice would inflate the only number
+            # we have about how wrong a rule is.
+            if first and metrics is not None:
+                metrics.alert_marked_expected(alert["rule"])
+            self._redirect(f"/account?id={alert['account_id']}")
+
         def _snooze(self, form):
             """Silence one alert for a while (G-26, #30).
 
@@ -1832,6 +1919,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
 
             if path == "/snooze":
                 self._snooze(form)
+                return
+
+            if path == "/expected":
+                self._expected(form)
                 return
 
             if path != "/login":

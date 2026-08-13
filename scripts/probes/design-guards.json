@@ -818,5 +818,85 @@
    "tests/test_password_reset.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "#28 ATTACK mark another customer's alert: the portal trusts the posted id",
+  "file": "sentinel/portal.py",
+  "old": "            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            note = (form.get(\"note\") or [\"\"])[0]",
+  "new": "            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                with db.cursor() as cur:\n                    cur.execute(\"SELECT id, account_id, rule, dedup_key, severity FROM alerts WHERE id = ?\", (alert_id,))\n                    alert = cur.fetchone()\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            note = (form.get(\"note\") or [\"\"])[0]",
+  "tests": [
+   "tests/test_expected_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#28 marking silences the alert too: one reassuring click turns a detector off",
+  "file": "sentinel/expected.py",
+  "old": "    logger.info(\"alert %d marked as expected activity by %s (rule %s)\",\n                alert_id, normalized, rule)\n    return True",
+  "new": "    from sentinel.snooze import snooze_alert\n    snooze_alert(db, account_id, dedup_key, rule, 24, requested_by=normalized)\n    logger.info(\"alert %d marked as expected activity by %s (rule %s)\",\n                alert_id, normalized, rule)\n    return True",
+  "tests": [
+   "tests/test_expected_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#28 a repeat marking is counted again, inflating the pattern an operator judges a rule by",
+  "file": "sentinel/expected.py",
+  "old": "            \"INSERT OR IGNORE INTO expected_activity \"",
+  "new": "            \"INSERT OR REPLACE INTO expected_activity \"",
+  "tests": [
+   "tests/test_expected_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#28 an anonymous marking is accepted, so the pattern names nobody",
+  "file": "sentinel/expected.py",
+  "old": "        raise ValueError(\"a marking must name who made it\")",
+  "new": "        normalized = \"unknown\"",
+  "tests": [
+   "tests/test_expected_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#28 the operator pattern view loses its denominator: 3 of 4 and 3 of 900 render identically",
+  "file": "sentinel/dashboard.py",
+  "old": "        share = f\"{r['marks']} of {total}\" if total else f\"{r['marks']}\"",
+  "new": "        share = f\"{r['marks']}\"",
+  "tests": [
+   "tests/test_expected_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#28 the note is unbounded: a POST body becomes whatever the sender typed",
+  "file": "sentinel/expected.py",
+  "old": "    clean_note = (note or \"\").strip()[:MAX_NOTE_LENGTH] or None",
+  "new": "    clean_note = (note or \"\").strip() or None",
+  "tests": [
+   "tests/test_expected_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#28 the metric counts every click, not every judgement",
+  "file": "sentinel/portal.py",
+  "old": "            if first and metrics is not None:",
+  "new": "            if metrics is not None:",
+  "tests": [
+   "tests/test_expected_activity.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#28 a customer's mark is dropped from the incident document handed to an exchange",
+  "file": "sentinel/portal.py",
+  "old": "    for mark in marks_for_alert(db, alert[\"id\"]):",
+  "new": "    for mark in []:",
+  "tests": [
+   "tests/test_expected_activity.py"
+  ],
+  "expect": "killed"
  }
 ]

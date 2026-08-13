@@ -57,6 +57,11 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     # `created_at` cannot delete a live token: the shortest expressible window
     # is a day (0 means keep forever) and the longest token life is an hour.
     "password_resets": ("created_at", "password_resets_days"),
+    # "That was me" (#28). A customer's judgement about one alert, on the same
+    # window as the alert it judges - a mark that outlived its alert would show
+    # in the operator's pattern view with nothing behind it, and a mark deleted
+    # before its alert would make a rule look better than it was.
+    "expected_activity": ("created_at", "expected_activity_days"),
     # Dedup state, not history. See the module docstring: too short and old
     # movements re-alert.
     "seen_withdrawals": ("first_seen_at", "dedup_days"),

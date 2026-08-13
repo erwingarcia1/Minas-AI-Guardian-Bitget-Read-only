@@ -143,6 +143,7 @@ retention:
   alerts_days: "730"
   operator_pages_days: "730"
   sms_deliveries_days: "730"
+  expected_activity_days: "730"  # "that was me" (#28); same window as the alert it judges
   dedup_days: "365"                   # see above - bounded below by correctness
   balance_snapshots_days: "7"         # only "what changed since the last poll" needs these
   permission_snapshots_days: "730"

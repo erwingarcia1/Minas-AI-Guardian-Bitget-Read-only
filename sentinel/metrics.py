@@ -35,6 +35,21 @@ class Metrics:
         )
         self.alerts = Counter("sentinel_alerts_sent_total", "Alerts sent (post-dedup)", ["severity"], registry=reg)
         self.accounts_active = Gauge("sentinel_accounts_active", "Accounts with status=active", registry=reg)
+        # A customer said an alert was their own activity (G-24, #28): a
+        # confirmed false positive, stated by the only person who can know.
+        #
+        # Deliberately a count of confirmed-wrong and NOT a precision ratio.
+        # An unmarked alert is unjudged, not correct, and most alerts are never
+        # judged by anybody - so dividing marks by all alerts would let a quiet
+        # week of nobody looking read as a detector improving. Rate this
+        # against `sentinel_detections_total` for the same rule when you want a
+        # trend, and read the denominator on the dashboard.
+        self.marked_expected = Counter(
+            "sentinel_alerts_marked_expected_total",
+            "Alerts a customer marked as their own activity (confirmed false positives)",
+            ["rule"],
+            registry=reg,
+        )
         # A record the exchange sent without a usable timestamp. Rising here
         # means an exchange changed its response format: those records can no
         # longer be placed in time, so quantity-drop stops crediting them as
@@ -102,6 +117,10 @@ class Metrics:
     def alert_sent(self, severity: str) -> None:
         if _AVAILABLE:
             self.alerts.labels(severity=severity).inc()
+
+    def alert_marked_expected(self, rule: str) -> None:
+        if _AVAILABLE:
+            self.marked_expected.labels(rule=rule).inc()
 
     def set_active_accounts(self, count: int) -> None:
         if _AVAILABLE:

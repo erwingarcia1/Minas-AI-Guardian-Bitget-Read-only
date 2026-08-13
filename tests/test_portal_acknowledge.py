@@ -290,6 +290,13 @@ def test_acknowledging_from_the_portal_stops_escalation(portal, db, alice):
 
 
 def test_an_unacknowledged_alert_offers_a_button_and_an_acknowledged_one_does_not(portal, db, alice):
+    """The acknowledge control specifically, not "the alert id is absent".
+
+    It used to assert the latter, which was equivalent while acknowledgement
+    was the only control on the row. "That was me" (G-24, #28) is deliberately
+    still offered after acknowledgement — people acknowledge in a hurry and
+    recognise their own activity a minute later — so the row still carries the
+    id, and the narrower assertion is the one that was always meant."""
     account_id, token = alice
     alert_id = _alert(db, account_id)
 
@@ -300,7 +307,8 @@ def test_an_unacknowledged_alert_offers_a_button_and_an_acknowledged_one_does_no
     _request(portal, "POST", "/acknowledge", body={"alert_id": str(alert_id)}, cookie=token)
 
     _, after = _request(portal, "GET", f"/account?id={account_id}", cookie=token)
-    assert f'value="{alert_id}"' not in after
+    assert "action='/acknowledge'" not in after
+    assert ">Acknowledge<" not in after
 
 
 def test_the_portal_shows_who_acknowledged_and_how_long_it_took(portal, db, alice):
