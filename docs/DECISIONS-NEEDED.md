@@ -21,7 +21,7 @@ whoever builds one should build it to cover both.
 |---|---|---|---|
 | 1 | Escalation timings | #27 (G-23), part of #26/#30 | 15 / 30 / 60 min, secondary at 15 |
 | 2 | Fire drill cadence + what customers see | #37 (G-33) | Weekly, drill account, customers see result only |
-| 3 | Incident page "what to do next" wording | #29 (G-25) | Three fixed actions, exchange-specific link |
+| 3 | Incident page "what to do next" wording | #29 (G-25) · depends on #69 | Three fixed actions, exchange-specific link |
 | 4 | Alert channel defaults + quiet hours | #24 (G-20) | Quiet hours non-critical only, 22:00–07:00 local |
 | 5 | PDF export for incidents | #29 (G-25) | Defer — print stylesheet now |
 | 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), #46 (G-42) | Start legal review now; 24 months interim |
@@ -188,10 +188,25 @@ closes with a link to the portal to check whether monitoring is still running.
 
 The runbook is now a single function so that review has one place to land, and
 the customer-facing gating (CRITICAL/HIGH only) is separate from the wording.
-There is still **no self-serve page for replacing a revoked key** — onboarding
-is operator-driven — so the link points at the portal front door rather than a
-flow that does not exist. That page is worth building before this advice gets
-much traffic.
+
+### The advice depends on a page that does not exist — #69
+
+There is still **no self-serve way for a customer to replace a revoked Guardian
+key.** Onboarding is operator-driven end to end, so the link in step 6 points
+at the portal front door rather than at a flow, and "ask us for a new key" is
+the entire recovery path. Filed as **#69** (epic-01, p2, Phase 3).
+
+This is a dependency of decision 3 rather than a note beside it. Step 6 tells a
+customer, correctly, that revoking every key leaves the account unwatched —
+and step 2 exists because we expect a frightened person to revoke everything.
+So the advice can put a customer into a state the product cannot recover from
+on its own, during a live incident, with the wait measured by whether an
+operator is awake.
+
+Whichever way the advice-versus-instruction question is settled, the wording of
+step 6 should be chosen knowing whether #69 exists by then: "ask us for a new
+key" is an honest sentence today and a poor one the moment there is a page that
+does it.
 
 ---
 
