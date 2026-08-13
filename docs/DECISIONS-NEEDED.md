@@ -471,6 +471,45 @@ late.
 
 ---
 
+## 11. Billing: provider, plans, prices, and what a lapse does (G-39/#43, G-40/#44)
+
+**No code written**, per the standing instruction. Full implementation plans are
+in the issues, ready to build once these are answered.
+
+### What I need
+
+1. **Provider.** Stripe and Paddle differ in whether they are merchant of
+   record, which decides who owes VAT on a UK-based service selling worldwide.
+   That is a tax question before it is an engineering one.
+2. **Plans and prices**, and specifically **per account or per customer**. The
+   data model differs and it is not a small change afterwards.
+3. **Trial?** And what happens at the end of one.
+4. **What a lapse does.** The honest options are different products:
+   keep monitoring and chase; stop monitoring after a grace period; or —
+   never — keep monitoring and stop alerting.
+5. **Grace period length and notice schedule**, if there is a grace period.
+
+### The engineering constraint, whichever you choose
+
+**Guardian must never stop monitoring because billing broke**, and **a customer
+must never believe they are monitored while they are not.**
+
+Detection reads `accounts.status`; billing must never write it. A lapse sets a
+separate flag that an explicit, attributable action acts on. The indirection
+exists so a webhook bug cannot silently switch off monitoring for the fleet —
+which is the same failure this project has now found technically three times
+(#57, #67, the ten-hour red CI), arrived at commercially.
+
+### Recommendation
+
+Grace period, then stop, with the stopping loud and repeated: a banner on
+**every** portal page, not a billing page; an email that says *monitoring has
+stopped* in those words rather than "your subscription has ended"; and an
+operator page, because ending monitoring for a customer who merely changed
+cards is a business event somebody should see.
+
+---
+
 ## Not a decision, but needs saying: #16's remaining criterion
 
 G-12's third criterion — "threshold changes are recorded, showing **who**
