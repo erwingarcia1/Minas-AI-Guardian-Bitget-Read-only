@@ -32,6 +32,30 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   distinguishes two withdrawals.
 
 ### Fixed
+- **A withdrawal we cannot identify no longer disappears quietly (#67).** When
+  an exchange sends a withdrawal with neither an `id`/`txid` nor a timestamp,
+  its derived identity is a digest of coin, amount, address, tag, network and
+  type — so two separate withdrawals of the same amount to the same address
+  collide, and every one after the first is dropped as "already seen".
+
+  That is a missed CRITICAL on the money-leaving path, and it happened in
+  complete silence: no log, no metric, no page, and a poll that reported
+  success. The identity docstring described the limitation and called it
+  something an operator should look at directly. Nobody was looking, because
+  nothing told them — documentation is not notification.
+
+  The condition now pages the operator at HIGH and increments
+  `sentinel_unidentifiable_withdrawals_total`. **The collision itself is not
+  fixed**: the options for fixing it trade against the property that one
+  settling withdrawal keeps one identity and does not re-page the customer on
+  every poll, and none of them should be chosen without knowing how often this
+  happens. The counter is what makes that knowable.
+
+  Checked *before* `record_seen_withdrawal`, since that call is what swallows
+  the duplicate — after it there is nothing left to notice. Counted per record
+  so the frequency is real, paged once per poll because the condition is about
+  the exchange's response format rather than any one record.
+
 - **Both mutation scripts aborted on a perfect score.** `grep` exits 1 when it
   matches nothing, and "nothing" here is the survivor list — so under
   `set -o pipefail` the run died at exactly the moment every mutant was killed,

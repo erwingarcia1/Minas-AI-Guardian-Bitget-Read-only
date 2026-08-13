@@ -23,6 +23,7 @@ class Metrics:
     def __init__(self, registry=None):
         # Maintained regardless of _AVAILABLE - see untimestamped_record.
         self._undated: dict = {}
+        self._unidentifiable = 0
         self._undated_lock = threading.Lock()
         if not _AVAILABLE:
             return
@@ -44,6 +45,18 @@ class Metrics:
             "sentinel_untimestamped_records_total",
             "Exchange records received with a missing or unparseable timestamp",
             ["exchange", "source"],
+            registry=reg,
+        )
+        # A withdrawal the exchange sent with neither a reference nor a time.
+        # Those cannot be told apart from each other, so all but the first are
+        # dropped as already seen - a MISSED CRITICAL on the money-leaving
+        # path, and previously an entirely silent one (#67). This counter is
+        # what makes the real frequency knowable, which is what the eventual
+        # fix has to be chosen from.
+        self.unidentifiable_withdrawals = Counter(
+            "sentinel_unidentifiable_withdrawals_total",
+            "Withdrawals received with neither an exchange reference nor a timestamp",
+            ["exchange"],
             registry=reg,
         )
         # 0 means config/rules.yaml on disk was rejected and detection is
@@ -105,6 +118,20 @@ class Metrics:
             self._undated[(exchange, source)] = self._undated.get((exchange, source), 0) + 1
         if _AVAILABLE:
             self.untimestamped_records.labels(exchange=exchange, source=source).inc()
+
+    def unidentifiable_withdrawal(self, exchange: str) -> None:
+        # Same two-place counting as untimestamped_record, and for the same
+        # reason: the plain integer survives prometheus_client being absent,
+        # and a count that quietly stops existing with an optional dependency
+        # looks exactly like a count of zero.
+        with self._undated_lock:
+            self._unidentifiable += 1
+        if _AVAILABLE:
+            self.unidentifiable_withdrawals.labels(exchange=exchange).inc()
+
+    def unidentifiable_withdrawals_total(self) -> int:
+        with self._undated_lock:
+            return self._unidentifiable
 
     def untimestamped_snapshot(self) -> dict:
         """Cumulative undated-record counts per (exchange, source). A copy, so

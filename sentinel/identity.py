@@ -93,6 +93,28 @@ def fill_identity(fill: dict) -> str:
     return "sha256:" + _digest(fill)
 
 
+def is_unidentifiable(record: dict) -> bool:
+    """True when a withdrawal has neither an exchange reference nor a time,
+    which is the one case where `withdrawal_identity` can genuinely collide
+    (#67).
+
+    Without a reference the identity is a digest of currency, amount, address,
+    tag, network, type and timestamp. A timestamp alone rescues it - two
+    withdrawals cannot share a millisecond. With the timestamp *also* missing,
+    two separate withdrawals of the same amount to the same address are one
+    record as far as this system is concerned, and the second is silently
+    dropped as already seen.
+
+    Falsy values count as absent, deliberately and to match
+    `withdrawal_identity`: an exchange whose schema requires the field sends
+    `""` or `0` when it has nothing, and 0 is not a plausible withdrawal time.
+    Anything that disagreed with the identity function about what counts as
+    present would mean this check never fires for the records that need it
+    most."""
+    has_reference = bool(record.get("id") or record.get("txid"))
+    return not has_reference and not record.get("timestamp")
+
+
 def evidence_reference(record: dict, identity: str) -> str:
     """What to put in an alert's `order_id` evidence field.
 

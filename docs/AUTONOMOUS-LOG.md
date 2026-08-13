@@ -2514,3 +2514,54 @@ first time any run reached 100%. Found only because this module was the first
 to get there. Worth remembering: the failure mode of a measurement tool is
 often the extreme of its own scale, which is the one case nobody writes a test
 for.
+
+---
+
+## #67 · The silence, fixed. The collision, measured.
+
+Filed during #65, built immediately after because it is p1 and Phase 1 and
+milestone order says Phase 1 first.
+
+**What I fixed is the silence, not the collision.** Two withdrawals with no
+reference and no timestamp still collide; the second is still dropped. What
+changed is that an operator is now told, and the frequency is counted.
+
+That split is deliberate and is the interesting judgment. Options 2 and 3 in
+the issue both stop the collision, and both trade against the property
+`withdrawal_identity` exists to hold - that one settling withdrawal keeps one
+identity and does not page the customer on every poll. Choosing between them
+needs a number nobody has. The counter is how that number gets collected, and
+picking a fix now would have been guessing dressed as progress.
+
+### Ordering that matters
+
+The check runs **before** `record_seen_withdrawal`, because that call is what
+swallows the duplicate. After it, the record is gone and there is nothing left
+to notice. Probed - moving it after the filter kills a test.
+
+### Counted per record, paged per poll
+
+An exchange that has stopped sending references sends a whole page of them. One
+page per record would bury the operator in the thing they are being told about.
+But the metric counts every record, because the fix has to be chosen from real
+frequency and a deduped page is not a frequency.
+
+### Falsy values, again
+
+`id: ""` and `id: 0` are what an exchange sends when its schema requires the
+field and it has nothing to put there. `timestamp: 0` is Unix epoch, which is
+not a plausible withdrawal time and is what a missing integer becomes passing
+through a careless adapter. All of them count as absent - and they have to,
+because `withdrawal_identity` already treats them that way. A check that
+disagreed with the identity function about what counts as present would fire
+on none of the records that need it.
+
+### A harness bug worth naming
+
+My first version of `poll_once_with_withdrawals` used one stub client for both
+onboarding and polling. Onboarding baselines whatever the exchange returns -
+that is its job - so the records under test were marked seen before the poll
+ran, and the poll correctly detected nothing. The test failed for a reason that
+had nothing to do with the code. A harness that pre-seeds the state the test is
+about will keep producing that shape of confusion, so the split is commented
+where it lives.
