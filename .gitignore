@@ -24,3 +24,6 @@ sentinel_data/
 # writes; both are regenerated and neither belongs in the repo.
 mutants/
 setup.cfg
+
+# scripts/mutation-probe.py's mutual exclusion; empty, and only ever locked.
+.mutation-probe.lock

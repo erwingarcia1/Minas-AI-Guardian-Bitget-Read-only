@@ -53,6 +53,12 @@ ENV_ALLOWLIST = frozenset({
     "TERM", "COLUMNS", "LINES", "LANG", "LANGUAGE", "TZ",
     # CI plumbing. Note GITHUB_* is NOT allowed: GITHUB_TOKEN lives there.
     "CI", "SOURCE_DATE_EPOCH",
+    # How mutmut tells the mutated package which mutant is live. Strip it and
+    # every mutant runs as unmutated source, so every test passes and every
+    # mutant "survives" - mutmut catches this up front ("Unable to force test
+    # failures") and refuses to run, which is how it was found. Not a secret,
+    # and only load-bearing inside mutmut's own copy of the package.
+    "MUTANT_UNDER_TEST",
 })
 
 ENV_ALLOWED_PREFIXES = ("PYTEST_", "LC_", "XDG_", "COVERAGE_", "COV_CORE_")

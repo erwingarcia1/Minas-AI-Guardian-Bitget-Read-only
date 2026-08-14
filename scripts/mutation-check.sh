@@ -33,8 +33,23 @@
 #    separation is passed to pytest as a single argument, and pytest reports it
 #    as one unfindable path.
 # 3. Mutant *generation* takes ~8 minutes for this package and is independent of
-#    the tests. It is cached in `mutants/` and only redone with --regenerate or
-#    when a source file is newer.
+#    the tests. It is cached in `mutants/` and only redone with --regenerate,
+#    when `mutants/` is absent, or when the drift check below finds a stale
+#    non-Python file. Generation always starts by deleting `mutants/`, because
+#    mutmut refreshes only *some* of what it copied - see 6.
+# 6. `copy_src_dir()` copies everything under `source_paths` with
+#    `if target_path.exists(): continue`. Python files are refreshed separately
+#    by the mutation pass, which compares mtimes, so *code* stays current. Every
+#    other file under `sentinel/` is copied the first time `mutants/` is built
+#    and never again - and `also_copy` (tests/, setup.cfg, pyproject.toml) *is*
+#    refreshed every run, which is what makes this invisible: the tests in
+#    `mutants/` are always current, so a stale copy there looks impossible.
+#    `sentinel/schema.sql` is the only non-Python file we have, and it is the
+#    schema every test's database is built from. When it lagged behind a new
+#    table, the ~80 tests that predated the table passed and the ones that
+#    touched it failed with `no such table` - which, with the runner's `-x`,
+#    aborted stats collection and ran zero mutants. `--regenerate` did not fix
+#    it, because it did not delete anything. Only `rm -rf mutants/` did.
 # 4. `mutmut run <pattern>` filters which mutants RUN, not which are generated.
 # 5. Mutant numbering is not stable across regenerations. Never record a
 #    survivor by number; record the module and the diff.
@@ -94,6 +109,18 @@ command -v "$MUTMUT" >/dev/null 2>&1 || [ -x "$MUTMUT" ] || {
 # The test selection is deliberately narrow: mutation testing runs it once per
 # mutant, so the full 70-second suite would make this unusable. These are the
 # tests that exercise detectors and alerting.
+#
+# Narrow is not the same as arbitrary. A mutant that no selected test reaches
+# is scored nowhere, so getting this list wrong does not make the gate slower,
+# it makes it quieter - and this script fails outright rather than report a
+# score over a subset. The last four were added after a clean run left 9
+# mutants unreached, each in a function these files are the only tests for:
+# portal_action_line and monitoring_note (the customer email), the ClickSend
+# and per-account branches of build_sms_channel, and acknowledge_operator_page.
+# Alerting code added under sentinel/ needs its tests added here too.
+#
+# Keep this a plain list. It is a configparser multi-line value, so an indented
+# `#` comment is read as another test path, not as a comment.
 cat > setup.cfg <<'EOF'
 [mutmut]
 source_paths=sentinel
@@ -114,11 +141,38 @@ pytest_add_cli_args_test_selection=
     tests/test_thresholds_and_evidence.py
     tests/test_alert_stack.py
     tests/test_sms_notifications.py
+    tests/test_customer_email_template.py
+    tests/test_clicksend_sms.py
+    tests/test_contact_router.py
+    tests/test_operator_alerting.py
 runner=python -m pytest -x -q -p no:cacheprovider
 EOF
 trap 'rm -f setup.cfg' EXIT
 
-if [ "$REGENERATE" = true ] || [ ! -d mutants ]; then
+# mutmut will not notice a changed non-Python source file (quirk 6 above), so
+# notice it here. Cheap: sentinel/schema.sql is currently the only such file,
+# and `cmp` on it costs nothing next to an 8-minute generation. Compare contents
+# rather than mtimes - mutmut copies with `copy2`, so the stale copy carries the
+# *source's* old mtime and looks freshly written.
+STALE=false
+if [ -d mutants ]; then
+  while IFS= read -r src; do
+    if ! cmp -s "$src" "mutants/$src"; then
+      echo "mutants/$src does not match $src - the copy mutmut runs the tests" >&2
+      echo "against is stale, and it will not refresh it itself. Rebuilding." >&2
+      STALE=true
+      break
+    fi
+  done < <(find sentinel -type f ! -name '*.py' ! -path '*__pycache__*')
+fi
+
+if [ "$REGENERATE" = true ] || [ ! -d mutants ] || [ "$STALE" = true ]; then
+  # Delete first. Generating over a surviving mutants/ is how every staleness
+  # bug in this gate has started: mutmut keeps whatever is already there, both
+  # the non-Python files above and mutmut-stats.json, which caches the
+  # test-to-function map and will happily reuse one built by a broken run.
+  # A regeneration that leaves anything behind is not a regeneration.
+  rm -rf mutants
   echo "Generating mutants (~8 min, cached afterwards)..."
   "$MUTMUT" run 'zzz.no.such.mutant' >/dev/null 2>&1 || true
 fi
@@ -137,7 +191,16 @@ LOG=$(mktemp)
 KILLED=$(tr '\r' '\n' < "$LOG" | grep -cE "^🎉" || true)
 SURVIVED=$(wc -l < /tmp/mutation-survivors.txt)
 TOTAL=$((KILLED + SURVIVED))
-[ "$TOTAL" -eq 0 ] && { echo "no mutants ran - check $LOG" >&2; exit 2; }
+# Zero is not a score, it is a gate that measured nothing - and in CI a silent
+# pass here reads exactly like coverage. Spelled as an `if` so the failure is
+# unconditional rather than riding on an AND-list's status.
+if [ "$TOTAL" -eq 0 ]; then
+  echo "no mutants ran - this gate measured nothing. Check $LOG." >&2
+  echo "Usually the baseline suite fails inside mutants/, so stats collection" >&2
+  echo "aborts before any mutant is tested. Run the selection there by hand:" >&2
+  echo "  (cd mutants && ../.venv/bin/python -m pytest -x -q tests/)" >&2
+  exit 2
+fi
 
 # A selected mutant that never ran is counted nowhere, and a score computed
 # over the ones that did looks exactly like a score over all of them - the same
@@ -159,12 +222,49 @@ echo
 echo "Killed ${KILLED}/${TOTAL} = ${SCORE}%"
 
 if [ "$CHECK" = true ]; then
-  FLOOR=$(cat "$FLOOR_FILE" 2>/dev/null || echo 0)
+  # A missing floor file used to default to 0, so `--check` passed whatever it
+  # was handed and printed "Floor: 0%" - a gate that cannot fail, in the one
+  # mode whose entire job is failing. There is nothing to compare against, so
+  # refuse rather than compare against nothing.
+  FLOOR=$(cat "$FLOOR_FILE" 2>/dev/null || true)
+  case "$FLOOR" in
+    ''|*[!0-9]*)
+      echo "--check has no floor to compare against: $FLOOR_FILE is missing or" >&2
+      echo "not a plain number (read: '${FLOOR}'). Refusing to pass a gate with" >&2
+      echo "no threshold. Restore it from git, or seed it with the current score" >&2
+      echo "by running this script without --check first." >&2
+      exit 2 ;;
+  esac
   echo "Floor: ${FLOOR}%"
   if [ "$SCORE" -lt "$FLOOR" ]; then
     echo "Mutation score dropped below the floor. A decision this suite used to pin, it no longer does." >&2
     exit 1
   fi
-  # Ratchet: a better score raises the floor, so the gain can't be given back.
-  [ "$SCORE" -gt "$FLOOR" ] && { echo "$SCORE" > "$FLOOR_FILE"; echo "Floor raised to ${SCORE}%."; }
+  # Ratchet, with headroom: floor = max(floor, score - BUFFER). A better score
+  # still raises the floor, so a gain cannot be quietly given back, and the
+  # floor still only ever moves up.
+  #
+  # The buffer is the point. Ratcheting to the score *exactly* guarantees zero
+  # slack forever - the floor is dragged up to meet every improvement, so the
+  # steady state is score == floor and the next honest change to any function
+  # this measures trips the gate. A tripwire that fires during legitimate work
+  # is one people learn to route around with --no-verify, and a gate everyone
+  # bypasses protects nothing. Two points buys room for ordinary change without
+  # letting a real regression through.
+  #
+  # Spelled as an `if` rather than `[ ... ] && { ... }` because that form was
+  # once the last command in the script: when the score merely equalled the
+  # floor the test was false and its status became the script's, so a passing
+  # run exited 1, identically to a real breach. Under the old zero-headroom
+  # rule equality was the steady state, so that was every healthy run.
+  BUFFER=2
+  TARGET=$((SCORE - BUFFER))
+  if [ "$TARGET" -lt 0 ]; then TARGET=0; fi
+  if [ "$TARGET" -gt "$FLOOR" ]; then
+    echo "$TARGET" > "$FLOOR_FILE"
+    echo "Floor raised to ${TARGET}% (score ${SCORE}%, ${BUFFER} points of headroom)."
+  fi
 fi
+
+# Explicit, so no future last-command status can be mistaken for a verdict.
+exit 0

@@ -296,3 +296,20 @@ means the equivalence claim has stopped being true.
 `scripts/mutation-check.sh` now also fails when fewer mutants ran than were
 selected — a mutant that never ran shrinks the denominator and raises the score
 by not existing.
+
+**One probe run at a time.** The probes patch files in the working tree, so two
+runs at once corrupt it — and they do it silently. Each run copies a file aside
+before mutating it, so if the second run takes its backup while the first has a
+mutation applied, that backup *is* the mutant, and the second run faithfully
+restores it on the way out. What's left is a real-looking source edit nobody
+made, in a tree `git status` says is dirty for a reason you'll assume was you.
+Seen for real: an incident-balance query left as `snapshot_at >= ?` where it
+should read `<= ?`, found only because the diff was read.
+
+`mutation-probe.py` therefore takes an advisory `flock` on
+`.mutation-probe.lock` and **refuses** — exit 2 — rather than queueing behind
+another run, since the callers are hooks and health checks that shouldn't block
+for however long somebody else's run takes. The kernel drops the lock when the
+process dies however it dies, so a killed run can't leave it stuck. The health
+check reports a refusal as `skipped`, never `pass`, and still exits non-zero:
+the guards went unchecked either way.

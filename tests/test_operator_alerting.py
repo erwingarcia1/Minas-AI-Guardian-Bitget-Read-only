@@ -11,12 +11,31 @@ about our problem.
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from sentinel.alerts.operator import OperatorAlerter, recent_operator_pages
 from sentinel.config import RulesConfig
+
+
+def rules_yaml() -> str:
+    """`config/rules.yaml`, found without depending on the current directory.
+
+    As a bare relative path this resolves only when pytest is started from the
+    repo root. mutmut runs the suite from its own copy of the package under
+    `mutants/`, which has no `config/`, so the test below failed there - and
+    because the runner uses `-x`, that one failure aborted stats collection and
+    took the entire mutation gate down with it ("failed to collect stats").
+
+    Walking up until the file actually appears works from the real tree and
+    from the copy, and does not care how deep either sits."""
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "config" / "rules.yaml"
+        if candidate.exists():
+            return str(candidate)
+    raise FileNotFoundError(f"no config/rules.yaml in any parent of {__file__}")
 
 
 class Recording:
@@ -34,7 +53,7 @@ def channels():
 
 @pytest.fixture
 def alerter(db, channels):
-    return OperatorAlerter(db, channels, RulesConfig("config/rules.yaml"))
+    return OperatorAlerter(db, channels, RulesConfig(rules_yaml()))
 
 
 def _account(db, label="cust-1", email="customer@example.com"):
@@ -93,7 +112,7 @@ def test_raising_a_page_never_notifies_a_customer(db, channels):
     no path to a customer at all — asserted by giving the alerter a router that
     fails the test if it is ever touched."""
     router = MagicMock()
-    alerter = OperatorAlerter(db, channels, RulesConfig("config/rules.yaml"))
+    alerter = OperatorAlerter(db, channels, RulesConfig(rules_yaml()))
 
     account_id = _account(db)
     alerter.page(
@@ -261,6 +280,6 @@ def test_acknowledging_a_page_records_it_once(db, alerter):
 def test_operator_alerting_config_is_accepted_by_the_schema():
     """The new section has to be declared in `rules_schema`, or G-12's
     validation rejects the very file that configures this."""
-    rules = RulesConfig("config/rules.yaml")
+    rules = RulesConfig(rules_yaml())
     assert rules.is_valid
     assert rules.get("operator_alerting", "routing", "CRITICAL")

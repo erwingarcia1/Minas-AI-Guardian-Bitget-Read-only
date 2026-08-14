@@ -64,6 +64,21 @@ def test_allowed_prefixes_survive(name):
     assert env_is_allowed(name)
 
 
+def test_the_mutmut_selector_survives():
+    """Not plumbing for this suite - plumbing for the gate that measures it.
+
+    `MUTANT_UNDER_TEST` is how mutmut tells its copy of the package which
+    mutant is live. Clear it and every mutant runs as unmutated source: the
+    tests all pass, every mutant is scored as surviving, and the mutation gate
+    reports on a run in which nothing was ever mutated. This suite cannot
+    notice that about itself, so the pin lives here.
+
+    Found the hard way - the allowlist landed without it and mutmut refused to
+    start, with `FAILED: Unable to force test failures`."""
+    assert env_is_allowed("MUTANT_UNDER_TEST")
+    assert env_names_to_clear(["MUTANT_UNDER_TEST"]) == []
+
+
 def test_the_allowlist_stays_small():
     """A guard on the direction of travel. This list grows one variable at a
     time, each with a reason; if it has grown a lot, the policy has quietly

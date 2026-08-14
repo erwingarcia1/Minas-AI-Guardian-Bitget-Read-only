@@ -46,6 +46,7 @@ expectation.
 from __future__ import annotations
 
 import atexit
+import fcntl
 import json
 import shutil
 import signal
@@ -55,6 +56,36 @@ import tempfile
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
+LOCKFILE = REPO / ".mutation-probe.lock"
+
+
+def _take_the_lock():
+    """Refuse to run while another probe run is patching the same files.
+
+    Two concurrent runs corrupt the working tree, and they do it in the one
+    way this tool is otherwise careful to prevent: silently. Each run copies a
+    file aside before mutating it, so if run B takes its backup while run A has
+    a mutation applied, B's backup *is* A's mutant - and B faithfully restores
+    it when it finishes. What is left on disk is a real-looking source edit
+    nobody made, in a tree that `git status` says is dirty for a reason you
+    will assume was you. Observed here: `snapshot_at <= ?` left as
+    `snapshot_at >= ?` in an incident-balance query.
+
+    Refuse rather than queue. Waiting would mean an unattended `--check` in a
+    hook or a health check blocking for however long the other run takes; the
+    honest answer is "somebody else is doing this, try again".
+
+    The lock is advisory and process-scoped: the kernel drops it when this
+    process dies however it dies, so a killed run cannot leave it held. The
+    handle is deliberately kept alive for the process lifetime.
+    """
+    handle = LOCKFILE.open("w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
 
 
 def _pytest() -> list[str]:
@@ -89,6 +120,13 @@ def main(argv: list[str]) -> int:
     if len(argv) != 2:
         print(__doc__.strip().splitlines()[2], file=sys.stderr)
         print("usage: scripts/mutation-probe.py <probes.json>", file=sys.stderr)
+        return 2
+
+    lock = _take_the_lock()
+    if lock is None:
+        print(f"another probe run holds {LOCKFILE.name} - it is patching these same "
+              f"files, and two runs at once leave mutations behind. Try again after "
+              f"it finishes.", file=sys.stderr)
         return 2
 
     probes = json.loads(Path(argv[1]).read_text())
