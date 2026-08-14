@@ -17,7 +17,10 @@ managed-service names differ.
 
 **Console steps:**
 
-1. EC2 → Launch instance, region **ca-central-1 (Montreal)**.
+1. EC2 → Launch instance, region **ap-northeast-1 (Tokyo)**. The region
+   decision is exchange reachability, not latency: us-east-1 geo-blocks
+   Bybit, Binance Global, and OKX Global (production was migrated out of it
+   for exactly this — see CHANGELOG 1.0.0); Tokyo reaches all four.
 2. AMI: **Ubuntu Server 24.04 LTS**. Instance type: **t3.small** (or
    t3.micro to start). Disk: 20 GB gp3.
 3. Key pair: create/download one (this is your SSH login).
@@ -25,9 +28,11 @@ managed-service names differ.
    the dashboard is reached over an SSH tunnel, never opened publicly.
 5. Advanced details → User data: paste the contents of
    [`scripts/aws-user-data.sh`](../scripts/aws-user-data.sh). It installs
-   Docker, adds swap, enables unattended security updates, and clones the
-   repo to `/opt/minas-guardian`. It contains no secrets by design
-   (user-data is readable from instance metadata).
+   Docker, adds swap, and enables unattended security updates. It does
+   **not** clone the repo — the repo is private, so the clone waits until
+   the deploy key exists (first-login steps below; the MOTD repeats them).
+   It contains no secrets by design (user-data is readable from instance
+   metadata).
 6. Launch, then: Elastic IPs → **Allocate** → **Associate** with the
    instance. This is the permanent egress IP you whitelist on Bitget keys.
 7. Instance settings → Metadata options: require **IMDSv2** with hop limit
@@ -38,6 +43,18 @@ managed-service names differ.
 
 ```bash
 ssh -i your-key.pem ubuntu@<elastic-ip>
+
+# One-time: a read-only deploy key so the box can pull the private repo.
+# It lives under /root/.ssh because /opt/minas-guardian is root-owned and
+# every pull runs under sudo — a key in ubuntu's ~/.ssh is invisible there.
+sudo ssh-keygen -t ed25519 -f /root/.ssh/id_ed25519 -N '' -C 'minas-guardian-deploy'
+sudo cat /root/.ssh/id_ed25519.pub
+#   → GitHub → repo → Settings → Deploy keys → Add deploy key.
+#     Leave "Allow write access" UNCHECKED: this box holds decrypted customer
+#     credentials, and a read-only key means a compromise of it cannot push
+#     poisoned code that our own next deploy would then install.
+
+sudo git clone git@github.com:erwingarcia1/Minas-AI-Guardian-Bitget-Read-only.git /opt/minas-guardian
 cd /opt/minas-guardian
 sudo cp .env.example .env && sudo nano .env   # master key + Telegram creds
 sudo chmod 600 .env                           # secrets: root-only, always
@@ -53,7 +70,10 @@ sudo docker compose exec -it sentinel sentinel onboard --label customer-1
 > you already booted with a fresh key, the migration recipe below uses
 > `up -d`, which recreates the container and picks up the edited `.env`.)
 
-**Reaching the dashboard** (from your laptop):
+**Reaching the dashboard** (from your laptop): production access is over
+**Tailscale Serve** — `https://minas-guardian.<tailnet>.ts.net`, set up once
+per instance (next section). The SSH tunnel remains the break-glass path,
+since it needs nothing but the EC2 key pair:
 
 ```bash
 ssh -i your-key.pem -L 8390:127.0.0.1:8390 -L 9109:127.0.0.1:9109 ubuntu@<elastic-ip>
@@ -92,6 +112,45 @@ is useless from any other network — do this for every onboarded account.
 **Reboot survival:** `restart: unless-stopped` + Docker's systemd unit mean
 the stack comes back on its own after a reboot or crash; no operator action.
 
+## Remote access: Tailscale (one-time per instance)
+
+Day-to-day access — dashboard and SSH — goes over the tailnet, so no port
+ever opens publicly and the dashboard URL works from any admin device:
+
+```bash
+# On the server (over the EC2-key SSH, the last time you'll need it daily):
+curl -fsSL https://tailscale.com/install.sh | sh
+sudo tailscale up --ssh --hostname minas-guardian   # prints an auth URL — open it in your browser
+
+# Publish the loopback-bound ports to the tailnet (persists across reboots
+# and container rebuilds — tailscaled proxies to the host's 127.0.0.1):
+sudo tailscale serve --bg 8390                 # dashboard → https://minas-guardian.<tailnet>.ts.net
+sudo tailscale serve --bg --https=9109 9109    # Prometheus metrics
+sudo tailscale serve --bg --https=8391 8391    # member portal (has its own login)
+tailscale serve status                         # verify
+```
+
+Then two settings in the [admin console](https://login.tailscale.com/admin):
+
+1. **Machines → minas-guardian → Disable key expiry.** Node keys expire
+   after ~180 days by default; an expired key silently drops the monitoring
+   box off the tailnet.
+2. **DNS → MagicDNS + HTTPS Certificates enabled** (needed for the
+   `https://…ts.net` names).
+
+Rules of the road:
+
+- **`serve`, never `funnel`.** They look alike; `funnel` publishes to the
+  open internet, and the dashboard has no auth.
+- Daily SSH is `ssh ubuntu@minas-guardian` (Tailscale SSH, no key file).
+  Keep the security group's port-22-from-admin-IP rule as break-glass —
+  and never remove it before Tailscale SSH is verified from a *fresh*
+  terminal.
+- The compose file needs no change for any of this: the `127.0.0.1:`
+  publishes stay exactly as they are, which is the point.
+- New team members reach the dashboard by tailnet invite — remember the
+  dashboard trusts the network entirely, so an invite *is* dashboard access.
+
 ## Before any upgrade: check the config that is already on the box
 
 ```bash
@@ -111,10 +170,53 @@ thresholds in force would not be the ones in the file.
 So check first. It costs a second and it is the difference between fixing a
 typo at your desk and finding out from a page.
 
+## Deploying code changes (routine update)
+
+The VM holds a read-only deploy key and `/opt/minas-guardian` is a real
+clone, so a deploy is a pull on the server — nothing is shipped from a
+laptop, and only what is committed *and pushed* to `main` can reach
+production:
+
+```bash
+ssh ubuntu@minas-guardian            # Tailscale SSH
+cd /opt/minas-guardian
+sudo git pull
+sudo docker compose build sentinel
+sudo docker compose run --rm sentinel sentinel validate-config /app/config/rules.yaml
+sudo docker compose up -d
+sudo docker compose ps               # wait for "healthy"
+```
+
+Why each step is shaped that way:
+
+- **`sudo git pull`** — the checkout and the deploy key are root's
+  (`/root/.ssh/id_ed25519`), so the pull must run under sudo too.
+- **Build, then `validate-config`, then switch** — the check runs *the new
+  image* against the box's live config, which is the order that catches a
+  schema tightened since the running build (see the section above). Exit 0
+  proceeds; exit 1 means fix the config before `up`.
+- **`up -d`, never `restart` or `stop`/`start`** — only recreating the
+  container applies the new image and any `.env` edits; `restart` re-runs
+  the old one.
+- Data survives all of this: the DB lives in the `sentinel-data` named
+  volume, which container recreation does not touch. (**Never** pass `-v`
+  to `docker compose down` — that flag deletes volumes.)
+
+Two operational consequences of pull-based deploys:
+
+- **Don't edit tracked files on the server.** `git pull` refuses to
+  overwrite local modifications, so a threshold tweaked directly in the
+  box's `config/rules.yaml` blocks the next deploy. Tune thresholds in git
+  and pull them — they still hot-reload on arrival, no restart.
+- **The directory name is load-bearing.** Compose derives volume names from
+  it (`minas-guardian_sentinel-data`), so the checkout must stay at
+  `/opt/minas-guardian` — a re-clone under another name would come up with
+  a fresh, empty database.
+
 ## First deployment (any host)
 
 ```bash
-git clone https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only.git minas-guardian
+git clone git@github.com:erwingarcia1/Minas-AI-Guardian-Bitget-Read-only.git minas-guardian
 cd minas-guardian
 cp .env.example .env
 # 1. Generate SENTINEL_MASTER_KEY (python3 command in .env.example)
@@ -123,10 +225,11 @@ chmod 600 .env
 docker compose up -d --build
 ```
 
-Note: the repo is currently **private**, so `git clone`/`curl` from the VM
-fail unauthenticated (404). Either deploy a read-only GitHub deploy key on
-the VM, or ship the code from a machine that has it:
-`git archive --format=tar.gz -o /tmp/deploy.tar.gz HEAD && scp ...`.
+Note: the repo is **private**, so the clone needs a key GitHub knows — on a
+production host that is a **read-only deploy key** (creation steps in the
+AWS quickstart above), generated where the pulls will actually run (root's
+`~/.ssh` if the checkout is root-owned). An unauthenticated `git clone`/
+`curl` fails with a 404.
 
 Onboard accounts from inside the container so credentials never touch the
 host shell history:
@@ -152,8 +255,8 @@ with `docker compose --profile scale up -d`.
 
 | Port | What | Exposure rule |
 |---|---|---|
-| 8390 | Status dashboard | **Never public.** No auth by design; bind stays on 127.0.0.1, reach it via SSH tunnel or VPN/security-group allowlist. |
-| 9109 | Prometheus metrics | Same rule; scrape from a private network only. |
+| 8390 | Status dashboard | **Never public.** No auth by design; bind stays on 127.0.0.1, reach it via Tailscale Serve (production) or an SSH tunnel (break-glass). |
+| 9109 | Prometheus metrics | Same rule; scrape over the tailnet or a private network only. |
 
 ## Rate limits and egress IPs
 
@@ -224,4 +327,4 @@ every docker command takes `sudo`:
 | Send digest now | `sudo docker compose exec -T sentinel sentinel digest` |
 | Tune thresholds | edit `config/rules.yaml` on the host — hot-reloads, no restart |
 | AI triage narrative for an account | `sudo docker compose exec sentinel sentinel triage --label <label>` |
-| Update to latest code | re-ship via `git archive` + scp (private repo), then `sudo docker compose up -d --build` |
+| Update to latest code | `sudo git pull`, build + `validate-config`, then `sudo docker compose up -d` — full sequence in "Deploying code changes" above |

@@ -404,7 +404,18 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 - **ccxt pinned to 4.5.63** — the version every adapter behavior was verified
   against; image rebuilds no longer float to untested releases.
 
-## [1.0.0] — 2026-07-05
+### Infrastructure
+- **Deploys are now a `git pull` on the server.** The VM holds a read-only
+  GitHub deploy key (root-owned, `/root/.ssh` — pulls run under sudo because
+  the checkout is root's), and `/opt/minas-guardian` is a real clone; it had
+  been a bare `git archive` extract with no `.git`, which is why pulling was
+  never possible before. The `git archive` + scp shipping path is retired.
+  Update procedure: pull → build → `validate-config` (new image against the
+  live config, in that order) → `up -d`. Read-only on the key is deliberate:
+  this box holds decrypted customer credentials, and a compromise of it must
+  not be able to push code that our own next deploy would install. Docs and
+  the EC2 bootstrap script now describe the key-first setup; the bootstrap
+  no longer attempts the unauthenticated clone that a private repo 404s.
 
 First production release. Running on AWS Tokyo (ap-northeast-1), reachable
 over a Tailscale-served HTTPS dashboard.

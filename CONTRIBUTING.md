@@ -60,19 +60,25 @@ python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().
 
 ## Deploying
 
-The production host has no GitHub credentials (private repo), so deploys ship
-the committed tree over SSH:
+The production host holds a **read-only deploy key** for this repo, so a
+deploy is a pull on the server — nothing is shipped from a laptop:
 
 ```bash
-git archive --format=tar.gz -o /tmp/minas-deploy.tar.gz HEAD
-scp -i <key.pem> /tmp/minas-deploy.tar.gz <host>:/tmp/
-ssh -i <key.pem> <host> "sudo tar xzf /tmp/minas-deploy.tar.gz -C /opt/minas-guardian \
-  && cd /opt/minas-guardian && sudo docker compose up -d --build"
+ssh ubuntu@minas-guardian     # Tailscale SSH
+cd /opt/minas-guardian
+sudo git pull                 # root's key: /root/.ssh/id_ed25519
+sudo docker compose build sentinel
+sudo docker compose run --rm sentinel sentinel validate-config /app/config/rules.yaml
+sudo docker compose up -d
 ```
 
+Push first: the server pulls from GitHub `main`, so unpushed work cannot
+deploy — GitHub and production stay in lockstep by construction. Don't edit
+tracked files on the server (it blocks the next pull); tune `rules.yaml`
+through git, it hot-reloads on arrival.
+
 Full procedure, region notes, and the DB-migration recipe:
-[docs/deployment.md](docs/deployment.md). Deploy only committed code so
-GitHub and production stay in lockstep.
+[docs/deployment.md](docs/deployment.md).
 
 
 ## After pushing

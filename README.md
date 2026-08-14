@@ -48,8 +48,9 @@ details — on every interface of whatever box you ran the quickstart on. The
 metrics view is on the same footing: unauthenticated, and it leaks operational
 shape (account counts, which rules are firing, which exchanges are
 misbehaving). To reach any of them from elsewhere, tunnel rather than widen:
-`ssh -L 8390:127.0.0.1:8390 your-host`, Tailscale, or an authenticating reverse
-proxy. The `*_HOST` vars above do widen the bind if a deployment genuinely
+Tailscale Serve (what production does — see
+[docs/deployment.md](docs/deployment.md)), `ssh -L 8390:127.0.0.1:8390
+your-host`, or an authenticating reverse proxy. The `*_HOST` vars above do widen the bind if a deployment genuinely
 needs it; the dashboard logs a startup warning whenever it isn't on loopback.
 
 Under Docker all three bind `0.0.0.0` *inside the container* on purpose,
@@ -58,7 +59,9 @@ never to its loopback. The `127.0.0.1:` publishes in `docker-compose.yml` are
 the gate instead.
 
 Docker (same image as production): `docker compose up -d --build`.
-Production deployment (AWS): see [docs/deployment.md](docs/deployment.md).
+Production deployment (AWS): see [docs/deployment.md](docs/deployment.md) —
+the server pulls from this repo via a read-only deploy key, so a deploy is
+`sudo git pull` + rebuild on the box; only pushed code can reach production.
 
 ## Onboarding a customer
 
