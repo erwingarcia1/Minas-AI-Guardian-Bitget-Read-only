@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 from unittest.mock import MagicMock
 
+from sentinel import poller as poller_module
 from sentinel.config import RulesConfig
 from sentinel.onboarding import onboard_account
 from sentinel.poller import AccountPoller
@@ -125,10 +126,28 @@ def test_unparseable_timestamp_is_treated_as_undated_not_as_zero(db, cipher, mon
 
 def test_undated_fill_is_judged_once_not_every_cycle(db, cipher, monkeypatch):
     """AC: checked once. The same undated fill comes back in the exchange's
-    response on every poll - it must not re-alert. Guards the obvious wrong
-    fix of simply including undated fills in the window."""
+    response on every poll - it must not be re-examined.
+
+    Asserts on what the detector is *handed*, not on how many alerts came out
+    the other end. The earlier form of this test counted delivered
+    `off_market_execution` alerts across three cycles and expected one - which
+    is also what you get with the identity gate deleted entirely, because
+    dispatch suppresses a repeat of the same HIGH alert for 30 minutes. It
+    passed on the cooldown, not on the guarantee it names, and a design-guard
+    probe that removed `if record_seen_fill(...)` left it green.
+
+    `detect_off_market_fills` is only called when the window is non-empty, so
+    the batches it receives are a direct read of what entered the window."""
     account_id, account_row = _settled_account(db, cipher, monkeypatch, label="undated-3")
 
+    batches: list[list] = []
+    real_detect = poller_module.detect_off_market_fills
+
+    def recording(fills, *args, **kwargs):
+        batches.append([f.get("id") for f in fills])
+        return real_detect(fills, *args, **kwargs)
+
+    monkeypatch.setattr("sentinel.poller.detect_off_market_fills", recording)
     monkeypatch.setattr(
         "sentinel.poller.make_client",
         lambda *a, **k: _client(fills=[_fill(timestamp=None)], tickers=_ticker()),
@@ -139,8 +158,11 @@ def test_undated_fill_is_judged_once_not_every_cycle(db, cipher, monkeypatch):
     poller.run_fast_loop(account_row)
     poller.run_fast_loop(account_row)
 
+    assert batches == [["f-1"]], (
+        f"the fill entered the examination window {len(batches)} times, expected once: {batches}"
+    )
     off_market = [a for a in channel.sent if a.rule == "off_market_execution"]
-    assert len(off_market) == 1, f"judged {len(off_market)} times, expected once"
+    assert len(off_market) == 1, f"alerted {len(off_market)} times, expected once"
 
 
 def test_undated_fill_fee_enters_the_baseline_once(db, cipher, monkeypatch):
@@ -148,6 +170,19 @@ def test_undated_fill_fee_enters_the_baseline_once(db, cipher, monkeypatch):
     same fee every 45 seconds walks the EMA up until the fee detector can
     never fire again - a detector that silently stops detecting."""
     account_id, account_row = _settled_account(db, cipher, monkeypatch, label="undated-4")
+
+    from sentinel.baseline import load_fee_baseline, save_fee_baseline
+
+    # Seed the EMA away from the fee under test, which is the whole reason this
+    # test can detect anything. `update_ema` is
+    # `alpha * observation + (1 - alpha) * previous`, so observing a fee equal
+    # to the current EMA leaves it exactly where it was: with the baseline
+    # seeded at 10 and the fill's fee also 10, re-counting that fill on every
+    # cycle moved the number not at all, and the assertion below held whether
+    # or not the guarantee did. A probe deleting the seen-fill gate left this
+    # test green. Seeded at 100, one sighting gives 0.2*10 + 0.8*100 = 82 and
+    # each re-count walks it further towards 10.
+    save_fee_baseline(db, account_id, {"USDT": Decimal("100")})
 
     # At-market price, so only the fee path is exercised.
     monkeypatch.setattr(
@@ -160,10 +195,8 @@ def test_undated_fill_fee_enters_the_baseline_once(db, cipher, monkeypatch):
     poller = _poller(db, cipher, RecordingChannel())
     poller.run_fast_loop(account_row)
 
-    from sentinel.baseline import load_fee_baseline
-
     after_first = load_fee_baseline(db, account_id).get("USDT")
-    assert after_first == Decimal("10"), f"first sighting should seed the EMA at 10, got {after_first}"
+    assert after_first == Decimal("82"), f"first sighting should move the EMA to 82, got {after_first}"
 
     for _ in range(5):
         poller.run_fast_loop(account_row)

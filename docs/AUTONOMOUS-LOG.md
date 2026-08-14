@@ -97,6 +97,26 @@ anyway — all of them *looked* fine because nothing was looking. Then I did it
 to my own workflow. Green locally is not evidence CI is green; the failure that
 caused this only appeared on a freshly booted machine.
 
+## Standing rule: confirm you are the only session, before each issue
+
+**Before starting any issue, run `ps aux | grep "[c]laude"` and confirm no other
+session is live in this tree.** One line.
+
+Two sessions editing one directory overwrite each other silently, and it has
+already cost a security fix that was reported as done while deleted. The
+design-guard probes make it worse than ordinary clobbering: they patch files in
+`sentinel/` in place and restore them afterwards, so a second session's edit
+landing inside that window is restored *away* — and what is left is a
+real-looking source change nobody made. That is how `snapshot_at <= ?` became
+`>= ?` in an incident query.
+
+`scripts/mutation-probe.py` takes an advisory `flock`, but that only protects
+probe against probe. It cannot protect a probe's restore against an ordinary
+edit from another session, which is the case this rule exists for.
+
+Cost of not doing it, measured: fourteen minutes on 2026-08-14, spent proving
+that a second `claude` process was not editing the tree.
+
 ---
 
 # Summary — session of 2026-08-12
@@ -2848,3 +2868,71 @@ Worth adopting as a standing practice: **for each gate, know the last time it
 failed. If you cannot remember one, break it on purpose and check that it
 notices.** Every defect above would have been caught the first time that was
 done.
+
+## #12 (G-8) · The label was stale. Two of its tests were hollow
+
+The only `status: broken` issue in the backlog. Its open criterion — "only
+activity in the relevant time window is considered" — carried the annotation
+*"met by silently discarding undated fills (#51)"*, and #51 has been closed with
+every criterion ticked since. So the first question was whether the label was
+just stale.
+
+**It was.** `sentinel/poller.py` now answers two separate questions where it
+used to answer one: *have I judged this fill already* (by identity, via
+`record_seen_fill`) and *is the current ticker valid evidence about it* (by
+time, and only for fills that actually carry one). An undated fill is judged
+once, on first sighting. Seven tests in `tests/test_undated_fills.py` cover it
+and all pass.
+
+I nearly closed it there. What stopped me was that **none of the 103
+design-guard probes covered any of it** — the guarantee was tested but not
+pinned, and this log's own warning is that tests asserting an absence pass for
+the wrong reason. So I wrote the two probes that break each half of the pair
+and ran them.
+
+One was killed. **The other survived: deleting the identity gate entirely broke
+no test.** Both tests that exist to pin "judged exactly once" were hollow, each
+for its own reason.
+
+- `test_undated_fill_is_judged_once_not_every_cycle` counted delivered
+  `off_market_execution` alerts across three cycles and expected one. Off-market
+  is `HIGH`, and `alerting.cooldown_minutes.HIGH` is 30 — so cycles two and
+  three are suppressed by the cooldown regardless. It was passing on dispatch's
+  dedup, not on the gate it names.
+- `test_undated_fill_fee_enters_the_baseline_once` seeded the EMA at 10 and fed
+  a fee of 10. `update_ema` is `alpha * observation + (1 - alpha) * previous`,
+  so an observation **equal to the current EMA is a fixed point**: re-counting
+  the same fill every cycle moves the number not at all. The assertion held
+  whether or not the guarantee did.
+
+Both now assert something a re-examination would actually change. The first
+records what `detect_off_market_fills` is *handed* on each cycle — the detector
+is only called when the window is non-empty, so the batches it receives read
+the window directly, and no downstream dedup can rescue it. The second seeds
+the baseline at 100 against a fee of 10, so one sighting gives 82 and every
+re-count walks it further towards 10.
+
+With those changes both probes are killed. 103 → 105 standing probes.
+
+**Judgment calls.**
+
+*Closing rather than fixing.* No product code changed. The defect #12 named was
+fixed by #51; what remained was that nothing would have told us if it came
+back. Two probes and two honest tests is the whole of it.
+
+*Asserting on the detector's input rather than on alerts.* Slightly whiter-box
+than I would normally write. Justified because the thing being pinned is
+precisely "what enters the examination window", and every observable further
+downstream has a dedup or a cooldown between it and the guarantee.
+
+*Not chasing the third criterion's wording.* "Only activity in the relevant
+time window is considered" is, strictly, no longer true: an undated fill is
+considered even though it cannot be placed in the window. That is deliberate
+and documented in `poller.py` — the alternative is the silent miss that #51
+existed to fix — so I ticked it rather than reopening the argument.
+
+**What surprised me.** The fee test's fixed point. It looks like a careful test:
+it seeds a baseline, runs five more cycles, and asserts the number did not
+move. The arithmetic that makes it vacuous is one line away in a different
+file, and no amount of reading the test would show it. Only breaking the source
+did.
