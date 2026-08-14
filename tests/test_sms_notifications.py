@@ -101,7 +101,7 @@ def test_sms_body_truncation_never_cuts_the_login_link(monkeypatch):
 # --- AC5: ClickSend receipts capture the provider message id -----------------
 
 def test_clicksend_send_returns_receipts_with_message_ids():
-    with patch("sentinel.alerts.clicksend.requests.post") as post:
+    with patch("sentinel.net.post") as post:
         post.return_value = MagicMock(
             status_code=200,
             json=lambda: {

@@ -15,7 +15,7 @@ def _alert():
 
 
 def test_clicksend_posts_expected_payload():
-    with patch("sentinel.alerts.clicksend.requests.post") as post:
+    with patch("sentinel.net.post") as post:
         post.return_value = MagicMock(
             status_code=200,
             json=lambda: {"response_code": "SUCCESS", "data": {"messages": [{"status": "SUCCESS"}]}},
@@ -30,7 +30,7 @@ def test_clicksend_posts_expected_payload():
 
 
 def test_clicksend_raises_on_top_level_failure():
-    with patch("sentinel.alerts.clicksend.requests.post") as post:
+    with patch("sentinel.net.post") as post:
         post.return_value = MagicMock(
             status_code=200, json=lambda: {"response_code": "ERROR", "response_msg": "bad auth"}
         )
@@ -39,7 +39,7 @@ def test_clicksend_raises_on_top_level_failure():
 
 
 def test_clicksend_raises_on_per_message_failure():
-    with patch("sentinel.alerts.clicksend.requests.post") as post:
+    with patch("sentinel.net.post") as post:
         post.return_value = MagicMock(
             status_code=200,
             json=lambda: {"response_code": "SUCCESS", "data": {"messages": [{"status": "INVALID_RECIPIENT"}]}},

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import smtplib
 from email.message import EmailMessage
 
+from sentinel import net
 from sentinel.alerts.base import AlertChannel, AlertMessage
 
 
@@ -35,7 +35,7 @@ class EmailChannel(AlertChannel):
         msg["To"] = ", ".join(self._recipients)
         msg.set_content(alert.render_customer() if customer else alert.render())
 
-        with smtplib.SMTP(self._host, self._port, timeout=15) as smtp:
+        with net.smtp(self._host, self._port, timeout=15) as smtp:
             if self._use_tls:
                 smtp.starttls()
             if self._username:

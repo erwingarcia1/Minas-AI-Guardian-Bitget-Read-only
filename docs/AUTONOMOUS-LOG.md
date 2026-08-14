@@ -3154,3 +3154,110 @@ The two new tests exist to close that specifically — one runs the same secret 
 the same instant through both confirmed states so the only difference is the
 guard, and the other pins the hazard by showing a *valid* enrolment also returns
 False when the code is judged far from its step.
+
+## #68 · The suite had credentials, and used them
+
+`sentinel.cli.main` opened with `load_dotenv()`. Two tests call `main()`.
+`load_dotenv` writes the operator's real `.env` into `os.environ` and has no
+teardown — it is not `monkeypatch` — so from that test onwards every test in
+the process saw live SMTP, SMS and Telegram credentials and behaved as if
+configured. The symptom in the issue is a real mail server answering
+`535 Missing password` inside `test_password_reset`, which is the benign
+version: one correct password and the suite mails customers.
+
+Two thirds of the issue's own suggested fix had already landed in `eb460b7`
+(the environment allowlist) and in the `.gitignore` widening to `.env.*`. What
+was left was the source of the leak and the defence-in-depth layer.
+
+**Where `load_dotenv` went.** Into `cli_entry()`, which only the installed
+command reaches; `main()` no longer loads anything. The alternative — a
+`load_env=False` parameter — makes the safe behaviour the one every caller has
+to remember to ask for, and this issue is a record of what forgetting costs.
+
+*The half of that change that is easy to miss.* `[project.scripts]` must move
+too. Leave it pointing at `main` and the deployed `sentinel` command silently
+stops reading `.env`: no SMTP, no Telegram, no exchange keys, and a service
+that starts cleanly and alerts nobody. That is a worse outcome than the bug
+being fixed, so it gets its own test — parse `pyproject.toml`, assert the
+entry point resolves to `cli_entry` — and its own probe.
+
+**`sentinel/net.py`, and why a chokepoint rather than four guards.** The issue
+suggests making `ContactRouter` refuse to send under test. I put the refusal
+one level lower, in the two functions that actually open a socket, because the
+issue's own reasoning points there: the allowlist protects `pytest`, and the
+case it does not cover is *a script somebody writes next month* that imports a
+channel directly. A guard per channel protects the four channels that exist. A
+guard under all of them protects the fifth.
+
+Which needs the "only module" rule to be enforced rather than intended, so
+`tests/test_no_live_traffic.py` parses every file in `sentinel/` and asserts
+that nothing but `net.py` imports `requests`, `smtplib`, `http.client`,
+`urllib.request` or `socket`. That test is the one carrying the guarantee. The
+per-channel tests below it only confirm today's four.
+
+**Judgment calls.**
+
+*Two signals, either sufficient.* `SENTINEL_ENV=test`, set by `conftest.py`,
+and `PYTEST_CURRENT_TEST`, set by pytest itself. The second covers what
+conftest cannot reach: a subprocess spawned by a test inherits it, and so does
+another repository's suite importing this package.
+
+*`SENTINEL_ENV` is set after the allowlist clears, not allowlisted through it.*
+Allowlisting it would let an operator shell holding `SENTINEL_ENV=production`
+hand that value to the suite, which is precisely the class of thing the
+allowlist exists to stop.
+
+*Refuse when told it is a test, rather than refuse unless told it is
+production.* The safer inversion breaks every real deployment that has not set
+the variable yet — loudly, but wide — and this is a second layer under one that
+already works. Worth revisiting if `SENTINEL_ENV` ever becomes something the
+deployment sets for other reasons.
+
+*Refusals name the host, never the URL.* The Telegram bot token is in the path
+of the URL `net.post` is handed, and this module's whole job is to raise
+exceptions that get logged (G-41). There is a probe for it: replace
+`urlsplit(url).netloc` with `url` and a test fails.
+
+*The exchange side keys on `isinstance(self._exchange, ccxt.Exchange)`.* Every
+read goes through `ExchangeClient._call`, which makes it the one place that
+can promise a test never reaches a real exchange — but the suite drives those
+wrappers with fakes, and "refuse everything under test" would break all of it.
+A fake is not a ccxt client, so the isinstance check is the whole distinction.
+
+**Then the guard found a second bug, which is the interesting part.**
+
+Before trusting the change I wanted to know whether anything in the suite was
+*still* trying to open a socket, so I ran the suite once with a counter wrapped
+around the refusal (`scripts` has nothing for this; it lived in a scratch
+directory and is not committed). Nine refusals, eight of them my own new tests.
+The ninth:
+
+```
+   2  an exchange request -> bitget
+      tests/test_onboarding.py::test_onboard_account_persists_encrypted_on_success
+```
+
+`_client_with` builds a real `BitgetClient` and replaces its network-touching
+methods with mocks. Its docstring says "never hits a live exchange". It names
+five methods. `seed_baseline` calls seven — `fetch_closed_orders` and
+`fetch_transfers` were not mocked, so every run of that test made two real HTTP
+requests to Bitget with the API key `"key"`.
+
+Nothing failed, because both calls sit inside the best-effort `except
+Exception` handlers that record a baseline gap and carry on (the ones #58 group
+C made visible). The account was onboarded with a knowingly incomplete
+baseline, the test asserted that the API key had been encrypted, and passed.
+
+Two fixes. The fake now sweeps the whole `fetch_*` surface instead of listing
+five names, so a method added to `ExchangeClient` next year is mocked the day
+it exists. And the test asserts what "on success" is supposed to mean: no
+`baseline_seed_incomplete` events on the account. I checked that pin lands by
+reverting the sweep — it fails, and names both calls.
+
+**What surprised me.** The comment was not wrong when it was written. It became
+wrong when `seed_baseline` grew two more calls, and nothing connected the two
+files. That is the same shape as the rest of this log — a guarantee written as
+prose, in a place with no way to notice it had stopped being true — and it is
+why the import scan exists rather than a note asking people to use `net.py`.
+
+**Numbers.** 855 → 872 tests. 109 → 119 design-guard probes, all landing.

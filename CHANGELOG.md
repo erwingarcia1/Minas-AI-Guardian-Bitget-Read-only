@@ -13,6 +13,39 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Fixed
+- **A test run can no longer reach the network** (#68). The suite made real
+  network calls with whatever credentials the machine had: `load_dotenv()` was
+  the first line of `sentinel.cli.main`, two tests call `main()`, and
+  `load_dotenv` writes the operator's real `.env` into `os.environ` for the
+  rest of the process with no teardown. A live SMTP server answered
+  `535 Missing password` in the middle of a password-reset test — one correct
+  password away from mailing real customers, and the SMS paths cost money per
+  message. CI never saw it, because CI has no `.env`; it failed only on a
+  developer machine with real credentials configured, which is the machine
+  where it costs the most.
+  - `load_dotenv()` moved out of `main()` into a new `cli_entry()`, which
+    nothing but the installed `sentinel` command reaches. `[project.scripts]`
+    points there now, and a test pins that it does — pointing it back at `main`
+    would leave production reading no `.env` at all.
+  - New `sentinel/net.py` is the only module in the package permitted to import
+    `requests` or `smtplib`, and it refuses to open a connection when
+    `SENTINEL_ENV=test` or pytest is running. The four alert transports and
+    every exchange read go through it. A source scan enforces the "only
+    module", so the next transport somebody writes is covered on the day it is
+    written rather than the day it is remembered.
+  - Refusals name the host and never the URL: a Telegram bot token lives in the
+    path, and these exceptions are written to logs (G-41).
+- **The onboarding tests were calling Bitget for real.** `_client_with` claimed
+  in its docstring to replace "the network-touching methods", and named five —
+  but `seed_baseline` also calls `fetch_closed_orders` and `fetch_transfers`,
+  so every run of `test_onboard_account_persists_encrypted_on_success` made two
+  live HTTP requests to Bitget. Both failures were swallowed by the
+  best-effort baseline-seeding handlers, which recorded a gap and carried on,
+  so the test passed throughout. The fake now covers the whole `fetch_*`
+  surface, and the test asserts the account onboarded with **no** baseline gaps
+  rather than only that its key was encrypted.
+
 ## [1.1.1] — 2026-08-14
 
 ### Fixed

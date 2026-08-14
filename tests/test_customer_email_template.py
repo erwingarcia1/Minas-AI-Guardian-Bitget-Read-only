@@ -145,7 +145,7 @@ def test_a_notice_survives_the_whole_path_to_the_wire(monkeypatch):
 
     So this one goes to the wire and reads the message that would have been
     put on it."""
-    import sentinel.alerts.email as email_module
+    from sentinel import net
 
     captured = []
 
@@ -168,7 +168,10 @@ def test_a_notice_survives_the_whole_path_to_the_wire(monkeypatch):
         def send_message(self, msg):
             captured.append(msg)
 
-    monkeypatch.setattr(email_module.smtplib, "SMTP", _FakeSMTP)
+    # The seam is `sentinel.net.smtp`, which is also where the refusal to open
+    # a real socket under test lives (#68). Replacing it is how a test says it
+    # wants a transport.
+    monkeypatch.setattr(net, "smtp", _FakeSMTP)
     monkeypatch.setenv("SMTP_HOST", "smtp.test")
     monkeypatch.setenv("SMTP_SENDER", "alerts@test")
 
@@ -195,7 +198,7 @@ def test_a_detection_on_the_same_wire_leaves_its_evidence_behind(monkeypatch):
     """The other half of the same seam. A detection must lose its free text on
     the way out, because that text embeds the withdrawal address - so the same
     path that has to preserve a notice's message has to drop a detection's."""
-    import sentinel.alerts.email as email_module
+    from sentinel import net
     from sentinel.detectors.base import Detection
 
     captured = []
@@ -219,7 +222,10 @@ def test_a_detection_on_the_same_wire_leaves_its_evidence_behind(monkeypatch):
         def send_message(self, msg):
             captured.append(msg)
 
-    monkeypatch.setattr(email_module.smtplib, "SMTP", _FakeSMTP)
+    # The seam is `sentinel.net.smtp`, which is also where the refusal to open
+    # a real socket under test lives (#68). Replacing it is how a test says it
+    # wants a transport.
+    monkeypatch.setattr(net, "smtp", _FakeSMTP)
     monkeypatch.setenv("SMTP_HOST", "smtp.test")
     monkeypatch.setenv("SMTP_SENDER", "alerts@test")
 

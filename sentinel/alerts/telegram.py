@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import requests
-
+from sentinel import net
 from sentinel.alerts.base import AlertChannel, AlertMessage
 
 
@@ -13,7 +12,7 @@ class TelegramChannel(AlertChannel):
 
     def send(self, alert: AlertMessage) -> None:
         url = f"https://api.telegram.org/bot{self._bot_token}/sendMessage"
-        resp = requests.post(
+        resp = net.post(
             url,
             json={"chat_id": self._chat_id, "text": alert.render()},
             timeout=self._timeout,

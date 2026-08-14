@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-import requests
-
+from sentinel import net
 from sentinel.alerts.base import AlertChannel, AlertMessage
 from sentinel.alerts.sms import SMS_MAX_LEN, format_sms_body
 
@@ -39,7 +38,7 @@ class ClickSendSmsChannel(AlertChannel):
                 msg["from"] = self._from
             messages.append(msg)
 
-        resp = requests.post(
+        resp = net.post(
             _CLICKSEND_SMS_URL,
             auth=(self._username, self._api_key),
             headers={"Content-Type": "application/json", "Accept": "application/json"},

@@ -708,7 +708,16 @@ def cmd_triage(args: argparse.Namespace) -> int:
 
 
 def main() -> None:
-    load_dotenv()
+    """Parse arguments and run a command. Reads the environment; never fills it.
+
+    `load_dotenv()` used to be the first line of this function, and two tests
+    call `main()` - so running the suite on a machine with a real `.env` wrote
+    every production credential into `os.environ` for the rest of the pytest
+    process, where later tests picked them up and used them (#68). It lives in
+    `cli_entry` below now, which nothing but the installed command reaches.
+
+    Keeping it out is a property of *this* function, not of the tests: a test
+    calling `main()` cannot opt into the leak by forgetting something."""
     parser = argparse.ArgumentParser(prog="sentinel")
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -794,5 +803,21 @@ def main() -> None:
     sys.exit(args.func(args))
 
 
-if __name__ == "__main__":
+def cli_entry() -> None:
+    """The installed `sentinel` command: load the operator's `.env`, then run.
+
+    The only caller of `load_dotenv()` in the package, and deliberately a
+    separate function from `main()` rather than a flag on it. A flag would make
+    the safe behaviour the one a caller has to remember to ask for, and #68 is
+    a record of what forgetting costs.
+
+    `pyproject.toml`'s `[project.scripts]` must point here and not at `main`,
+    or the deployed command silently stops reading `.env` - a service that
+    starts with no SMTP configured and alerts nobody. `test_cli_entrypoint.py`
+    pins that."""
+    load_dotenv()
     main()
+
+
+if __name__ == "__main__":
+    cli_entry()

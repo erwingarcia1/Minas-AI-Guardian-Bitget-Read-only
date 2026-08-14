@@ -1008,5 +1008,95 @@
   "tests": [
    "tests/test_twofactor.py"
   ]
+ },
+ {
+  "name": "#68 the test marker stops being one of the two signals, so only pytest's own variable is left",
+  "file": "sentinel/net.py",
+  "old": "    if os.environ.get(\"SENTINEL_ENV\") == \"test\":\n        return \"SENTINEL_ENV=test\"",
+  "new": "    if os.environ.get(\"SENTINEL_ENV\") == \"production\":\n        return \"SENTINEL_ENV=test\"",
+  "tests": [
+   "tests/test_no_live_traffic.py"
+  ]
+ },
+ {
+  "name": "#68 pytest's own marker stops counting, so a subprocess or another repo's suite may dial out",
+  "file": "sentinel/net.py",
+  "old": "    if \"PYTEST_CURRENT_TEST\" in os.environ:\n        return \"running under pytest\"\n    return None",
+  "new": "    return None",
+  "tests": [
+   "tests/test_no_live_traffic.py"
+  ]
+ },
+ {
+  "name": "#68 HTTP stops being refused under test",
+  "file": "sentinel/net.py",
+  "old": "    refuse_if_under_test(\"an HTTP request\", _host_of(url))\n    return requests.post(url, **kwargs)",
+  "new": "    return requests.post(url, **kwargs)",
+  "tests": [
+   "tests/test_no_live_traffic.py"
+  ]
+ },
+ {
+  "name": "#68 SMTP stops being refused under test",
+  "file": "sentinel/net.py",
+  "old": "    refuse_if_under_test(\"an SMTP connection\", f\"{host}:{port}\")\n    return smtplib.SMTP(host, port, timeout=timeout)",
+  "new": "    return smtplib.SMTP(host, port, timeout=timeout)",
+  "tests": [
+   "tests/test_no_live_traffic.py"
+  ]
+ },
+ {
+  "name": "#68 the refusal names the whole URL, putting a Telegram bot token in the logs (G-41)",
+  "file": "sentinel/net.py",
+  "old": "    return urlsplit(url).netloc or \"an unparseable url\"",
+  "new": "    return url",
+  "tests": [
+   "tests/test_no_live_traffic.py"
+  ]
+ },
+ {
+  "name": "#68 an exchange request stops being refused under test",
+  "file": "sentinel/exchange.py",
+  "old": "        if isinstance(self._exchange, ccxt.Exchange):\n            net.refuse_if_under_test(\"an exchange request\", self.exchange_id or \"an exchange\")",
+  "new": "        pass",
+  "tests": [
+   "tests/test_no_live_traffic.py"
+  ]
+ },
+ {
+  "name": "#68 load_dotenv returns to main(), where two tests reach it",
+  "file": "sentinel/cli.py",
+  "old": "    parser = argparse.ArgumentParser(prog=\"sentinel\")",
+  "new": "    load_dotenv()\n    parser = argparse.ArgumentParser(prog=\"sentinel\")",
+  "tests": [
+   "tests/test_cli_entrypoint.py"
+  ]
+ },
+ {
+  "name": "#68 the installed command stops loading .env at all, so production starts with nothing configured",
+  "file": "sentinel/cli.py",
+  "old": "    load_dotenv()\n    main()",
+  "new": "    main()",
+  "tests": [
+   "tests/test_cli_entrypoint.py"
+  ]
+ },
+ {
+  "name": "#68 the console script points back at main, which no longer reads .env",
+  "file": "pyproject.toml",
+  "old": "sentinel = \"sentinel.cli:cli_entry\"",
+  "new": "sentinel = \"sentinel.cli:main\"",
+  "tests": [
+   "tests/test_cli_entrypoint.py"
+  ]
+ },
+ {
+  "name": "#68 the onboarding fake stops covering the whole read surface, and the suite calls Bitget for real again",
+  "file": "tests/test_onboarding.py",
+  "old": "    for name in dir(client):\n        if name.startswith(\"fetch_\"):",
+  "new": "    for name in []:\n        if name.startswith(\"fetch_\"):",
+  "tests": [
+   "tests/test_onboarding.py"
+  ]
  }
 ]

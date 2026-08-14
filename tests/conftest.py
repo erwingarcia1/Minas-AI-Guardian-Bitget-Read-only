@@ -92,6 +92,10 @@ def only_allowlisted_environment(monkeypatch):
     monkeypatches a fake one in and wins."""
     for name in env_names_to_clear(os.environ):
         monkeypatch.delenv(name, raising=False)
+    # Set after the clearing, not allowlisted through it: an operator shell
+    # with SENTINEL_ENV=production must not be able to hand that value to the
+    # suite. `sentinel.net` reads it and refuses to open a socket.
+    monkeypatch.setenv("SENTINEL_ENV", "test")
 
 
 # The instant every TOTP code in this suite is built for and judged against

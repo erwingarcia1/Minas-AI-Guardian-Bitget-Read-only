@@ -5,6 +5,7 @@ from typing import Any
 
 import ccxt
 
+from sentinel import net
 from sentinel.crypto import redact_secrets
 
 logger = logging.getLogger("sentinel.exchange")
@@ -62,6 +63,13 @@ class ExchangeClient:
         return redact_secrets(text, self._api_key, self._secret, self._password)
 
     def _call(self, fn, *args, **kwargs) -> Any:
+        # Every read this service performs passes through here, which makes it
+        # the one place that can promise a test run never reaches a real
+        # exchange with a real key (#68). The isinstance check is the whole
+        # point: the suite drives these wrappers with fakes, and a fake is not
+        # a ccxt client, so only a genuine one is refused.
+        if isinstance(self._exchange, ccxt.Exchange):
+            net.refuse_if_under_test("an exchange request", self.exchange_id or "an exchange")
         try:
             return fn(*args, **kwargs)
         except (ccxt.AuthenticationError, ccxt.PermissionDenied) as exc:

@@ -19,8 +19,24 @@ def _client_with(
     trades=None,
 ):
     """A BitgetClient with its network-touching methods replaced by mocks -
-    never hits a live exchange."""
+    never hits a live exchange.
+
+    That sentence was false for two years. The five methods named below were
+    mocked; `fetch_closed_orders` and `fetch_transfers` were not, and
+    `seed_baseline` calls both - so every run of
+    `test_onboard_account_persists_encrypted_on_success` made two real HTTP
+    requests to Bitget with the key "key". Nothing failed, because both calls
+    sit inside best-effort `except Exception` handlers that record a baseline
+    gap and carry on. Found by the refusal counter added with #68.
+
+    So the mocking is now a sweep over the whole read surface rather than a
+    list somebody has to extend. A method added to `ExchangeClient` next year
+    is mocked here the day it exists, which is the only version of this that
+    stays true."""
     client = BitgetClient("key", "secret", "pass")
+    for name in dir(client):
+        if name.startswith("fetch_"):
+            setattr(client, name, MagicMock(return_value=[]))
     client.fetch_balance = (
         MagicMock(side_effect=balance_error)
         if balance_error is not None
@@ -86,6 +102,21 @@ def test_onboard_account_persists_encrypted_on_success(db, cipher, monkeypatch):
         row = cur.fetchone()
     assert row["encrypted_api_key"] != "k"
     assert cipher.decrypt(row["encrypted_api_key"]) == "k"
+
+    # "On success" has to mean the whole onboarding succeeded, not just the
+    # part this test looks at. Two of the baseline's exchange reads failed on
+    # every run of this test - they were reaching the real Bitget and being
+    # rejected - and `seed_baseline` swallows that by design, recording a gap
+    # and carrying on. The assertion above passed throughout. Reading the
+    # account's own record is what tells them apart.
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT payload_json FROM events "
+            "WHERE account_id = ? AND event_type = 'baseline_seed_incomplete'",
+            (result.account_id,),
+        )
+        gaps = [row["payload_json"] for row in cur.fetchall()]
+    assert gaps == [], f"the baseline did not seed completely: {gaps}"
 
 
 def test_onboard_account_rejects_write_scope_and_persists_nothing(db, cipher, monkeypatch):

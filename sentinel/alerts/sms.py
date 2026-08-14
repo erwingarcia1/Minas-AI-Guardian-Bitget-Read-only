@@ -2,8 +2,7 @@ from __future__ import annotations
 
 import os
 
-import requests
-
+from sentinel import net
 from sentinel.alerts.base import AlertChannel, AlertMessage
 
 # Two SMS segments. Shared by every SMS transport: SMS is a pager, not a
@@ -70,7 +69,7 @@ class TwilioSmsChannel(AlertChannel):
         url = f"https://api.twilio.com/2010-04-01/Accounts/{self._sid}/Messages.json"
         receipts = []
         for number in self._to:
-            resp = requests.post(
+            resp = net.post(
                 url,
                 auth=(self._sid, self._token),
                 data={"From": self._from, "To": number, "Body": body},

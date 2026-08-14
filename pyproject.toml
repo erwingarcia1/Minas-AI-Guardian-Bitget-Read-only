@@ -29,7 +29,7 @@ triage = [
 ]
 
 [project.scripts]
-sentinel = "sentinel.cli:main"
+sentinel = "sentinel.cli:cli_entry"
 
 [build-system]
 requires = ["setuptools>=68"]
