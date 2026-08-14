@@ -2936,3 +2936,64 @@ it seeds a baseline, runs five more cycles, and asserts the number did not
 move. The arithmetic that makes it vacuous is one line away in a different
 file, and no amount of reading the test would show it. Only breaking the source
 did.
+
+**Two mistakes of my own, both caught by gates rather than by me.**
+
+I closed #12 with a `Closes #12` trailer and did not touch its label, so the
+issue-status gate failed the next run with exactly the drift CONTRIBUTING
+describes as the common mechanical cause. The gate was right.
+
+I also rewrote `scripts/probes/design-guards.json` with
+`json.dumps(indent=2)` when it has always been `indent=1`, reformatting all 103
+existing probes: 957 phantom deleted lines around an 18-line addition, on the
+one file that records every design guarantee this project holds. `git blame` on
+any probe would have pointed at the #12 commit. Restored in `053a3c2`; the net
+change against the pre-#12 version is now exactly the two new probes. Worth
+saying plainly because it is the kind of damage that is invisible in a passing
+test run and permanent in history.
+
+## #71 · The audit called every commit's CI a failure, and nobody could tell
+
+Found by pulling the thread on the gate failure above. The audit's row read
+*"CI failed on bd62fcb - verify the work before trusting the closure"*, and
+`gh run list` said that commit was `completed/success`.
+
+```python
+return "success" if all(c == "success" for c in conclusions) else "failure"
+```
+
+The weekly mutation workflow is conditional, so GitHub records it as `skipped`
+on every push. `all(c == "success")` is therefore false for **every commit in
+this repository**, permanently. I checked four; all identical.
+
+Two silent consequences. `recommend()` gates its actionable flag on
+`ci != "failure"`, so `--apply` could never act on anything — every run printed
+`0 of N evidenced` and the feature was dead from the day it shipped. And the
+reason it gave for refusing was a claim about CI that nobody cross-checks.
+
+The fix is three answers instead of two, because `skipped` is neither success
+nor failure: an explicit red list (`failure`, `cancelled`, `timed_out`,
+`action_required`, `startup_failure`) → failure; otherwise any real success →
+success; nothing conclusive → `None`, which the caller already reports as "CI
+unknown" and hands to a person.
+
+**Judgment call: red is a list, not a negation.** `not success` would have been
+shorter and would have swept up `cancelled` and `timed_out` for free. I wrote
+the list out because the failure I was fixing came *from* a catch-all — treating
+every non-success alike is what made `skipped` a failure in the first place, and
+the inverse mistake (treating every non-failure as clean) promotes an unverified
+commit unattended. Naming both sets means a conclusion GitHub adds later falls
+into neither and returns `None`, which is the safe answer.
+
+**Judgment call: all-skipped is `None`, not `success`.** Tempting to say "nothing
+went red, so it's fine". But nothing ran, and this value's only job is to decide
+whether a label may be changed without a human. "I don't know" is the honest
+answer and the caller already handles it.
+
+Three probes pin the three arms. 105 → 108.
+
+**What surprised me here.** This is the fourth signal-that-goes-nowhere in the
+log, and the first one I found by *disbelieving a gate's explanation* rather
+than its verdict. The gate was correctly failing on real drift; the sentence it
+printed about why was false. I nearly fixed the label and moved on, which would
+have left it.

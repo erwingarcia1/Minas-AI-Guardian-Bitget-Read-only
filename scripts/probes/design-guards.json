@@ -972,5 +972,32 @@
   "tests": [
    "tests/test_undated_fills.py"
   ]
+ },
+ {
+  "name": "audit: a skipped conditional job counts as a red CI again",
+  "file": "scripts/audit_issue_status.py",
+  "old": "    if any(c in RED_CONCLUSIONS for c in conclusions):\n        return \"failure\"\n    if any(c == \"success\" for c in conclusions):\n        return \"success\"\n    return None",
+  "new": "    return \"success\" if all(c == \"success\" for c in conclusions) else \"failure\"",
+  "tests": [
+   "tests/test_issue_status_audit.py"
+  ]
+ },
+ {
+  "name": "audit: a commit where every check was skipped is reported as success",
+  "file": "scripts/audit_issue_status.py",
+  "old": "    if any(c == \"success\" for c in conclusions):\n        return \"success\"\n    return None",
+  "new": "    return \"success\"",
+  "tests": [
+   "tests/test_issue_status_audit.py"
+  ]
+ },
+ {
+  "name": "audit: only a plain failure counts as red, so a cancelled run reads clean",
+  "file": "scripts/audit_issue_status.py",
+  "old": "RED_CONCLUSIONS = frozenset({\n    \"failure\", \"cancelled\", \"timed_out\", \"action_required\", \"startup_failure\",\n})",
+  "new": "RED_CONCLUSIONS = frozenset({\"failure\"})",
+  "tests": [
+   "tests/test_issue_status_audit.py"
+  ]
  }
 ]

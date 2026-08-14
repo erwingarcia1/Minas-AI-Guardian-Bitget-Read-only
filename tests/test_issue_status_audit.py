@@ -29,6 +29,8 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
+import pytest
+
 _spec = importlib.util.spec_from_file_location(
     "audit_issue_status", Path(__file__).resolve().parent.parent / "scripts" / "audit_issue_status.py"
 )
@@ -151,6 +153,55 @@ def test_unknown_ci_is_noted_but_does_not_block():
     assert label == "status: built"
     assert actionable is True
     assert "ci unknown" in reason.lower()
+
+
+# --- what actually counts as a red CI -----------------------------------------
+#
+# `ci_for` used to be `all(c == "success")`. The weekly mutation workflow is
+# conditional, so GitHub records it as `skipped` on every push - which made that
+# expression return "failure" for every commit in this repository, permanently.
+# Nothing looked wrong: the audit still printed its table, and the row it could
+# never act on read "CI failed on <sha>" about a commit whose CI was green.
+#
+# The distinction these pin: a check that went red, a check that did not run,
+# and a commit where nothing ran at all are three different answers.
+
+
+def _conclusions(monkeypatch, joined: str) -> str | None:
+    """`ci_for` shells out to `gh` with a jq that comma-joins the conclusions."""
+    monkeypatch.setattr(audit, "_run", lambda *a, **k: joined)
+    return audit.ci_for("abc1234")
+
+
+def test_a_skipped_conditional_job_is_not_a_red_ci(monkeypatch):
+    assert _conclusions(monkeypatch, "skipped,success") == "success"
+
+
+def test_a_neutral_check_is_not_a_red_ci_either(monkeypatch):
+    assert _conclusions(monkeypatch, "neutral,success") == "success"
+
+
+def test_a_real_failure_is_still_a_red_ci(monkeypatch):
+    assert _conclusions(monkeypatch, "skipped,failure") == "failure"
+
+
+@pytest.mark.parametrize("red", ["cancelled", "timed_out", "action_required", "startup_failure"])
+def test_the_other_ways_a_check_goes_red_all_count(monkeypatch, red):
+    """Not just `failure`. A cancelled or timed-out run is a run that did not
+    prove anything, and treating it as clean is how an unverified commit gets
+    promoted unattended."""
+    assert _conclusions(monkeypatch, f"success,{red}") == "failure"
+
+
+def test_nothing_actually_ran_is_unknown_not_success(monkeypatch):
+    """All skipped means no check ever executed. Reporting that as success
+    would let --apply act on a commit nothing verified. The caller already
+    treats None as "CI unknown" and hands the row to a person."""
+    assert _conclusions(monkeypatch, "skipped,skipped") is None
+
+
+def test_no_check_runs_at_all_is_unknown(monkeypatch):
+    assert _conclusions(monkeypatch, "") is None
 
 
 # --- drift accounting ---------------------------------------------------------
