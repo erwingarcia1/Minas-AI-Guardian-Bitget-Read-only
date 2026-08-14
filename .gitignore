@@ -27,3 +27,7 @@ setup.cfg
 
 # scripts/mutation-probe.py's mutual exclusion; empty, and only ever locked.
 .mutation-probe.lock
+
+# scripts/health-check.sh keeps the output of every run, passes included, so a
+# green can be audited without re-running it. Self-pruning after 14 days.
+.health-check-logs/

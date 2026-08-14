@@ -22,6 +22,7 @@ python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().
 .venv/bin/pytest -q                    # full suite — mocked CCXT, never hits a live exchange
 .venv/bin/python scripts/soak_test.py  # 100-account synthetic soak
 .venv/bin/sentinel run                 # engine + dashboard (:8390) + metrics (:9109)
+scripts/health-check.sh                # every gate, one table — "Is everything okay?" below
 ```
 
 ## Hard rules
@@ -74,6 +75,113 @@ Full procedure, region notes, and the DB-migration recipe:
 [docs/deployment.md](docs/deployment.md). Deploy only committed code so
 GitHub and production stay in lockstep.
 
+
+## Is everything okay?
+
+```bash
+scripts/health-check.sh          # every gate (~20 min, mutation dominates)
+scripts/health-check.sh --fast   # skips the two multi-minute gates (~4 min)
+```
+
+One command, seven gates, one summary table: ruff, the suite, the coverage
+floor, `pip-audit`, the design-guard probes, the mutation floor, and the
+issue-status audit. Non-zero if any of them fail.
+
+```
+GATE                         RESULT     TIME  NOTES
+---------------------------- -------- ------  -----
+ruff                         pass         0s
+tests                        pass       179s
+coverage floor (78%)         pass         0s
+pip-audit                    pass        39s
+issue-status audit           pass         3s
+design-guard probes          skipped       -  --fast
+mutation floor (90%)         skipped       -  --fast
+```
+
+Each gate is documented in its own section below; this only runs them. Three
+things it is deliberate about:
+
+- **It does not stop at the first failure.** The point of the table is knowing
+  all seven answers. Failed gates get their last 30 lines printed inline.
+- **It keeps the logs when everything passes.** Every run writes to
+  `.health-check-logs/<utc-stamp>-<sha>/`, named at the top of the run and kept
+  for 14 days whatever the result. Deleting them on success sounds tidy and is
+  backwards: a pass is the result most worth being able to audit. The mutation
+  gate can report 108/119 in eight seconds off mutmut's per-mutant cache, which
+  is a real pass and looks exactly like a hollow one — the difference is only in
+  the log, and re-running to see it costs twenty minutes.
+- **A gate it could not run is `skipped`, never `pass`, and the run exits 2.**
+  No `gh`, no authentication, no `mutmut`, or another probe run already holding
+  the lock — the question went unanswered, and an unanswered question reported
+  in green is the failure mode most of this file exists to prevent. `--fast` is
+  the one exception: you asked for the skip, so it still exits 0, and the notes
+  column says which gates you gave up.
+- **It does not know the floors.** The coverage floor is read out of
+  `.github/workflows/ci.yml` and the mutation floor out of
+  `scripts/mutation-floor.txt`. A number retyped into this script would go on
+  printing "pass" after CI started failing.
+
+Two smaller traps it closes. `.coverage` from an earlier run sits in the working
+tree, and `coverage report` will read it without complaint — so the floor gate
+refuses to run unless pytest just rewrote the file, rather than scoring a
+month-old run. And the floor and the suite are checked separately instead of via
+`--cov-fail-under`, because otherwise a coverage shortfall and a failing test
+are the same red and the first question is always which one it was.
+
+Note that `--check` on the mutation gate **ratchets**: it raises
+`scripts/mutation-floor.txt` to `max(floor, score - 2)`, never lowers it, and
+that file is tracked — so a completely clean health check can leave you a change
+to commit, and the run says so when it does. The two-point buffer is
+deliberate. A floor dragged up to meet the score exactly leaves zero slack, and
+a gate sitting on its own floor fires on the next honest change to anything it
+measures; a tripwire that goes off during legitimate work is one people learn to
+route around with `--no-verify`, and then it guards nothing.
+
+If the mutation gate fails with **"no mutants ran"**, it measured nothing and
+exits non-zero. Almost always the baseline suite is failing inside `mutants/`:
+the runner uses `-x`, so one failure aborts stats collection before a single
+mutant is tested. Reproduce it directly, which is what the error message tells
+you to do:
+
+```bash
+(cd mutants && ../.venv/bin/python -m pytest -x -q tests/)
+```
+
+Historically the cause was mutmut's cache, and it is worth knowing why, because
+the shape of it is easy to walk back into. `copy_src_dir()` copies everything
+under `source_paths` with `if target_path.exists(): continue`. Python files are
+refreshed separately by the mutation pass, which compares mtimes — so *code*
+stays current. Everything else is copied once and never again. Meanwhile
+`also_copy` — `tests/`, `setup.cfg`, `pyproject.toml` — *is* rewritten every
+run. That combination is what made it invisible: the tests inside `mutants/`
+were always current, so a stale copy in there looked impossible.
+
+`sentinel/schema.sql` is our only non-Python source file, and it is the schema
+every test's database is built from. When it lagged behind a newly added table,
+the ~80 tests predating that table passed and the ones touching it failed with
+`no such table`, taking the whole gate down. `--regenerate` did not help,
+because it deleted nothing.
+
+Both halves are now closed in `scripts/mutation-check.sh`: it compares each
+non-Python file under `sentinel/` against its copy and rebuilds on any
+difference, and every generation starts with `rm -rf mutants/`. Deleting first
+also clears `mutants/mutmut-stats.json`, the cached test-to-function map — if
+that map is ever built by a run in which the tests cannot see
+`MUTANT_UNDER_TEST` (see the allowlist note in `tests/conftest.py`), every
+function looks untested and the total comes out zero. Diagnose that one by
+reading the map: `tests_by_mangled_function_name` with a handful of entries
+rather than hundreds is this.
+
+Compare contents, never mtimes: mutmut copies with `copy2`, so a stale copy
+carries the *source's* old mtime and looks freshly written.
+
+CI never hits any of it — a fresh checkout has no `mutants/` at all, which is
+why this only ever bit locally.
+
+This does not replace `gh run list --limit 1` after pushing. It runs what CI
+runs; it does not run it on CI's hardware, which is where the `time.monotonic()`
+defect below was found and could only have been found.
 
 ## Before pushing
 
