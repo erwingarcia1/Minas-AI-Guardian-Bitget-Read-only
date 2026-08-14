@@ -57,10 +57,41 @@ def test_the_changelog_has_an_unreleased_section():
     assert "## [Unreleased]" in (ROOT / "CHANGELOG.md").read_text()
 
 
+def _changelog_heading_and_link_versions() -> tuple[set[str], set[str]]:
+    text = (ROOT / "CHANGELOG.md").read_text()
+    return (
+        set(re.findall(r"^## \[(\d+\.\d+\.\d+)\]", text, re.MULTILINE)),
+        set(re.findall(r"^\[(\d+\.\d+\.\d+)\]:", text, re.MULTILINE)),
+    )
+
+
 def test_every_changelog_version_has_a_link_definition():
     """The compare links at the bottom. A heading without one renders as plain
     text and the reader can't get to the diff."""
-    text = (ROOT / "CHANGELOG.md").read_text()
-    headings = set(re.findall(r"^## \[(\d+\.\d+\.\d+)\]", text, re.MULTILINE))
-    linked = set(re.findall(r"^\[(\d+\.\d+\.\d+)\]:", text, re.MULTILINE))
+    headings, linked = _changelog_heading_and_link_versions()
     assert headings <= linked, f"CHANGELOG headings with no link definition: {sorted(headings - linked)}"
+
+
+def test_every_changelog_link_definition_has_a_heading():
+    """The other direction, which cost us a red main to learn.
+
+    A docs commit pasted a block onto the `## [1.0.0]` line and deleted it.
+    The release's body stayed in the file, orphaned under `[Unreleased]`, and
+    `[0.4.0]` became the newest heading — so the failure surfaced as
+    `test_the_package_version_matches_the_changelog` complaining about
+    pyproject.toml, three files from the edit that caused it. The near-miss was
+    concluding pyproject was wrong and bumping it *down* to 0.4.0, which would
+    have gone green while mislabelling a shipped release.
+
+    The `[1.0.0]:` link definition was still sitting there the whole time,
+    pointing at a heading that no longer existed. Nothing said so, because
+    containment was only ever checked one way. Both directions are meaningful
+    here — the sets are two views of the same list of releases, and either one
+    losing an entry is a bug — so both are asserted.
+    """
+    headings, linked = _changelog_heading_and_link_versions()
+    assert linked <= headings, (
+        f"CHANGELOG link definitions with no heading: {sorted(linked - headings)}. "
+        "A link definition outlives its heading when something overwrites the "
+        "heading line — check whether the release section was deleted."
+    )

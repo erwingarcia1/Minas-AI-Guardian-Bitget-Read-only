@@ -117,6 +117,89 @@ edit from another session, which is the case this rule exists for.
 Cost of not doing it, measured: fourteen minutes on 2026-08-14, spent proving
 that a second `claude` process was not editing the tree.
 
+## The tell for an accidental overwrite: the commit cites what it deleted
+
+2026-08-14. `ef8a7f7` ("update deployment docs") pasted an `### Infrastructure`
+block directly onto the `## [1.0.0] — 2026-07-05` line in `CHANGELOG.md`,
+deleting it. The release's body — "First production release…" and its whole
+`### Added` list — was left orphaned under `[Unreleased]`, `[0.4.0]` became the
+newest heading, and CI went red on
+`test_the_package_version_matches_the_changelog`.
+
+**The tell, and the thing worth recognising next time: the same commit added a
+cross-reference to "see CHANGELOG 1.0.0" in `docs/deployment.md`.** It cited the
+section it had just destroyed, in the same diff. Nobody deletes a section and
+then links to it on purpose. That is about as unambiguous as accidental gets,
+and it is cheap to look for: when a heading, symbol or anchor goes missing, grep
+the *same commit* for references to it. A deliberate removal updates its
+referrers; an accidental one leaves them pointing at a hole.
+
+Three more signals pointed the same way, all of them cheaper than reading the
+whole diff:
+
+- **Link definitions outlived the heading.** `[1.0.0]: compare/v0.4.0...v1.0.0`
+  and `[Unreleased]: compare/v1.0.0...HEAD` were untouched. A real version
+  walk-back has to rewrite those.
+- **The body was still there, headingless.** Content without its heading is a
+  deletion; a decision would have removed both.
+- **The "new" version wasn't new.** `[0.4.0]` is dated 2026-07-05 and predates
+  the commit. Nothing had been written — something had been removed, and the
+  next heading down was promoted by default.
+
+**The near-miss is the real lesson.** The session opened with the conclusion
+already drawn — that Erwin had deliberately written 0.4.0, and that pyproject's
+1.0.0 was a bad earlier inference to be reversed. Setting pyproject to 0.4.0
+would have turned CI green in one line. It would also have labelled a shipped
+production release with a version from July and cemented the loss of the whole
+1.0.0 section. **A version mismatch names two files; it does not tell you which
+one moved.** Read the commit that changed one of them before believing either.
+`git log -p -1 <commit> -- <file>` costs seconds.
+
+And the reason it surfaced three files away from the edit:
+`test_every_changelog_version_has_a_link_definition` asserted
+`headings <= linked` and nothing else, so an orphaned link definition pointing
+at a deleted heading was invisible to it. The inverse is now asserted as
+`test_every_changelog_link_definition_has_a_heading`, and it names the deleted
+heading directly instead of complaining about `pyproject.toml`.
+
+### The generalisation: one-directional containment
+
+**Whenever two sets are views of the same list, both directions are
+meaningful, and asserting one is a guard that only half exists.** One set
+losing an entry is a missing thing; the other losing one is a stale entry
+pointing at nothing. The second is the quieter failure, because the stale
+entry keeps *looking* like coverage — which is this repo's recurring theme,
+one level up from the code.
+
+Swept the suite for the shape after the CHANGELOG fix. Two more, both now
+closed, neither of which had a live bug behind it yet:
+
+- **`tests/test_retention.py`** — `actual - covered` asserted every real table
+  has a retention decision; nothing asserted every decision names a real
+  table. `prune_all` issues `DELETE FROM <table>` per `PRUNABLE` key, so a key
+  left behind by a rename matches nothing, errors nothing, and reads as active
+  retention in the list and in `table_counts` while pruning nothing — and the
+  original test stays green, because the stale key still counts as covering
+  the table it names. Now `test_every_retention_decision_names_a_real_table`.
+- **`tests/test_config_defaults.py`** — SPEC→DEFAULTS was walked one way. A
+  default under a renamed or misspelled path is dead config that `default_for`
+  can never return. Now `test_every_declared_default_names_a_setting_in_the_schema`.
+
+The config one had the shape nested inside it as well:
+`test_every_declared_default_matches_the_shipped_config` `continue`s on any
+default absent from `config/rules.yaml`. Three are legitimately in that state
+(`retention.snoozes_days`, `retention.config_changes_days`,
+`retention.password_resets_days` — code fallbacks never written into the
+shipped file), so it cannot simply assert. But a *misspelled* path is absent
+from the shipped file too, and was being swallowed by the same `continue`,
+invisible in both directions at once. Verified: with a bogus
+`retention.eventss_days` present, that test still passes. The new inverse
+catches it by name, and the `continue` now carries a comment saying exactly
+what it tolerates, why, and what makes the skip safe rather than silent.
+
+Left undone, worth someone's judgement: those three settings are undiscoverable
+to an operator reading `config/rules.yaml`.
+
 ---
 
 # Summary — session of 2026-08-12

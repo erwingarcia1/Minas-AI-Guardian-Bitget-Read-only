@@ -67,7 +67,25 @@ def test_every_declared_default_matches_the_shipped_config(tmp_path):
             if node is None:
                 break
         if node is None:
-            continue  # not present in the shipped file; nothing to disagree with
+            # Tolerated deliberately, and narrowly: a setting that has a code
+            # default but is not written into config/rules.yaml. Three are in
+            # that state today - retention.snoozes_days,
+            # retention.config_changes_days, retention.password_resets_days -
+            # all newer retention windows that ship as code fallbacks only.
+            # There is nothing in the file to disagree with, so drift is not
+            # the question for them.
+            #
+            # What makes the skip safe rather than silent is
+            # `test_every_declared_default_names_a_setting_in_the_schema`
+            # below: a default whose path is *misspelled* would land here too,
+            # and would otherwise be skipped forever by this test while being
+            # invisible to the SPEC walk in the other direction. That test
+            # catches it by name. Without it, this `continue` would swallow
+            # typos as quietly as it swallows unshipped settings.
+            #
+            # The cost that remains: an operator reading config/rules.yaml
+            # cannot discover those three are tunable.
+            continue
         if not _same(node, declared):
             mismatches.append(f"{'.'.join(path)}: code {declared!r} vs shipped {node!r}")
     assert mismatches == [], "code defaults have drifted from config/rules.yaml:\n  " + "\n  ".join(mismatches)
@@ -89,6 +107,44 @@ def test_every_setting_in_the_schema_declares_a_default():
 
     walk_spec(SPEC, DEFAULTS)
     assert missing == [], f"settings with no declared fallback: {missing}"
+
+
+def test_every_declared_default_names_a_setting_in_the_schema():
+    """The other direction: a default for a setting that does not exist.
+
+    Dead config. `default_for` is only ever consulted for paths the schema
+    knows, so a default declared under a renamed or misspelled path can never
+    be returned to anyone — it sits in the registry looking like the answer to
+    "what happens when this is absent", and the real answer is whatever the
+    caller passed instead. That is how `tolerance_pct` defaulted to zero, one
+    level removed.
+
+    It is also the only guard on the `continue` in
+    `test_every_declared_default_matches_the_shipped_config` above, which skips
+    any default absent from the shipped file — a misspelled path is absent from
+    the shipped file too, so that test cannot tell a typo from a setting that
+    simply is not written down. This one can.
+
+    Same shape as the `[1.0.0]` CHANGELOG link definition that outlived its
+    heading (see docs/AUTONOMOUS-LOG.md): containment checked one way only, so
+    an entry pointing at nothing goes unnoticed.
+    """
+    orphans = []
+
+    def walk_defaults(defaults, spec, path=()):
+        for key, value in defaults.items():
+            here = path + (key,)
+            node = spec.get(key) if isinstance(spec, dict) else None
+            if node is None:
+                orphans.append(".".join(here))
+            elif isinstance(value, dict):
+                walk_defaults(value, node, here)
+
+    walk_defaults(DEFAULTS, SPEC)
+    assert orphans == [], (
+        f"declared defaults with no such setting in the schema: {orphans}. "
+        "A default under a renamed or misspelled path can never be returned."
+    )
 
 
 # --- the divergences the audit found -----------------------------------------

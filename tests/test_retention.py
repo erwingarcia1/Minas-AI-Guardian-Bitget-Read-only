@@ -79,6 +79,36 @@ def test_every_growing_table_is_covered(db, rules):
     assert actual - covered == set(), f"tables with no retention decision: {actual - covered}"
 
 
+def test_every_retention_decision_names_a_real_table(db, rules):
+    """The other direction, and the one that fails silently.
+
+    `prune_all` iterates `PRUNABLE` and issues `DELETE FROM <table> WHERE
+    <column> < ?` per key. A key naming a table that was renamed or dropped
+    matches nothing — no error, `rowcount` 0 — so the entry reads as active
+    retention in the list, in `table_counts`, and to anyone auditing what this
+    product keeps, while pruning nothing at all. The table it was *meant* to
+    cover grows forever, and `test_every_growing_table_is_covered` above stays
+    green throughout, because the stale key still counts as covering it.
+
+    Same shape as the `[1.0.0]` CHANGELOG link definition that outlived its
+    heading (see docs/AUTONOMOUS-LOG.md): two sets that are views of one list,
+    containment asserted one way only, so an entry pointing at something that
+    no longer exists is invisible. Both directions are meaningful here.
+    """
+    from sentinel.retention import KEEP_LATEST_PER_ACCOUNT, PRUNABLE
+
+    covered = set(PRUNABLE) | set(KEEP_LATEST_PER_ACCOUNT) | NEVER_PRUNE
+    with db.cursor() as cur:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        actual = {r["name"] for r in cur.fetchall()}
+
+    assert covered - actual == set(), (
+        f"retention decisions naming no such table: {sorted(covered - actual)}. "
+        "A renamed or dropped table leaves the old key behind, where it prunes "
+        "nothing and still reads as covered."
+    )
+
+
 def test_pruning_is_repeatable(db, rules):
     account_id = _account(db)
     with db.cursor() as cur:
