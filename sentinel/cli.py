@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from sentinel.alerts.email import EmailChannel
 from sentinel.alerts.escalation import Escalator
 from sentinel.alerts.telegram import TelegramChannel
+from sentinel.buildinfo import build_info
 from sentinel.config import RulesConfig
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
@@ -210,6 +211,34 @@ def cmd_onboard(args: argparse.Namespace) -> int:
         for gap in gaps:
             print(f"  {gap}", file=sys.stderr)
         print("Re-onboard or re-seed once the exchange endpoint is working.", file=sys.stderr)
+    return 0
+
+
+def cmd_version(args: argparse.Namespace) -> int:
+    """What is running, and what it was built from.
+
+    Answers the question a deploy otherwise leaves to trust. `sudo docker
+    compose exec -T sentinel sentinel version` after an upgrade is the
+    difference between knowing the new image is serving and assuming it,
+    which is the failure this codebase keeps closing elsewhere.
+
+    Exits 1 when the commit is unknown - a build that cannot say what it is
+    should not report success to a script checking whether the deploy landed.
+    """
+    info = build_info()
+    print(f"Minas AI Guardian {info['version']}")
+    print(f"  commit   {info['commit']}")
+    print(f"  tag      {info['tag']}")
+    print(f"  source   {info['source']}")
+    if info["commit"] == "unknown":
+        print(
+            "\nThis build does not know which commit it came from: it was built "
+            "without\nGIT_SHA and has no checkout to read. Deploy via "
+            "docs/deployment.md, which\npasses it through, if you need this to "
+            "identify what is running.",
+            file=sys.stderr,
+        )
+        return 1
     return 0
 
 
@@ -693,6 +722,12 @@ def main() -> None:
     onboard_parser.add_argument("--alert-email", help="per-account alert destination (email)")
     onboard_parser.add_argument("--alert-phone", help="per-account alert destination (E.164 phone)")
     onboard_parser.set_defaults(func=cmd_onboard)
+
+    version_parser = sub.add_parser(
+        "version",
+        help="Print the running version and the commit it was built from",
+    )
+    version_parser.set_defaults(func=cmd_version)
 
     validate_parser = sub.add_parser(
         "validate-config",

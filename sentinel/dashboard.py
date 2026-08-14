@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from sentinel.buildinfo import version_line
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
 from sentinel.events import append_event
@@ -119,6 +120,7 @@ _STYLE = """
   }
   .empty { padding:34px; text-align:center; color:var(--faint); font-size:13px; }
   footer { margin-top:28px; text-align:center; color:var(--faint); font-size:11.5px; }
+  footer .build { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; opacity:.85; }
   a.acctlink { color:var(--txt); text-decoration:none; font-weight:550; }
   a.acctlink:hover { color:var(--gold); }
   /* --- Account detail --- */
@@ -226,7 +228,13 @@ def _page(nav_html: str, body_html: str, refresh: bool = True) -> str:
         '<div class="sub">Multi-exchange account-compromise monitoring</div></div></div>'
         '<div class="nav">' + nav_html + "</div></header>"
         + body_html
-        + "<footer>Minas AI Guardian · internal ops view · network-gated (Tailscale)</footer></div>"
+        # The build line is here rather than tucked in a status page because
+        # "what is deployed" is a question asked while looking at something
+        # else - an alert that should have fired, a fix that should have
+        # landed. Showing it on every page means the answer is never a guess
+        # about whether the last deploy took.
+        + '<footer>Minas AI Guardian · internal ops view · network-gated (Tailscale)'
+        + f'<br><span class="build">{html.escape(version_line())}</span></footer></div>'
         + _LOCAL_TIME_SCRIPT + "</body></html>"
     )
 

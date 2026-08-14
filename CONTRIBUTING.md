@@ -56,8 +56,95 @@ scripts/health-check.sh                # every gate, one table — "Is everythin
 
 - Work on a feature branch; open a PR into `main`. CI (pytest) must pass.
 - Commit subject: imperative, ≤ ~72 chars; body explains the *why*.
-- Bump [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`; tag releases
-  `vMAJOR.MINOR.PATCH` (SemVer) and cut a GitHub Release.
+- Bump [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`; releases are cut with
+  `scripts/release.sh` — see **Releases and versioning** below.
+
+## Releases and versioning
+
+This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
+and [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). Both were already
+in use informally; what follows is what the levels mean **for this product**,
+so the question "is this a minor or a patch" has an answer that does not depend
+on who is asking.
+
+The audience for a version number here is an operator deciding whether they can
+upgrade during a quiet afternoon or need to schedule a window. Everything below
+is written to answer that question and no other.
+
+### MAJOR — the operator must do something before upgrading
+
+Reserved for upgrades that are not `git pull` + rebuild. Specifically:
+
+- **Config schema changes that reject an existing `rules.yaml`.** A file that
+  the running version accepts and the new version refuses.
+- **Database migrations that are not reversible.** Dropping a table or column,
+  rewriting stored values, anything that means the previous image can no longer
+  read `/data/sentinel.db`. Additive migrations (`CREATE TABLE IF NOT EXISTS`,
+  `ALTER TABLE … ADD COLUMN`) are *not* MAJOR: the old image ignores what it
+  does not know about, so a rollback works.
+- **Removed settings.** A key an operator may have in their `rules.yaml` that
+  now does nothing, or is rejected.
+
+If a release is MAJOR, the notes must open with what the operator has to do,
+before anything else. That paragraph is the reason the number changed.
+
+### MINOR — new capability, upgrade at will
+
+New detectors, new features, new alert channels, new CLI commands, new pages.
+Additive database migrations live here. An operator can upgrade without reading
+anything, and the product does more than it did.
+
+### PATCH — bug fixes, including detector fixes
+
+Fixes to existing behaviour, including detector fixes. No new capability.
+
+### The awkward case: a detector fix that changes what gets alerted
+
+**A detector fix is technically a PATCH, and it can still change behaviour
+customers rely on.** "We now alert on X where we didn't" is not a bigger version
+number — but it *is* the single thing an operator most needs to read, and it is
+exactly what a version number cannot express.
+
+So it goes in the notes under its own heading, **`### Changed detection
+behaviour`**, whatever the version bump. Not under `Fixed`, where it reads as
+housekeeping and gets skimmed.
+
+Anything belongs under that heading if, after upgrading:
+
+- an alert fires that would not have fired before (a fixed blind spot, a
+  detector that was inert, a severity raised);
+- an alert stops firing that used to (a fixed false positive, a widened
+  tolerance, a new suppression);
+- the same condition reaches a different person, or reaches them differently
+  (routing, escalation, digest-vs-page, snooze and cooldown changes).
+
+Write each one as the operator experiences it — *what changes about the alerts
+they see* — not as the code change that caused it. "Withdrawals with no
+reference ID now alert again; they were silently dropped since 0.4.0" is the
+sentence. "Fixed `_dedup_key` null handling" is not.
+
+The test of a good entry: an operator who reads only that heading can predict
+what their inbox looks like tomorrow.
+
+### Cutting a release
+
+```bash
+scripts/release.sh 1.2.0     # refuses on an empty [Unreleased], a dirty tree,
+                             # a duplicate tag, or any health-check failure
+```
+
+It moves `[Unreleased]` under a dated heading, bumps `pyproject.toml`, adds the
+compare link, commits, and creates the annotated tag `v1.2.0`. Push with
+`git push && git push --tags`.
+
+**There is no release without notes.** The script refuses an empty
+`[Unreleased]`, which is the whole point: the note is not paperwork that
+follows the release, it is the thing being released.
+
+**Deploys refuse any commit that is not exactly a tag** (see
+[docs/deployment.md](docs/deployment.md)), so the only way to ship is to cut a
+release, and cutting a release produces the note as a side effect. There is no
+`--force`. If something is urgent, cut a PATCH — it takes thirty seconds.
 
 ## Deploying
 
@@ -68,9 +155,12 @@ deploy is a pull on the server — nothing is shipped from a laptop:
 ssh ubuntu@minas-guardian     # Tailscale SSH
 cd /opt/minas-guardian
 sudo git pull                 # root's key: /root/.ssh/id_ed25519
-sudo docker compose build sentinel
+scripts/deploy-gate.sh        # refuses unless HEAD is exactly a release tag
+eval "$(scripts/deploy-gate.sh --export)"   # GIT_SHA/GIT_TAG for the build
+sudo -E docker compose build sentinel
 sudo docker compose run --rm sentinel sentinel validate-config /app/config/rules.yaml
 sudo docker compose up -d
+sudo docker compose exec -T sentinel sentinel version   # confirm what is running
 ```
 
 Push first: the server pulls from GitHub `main`, so unpushed work cannot

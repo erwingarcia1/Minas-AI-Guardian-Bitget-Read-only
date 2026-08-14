@@ -1,6 +1,14 @@
 services:
   sentinel:
-    build: .
+    build:
+      context: .
+      # Passed in by the deploy: `eval "$(scripts/deploy-gate.sh --export)"`
+      # then `sudo -E docker compose build sentinel`. Unset means the image
+      # reports its commit as `unknown`, which `sentinel version` treats as a
+      # failure rather than papering over.
+      args:
+        GIT_SHA: ${GIT_SHA:-unknown}
+        GIT_TAG: ${GIT_TAG:-unknown}
     restart: unless-stopped
     env_file: .env
     # Explicit overrides beat env_file: a host .env carrying the local-dev

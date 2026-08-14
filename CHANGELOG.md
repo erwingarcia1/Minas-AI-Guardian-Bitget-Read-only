@@ -13,7 +13,90 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**Read this section if you read nothing else.** Every entry here changes which
+alerts reach you, or who they reach. Each one is detailed further down under
+`Added`/`Fixed`; this is the summary an operator needs before upgrading. The
+version bump is MINOR, which says nothing about how much your inbox changes —
+that is what this heading is for.
+
+**Alerts that now fire where they previously did not.** Expect more alerts, on
+accounts that looked quiet because nothing was watching:
+
+- **Withdrawals with no reference ID** — silently dropped before, so a
+  withdrawal the exchange did not stamp with an id produced no CRITICAL at all
+  (G-11, #15).
+- **Withdrawals that cannot be told apart from each other** — two undated,
+  unreferenced withdrawals collided on the same dedup key and the second was
+  suppressed for a whole CRITICAL cooldown. Now both are reported (#67).
+- **Undated fills** — a fill with no exchange timestamp was skipped by
+  off-market and fee checking entirely (G-47, #51).
+- **Off-market execution on mixed batches** — one unparseable record ended the
+  scan, so every later fill in that poll went unexamined (#66).
+- **OKX IP-allowlist drift** — the detector was inert against OKX's response
+  shape and could never have fired.
+- **Loss of access to a customer's account** — raised to HIGH from a
+  digest-only path that in practice never sent, and it now repeats daily while
+  unresolved. The customer is told plainly that their account is **not being
+  watched** (G-6, #58).
+- **An account whose baseline never completed** — onboarded, displayed as
+  healthy, and never fully checked (#58, group C).
+- **A poll that dies partway through** — used to stamp itself a success, which
+  kept `account_unreachable` from ever firing while nothing was being examined
+  (#59).
+
+**Alerts that stop firing, or arrive differently.** These were false or
+misrouted:
+
+- **Binance CRITICAL quantity-drop false positives** — closed-order coverage
+  now accounts for the fills that explained the drop.
+- **First-poll `transfer_route_never_seen`** — a new account's first poll
+  reported every existing route as never-seen.
+- **Old activity no longer explains away a fresh theft** — attribution was
+  matching trades outside the window, so a real drop could be marked
+  accounted-for (G-7). This makes some genuine thefts alert that previously
+  did not.
+- **An alert whose channel fails is no longer lost** — one failing channel
+  used to drop the alert for every channel (#57).
+- **Alert routing falls back to channels rather than to nothing** — a missing
+  or mistyped routing table meant alerts were stored, deduped, and delivered
+  nowhere.
+
+**Who gets told, and how you can quiet it:**
+
+- **Minas is now paged separately from the customer** for our own outages, on
+  its own routing table that customer tuning cannot change (G-49, #53).
+- **Customers can acknowledge and snooze their own alerts** from the portal,
+  capped per severity — CRITICAL 1 hour, HIGH 4 hours, MEDIUM/LOW 24 hours.
+  A snooze silences one alert, never a rule, and never forever (G-22 #26,
+  G-26 #30).
+- **Secondary contacts receive alerts and can sign in** (G-21, #25).
+- **Member SMS** via ClickSend, per-account opt-out honoured for non-CRITICAL.
+- **A rejected `rules.yaml` no longer stops the service** — it starts on every
+  setting that validates, falls back to built-in defaults for the rest, and
+  raises a **CRITICAL operator page** saying the thresholds in force are not
+  the ones in the file. Previously the process refused to start, which turned
+  a bad edit during an upgrade into an outage.
+
 ### Added
+- **Releases are enforced rather than remembered.** `scripts/release.sh
+  <version>` cuts a release and refuses an empty `[Unreleased]`, a dirty tree,
+  a duplicate tag, or a failing health-check; `scripts/deploy-gate.sh` refuses
+  to deploy any commit that is not exactly a release tag, with no `--force`.
+  Together they mean every deployed commit has notes by construction: the only
+  path to production runs through a release, and a release cannot be cut
+  without writing what changed. `CONTRIBUTING.md` defines what MAJOR, MINOR
+  and PATCH mean for this product, and requires alert-affecting changes to
+  appear under a `Changed detection behaviour` heading whatever the bump —
+  because "we now alert on X where we didn't" is what an operator needs, and
+  it is exactly what a version number cannot express.
+- **`sentinel version` reports the running version and the commit it was built
+  from**, and the ops dashboard shows the same line in its footer. The commit
+  is passed into the image as a build argument by the deploy, since the image
+  has no `.git`; a build that was not given one reports `unknown` and exits
+  non-zero rather than naming a commit it cannot vouch for. Until now the only
+  way to know what was deployed was to trust that the deploy worked.
 - **`detectors/withdrawal.py` covered by hand (#65).** The CRITICAL
   money-leaving path, and the module the automated mutation check is
   structurally blind to: it has no conditionals, so it produces no

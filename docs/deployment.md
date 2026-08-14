@@ -181,14 +181,42 @@ production:
 ssh ubuntu@minas-guardian            # Tailscale SSH
 cd /opt/minas-guardian
 sudo git pull
-sudo docker compose build sentinel
+scripts/deploy-gate.sh               # STEP ONE: refuses anything that is not a release
+eval "$(scripts/deploy-gate.sh --export)"
+sudo -E docker compose build sentinel
 sudo docker compose run --rm sentinel sentinel validate-config /app/config/rules.yaml
 sudo docker compose up -d
 sudo docker compose ps               # wait for "healthy"
+sudo docker compose exec -T sentinel sentinel version   # confirm what is running
 ```
 
 Why each step is shaped that way:
 
+- **`scripts/deploy-gate.sh` first, before the build and before the config
+  check.** It runs `git describe --exact-match --tags HEAD` and stops the
+  deploy if HEAD is not exactly a release tag. An untagged commit is one nobody
+  wrote release notes for, and shipping it puts changes into production that
+  are described nowhere — which is how you end up reading a diff to find out
+  what changed under a customer.
+
+  It is step one because the other steps cost real time: the build takes
+  minutes and `validate-config` needs the new image. Finding out *after* both
+  that this commit was never meant to ship wastes the window and tempts
+  somebody into shipping it anyway.
+
+  **There is no `--force`.** If something is urgent, cut a PATCH release —
+  `scripts/release.sh X.Y.Z` — which takes about thirty seconds and produces
+  the note as a side effect. An escape hatch used once during an incident is
+  an escape hatch used every time after, and the first use always looks
+  justified. Full rules in
+  [CONTRIBUTING.md](../CONTRIBUTING.md) under "Releases and versioning".
+
+- **`eval "$(… --export)"` then `sudo -E`** — the gate prints `GIT_SHA` and
+  `GIT_TAG`; compose forwards them to the image as build args. `-E` is what
+  carries them through sudo. Skip this and the build still succeeds, but
+  `sentinel version` will report its commit as `unknown` and exit non-zero,
+  because a build that misreports what it is would be worse than one that
+  admits it does not know.
 - **`sudo git pull`** — the checkout and the deploy key are root's
   (`/root/.ssh/id_ed25519`), so the pull must run under sudo too.
 - **Build, then `validate-config`, then switch** — the check runs *the new
@@ -407,5 +435,6 @@ every docker command takes `sudo`:
 | Send digest now | `sudo docker compose exec -T sentinel sentinel digest` |
 | Tune thresholds | edit `config/rules.yaml` on the host — hot-reloads, no restart |
 | AI triage narrative for an account | `sudo docker compose exec sentinel sentinel triage --label <label>` |
-| Update to latest code | `sudo git pull`, build + `validate-config`, then `sudo docker compose up -d` — full sequence in "Deploying code changes" above |
+| Update to latest code | `sudo git pull`, `scripts/deploy-gate.sh`, build + `validate-config`, then `sudo docker compose up -d` — full sequence in "Deploying code changes" above |
+| What is running right now | `sudo docker compose exec -T sentinel sentinel version` (also in the dashboard footer) |
 | Stop the stack | `sudo docker compose down` — **never with `-v`**: that flag also deletes the volumes, i.e. the customer database (see the warning section above) |
