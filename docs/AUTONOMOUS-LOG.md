@@ -2803,3 +2803,48 @@ my data, blocked on decision 6) and #17 (per-customer thresholds) open, none of
 them blocked on a decision except #46. #56 — moving alarms to Alertmanager —
 is still the architectural question nobody has opened, and still deserves a
 considered answer rather than a tired one.
+
+
+# Session of 2026-08-14 — one command for every gate, and what it found
+
+## Three safety mechanisms have now died quietly. That is a pattern
+
+`scripts/health-check.sh` was meant to be plumbing: seven gates that already
+existed, one table, one exit code. Running it for the first time found that the
+mutation gate had been measuring nothing since `eb460b7` — the environment
+allowlist stripped `MUTANT_UNDER_TEST`, so every mutant ran as unmutated source,
+every test passed, and every mutant "survived". Four more defects were stacked
+behind that one, each hidden by the one before it.
+
+That is the third time in this log:
+
+- **The untimestamped counter** rose correctly and nothing called the alarm that
+  read it. A detector with no caller.
+- **CI was red for ten hours**, across about ten pushes, and I never looked. The
+  user found it.
+- **The mutation gate** printed a score for a run in which no mutant was ever
+  tested.
+
+None of them broke loudly. Each kept producing output that looked exactly like
+the output of a working check: a counter that rose, a workflow that ran, a score
+that printed. The shape is always the same — **the thing that was supposed to
+notice stopped noticing, and nothing was watching the watcher.**
+
+**The fix is not more checks.** An eighth gate in the table would have the same
+half-life as the other seven. The fix is periodically asking each existing check
+to prove it is still alive — that it can still fail. A gate that has not gone red
+in living memory is not evidence of health; it is an unfalsified claim.
+
+What that looked like in practice this session: the mutation gate now refuses to
+pass when it measured nothing, and refuses to pass when it has no floor to
+compare against — both used to read as green. The health check reports an
+unrunnable gate as `skipped` and exits non-zero, so an unasked question cannot
+count as an answer. And it keeps its logs on green runs, because a pass nobody
+can audit is the same unfalsified claim in miniature: the mutation gate reports
+108/119 in eight seconds off mutmut's cache, which is a real pass and looks
+identical to a hollow one.
+
+Worth adopting as a standing practice: **for each gate, know the last time it
+failed. If you cannot remember one, break it on purpose and check that it
+notices.** Every defect above would have been caught the first time that was
+done.
