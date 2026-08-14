@@ -24,6 +24,7 @@ import pytest
 from sentinel.portal import serve_portal, set_member_password
 from sentinel.totp import totp_at
 from sentinel.twofactor import MEMBER, begin_enrolment, confirm_enrolment
+from tests.conftest import PINNED_TOTP_NOW
 
 ALICE = "alice@example.com"
 PASSWORD = "a-long-enough-password"
@@ -107,7 +108,7 @@ def alice_with_2fa(db, cipher):
     set_member_password(db, ALICE, PASSWORD)
     secret, _ = begin_enrolment(db, cipher, MEMBER, ALICE)
     codes = confirm_enrolment(db, cipher, MEMBER, ALICE,
-                              totp_at(secret, time.time() - STEP_SECONDS))
+                              totp_at(secret, PINNED_TOTP_NOW - STEP_SECONDS))
     assert codes
     return secret, codes
 
@@ -142,7 +143,7 @@ def test_a_correct_code_completes_the_sign_in(portal, db, alice_with_2fa):
     pending = _pending_from(body)
 
     status, _, cookie = _post(portal, "/login-code",
-                              {"pending": pending, "code": totp_at(secret, time.time() + 30)})
+                              {"pending": pending, "code": totp_at(secret, PINNED_TOTP_NOW + 30)})
 
     assert status == 303 and cookie
     _, page = _get(portal, "/", cookie=cookie)
@@ -188,7 +189,7 @@ def test_a_pending_token_cannot_be_forged(portal, db, alice_with_2fa):
     forged = f"pending.{email_b64}.{int(time.time()) + 300}.{'0' * 64}"
 
     _, _, cookie = _post(portal, "/login-code",
-                         {"pending": forged, "code": totp_at(secret, time.time())})
+                         {"pending": forged, "code": totp_at(secret, PINNED_TOTP_NOW)})
 
     assert cookie == ""
 
@@ -243,7 +244,7 @@ def test_an_expired_pending_token_is_refused(portal, db, alice_with_2fa, monkeyp
     monkeypatch.setattr(portal_module, "_pending_now",
                         lambda: time.time() + portal_module.PENDING_TTL_SECONDS + 10)
     _, _, cookie = _post(portal, "/login-code",
-                         {"pending": pending, "code": totp_at(secret, time.time())})
+                         {"pending": pending, "code": totp_at(secret, PINNED_TOTP_NOW)})
 
     assert cookie == ""
 
@@ -281,7 +282,7 @@ def test_a_member_can_enrol_and_is_shown_recovery_codes_once(portal, db, cipher)
     secret = setup.split('desc mono">', 1)[1].split("<", 1)[0]
 
     _, done, _ = _post(portal, "/security/2fa/confirm",
-                       {"code": totp_at(secret, time.time())}, cookie=cookie)
+                       {"code": totp_at(secret, PINNED_TOTP_NOW)}, cookie=cookie)
 
     assert "recovery codes" in done.lower()
     assert "only time they can be shown" in done.lower()
@@ -327,7 +328,7 @@ def test_disabling_from_the_page_requires_a_working_code(portal, db, cipher, ali
     from sentinel.twofactor import is_enabled
 
     secret, _ = alice_with_2fa
-    now = time.time()
+    now = PINNED_TOTP_NOW
     _, body, _ = _post(portal, "/login", {"email": ALICE, "password": PASSWORD})
     _, _, cookie = _post(portal, "/login-code",
                          {"pending": _pending_from(body), "code": totp_at(secret, now)})

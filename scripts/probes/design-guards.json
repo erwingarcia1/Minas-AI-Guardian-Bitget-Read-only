@@ -999,5 +999,14 @@
   "tests": [
    "tests/test_issue_status_audit.py"
   ]
+ },
+ {
+  "name": "#72 the verification clock stops being the seam, so a code is judged against a different instant than it was built for",
+  "file": "sentinel/twofactor.py",
+  "old": "    secret = cipher.decrypt(row[\"encrypted_secret\"])\n    step = verify_code(secret, code, at=_clock(),\n                       last_used_step=row[\"last_used_step\"])\n    if step is not None:",
+  "new": "    secret = cipher.decrypt(row[\"encrypted_secret\"])\n    step = verify_code(secret, code, at=datetime.now(timezone.utc).timestamp(),\n                       last_used_step=row[\"last_used_step\"])\n    if step is not None:",
+  "tests": [
+   "tests/test_twofactor.py"
+  ]
  }
 ]

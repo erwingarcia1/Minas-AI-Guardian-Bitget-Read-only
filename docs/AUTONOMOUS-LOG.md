@@ -2997,3 +2997,77 @@ log, and the first one I found by *disbelieving a gate's explanation* rather
 than its verdict. The gate was correctly failing on real drift; the sentence it
 printed about why was false. I nearly fixed the label and moved on, which would
 have left it.
+
+## #72 · A 2FA guard that could be deleted with the suite green
+
+The health-check run that carried #71's work came back with the design-guard
+probe **`#32 ATTACK sign in with an unconfirmed enrolment` surviving**. That
+probe deletes `not row["confirmed"]` from `check_second_factor` — the guard
+enforcing G-28's fourth criterion, that an operator without a confirmed
+enrolment cannot complete a sign-in. It survived. No test noticed. 107/108.
+
+**I could not reproduce it.** 15/15 killed running the probe alone, 8/8 killed
+running it immediately after its neighbour, 108/108 on a full re-run of the
+suite. I am not claiming to know what happened on that run, and I did not push
+on a green re-run and call it resolved.
+
+I had one specific theory and it was wrong, which is worth recording because it
+was seductive. Probes 63 and 64 mutate `twofactor.py` to *exactly* the same
+size, 10073 bytes, and run consecutively — and `.pyc` cache validation keys on
+(mtime-in-whole-seconds, size), so probe 64 importing probe 63's stale bytecode
+would explain everything. Testing the pair: 8/8 killed. Then I timed the runs:
+each probe's pytest takes ~2.4 seconds, so the two writes can never share a
+wall-clock second. Dead, and dead for a reason rather than for lack of evidence.
+
+**What does not need reproducing is why it can happen.** `check_second_factor`
+and `confirm_enrolment` read the clock themselves. The tests build a code from a
+separate reading:
+
+```python
+def _code(secret, offset=0):
+    return totp_at(secret, _now() + offset)              # one reading
+...
+step = verify_code(secret, code, at=datetime.now(...).timestamp(), ...)  # another
+```
+
+So the test kills the mutant only when two independent readings land in the same
+30-second step. Almost always true — which is exactly the danger. When it is
+not, the call returns False because the code *expired* rather than because the
+guard fired, and `is False` cannot tell those apart: a wrong code, a stale code
+and a rejected-because-unconfirmed enrolment are all False. The pin goes quietly
+green instead of red. This host is WSL2, where the clock can jump after host
+suspend; a candidate, not a conclusion.
+
+The fix removes the dependency rather than the symptom. `_clock()` is a named
+seam returning exactly what it returned before, and `tests/conftest.py` pins it
+globally to the instant the tests build codes for. One reading, not two.
+
+**Judgment calls.**
+
+*Two call sites, not one.* `confirm_enrolment` verifies a code the same way, so
+the `enrolled` fixture carried the same nondeterminism. Bugs come in pairs, and
+the `Edit` tool refusing an ambiguous match is what surfaced the second.
+
+*Global rather than per-file.* Three files share the shape —
+`test_twofactor.py`, `test_portal_two_factor_login.py`,
+`test_portal_activity.py` — and the next TOTP test written would have inherited
+it. An autouse fixture in `conftest.py` makes the whole class impossible rather
+than fixing three instances. A test that genuinely wants drift monkeypatches
+`_clock` itself and wins, exactly as the environment allowlist lets a test put
+its own transport back.
+
+*Only the readings feeding `totp_at`.* The portal files also call `time.time()`
+for the pending token's TTL, and one test deliberately pushes that past
+`PENDING_TTL_SECONDS`. Pinning that would have broken what those tests measure.
+
+*A seam in production code for a test's benefit.* Normally I would resist. It
+earns its place here because `verify_code` already takes `at` explicitly for the
+same reason — the module's own design says the verification instant is a
+parameter, and this just extends that one level up to its callers.
+
+**What surprised me.** That the assertion which made this possible is the same
+one this log keeps flagging: `is False` on a call with several ways to be false.
+The two new tests exist to close that specifically — one runs the same secret at
+the same instant through both confirmed states so the only difference is the
+guard, and the other pins the hazard by showing a *valid* enrolment also returns
+False when the code is judged far from its step.

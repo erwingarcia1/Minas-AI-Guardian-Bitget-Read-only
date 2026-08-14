@@ -26,7 +26,6 @@ from __future__ import annotations
 import argparse
 import http.client
 import re
-import time
 import urllib.parse
 from pathlib import Path
 
@@ -35,6 +34,7 @@ import pytest
 from sentinel.cli import cmd_set_contact
 from sentinel.events import append_event, record_member_security_event
 from sentinel.portal import account_activity, serve_portal, set_member_password
+from tests.conftest import PINNED_TOTP_NOW
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -291,10 +291,10 @@ def test_two_factor_disable_is_recorded(db, cipher, portal):
         # Each of these three actions spends a step, and a spent step is
         # refused afterwards — replay protection working, not a test quirk.
         confirm_enrolment(db, cipher, MEMBER, EMAIL,
-                          totp_at(secret, time.time() - STEP_SECONDS))
+                          totp_at(secret, PINNED_TOTP_NOW - STEP_SECONDS))
         token = _login_with_code(host_port, secret)
         _request(host_port, "POST", "/security/2fa/disable",
-                 body={"code": totp_at(secret, time.time() + STEP_SECONDS)}, cookie=token)
+                 body={"code": totp_at(secret, PINNED_TOTP_NOW + STEP_SECONDS)}, cookie=token)
         kinds = [r["event_type"] for r in account_activity(db, [aid])]
         assert "member_two_factor_disabled" in kinds
         assert "member_two_factor_enabled" in kinds
@@ -318,7 +318,7 @@ def _login_with_code(host_port, secret):
 
     conn = http.client.HTTPConnection(host, port, timeout=5)
     conn.request("POST", "/login-code", body=urllib.parse.urlencode(
-        {"pending": pending, "code": totp_at(secret, time.time())}),
+        {"pending": pending, "code": totp_at(secret, PINNED_TOTP_NOW)}),
         headers={"Content-Type": "application/x-www-form-urlencoded"})
     resp = conn.getresponse()
     resp.read()

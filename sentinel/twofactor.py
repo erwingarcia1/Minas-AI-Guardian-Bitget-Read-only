@@ -46,6 +46,22 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _clock() -> float:
+    """The instant a submitted code is judged against.
+
+    A seam, not a policy - it returns the same thing it always did. It exists
+    because a test that builds a code from its own clock read and then calls
+    into here is really asserting that two independent reads land in the same
+    30-second step. That is true almost always, which is the problem: when it
+    is not, `check_second_factor` returns False because the code expired rather
+    than because the guard fired, and a test asserting `is False` cannot tell
+    those apart. The unconfirmed-enrolment probe survived a run that way (#72).
+
+    `verify_code` already takes `at` explicitly for the same reason. This puts
+    the caller's clock read behind the same kind of door."""
+    return datetime.now(timezone.utc).timestamp()
+
+
 def begin_enrolment(db: Database, cipher, kind: str, subject: str) -> tuple[str, str]:
     """Generate and store an unconfirmed secret. Returns (secret, otpauth URI).
 
@@ -88,7 +104,7 @@ def confirm_enrolment(db: Database, cipher, kind: str, subject: str, code: str) 
     if row is None:
         return None
     secret = cipher.decrypt(row["encrypted_secret"])
-    step = verify_code(secret, code, at=datetime.now(timezone.utc).timestamp(),
+    step = verify_code(secret, code, at=_clock(),
                        last_used_step=row["last_used_step"])
     if step is None:
         return None
@@ -155,7 +171,7 @@ def check_second_factor(db: Database, cipher, kind: str, subject: str, code: str
         return False
 
     secret = cipher.decrypt(row["encrypted_secret"])
-    step = verify_code(secret, code, at=datetime.now(timezone.utc).timestamp(),
+    step = verify_code(secret, code, at=_clock(),
                        last_used_step=row["last_used_step"])
     if step is not None:
         # Recorded BEFORE returning success, so a code cannot be spent twice

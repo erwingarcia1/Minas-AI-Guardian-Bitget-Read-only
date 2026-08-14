@@ -16,8 +16,6 @@ go for, because the maths is not where these things fail.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
 import pytest
 
 from sentinel.totp import STEP_SECONDS, totp_at
@@ -31,12 +29,16 @@ from sentinel.twofactor import (
     is_enabled,
     remaining_recovery_codes,
 )
+from tests.conftest import PINNED_TOTP_NOW
 
 ALICE = "alice@example.com"
 
 
 def _now():
-    return datetime.now(timezone.utc).timestamp()
+    """The instant `tests/conftest.py` pins the verification clock to (#72), so
+    a code this file builds is judged against the step it was built for rather
+    than against a second, independent reading of the wall clock."""
+    return PINNED_TOTP_NOW
 
 
 def _code(secret, offset=0):
@@ -138,6 +140,38 @@ def test_an_unconfirmed_enrolment_does_not_satisfy_the_second_factor(db, cipher)
     secret, _ = begin_enrolment(db, cipher, MEMBER, ALICE)
 
     assert check_second_factor(db, cipher, MEMBER, ALICE, _code(secret)) is False
+
+
+def test_the_same_code_is_accepted_once_that_enrolment_is_confirmed(db, cipher):
+    """What makes the test above mean anything (#72).
+
+    `is False` on its own proves nothing: a wrong code, an expired code and a
+    rejected-because-unconfirmed enrolment are all False. This runs the same
+    secret at the same pinned instant through both states, so the only thing
+    that differs between the two answers is `confirmed`. Without it, the
+    unconfirmed test could pass with the guard deleted - and it did, in the
+    health-check run that started this."""
+    secret, _ = begin_enrolment(db, cipher, MEMBER, ALICE)
+    assert check_second_factor(db, cipher, MEMBER, ALICE, _code(secret)) is False
+
+    # A step we have not spent, so replay protection is not what answers here.
+    assert confirm_enrolment(db, cipher, MEMBER, ALICE, _code(secret)) is not None
+    assert check_second_factor(db, cipher, MEMBER, ALICE,
+                               _code(secret, offset=STEP_SECONDS)) is True
+
+
+def test_a_code_from_a_distant_step_is_refused_even_when_confirmed(db, cipher, enrolled):
+    """The hazard itself, pinned so it stays understood rather than rediscovered.
+
+    A confirmed enrolment - nothing wrong with it - still returns False when the
+    code is judged against a step far from the one it was built for. That is the
+    same False the unconfirmed guard returns, which is why every test in this
+    file pins the clock instead of taking two independent readings of it."""
+    secret, _ = enrolled
+
+    stale = totp_at(secret, PINNED_TOTP_NOW - 3600)
+
+    assert check_second_factor(db, cipher, MEMBER, ALICE, stale) is False
 
 
 # --- recovery codes -----------------------------------------------------------

@@ -5,6 +5,7 @@ import os
 import pytest
 from cryptography.fernet import Fernet
 
+from sentinel import twofactor
 from sentinel.config import RulesConfig
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
@@ -91,6 +92,34 @@ def only_allowlisted_environment(monkeypatch):
     monkeypatches a fake one in and wins."""
     for name in env_names_to_clear(os.environ):
         monkeypatch.delenv(name, raising=False)
+
+
+# The instant every TOTP code in this suite is built for and judged against
+# (#72). Arbitrary, and fixed: 2026-01-01T00:00:00Z.
+PINNED_TOTP_NOW = 1_767_225_600.0
+
+
+@pytest.fixture(autouse=True)
+def pinned_totp_clock(monkeypatch):
+    """One clock reading, not two, wherever a code is verified.
+
+    `confirm_enrolment` and `check_second_factor` read the clock themselves. A
+    test that builds a code from a *separate* reading is therefore asserting
+    that the two land in the same 30-second step - true almost always, and
+    silently wrong when it isn't. The call then returns False because the code
+    expired rather than because the guard under test fired, and a test asserting
+    `is False` cannot tell those apart.
+
+    That is not hypothetical: the `#32 ATTACK sign in with an unconfirmed
+    enrolment` probe survived a health-check run, meaning the 2FA guard could
+    have been deleted with the suite green. It has never reproduced, and it does
+    not need to - the dependency is visible in the source, and this removes it.
+
+    Autouse and global rather than per-file, because the next TOTP test written
+    would otherwise inherit the same shape. A test that genuinely wants clock
+    drift can monkeypatch `_clock` itself and win, the same way the environment
+    allowlist above lets a test put its own transport back."""
+    monkeypatch.setattr(twofactor, "_clock", lambda: PINNED_TOTP_NOW)
 
 
 @pytest.fixture
