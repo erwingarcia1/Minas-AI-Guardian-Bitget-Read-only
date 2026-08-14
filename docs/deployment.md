@@ -199,8 +199,8 @@ Why each step is shaped that way:
   container applies the new image and any `.env` edits; `restart` re-runs
   the old one.
 - Data survives all of this: the DB lives in the `sentinel-data` named
-  volume, which container recreation does not touch. (**Never** pass `-v`
-  to `docker compose down` — that flag deletes volumes.)
+  volume, which container recreation does not touch. The one flag that
+  *does* touch it is `down -v` — see the warning section below.
 
 Two operational consequences of pull-based deploys:
 
@@ -212,6 +212,37 @@ Two operational consequences of pull-based deploys:
   it (`minas-guardian_sentinel-data`), so the checkout must stay at
   `/opt/minas-guardian` — a re-clone under another name would come up with
   a fresh, empty database.
+
+## Never run `docker compose down -v` on this box
+
+`docker compose down` is safe: it stops and removes **containers**, the
+named volumes survive, and the next `up -d` picks them back up. The same
+command with `-v` (or `--volumes`) **also deletes the volumes** — and on
+this stack `minas-guardian_sentinel-data` is the entire production state:
+every onboarded customer's encrypted API key, every baseline (known
+addresses, traded pairs, transfer routes, balance and permission
+snapshots), the append-only event log, and the alert and SMS delivery
+history. One extra flag, no confirmation prompt, gone in a second.
+
+Three properties make this worth its own section rather than a footnote:
+
+- **The muscle memory is real.** On a dev machine `down -v` is the routine
+  "give me a clean slate" command. That habit is exactly wrong here, and
+  the command that expresses it differs by two characters from the safe
+  one you type all the time.
+- **The damage doesn't look like damage.** Nothing errors. The next
+  `up -d` quietly creates a fresh empty volume, the service starts
+  healthy, and the dashboard shows zero accounts — it looks like a fresh
+  install, while every customer silently stopped being monitored.
+- **Recovery is snapshot-or-nothing.** The DB exists nowhere but that
+  volume; without an EBS snapshot or a `tar` backup (see "Secrets
+  posture") there is nothing to restore, and every customer would have to
+  be re-onboarded — new keys, new baselines, history unrecoverable.
+
+If you genuinely need to destroy the state on a production box, say so
+explicitly instead of reaching for a cleanup flag: take a backup, then
+`sudo docker volume rm minas-guardian_sentinel-data` — a command that can
+only mean the thing it does.
 
 ## First deployment (any host)
 
@@ -377,3 +408,4 @@ every docker command takes `sudo`:
 | Tune thresholds | edit `config/rules.yaml` on the host — hot-reloads, no restart |
 | AI triage narrative for an account | `sudo docker compose exec sentinel sentinel triage --label <label>` |
 | Update to latest code | `sudo git pull`, build + `validate-config`, then `sudo docker compose up -d` — full sequence in "Deploying code changes" above |
+| Stop the stack | `sudo docker compose down` — **never with `-v`**: that flag also deletes the volumes, i.e. the customer database (see the warning section above) |

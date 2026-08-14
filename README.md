@@ -63,6 +63,14 @@ Production deployment (AWS): see [docs/deployment.md](docs/deployment.md) —
 the server pulls from this repo via a read-only deploy key, so a deploy is
 `sudo git pull` + rebuild on the box; only pushed code can reach production.
 
+> **Never run `docker compose down -v` against a real deployment.** The
+> `sentinel-data` volume it deletes *is* the database — every customer's
+> encrypted API key, baselines, event log, alert history. No prompt, no
+> error, and the next `up` starts clean as if nothing was ever there. The
+> dev-machine "clean slate" habit is the exact command that destroys
+> production; `down` without `-v` is always safe. Details in
+> [docs/deployment.md](docs/deployment.md).
+
 ## Onboarding a customer
 
 - **Web form** — the dashboard's **+ Add customer** button captures the full
