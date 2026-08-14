@@ -3261,3 +3261,86 @@ prose, in a place with no way to notice it had stopped being true — and it is
 why the import scan exists rather than a note asking people to use `net.py`.
 
 **Numbers.** 855 → 872 tests. 109 → 119 design-guard probes, all landing.
+
+## #69 · The advice we give, and the route we did not have
+
+`runbook()` prints on every CRITICAL and HIGH customer alert, and its note says
+that revoking every key stops the monitoring. Before this, the recovery it
+pointed at was "ask us for a new key" — a human path, at 3am, during the
+incident the alert is about.
+
+Two decisions were the user's and were taken before any code: bind a
+replacement key to the exchange account it claims to be for and fail closed
+when we cannot; and update the runbook's wording once the page exists.
+
+**The attack the whole design is shaped around.** Accepting a key from a
+signed-in member reads like a small feature: check it is read-only (G-4),
+store it. But a key can be genuinely read-only, work perfectly, and be for a
+*different exchange account* — the submitter's own empty one. Store that and
+every signal turns green: polls succeed, no detector fires, the portal says
+"watching". The customer's real account is unmonitored and nothing says so.
+The feature meant to close a gap would have opened the exact failure this
+product exists to prevent.
+
+So a replacement has to prove sameness, and nothing recorded an exchange-side
+identity. `accounts` held credentials and labels; `permission_snapshots` held
+authorities and IP allow-lists. What did exist was the payload:
+`fetch_account_info` carries Bitget's `userId`, and the slow loop reads it
+every ten minutes for G-9 already.
+
+**Judgment calls.**
+
+*Learn from the payload already in hand, in two places.* Onboarding, because
+that is the one moment a person has vouched that this key belongs to this
+account; and the slow loop, because otherwise every account already in the
+fleet would be NULL forever and the page would always say no. Within one slow
+loop of deploying, the whole fleet becomes eligible. A check against a column
+nothing populates is worse than no feature — it refuses every honest customer
+and looks like working code.
+
+*A recorded id is never overwritten.* `learn_exchange_uid` reports `mismatch`
+rather than writing it. An id a poll can move is not a check, it is a delay.
+
+*A mismatch is logged, not detected.* The same stored key answering with a
+different account id is far more likely to be an exchange changing its JSON
+than an attack, and a CRITICAL that fires on a vendor's release note is how
+alert fatigue starts.
+
+*Binance is permanently ineligible, and that is written down.* Its
+apiRestrictions payload carries no account identifier, so `_ACCOUNT_UID_FIELDS`
+has an empty tuple for it and those customers get the operator path. The
+Bybit and OKX field names are candidates read from the normalized payload and
+are **not** verified against a live response — which is safe precisely because
+unknown means None means refuse. Several spellings are listed for each.
+
+*The refusal for an unknown identity pages an operator.* A customer who
+reaches it is stuck at the worst possible moment, and a refusal nobody is told
+about looks exactly like a service that works.
+
+*Both account ids go on the operator page; neither goes on the screen.* The
+person reading the screen during an incident is not necessarily the owner.
+
+*The runbook note tells them they can do it themselves and still does not
+link to the form.* Sending a URL that lands on "paste your API key here" is
+the phishing template we would be teaching customers to trust, in the one
+message where the opposite habit could be taught. The rule the copy installs
+is: sign in, then look. There is a probe that fails if a future edit turns the
+note into a deep link.
+
+**What the portal needed.** It is the first member-facing write that accepts a
+secret — everything before it moved a flag on a row the member could already
+see. Ordering is a security property here, not style: session, then scope,
+then the validation that costs exchange calls, so an unauthenticated POST
+cannot make this server dial anybody. Nothing submitted is echoed back into
+the form; a wrong key is retyped rather than corrected in place, because
+rendering a live credential puts it in browser history and on the shoulder of
+whoever is standing behind a frightened person.
+
+**What I did not do.** Per-account portal scoping is still decision 10's to
+make: portal identity is an email, so a member who contacts three accounts can
+replace the key on any of the three. That is unchanged by this work and is the
+model the decision recommends keeping for now — but it is worth restating that
+this feature inherits it, because a credential write inherits it more sharply
+than a read did.
+
+**Numbers.** 873 → 922 tests. 119 → 129 design-guard probes, all landing.

@@ -13,6 +13,36 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Added
+- **A customer can replace a revoked monitoring key themselves** (#69, G-3).
+  The runbook on every CRITICAL and HIGH alert tells a frightened person to
+  revoke API keys, and names ours as the one to leave alone — it is read-only,
+  so revoking it takes nothing from an attacker and switches the monitoring
+  off. Panic being what it is, some revoke everything anyway, and until now the
+  only way back was an operator being awake. A signed-in member can now submit
+  a new read-only key from their account page, and monitoring resumes on the
+  next poll.
+  - **A replacement must be for the same exchange account.** A key can be
+    genuinely read-only, pass every check, and belong to somebody else's
+    account — at which point the Guardian polls a quiet account, reports
+    "watching", and the real one is drained unobserved. `accounts.exchange_uid`
+    records the exchange's own account id (Bitget `userId`, OKX `uid`, …),
+    learned at onboarding and refreshed by every slow loop, and a replacement
+    that reports a different one is refused and paged.
+  - **Where we cannot check, we refuse.** An account with no recorded id — any
+    account onboarded before this release, until its next slow loop, and every
+    Binance account, whose API carries no account identifier — gets the
+    operator path instead, and an operator is paged that the customer is
+    waiting.
+  - The read-only gate (G-4) applies to this door exactly as it does to
+    onboarding: a key that can trade or withdraw is refused, not stored with a
+    warning. The change is recorded against the member on their own activity
+    page (G-32), and an operator is told.
+  - **The alert runbook now says a customer can do this themselves, and still
+    does not link to the page.** "Minas emails you a link, you paste your API
+    key" is a phishing template, and the alert email is the one message where
+    we can teach the opposite habit: sign in, then look.
+
 ### Fixed
 - **A test run can no longer reach the network** (#68). The suite made real
   network calls with whatever credentials the machine had: `load_dotenv()` was

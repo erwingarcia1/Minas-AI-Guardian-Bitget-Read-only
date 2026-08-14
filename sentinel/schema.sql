@@ -24,6 +24,13 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- alerting.sms_critical_overrides_optout is true (business rule).
     sms_alerts_enabled INTEGER NOT NULL DEFAULT 1,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'tamper_suspected', 'disabled')),
+    -- The exchange's own id for this account (Bitget userId, OKX uid, ...),
+    -- learned from an account-info payload and refreshed by the slow loop.
+    -- NULL means "not yet learned", not "none": accounts predating this column
+    -- fill it in on their next poll. It exists so a replacement key (#69) can
+    -- be proved to be for THIS account - a read-only key for somebody else's
+    -- account passes every other check and leaves the real one unwatched.
+    exchange_uid TEXT,
     onboarded_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );

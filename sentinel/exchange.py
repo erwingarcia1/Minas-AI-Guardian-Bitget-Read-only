@@ -38,6 +38,56 @@ BINANCE_API_RESTRICTIONS_METHOD = "sapi_get_account_apirestrictions"
 
 SUPPORTED_EXCHANGES = ("bitget", "bybit", "okx", "binance")
 
+# Which field in an account-info payload names the exchange account the calling
+# key belongs to (#69). This is what stops a replacement key from pointing the
+# Guardian at a *different* account: a key can be genuinely read-only, validate
+# perfectly, and still be for somebody else's empty account - at which point we
+# poll a quiet account, report "watching", and the real one goes unobserved.
+#
+# Bitget's `userId` is confirmed: it is in the documented response and in the
+# fixtures this suite has always used. The Bybit and OKX candidates are read
+# from the same normalized `data` dict their clients already build and are NOT
+# verified against a live response; several spellings are listed for that
+# reason. Binance's apiRestrictions payload carries no account identifier at
+# all, so the tuple is deliberately empty.
+#
+# Unknown is None, and None is refused by every caller. An exchange we cannot
+# identify an account on is one where self-serve key replacement stays with an
+# operator - which is the fail-closed half of G-4 applied to a new question.
+_ACCOUNT_UID_FIELDS = {
+    "bitget": ("userId",),
+    "bybit": ("userID", "userId", "uid"),
+    "okx": ("uid",),
+    "binance": (),
+}
+
+
+def exchange_account_uid(exchange: str, payload: object) -> str | None:
+    """The exchange's own id for the account a key belongs to, or None.
+
+    Takes an already-fetched `fetch_account_info()` payload rather than a
+    client, because every caller has one in hand: the slow loop reads it every
+    ten minutes, onboarding reads it once, and asking the exchange a second
+    time would cost a request to learn something already on the table.
+
+    Accepts either the whole `{"data": {...}}` envelope or the inner dict."""
+    if isinstance(payload, dict):
+        payload = payload.get("data", payload)
+    if not isinstance(payload, dict):
+        return None
+    for field in _ACCOUNT_UID_FIELDS.get(exchange, ()):
+        value = payload.get(field)
+        # A blank string is not an identity. Neither is 0 - and the falsy-
+        # sentinel rule in CONTRIBUTING is what makes that worth writing down:
+        # `str(value or "")` would turn a legitimate uid of 0 into "no idea",
+        # which fails closed but for a reason that is not true.
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
 
 class TamperSignal(Exception):
     """Raised when the exchange rejects our credentials with an auth/permission

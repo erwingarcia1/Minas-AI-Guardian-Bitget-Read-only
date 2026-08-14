@@ -1098,5 +1098,95 @@
   "tests": [
    "tests/test_onboarding.py"
   ]
+ },
+ {
+  "name": "#69 a replacement key stops being checked against the account it claims to be for",
+  "file": "sentinel/keyreplacement.py",
+  "old": "    if candidate_uid != known_uid:",
+  "new": "    if False:",
+  "tests": [
+   "tests/test_key_replacement.py"
+  ]
+ },
+ {
+  "name": "#69 an account with no recorded identity stops being refused, and is replaced on trust",
+  "file": "sentinel/keyreplacement.py",
+  "old": "    if not known_uid:",
+  "new": "    if False:",
+  "tests": [
+   "tests/test_key_replacement.py"
+  ]
+ },
+ {
+  "name": "#69 the read-only gate (G-4) stops applying to keys arriving through the portal",
+  "file": "sentinel/keyreplacement.py",
+  "old": "    ok, reason = verify_read_only(client, exchange)\n    if not ok:",
+  "new": "    ok, reason = verify_read_only(client, exchange)\n    if False:",
+  "tests": [
+   "tests/test_key_replacement.py"
+  ]
+ },
+ {
+  "name": "#69 an account-info payload with no id stops being refused",
+  "file": "sentinel/keyreplacement.py",
+  "old": "    if candidate_uid is None:",
+  "new": "    if False:",
+  "tests": [
+   "tests/test_key_replacement.py"
+  ]
+ },
+ {
+  "name": "#69 the portal stops scoping a key replacement to the member's own accounts",
+  "file": "sentinel/portal.py",
+  "old": "            if _render_replace_key(db, email, account_id) is None:\n                self._send(_render_not_found().encode(), 404)\n                return",
+  "new": "            pass",
+  "tests": [
+   "tests/test_portal_key_replacement.py"
+  ]
+ },
+ {
+  "name": "#69 a recorded exchange account id becomes overwritable, so the check can be walked past one poll at a time",
+  "file": "sentinel/baseline.py",
+  "old": "        if current:\n            return \"unchanged\" if current == uid else \"mismatch\"",
+  "new": "        if current == uid:\n            return \"unchanged\"",
+  "tests": [
+   "tests/test_key_replacement.py"
+  ]
+ },
+ {
+  "name": "#69 a blank account id counts as an identity",
+  "file": "sentinel/exchange.py",
+  "old": "        text = str(value).strip()\n        if text:\n            return text",
+  "new": "        return str(value)",
+  "tests": [
+   "tests/test_key_replacement.py"
+  ]
+ },
+ {
+  "name": "#69 the slow loop stops learning the account id, so no account ever becomes eligible",
+  "file": "sentinel/poller.py",
+  "old": "        outcome = learn_exchange_uid(\n            self._db, account_id, exchange_account_uid(account_row[\"exchange\"], payload))",
+  "new": "        outcome = \"unknown\"",
+  "tests": [
+   "tests/test_key_replacement.py"
+  ]
+ },
+ {
+  "name": "#69 a key replacement stops appearing on the page a customer reads to see who touched their account",
+  "file": "sentinel/events.py",
+  "old": "    \"monitoring_key_replaced\",\n)",
+  "new": ")",
+  "tests": [
+   "tests/test_key_replacement.py"
+  ]
+ },
+ {
+  "name": "#69 the runbook goes back to sending a frightened customer straight to a form that wants an API key",
+  "file": "sentinel/alerts/base.py",
+  "old": "    where = f\" Sign in at {url}\" if url else \" Sign in to Minas AI Guardian\"",
+  "new": "    where = f\" Replace it here: {url}/key\" if url else \" Sign in to Minas AI Guardian\"",
+  "tests": [
+   "tests/test_customer_email_template.py"
+  ]
  }
 ]

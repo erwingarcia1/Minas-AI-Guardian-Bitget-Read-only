@@ -296,7 +296,26 @@ def test_without_a_portal_url_the_runbook_still_names_the_step(monkeypatch):
     text = runbook()
     assert "http" not in text
     assert "no longer monitored" in text
-    assert "ask us for a new key" in text
+    assert "Sign in to Minas AI Guardian" in text
+    # A route the customer can walk without us, and a person to ask when it
+    # does not work. Before #69 the note offered only the second.
+    assert "yourself" in text
+    assert "ask us" in text
+
+
+def test_the_runbook_never_links_straight_to_the_key_form(monkeypatch):
+    """The note tells a frightened person they can replace the key themselves,
+    and deliberately does not hand them a link that lands on a form asking for
+    an API key (#69).
+
+    "Minas emails you a link, you paste your key" is a phishing template, and
+    the one message where we could teach a customer to distrust it is this one.
+    The instruction is sign in, then look."""
+    monkeypatch.setenv("SENTINEL_PORTAL_URL", PORTAL)
+    text = runbook()
+    assert PORTAL in text
+    assert "/key" not in text
+    assert f"{PORTAL}/" not in text
 
 
 # --- the runbook survives its reading environment ---------------------------

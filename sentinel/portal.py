@@ -670,6 +670,14 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
         + live_check +
         '<div class="check"><span class="ic ok">✓</span><span class="txt"><b>Credentials encrypted</b> — '
         "your API key is encrypted at rest and never displayed</span></div>"
+        # Offered on every account rather than only on unwatched ones. The
+        # customer who needs it most has just revoked every key in a panic, and
+        # asking them to first prove the account looks broken - on a page whose
+        # freshness check may not have caught up yet - is a hurdle at the worst
+        # possible moment (#69).
+        '<div class="check"><span class="ic ok">✓</span><span class="txt"><b>Revoked our key?</b> — '
+        f'<a class="acctlink" href="/key?id={int(account_id)}">Replace the monitoring key ›</a> '
+        "and monitoring restarts within a minute</span></div>"
         "</div></div>"
     )
 
@@ -1378,6 +1386,80 @@ def _render_code_prompt(pending: str, error: str | None = None) -> str:
     )
 
 
+def _render_replace_key(db: Database, email: str, account_id: int, *,
+                        error: str | None = None, notice: str | None = None) -> str | None:
+    """The form a customer uses to put a new read-only key in place (#69).
+
+    Returns None - rendered as not-found - unless this account belongs to this
+    member, exactly like every other account-scoped page. Existence is never
+    revealed.
+
+    **This page never arrives by link.** It is reachable only from a signed-in
+    session, and the alert emails point at the portal's front door rather than
+    here. "Minas emails you a link and asks you to paste an API key" is a
+    phishing template we would be teaching customers to trust, and the cost of
+    that lands on people we will never hear from. The copy says so on the page,
+    because a customer who has learned the rule can spot the imitation.
+
+    Nothing submitted is ever echoed back into the form. A wrong key is
+    retyped, not corrected in place: rendering a secret back into HTML puts it
+    in the browser's history, in any proxy's buffer, and on the shoulder of
+    whoever is standing behind a frightened person."""
+    rows = {r["id"]: r for r in member_accounts(db, email)}
+    acct = rows.get(account_id)
+    if acct is None:
+        return None
+
+    exchange = (acct["exchange"] or "bitget")
+    banner = ""
+    if error:
+        banner = f'<div class="banner err">✕ {html.escape(error)}</div>'
+    elif notice:
+        banner = f'<div class="banner ok">✓ {html.escape(notice)}</div>'
+
+    # Only Bitget and OKX take a passphrase. Showing the field to everyone and
+    # explaining it is better than hiding it: a Bybit customer who sees no
+    # passphrase box and expects one has no way to tell whether the page is
+    # broken or their key is different.
+    passphrase_hint = (
+        "Required for Bitget and OKX keys; leave empty for Bybit and Binance."
+    )
+
+    body = (
+        '<section>' + banner +
+        '<div class="card"><div class="card-head"><h2>Replace the monitoring key</h2>'
+        f'<span class="count">{html.escape(acct["label"])}</span></div>'
+        '<div class="checks">'
+        '<div class="check"><span class="ic ok">✓</span><span class="txt">'
+        "<b>Read-only keys only.</b> A key that can trade or withdraw is refused, not "
+        "accepted with a warning. Create the new key with view or read permission only."
+        "</span></div>"
+        '<div class="check"><span class="ic ok">✓</span><span class="txt">'
+        "<b>It must be for this same exchange account.</b> We check the account the key "
+        "belongs to before we store it, so a key from a different account is refused."
+        "</span></div>"
+        '<div class="check"><span class="ic warn">!</span><span class="txt">'
+        "<b>Minas will never email you a link to this page.</b> You reached it by signing in, "
+        "and that is the only way to reach it. If a message ever asks you to paste an API key, "
+        "it is not from us."
+        "</span></div>"
+        "</div>"
+        '<form class="addf" method="post" action="/key" autocomplete="off">'
+        f'<input type="hidden" name="account_id" value="{int(account_id)}">'
+        f'<div class="fld"><label>New API key ({html.escape(exchange)})</label>'
+        '<input type="text" name="api_key" required autocomplete="off" spellcheck="false"></div>'
+        '<div class="fld"><label>API secret</label>'
+        '<input type="password" name="secret" required autocomplete="off"></div>'
+        '<div class="fld"><label>API passphrase</label>'
+        '<input type="password" name="passphrase" autocomplete="off"></div>'
+        f'<div class="actions"><button class="submit" type="submit">Check and replace</button>'
+        f'<span class="hint">{passphrase_hint}</span></div>'
+        "</form></div></section>"
+    )
+    nav = f'<a class="live" href="/account?id={int(account_id)}">← Back to this account</a>'
+    return _page(body, nav)
+
+
 def _render_security(db: Database, email: str, *, secret: str | None = None,
                      codes: list | None = None, error: str | None = None,
                      notice: str | None = None) -> str:
@@ -1465,7 +1547,8 @@ def _render_not_found() -> str:
 # --- server ------------------------------------------------------------------
 
 def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
-                 rules=None, cipher=None, metrics=None) -> ThreadingHTTPServer:
+                 rules=None, cipher=None, metrics=None,
+                 operator_alerter=None) -> ThreadingHTTPServer:
     """Customer-facing member portal.
 
     Unlike the ops dashboard this one has its own login and is *meant* to be
@@ -1590,6 +1673,17 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     self._send(page.encode())
             elif path == "/security":
                 self._send(_render_security(db, email).encode())
+            elif path == "/key":
+                qs = parse_qs(urlparse(self.path).query)
+                try:
+                    aid = int(qs.get("id", ["0"])[0])
+                except ValueError:
+                    aid = 0
+                page = _render_replace_key(db, email, aid)
+                if page is None:
+                    self._send(_render_not_found().encode(), 404)
+                else:
+                    self._send(page.encode())
             elif path == "/account":
                 qs = parse_qs(urlparse(self.path).query)
                 try:
@@ -1888,6 +1982,70 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                          severity=alert["severity"], rules=rules)
             self._redirect(f"/account?id={alert['account_id']}")
 
+        def _replace_key(self, form):
+            """Install a customer-supplied replacement monitoring key (#69).
+
+            The portal's first write that accepts a secret, so the ordering
+            here is deliberate: session first, then scope, then the validation
+            that costs exchange calls. Somebody without a session must not be
+            able to make this server talk to an exchange at all.
+
+            The submitted values are never logged, never rendered back, and
+            never put in an event payload - `keyreplacement` holds that rule
+            too, and it is repeated here because this is where they arrive."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            try:
+                account_id = int((form.get("account_id") or [""])[0])
+            except (TypeError, ValueError):
+                self._send(_render_not_found().encode(), 404)
+                return
+
+            # Scope before anything else. `_render_replace_key` returning None
+            # is the same isolation boundary every other account page uses, so
+            # an account the member cannot see is indistinguishable from one
+            # that does not exist.
+            if _render_replace_key(db, email, account_id) is None:
+                self._send(_render_not_found().encode(), 404)
+                return
+
+            if cipher is None:
+                # Without a cipher there is nowhere safe to put the key. Same
+                # refusal the two-factor routes make, and for the same reason.
+                page = _render_replace_key(
+                    db, email, account_id,
+                    error="Key replacement is not available on this server. Contact Minas.")
+                self._send(page.encode(), 503)
+                return
+
+            from sentinel.keyreplacement import replace_monitoring_key
+
+            outcome = replace_monitoring_key(
+                db, cipher,
+                account_id=account_id,
+                api_key=(form.get("api_key") or [""])[0],
+                secret=(form.get("secret") or [""])[0],
+                passphrase=(form.get("passphrase") or [""])[0],
+                actor=normalize_email(email),
+                operator_alerter=operator_alerter,
+            )
+            if outcome.ok:
+                logger.info("portal: monitoring key replaced on account %d by %s", account_id, email)
+            else:
+                # The reason code, not the detail: the detail names what the
+                # exchange said, and this line ends up in a log an operator
+                # reads over somebody's shoulder.
+                logger.warning("portal: key replacement refused on account %d for %s (%s)",
+                               account_id, email, outcome.reason_code)
+            page = _render_replace_key(
+                db, email, account_id,
+                error=None if outcome.ok else outcome.message,
+                notice=outcome.message if outcome.ok else None,
+            )
+            self._send(page.encode(), 200 if outcome.ok else 400)
+
         def do_POST(self):
             path = urlparse(self.path).path.rstrip("/")
             if not _same_origin(self):
@@ -1932,6 +2090,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
 
             if path == "/expected":
                 self._expected(form)
+                return
+
+            if path == "/key":
+                self._replace_key(form)
                 return
 
             if path != "/login":

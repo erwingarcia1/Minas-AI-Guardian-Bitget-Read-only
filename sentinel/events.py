@@ -58,6 +58,7 @@ ADMIN_EVENT_TYPES = (
     "member_password_changed",
     "member_two_factor_enabled",
     "member_two_factor_disabled",
+    "monitoring_key_replaced",
 )
 
 # How each reads to a customer. The dashboard shows event_type; this page is
@@ -71,6 +72,7 @@ ADMIN_EVENT_LABELS = {
     "member_password_changed": "Portal password changed",
     "member_two_factor_enabled": "Two-factor turned on",
     "member_two_factor_disabled": "Two-factor turned off",
+    "monitoring_key_replaced": "Monitoring key replaced",
 }
 
 

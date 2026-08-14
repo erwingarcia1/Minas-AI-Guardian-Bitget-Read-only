@@ -13,6 +13,7 @@ from sentinel.baseline import (
     latest_balance_snapshot,
     latest_balance_snapshot_at,
     latest_permission_snapshot,
+    learn_exchange_uid,
     load_fee_baseline,
     prune_balance_snapshots,
     record_balance_snapshot,
@@ -40,7 +41,7 @@ from sentinel.detectors.transfer_pattern import detect_new_transfer_route
 from sentinel.detectors.unseen_address import detect_unseen_address
 from sentinel.detectors.withdrawal import detect_new_withdrawals
 from sentinel.events import append_event
-from sentinel.exchange import ExchangeClient, TamperSignal, make_client
+from sentinel.exchange import ExchangeClient, TamperSignal, exchange_account_uid, make_client
 from sentinel.identity import is_unidentifiable
 from sentinel.numeric import to_decimal
 
@@ -575,6 +576,22 @@ class AccountPoller:
             self._emit(account_id, label, detection)
 
         record_permission_snapshot(self._db, account_id, current["authorities"], current["ip_whitelist"])
+        # Every ten minutes, this payload names the exchange account the
+        # working key belongs to. Recording it is what lets a customer replace
+        # a revoked key themselves later (#69) - and doing it here rather than
+        # only at onboarding is what gives every account already in the fleet
+        # an identity within one slow loop, instead of never.
+        outcome = learn_exchange_uid(
+            self._db, account_id, exchange_account_uid(account_row["exchange"], payload))
+        if outcome == "mismatch":
+            # Not made into a detection: the same key answering with a
+            # different account id is far more likely to be an exchange
+            # changing its response shape than an attack, and a new CRITICAL
+            # rule that fires on a vendor's JSON edit is how alert fatigue
+            # starts. Logged so a person can see it, and the stored id is left
+            # alone so the replacement check keeps meaning something.
+            logger.warning("account %s: exchange reports a different account id than the one on "
+                           "record - key replacement will refuse until this is looked at", label)
         # Housekeeping on the slow cadence: balance snapshots older than the
         # retention window only bloat the table the fast loop queries.
         prune_balance_snapshots(self._db, account_id)

@@ -223,6 +223,24 @@ the customer-facing gating (CRITICAL/HIGH only) is separate from the wording.
 
 ### The advice depends on a page that does not exist — #69
 
+> **Update 2026-08-14: the page exists now, and the note has been rewritten.**
+> #69 shipped a self-serve replacement flow, so the monitoring note no longer
+> says "ask us for a new key" — it says a signed-in customer can put a new
+> read-only key in place themselves, and to ask us if anything there does not
+> work. The dependency below is discharged; the rest of decision 3 (how much
+> the runbook may instruct rather than advise, how certain it may sound, and
+> whether it varies per rule) is untouched and still yours.
+>
+> One deliberate constraint on any future wording: **the note must not link
+> directly to the replacement form.** A message from us that lands a reader on
+> "paste your API key here" is the phishing shape we would be teaching them to
+> trust, and this is the one message where the opposite habit — sign in, then
+> look — can be taught. A design-guard probe fails if an edit turns it into a
+> deep link.
+>
+> The section below is kept as written, because it is the reasoning that made
+> #69 a p2 rather than a nicety.
+
 There is still **no self-serve way for a customer to replace a revoked Guardian
 key.** Onboarding is operator-driven end to end, so the link in the monitoring
 note points at the portal front door rather than at a flow, and "ask us for a

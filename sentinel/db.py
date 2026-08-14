@@ -129,6 +129,14 @@ class Database:
             "ALTER TABLE accounts ADD COLUMN telegram_handle_secondary TEXT",
             "ALTER TABLE accounts ADD COLUMN license TEXT",
             "ALTER TABLE accounts ADD COLUMN sms_alerts_enabled INTEGER NOT NULL DEFAULT 1",
+            # The exchange's own id for this account, learned from an
+            # account-info payload (#69). Nullable, and NULL means "we have not
+            # been told yet" rather than "no id" - every account onboarded
+            # before this column existed starts NULL and fills itself in on its
+            # next slow loop. Self-serve key replacement refuses while it is
+            # NULL, because with nothing to compare against a replacement key
+            # could point us at a different account entirely.
+            "ALTER TABLE accounts ADD COLUMN exchange_uid TEXT",
         )
         for ddl in migrations:
             # Re-adding an existing column raises, and that IS the ordinary

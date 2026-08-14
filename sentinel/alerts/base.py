@@ -51,17 +51,21 @@ def runbook() -> str:
 def monitoring_note() -> str:
     """The consequence of step 2, sitting below the list rather than in it.
 
-    Points at the portal front door, not a deep link - there is no self-serve
-    page for replacing a revoked key (onboarding is operator-driven), and a
-    runbook that sends a frightened customer to a 404 is worse than one that
-    sends them somewhere real. Carries its own condition like every step, for
-    the same reason: read alone, it must still be about a thing that may not
-    have happened."""
+    Points at the portal front door, not a deep link into the replacement page
+    (#69). The page exists now, and the note says a customer can do it
+    themselves - but sending them to a URL that lands directly on "paste your
+    API key here" is the phishing template we would be teaching them to trust.
+    The rule the copy is trying to install is *sign in, then look*, and a link
+    that skips the signing in undermines it in the one message where it counts.
+
+    Carries its own condition like every step, for the same reason: read alone,
+    it must still be about a thing that may not have happened."""
     url = (os.environ.get("SENTINEL_PORTAL_URL") or "").strip().rstrip("/")
-    tail = f" Check here and ask for a new key: {url}" if url else (
-        " Sign in to Minas AI Guardian to check, and ask us for a new key.")
+    where = f" Sign in at {url}" if url else " Sign in to Minas AI Guardian"
     return ("Note: if you revoked every key, this account is no longer "
-            "monitored until a new Guardian key is issued." + tail)
+            "monitored until a new Guardian key is issued." + where +
+            " and open the account to put a new read-only key in place yourself; "
+            "ask us if anything there does not work.")
 
 # The runbook tells a frightened person to freeze an account and revoke keys.
 # It belongs on the alerts where that is the proportionate response and on no

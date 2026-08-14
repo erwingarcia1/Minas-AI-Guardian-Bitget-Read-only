@@ -5,7 +5,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from sentinel.db import Database
-from sentinel.exchange import ExchangeClient
+from sentinel.exchange import ExchangeClient, exchange_account_uid
 from sentinel.identity import fill_identity, transfer_identity, withdrawal_identity
 from sentinel.numeric import to_decimal
 
@@ -142,6 +142,33 @@ def record_permission_snapshot(db: Database, account_id: int, authorities: objec
             "VALUES (?, ?, ?, ?)",
             (account_id, json.dumps(authorities, default=str), json.dumps(ip_whitelist, default=str), _now()),
         )
+
+
+def learn_exchange_uid(db: Database, account_id: int, uid: str | None) -> str:
+    """Record which exchange account this key belongs to, once (#69).
+
+    Returns what happened, in one word, so a caller can act on it: `learned`,
+    `unchanged`, `unknown` (the exchange did not tell us), or `mismatch`.
+
+    **A recorded uid is never overwritten.** It is the thing a replacement key
+    is checked against, so a path that quietly updates it would let the check
+    it exists for be walked past one poll at a time. `mismatch` therefore
+    reports rather than writes: the same stored key answering with a different
+    account id is either an exchange changing its response shape or something
+    that deserves a person, and neither is fixed by believing the new value."""
+    if uid is None or not str(uid).strip():
+        return "unknown"
+    uid = str(uid).strip()
+    with db.cursor() as cur:
+        cur.execute("SELECT exchange_uid FROM accounts WHERE id = ?", (account_id,))
+        row = cur.fetchone()
+        if row is None:
+            return "unknown"
+        current = (row["exchange_uid"] or "").strip()
+        if current:
+            return "unchanged" if current == uid else "mismatch"
+        cur.execute("UPDATE accounts SET exchange_uid = ? WHERE id = ?", (uid, account_id))
+    return "learned"
 
 
 def latest_permission_snapshot(db: Database, account_id: int) -> dict | None:
@@ -305,5 +332,9 @@ def seed_baseline(db: Database, account_id: int, client: ExchangeClient) -> list
     payload = info.get("data", info) if isinstance(info, dict) else info
     if isinstance(payload, dict):
         record_permission_snapshot(db, account_id, payload.get("authorities"), payload.get("ips"))
+        # Learned here rather than fetched separately: this payload is the one
+        # that carries it, and onboarding is the moment we know the key and the
+        # account genuinely belong together, because a person put them there.
+        learn_exchange_uid(db, account_id, exchange_account_uid(client.exchange_id, payload))
 
     return gaps
