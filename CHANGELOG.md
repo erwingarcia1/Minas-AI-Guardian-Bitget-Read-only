@@ -828,6 +828,8 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   the EC2 bootstrap script now describe the key-first setup; the bootstrap
   no longer attempts the unauthenticated clone that a private repo 404s.
 
+## [1.0.0] — 2026-07-05
+
 First production release. Running on AWS Tokyo (ap-northeast-1), reachable
 over a Tailscale-served HTTPS dashboard.
 
