@@ -13,6 +13,26 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Fixed
+- **CI now builds the image and checks it can name its own commit.** Nothing
+  built the image before this — `docker compose config` only proves the
+  compose file parses — so the `GIT_SHA` build-arg → Dockerfile `ENV` →
+  `sentinel version` chain shipped in 1.1.0 was the one path production
+  depends on and no test could reach: the unit tests set the environment
+  variable directly, and a source checkout takes the git fallback instead. CI
+  now builds with a commit and asserts it is reported back, then builds
+  *without* one and asserts the image says `unknown` and exits non-zero rather
+  than naming something plausible.
+- **README stated the deploy guarantee as it was before 1.1.0** — "only pushed
+  code can reach production". Pushed is no longer sufficient: only released
+  code can, because the deploy gate refuses any commit that is not exactly a
+  tag.
+- **A brittle assertion in the deploy-gate tests.** It scanned the script's
+  source for `--force` while stripping the prose that explains its absence, so
+  rewording a comment failed the suite. The behavioural checks either side of
+  it — that `--force`, `-f` and `--yes` are all rejected — are what actually
+  pin the rule.
+
 ## [1.1.0] — 2026-08-14
 
 ### Changed detection behaviour

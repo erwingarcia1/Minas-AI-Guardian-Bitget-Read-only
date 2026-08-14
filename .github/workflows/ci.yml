@@ -54,6 +54,38 @@ jobs:
           docker compose config --quiet && echo "compose OK"
           rm -f .env
 
+      # The image is what production runs, and nothing built it until now -
+      # `docker compose config` only proves the compose file parses.
+      #
+      # What this covers that no test can: the GIT_SHA build-arg -> Dockerfile
+      # ENV -> `sentinel version` chain. The unit tests set SENTINEL_GIT_SHA
+      # directly, and a source checkout takes the git fallback, so the path
+      # production actually uses was the one path never executed. Its failure
+      # mode is loud (version reports `unknown`, exit 1), but finding that out
+      # on the server is what this repo keeps closing.
+      - name: Image builds and reports the commit it was built from
+        run: |
+          docker build --build-arg GIT_SHA="$GITHUB_SHA" --build-arg GIT_TAG=ci -t sentinel-ci .
+
+          out=$(docker run --rm sentinel-ci sentinel version)
+          echo "$out"
+          echo "$out" | grep -q "$GITHUB_SHA" \
+            || { echo "::error::image does not report the commit it was built from"; exit 1; }
+          echo "$out" | grep -q "build-arg" \
+            || { echo "::error::image reports a commit but not via the build arg"; exit 1; }
+
+      # The other half: a build given no commit must say so and fail, rather
+      # than naming something plausible. Reuses every cached layer above, so
+      # it costs seconds.
+      - name: An image built without a commit refuses to claim one
+        run: |
+          docker build -t sentinel-ci-nosha .
+          if docker run --rm sentinel-ci-nosha sentinel version; then
+            echo "::error::a build with no GIT_SHA reported success"; exit 1
+          fi
+          docker run --rm sentinel-ci-nosha sentinel version 2>/dev/null | grep -q unknown \
+            || { echo "::error::expected the commit to be reported as unknown"; exit 1; }
+
   # Decision-point mutation score, as a floor that can only go up.
   #
   # Deliberately NOT part of the `test` job: mutant generation is ~8 minutes and

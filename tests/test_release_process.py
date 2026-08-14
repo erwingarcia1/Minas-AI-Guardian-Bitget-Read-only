@@ -270,11 +270,13 @@ def test_deploy_gate_accepts_a_tagged_commit(repo: Path):
 
 def test_deploy_gate_offers_no_force_flag(repo: Path):
     """Stated as a test because it is the most likely thing for a future
-    reader to add during an incident, when it will look justified."""
-    assert "--force" not in DEPLOY_GATE.read_text().replace("no --force", "").replace(
-        "There is no --force", ""
-    ).replace("is no `--force`", "")
+    reader to add during an incident, when it will look justified.
 
+    Asserted behaviourally. An earlier version of this also scanned the
+    script's source for the string `--force`, stripping the prose that
+    explains its absence — which made rewording a comment a test failure, and
+    told you nothing the checks below don't.
+    """
     for flag in ("--force", "-f", "--yes"):
         result = _run(repo, "deploy-gate.sh", flag)
         assert result.returncode == 2, flag
