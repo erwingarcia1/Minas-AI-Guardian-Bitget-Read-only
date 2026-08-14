@@ -226,6 +226,7 @@ CREATE TABLE IF NOT EXISTS operators (
     display_name TEXT,
     password_hash TEXT NOT NULL,
     status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'disabled')),
+    session_epoch INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_login_at TEXT
@@ -246,6 +247,11 @@ CREATE TABLE IF NOT EXISTS portal_members (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    -- Bumped on every password change. Baked into the session cookie and
+    -- checked on every request, so raising it retires every cookie ever issued
+    -- to this member. Sessions are stateless HMACs with nothing server-side to
+    -- delete, so this column IS "sign out all other sessions" (#33).
+    session_epoch INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
     last_login_at TEXT
@@ -257,3 +263,150 @@ CREATE TABLE IF NOT EXISTS portal_meta (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+
+-- Customer-requested silences (G-26, #30). One row per snooze, keyed on the
+-- alert'"'"'s dedup_key rather than on its rule: snoozing "withdrawal to an
+-- unrecognised address" because you recognise THIS address must not silence
+-- the next one to a different address, which is the case the rule exists for.
+--
+-- `expires_at` is NOT NULL on purpose. There is no permanent mute, and the
+-- schema is where that is guaranteed - a cap enforced only in the form is not
+-- a cap, because the form is a POST that can be retyped.
+--
+-- Rows are kept after expiry. Who silenced an alarm, and until when, is a fact
+-- about a person and a time on an account that may later be the subject of an
+-- exchange dispute; it outlives the silence.
+CREATE TABLE IF NOT EXISTS snoozes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    dedup_key TEXT NOT NULL,
+    rule TEXT NOT NULL,
+    requested_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_snoozes_lookup ON snoozes(account_id, dedup_key, expires_at);
+
+-- "That was me" (G-24, #28). A customer telling us an alert was their own
+-- activity.
+--
+-- A separate table rather than a column on `alerts`, for the same reason
+-- `snoozes` is: the value of this data is the PATTERN. One row per marking,
+-- keeping every one, is what lets an operator see that a customer has said
+-- "that was me" to the same rule eleven times - which is a statement about the
+-- rule, not about the customer. A column would hold only the latest fact and
+-- would erase exactly the history that makes it useful.
+--
+-- Kept after the alert ages out of usefulness for the same reason snoozes are
+-- kept: who said a movement on their account was expected, and when, is a fact
+-- that may later matter in a dispute with an exchange.
+--
+-- What this deliberately does NOT do is suppress anything. Marking is a claim
+-- about one alert that already fired; it does not silence the rule, the
+-- account or the next alert. Suppression is what `snoozes` is for, it is
+-- bounded and it expires - and folding "this was expected" into "stop telling
+-- me" would let one reassuring click turn a detector off indefinitely.
+CREATE TABLE IF NOT EXISTS expected_activity (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    alert_id INTEGER NOT NULL REFERENCES alerts(id),
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    rule TEXT NOT NULL,
+    dedup_key TEXT NOT NULL,
+    note TEXT,
+    marked_by TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    -- One mark per alert per person. A customer clicking twice has not told us
+    -- anything twice, and counting it as two would inflate the very pattern an
+    -- operator reads to judge a rule.
+    UNIQUE(alert_id, marked_by)
+);
+CREATE INDEX IF NOT EXISTS idx_expected_account ON expected_activity(account_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_expected_rule ON expected_activity(rule, created_at);
+
+-- Threshold changes (G-12, #16). A detection threshold is the difference
+-- between an alert and silence, so an unrecorded threshold change is an
+-- unrecorded change to what this product notices: take tolerance_pct from 1 to
+-- 50 and the account stops being watched in the only way that matters while
+-- every dashboard still reads healthy.
+--
+-- Deliberately NOT a row in `events`: that table is per-account and its
+-- account_id is NOT NULL, and a threshold is fleet-wide - it belongs to no
+-- customer. Relaxing that column would mean rebuilding the forensic log, which
+-- is not a migration worth doing to avoid a table.
+--
+-- `actor` is NULLABLE and means "we cannot say who". An edit made directly to
+-- rules.yaml on a server has no identity attached to it, and filling the column
+-- in with the process owner or 'system' would make the log claim a person
+-- acted. An unattributed threshold change is itself the finding.
+CREATE TABLE IF NOT EXISTS config_changes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    setting TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    actor TEXT,
+    changed_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_config_changes_time ON config_changes(changed_at);
+
+-- Single-use password-reset tokens (G-29, #33).
+--
+-- Only the HASH of the token is stored. A reset token is a bearer credential
+-- for as long as it lives - anyone holding it can take the account - so a
+-- database read, a backup or a stray log line must not yield a working link.
+-- The plaintext exists exactly once, in one email.
+--
+-- `used_at` rather than deletion, so a redeemed link is distinguishable from
+-- one that never existed when something needs investigating later.
+CREATE TABLE IF NOT EXISTS password_resets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    expires_at TEXT NOT NULL,
+    used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_password_resets_hash ON password_resets(token_hash);
+CREATE INDEX IF NOT EXISTS idx_password_resets_email ON password_resets(email, expires_at);
+
+-- Two-factor enrolment, for members and operators alike (G-28, #32).
+--
+-- `subject_kind` + `subject` rather than a foreign key, because operators and
+-- portal members are deliberately separate tables reached through separate
+-- logins - an operator is not a customer with extra rights - and one 2FA
+-- mechanism serving both must not quietly join them.
+--
+-- `encrypted_secret`, never the plaintext. The shared secret is a credential
+-- exactly as much as an exchange API key is, and it is encrypted with the same
+-- cipher: a database read must not yield a working authenticator.
+--
+-- `last_used_step` is replay protection. A TOTP code is valid for up to ninety
+-- seconds, which is long enough for somebody who read it over a shoulder;
+-- recording the last accepted step makes each one usable exactly once.
+CREATE TABLE IF NOT EXISTS totp_enrolments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_kind TEXT NOT NULL CHECK (subject_kind IN ('member', 'operator')),
+    subject TEXT NOT NULL,
+    encrypted_secret TEXT NOT NULL,
+    -- 0 while enrolling. A secret is stored before it is confirmed so the
+    -- customer can scan it, but 2FA is not IN FORCE until they have proved
+    -- they can produce a code - otherwise a mis-scanned QR locks them out of
+    -- the thing protecting their exchange accounts.
+    confirmed INTEGER NOT NULL DEFAULT 0,
+    last_used_step INTEGER,
+    created_at TEXT NOT NULL,
+    confirmed_at TEXT,
+    UNIQUE(subject_kind, subject)
+);
+
+-- Single-use codes that bypass the second factor. Hashed, because they are
+-- worth exactly as much as the password.
+CREATE TABLE IF NOT EXISTS totp_recovery_codes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    subject_kind TEXT NOT NULL CHECK (subject_kind IN ('member', 'operator')),
+    subject TEXT NOT NULL,
+    code_hash TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    used_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_recovery_lookup
+    ON totp_recovery_codes(subject_kind, subject, used_at);

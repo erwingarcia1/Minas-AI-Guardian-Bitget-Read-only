@@ -138,6 +138,9 @@ SPEC: dict = {
         # Zero cooldown means never suppress a repeat — noisy, but a choice an
         # operator is entitled to make.
         "cooldown_minutes": {sev: NON_NEGATIVE for sev in SEVERITIES},
+        # Longest a customer may silence each severity (#30, decision 8).
+        # 0 means that severity cannot be snoozed at all.
+        "snooze_cap_hours": {sev: NON_NEGATIVE for sev in SEVERITIES},
         "escalation_unacknowledged_minutes": POSITIVE,
         "unreachable_repeat_minutes": POSITIVE,
         "sms_cooldown_minutes": NON_NEGATIVE,
@@ -163,6 +166,10 @@ SPEC: dict = {
         "alerts_days": NON_NEGATIVE,
         "operator_pages_days": NON_NEGATIVE,
         "sms_deliveries_days": NON_NEGATIVE,
+        "snoozes_days": NON_NEGATIVE,
+        "config_changes_days": NON_NEGATIVE,
+        "expected_activity_days": NON_NEGATIVE,
+        "password_resets_days": NON_NEGATIVE,
         "dedup_days": NON_NEGATIVE,
         "balance_snapshots_days": NON_NEGATIVE,
         "permission_snapshots_days": NON_NEGATIVE,
@@ -239,6 +246,7 @@ DEFAULTS: dict = {
             "LOW": ["digest"],
         },
         "cooldown_minutes": {"CRITICAL": 15, "HIGH": 30, "MEDIUM": 720, "LOW": 1440},
+        "snooze_cap_hours": {"CRITICAL": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 24},
         "escalation_unacknowledged_minutes": 15,
         "unreachable_repeat_minutes": 1440,
         "sms_cooldown_minutes": 30,
@@ -260,6 +268,10 @@ DEFAULTS: dict = {
         "alerts_days": 730,
         "operator_pages_days": 730,
         "sms_deliveries_days": 730,
+        "snoozes_days": 730,
+        "config_changes_days": 730,
+        "expected_activity_days": 730,
+        "password_resets_days": 730,
         "dedup_days": 365,
         "balance_snapshots_days": 7,
         "permission_snapshots_days": 730,

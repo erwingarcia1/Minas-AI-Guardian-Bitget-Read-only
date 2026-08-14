@@ -140,6 +140,20 @@ def check_operator_login(db: Database, username: str, password: str) -> bool:
     return True
 
 
+def operator_login_requires_code(db: Database, username: str) -> bool:
+    """Always True (G-28, #32). Operator two-factor is not optional.
+
+    Both halves of that criterion live here. An *enrolled* operator cannot turn
+    it off - `twofactor.disable` refuses for operators. An *unenrolled* one
+    cannot sign in either, because this returns True regardless of enrolment,
+    so the login route must send them to enrol before it will issue a session.
+
+    Without the second half, "operators must have 2FA" would be satisfied by
+    nobody ever enrolling - which is exactly how a mandatory control becomes
+    an optional one."""
+    return True
+
+
 # --- sessions -----------------------------------------------------------------
 
 def session_secret(db: Database) -> bytes:

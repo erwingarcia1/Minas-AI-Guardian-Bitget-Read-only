@@ -22,6 +22,7 @@ python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().
 .venv/bin/pytest -q                    # full suite — mocked CCXT, never hits a live exchange
 .venv/bin/python scripts/soak_test.py  # 100-account synthetic soak
 .venv/bin/sentinel run                 # engine + dashboard (:8390) + metrics (:9109)
+scripts/health-check.sh                # every gate, one table — "Is everything okay?" below
 ```
 
 ## Hard rules
@@ -79,6 +80,145 @@ through git, it hot-reloads on arrival.
 
 Full procedure, region notes, and the DB-migration recipe:
 [docs/deployment.md](docs/deployment.md).
+
+
+## Is everything okay?
+
+```bash
+scripts/health-check.sh          # every gate (~20 min, mutation dominates)
+scripts/health-check.sh --fast   # skips the two multi-minute gates (~4 min)
+```
+
+One command, seven gates, one summary table: ruff, the suite, the coverage
+floor, `pip-audit`, the design-guard probes, the mutation floor, and the
+issue-status audit. Non-zero if any of them fail.
+
+```
+GATE                         RESULT     TIME  NOTES
+---------------------------- -------- ------  -----
+ruff                         pass         0s
+tests                        pass       179s
+coverage floor (78%)         pass         0s
+pip-audit                    pass        39s
+issue-status audit           pass         3s
+design-guard probes          skipped       -  --fast
+mutation floor (90%)         skipped       -  --fast
+```
+
+Each gate is documented in its own section below; this only runs them. Three
+things it is deliberate about:
+
+- **It does not stop at the first failure.** The point of the table is knowing
+  all seven answers. Failed gates get their last 30 lines printed inline.
+- **It keeps the logs when everything passes.** Every run writes to
+  `.health-check-logs/<utc-stamp>-<sha>/`, named at the top of the run and kept
+  for 14 days whatever the result. Deleting them on success sounds tidy and is
+  backwards: a pass is the result most worth being able to audit. The mutation
+  gate can report 108/119 in eight seconds off mutmut's per-mutant cache, which
+  is a real pass and looks exactly like a hollow one — the difference is only in
+  the log, and re-running to see it costs twenty minutes.
+- **A gate it could not run is `skipped`, never `pass`, and the run exits 2.**
+  No `gh`, no authentication, no `mutmut`, or another probe run already holding
+  the lock — the question went unanswered, and an unanswered question reported
+  in green is the failure mode most of this file exists to prevent. `--fast` is
+  the one exception: you asked for the skip, so it still exits 0, and the notes
+  column says which gates you gave up.
+- **It does not know the floors.** The coverage floor is read out of
+  `.github/workflows/ci.yml` and the mutation floor out of
+  `scripts/mutation-floor.txt`. A number retyped into this script would go on
+  printing "pass" after CI started failing.
+
+Two smaller traps it closes. `.coverage` from an earlier run sits in the working
+tree, and `coverage report` will read it without complaint — so the floor gate
+refuses to run unless pytest just rewrote the file, rather than scoring a
+month-old run. And the floor and the suite are checked separately instead of via
+`--cov-fail-under`, because otherwise a coverage shortfall and a failing test
+are the same red and the first question is always which one it was.
+
+Note that `--check` on the mutation gate **ratchets**: it raises
+`scripts/mutation-floor.txt` to `max(floor, score - 2)`, never lowers it, and
+that file is tracked — so a completely clean health check can leave you a change
+to commit, and the run says so when it does. The two-point buffer is
+deliberate. A floor dragged up to meet the score exactly leaves zero slack, and
+a gate sitting on its own floor fires on the next honest change to anything it
+measures; a tripwire that goes off during legitimate work is one people learn to
+route around with `--no-verify`, and then it guards nothing.
+
+If the mutation gate fails with **"no mutants ran"**, it measured nothing and
+exits non-zero. Almost always the baseline suite is failing inside `mutants/`:
+the runner uses `-x`, so one failure aborts stats collection before a single
+mutant is tested. Reproduce it directly, which is what the error message tells
+you to do:
+
+```bash
+(cd mutants && ../.venv/bin/python -m pytest -x -q tests/)
+```
+
+Historically the cause was mutmut's cache, and it is worth knowing why, because
+the shape of it is easy to walk back into. `copy_src_dir()` copies everything
+under `source_paths` with `if target_path.exists(): continue`. Python files are
+refreshed separately by the mutation pass, which compares mtimes — so *code*
+stays current. Everything else is copied once and never again. Meanwhile
+`also_copy` — `tests/`, `setup.cfg`, `pyproject.toml` — *is* rewritten every
+run. That combination is what made it invisible: the tests inside `mutants/`
+were always current, so a stale copy in there looked impossible.
+
+`sentinel/schema.sql` is our only non-Python source file, and it is the schema
+every test's database is built from. When it lagged behind a newly added table,
+the ~80 tests predating that table passed and the ones touching it failed with
+`no such table`, taking the whole gate down. `--regenerate` did not help,
+because it deleted nothing.
+
+Both halves are now closed in `scripts/mutation-check.sh`: it compares each
+non-Python file under `sentinel/` against its copy and rebuilds on any
+difference, and every generation starts with `rm -rf mutants/`. Deleting first
+also clears `mutants/mutmut-stats.json`, the cached test-to-function map — if
+that map is ever built by a run in which the tests cannot see
+`MUTANT_UNDER_TEST` (see the allowlist note in `tests/conftest.py`), every
+function looks untested and the total comes out zero. Diagnose that one by
+reading the map: `tests_by_mangled_function_name` with a handful of entries
+rather than hundreds is this.
+
+Compare contents, never mtimes: mutmut copies with `copy2`, so a stale copy
+carries the *source's* old mtime and looks freshly written.
+
+CI never hits any of it — a fresh checkout has no `mutants/` at all, which is
+why this only ever bit locally.
+
+This does not replace `gh run list --limit 1` after pushing. It runs what CI
+runs; it does not run it on CI's hardware, which is where the `time.monotonic()`
+defect below was found and could only have been found.
+
+## Before pushing
+
+Install the hooks once, per clone:
+
+```bash
+scripts/install-hooks.sh
+```
+
+- **pre-commit** — `ruff check sentinel tests`. Milliseconds. It lints the
+  *working tree*, and says so when you have unstaged changes, because a hook
+  that quietly checked something other than what you are committing would be
+  worse than no hook.
+- **pre-push** — ruff plus the full suite. Over two minutes, which is why it is
+  not on every commit: a hook people disable protects nothing. Pre-push is the
+  last moment before a commit can cost anyone else anything, which is exactly
+  where a slow check belongs.
+
+Bypass with `--no-verify` when you genuinely need to. It is possible on
+purpose — a hook that blocks an urgent fix gets uninstalled — and it is never
+silent.
+
+The hooks are deliberately not the `pre-commit` tool. That would buy hook
+management at the price of a dev dependency managing its own tool environments,
+for two hooks running two commands that are already dependencies. What actually
+mattered from that suggestion — that a clone does not silently have no hooks —
+is covered by the installer and this section. What a hook manager would *not*
+have given us is `tests/test_git_hooks.py`, which fails if the hooks and CI ever
+check different things: a hook that drifts narrower than CI goes on passing
+while it stops protecting anything, and teaches people that `--no-verify` is
+the normal way to commit.
 
 
 ## After pushing
@@ -197,3 +337,93 @@ if reference:
     return f"id:{reference}"
 return "sha256:" + _digest(...)       # explicit, not a fallback value
 ```
+
+## Mutation testing
+
+```bash
+scripts/mutation-check.sh            # run; print survivors and the score
+scripts/mutation-check.sh --check    # fail below the floor, raise it on improvement
+```
+
+Restricted to **decision points** — comparison operators, boolean operators,
+`continue`/`break`/`return` — over `sentinel/detectors/` and `sentinel/alerts/`.
+
+An unrestricted run produced **588 survivors from 1,322 mutants** and would take
+~36 hours for the whole package; roughly 60% were cosmetic (mutated log text,
+SQL keyword casing, string literals). Chasing that list is a project that
+stalls. The restricted run is **110 mutants**, and every survivor is a decision
+a test could reasonably be expected to pin.
+
+The score is a floor in `scripts/mutation-floor.txt`, ratcheted the same way as
+the coverage floor: set from measured reality, never lowered, raised whenever it
+improves.
+
+**Known blind spot:** a module with no conditionals produces no decision-point
+mutants at all, and the silence reads like coverage. `detectors/withdrawal.py`
+is the case — a straight-line `Detection` builder on the CRITICAL money-leaving
+path. Its mutations are evidence-key and message changes, which the restricted
+run discards as cosmetic and which are nothing of the kind: `dispatch._dedup_key`
+reads `evidence["order_id"]` to decide whether two withdrawals are one.
+
+Covered by hand under **#65**, and measured with `scripts/mutation-module.sh`,
+which runs an *unrestricted* mutation score over a single module:
+
+```bash
+scripts/mutation-module.sh sentinel/detectors/withdrawal.py \
+    tests/test_detectors_withdrawal.py tests/test_withdrawal_evidence.py \
+    tests/test_dispatch.py tests/test_detector_wiring.py
+```
+
+59 mutants: **40 survived (67.8%) before, 0 survived (0.0%) after**. The
+decision-point floor did not move and cannot — it counts mutants this module
+does not produce. Use this script when auditing one file deeply; it is manual
+by design and not in CI.
+
+The mutmut invocation quirks (whole-package `source_paths`, newline-separated
+test selection, the cached `mutants/` copy, unstable mutant numbering) are
+documented at the top of the script so nobody rediscovers them.
+
+### Hand-written probes, and why they need a tool
+
+```bash
+scripts/mutation-probe.py scripts/probes/design-guards.json
+```
+
+mutmut can only mutate what it can parse an operator out of. It cannot express
+"the account scope is inside the `UPDATE`", "a failed audit write must not stop
+the reload", or "attribution is required once operators exist" — design guards
+with no operator to flip. Those get broken by hand instead.
+
+**Never do that with an ad-hoc `sed`.** A pattern that doesn't match, or a
+replacement whose indentation is off by four spaces, changes nothing — and an
+unchanged file passes its tests, which is indistinguishable from a test killing
+the mutant. That is the same failure this whole section exists to prevent, one
+level up: an absence of evidence read as evidence. It has already happened here
+once.
+
+`mutation-probe.py` refuses to run tests until it has proved the file on disk
+changed, requires the pattern to match exactly once, and **fails the run** if
+any probe didn't land. `expect: "survived"` marks a probe you have decided is
+an equivalent mutation; it then fails if a test ever starts killing it, which
+means the equivalence claim has stopped being true.
+
+`scripts/mutation-check.sh` now also fails when fewer mutants ran than were
+selected — a mutant that never ran shrinks the denominator and raises the score
+by not existing.
+
+**One probe run at a time.** The probes patch files in the working tree, so two
+runs at once corrupt it — and they do it silently. Each run copies a file aside
+before mutating it, so if the second run takes its backup while the first has a
+mutation applied, that backup *is* the mutant, and the second run faithfully
+restores it on the way out. What's left is a real-looking source edit nobody
+made, in a tree `git status` says is dirty for a reason you'll assume was you.
+Seen for real: an incident-balance query left as `snapshot_at >= ?` where it
+should read `<= ?`, found only because the diff was read.
+
+`mutation-probe.py` therefore takes an advisory `flock` on
+`.mutation-probe.lock` and **refuses** — exit 2 — rather than queueing behind
+another run, since the callers are hooks and health checks that shouldn't block
+for however long somebody else's run takes. The kernel drops the lock when the
+process dies however it dies, so a killed run can't leave it stuck. The health
+check reports a refusal as `skipped`, never `pass`, and still exits non-zero:
+the guards went unchecked either way.

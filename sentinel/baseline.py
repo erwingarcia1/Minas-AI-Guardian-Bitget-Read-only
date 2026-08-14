@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timedelta, timezone
 
 from sentinel.db import Database
 from sentinel.exchange import ExchangeClient
 from sentinel.identity import fill_identity, transfer_identity, withdrawal_identity
 from sentinel.numeric import to_decimal
+
+logger = logging.getLogger("sentinel.baseline")
 
 
 def _now() -> str:
@@ -239,11 +242,22 @@ def save_fee_baseline(db: Database, account_id: int, ema: dict) -> None:
         )
 
 
-def seed_baseline(db: Database, account_id: int, client: ExchangeClient) -> None:
+def seed_baseline(db: Database, account_id: int, client: ExchangeClient) -> list[dict]:
     """Called once at onboarding. Builds the initial 'known good' picture so
     the first fast-loop poll doesn't fire CRITICAL alerts for history that
     predates monitoring (pre-existing withdrawals/addresses are baseline,
-    not anomalies)."""
+    not anomalies).
+
+    Returns the seeds that FAILED, as [{"what": ..., "error": ...}]. The
+    seeding is best-effort on purpose - a broken order-history endpoint should
+    not block onboarding, and that decision is unchanged. But the consequence
+    lands later and on the customer: an account seeded without its trading
+    history false-positives on `never_touched_pair_activity` for pairs they
+    have always traded, and until now nobody could tell that account apart from
+    one that started complete (#58, group C).
+
+    Returning the gaps rather than paging from here keeps this function free of
+    the alerting stack, which onboarding may not have constructed."""
     balance = client.fetch_balance()
     totals = balance.get("total", {}) if isinstance(balance, dict) else {}
     record_balance_snapshot(db, account_id, {k: v for k, v in totals.items() if v})
@@ -257,11 +271,15 @@ def seed_baseline(db: Database, account_id: int, client: ExchangeClient) -> None
 
     # Seed the trading-pair baseline from order history so active traders
     # (incl. AI futures accounts) don't false-positive on day one.
+    gaps: list[dict] = []
     try:
         for order in client.fetch_closed_orders():
             record_traded_pair(db, account_id, order.get("symbol"))
-    except Exception:  # noqa: BLE001 - order history is a best-effort seed
-        pass
+    except Exception as exc:  # noqa: BLE001 - order history is a best-effort seed
+        logger.warning("account %d: closed-order seeding failed: %s", account_id, exc)
+        gaps.append({"what": "closed_orders", "error": str(exc),
+                     "consequence": "never_touched_pair_activity may false-positive on "
+                                    "pairs this customer has always traded"})
 
     # Seed transfer history the same way: internal routes the customer already
     # uses (spot->funding, spot->p2p, ...) are baseline, not first-poll HIGH
@@ -276,10 +294,16 @@ def seed_baseline(db: Database, account_id: int, client: ExchangeClient) -> None
                 record_seen_transfer(db, account_id, transfer)
                 route = f"{transfer.get('fromAccount') or '?'}->{transfer.get('toAccount') or '?'}"
                 record_transfer_route(db, account_id, route)
-        except Exception:  # noqa: BLE001 - transfer history is a best-effort seed
+        except Exception as exc:  # noqa: BLE001 - transfer history is a best-effort seed
+            logger.warning("account %d: transfer seeding failed for %s: %s", account_id, coin, exc)
+            gaps.append({"what": "transfers", "coin": coin, "error": str(exc),
+                         "consequence": "new_transfer_route may false-positive on routes this "
+                                        "customer already uses"})
             continue
 
     info = client.fetch_account_info()
     payload = info.get("data", info) if isinstance(info, dict) else info
     if isinstance(payload, dict):
         record_permission_snapshot(db, account_id, payload.get("authorities"), payload.get("ips"))
+
+    return gaps

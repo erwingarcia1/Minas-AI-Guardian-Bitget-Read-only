@@ -1,5 +1,70 @@
 # Autonomous work log
 
+> ## Session summary — 2026-08-13
+>
+> **Closed:** #66 (mutation survivors), #26 (acknowledge), #30 (snooze), #16
+> (threshold audit), #65 (withdrawal.py by hand), #58 (logged-and-swallowed
+> sweep), #33 (password reset), #32 (2FA), #40 (dashboard protected), #62 (git
+> hooks). **Partial:** #67, #29, #27, #61. **Planned, no code:** #43, #44.
+>
+> ### Numbers
+>
+> Suite 441 → 686 tests. Decision-point mutation score **60% → 92%**.
+> `withdrawal.py`, invisible to that score, went **67.8% → 0%** surviving
+> mutants measured separately. 75 standing design-guard probes, all landing.
+> CI green after every push.
+>
+> ### The three defects found, and what they had in common
+>
+> **#67** — two withdrawals with no reference and no timestamp collide, and the
+> second is dropped with no log, no metric and no page. **#58 group D** — every
+> migration ran under `suppress(OperationalError)`, so a renamed table was
+> indistinguishable from "column already exists" and a database that had not
+> migrated started the service anyway. **A falsy sentinel I wrote myself** — a
+> snooze cap of `0` read as "not configured", silently re-enabling suppression
+> an owner had turned off.
+>
+> Each looked like it worked. That is the whole pattern, and it is why the
+> tooling below matters more than any single fix.
+>
+> ### What I would tell someone arriving cold
+>
+> **Tests that assert an absence pass for the wrong reason.** Eight of mine did
+> this session, every one caught by a probe rather than by review: a wiring test
+> matching a variable name instead of an argument; a once-per-process guard that
+> was actually being deduped by a cooldown underneath it; a forged-token test
+> whose token was rejected by `split` before the signature check ran. Reading
+> them, they all look fine.
+>
+> **`scripts/mutation-probe.py` is the tool that found those.** It refuses to
+> believe a result until it has proved the source changed, because a `sed` that
+> matches nothing passes its tests — which is indistinguishable from a test
+> killing the mutant. That happened to me once before I built it.
+>
+> ### Blocked, and on what
+>
+> | Issue | Waiting on |
+> |---|---|
+> | #67 (half) | production frequency data — the counter now exists to collect it |
+> | #63, #37 | fire-drill and heartbeat cadence (decisions doc) |
+> | #27 (half) | G-23 escalation timings |
+> | #29 (¼) | decision 9 — "what to do next" wording |
+> | #61 (model) | decision 10 — per-account credentials |
+> | #43, #44 | decision 11 — provider, plans, prices, lapse behaviour |
+> | #24, #47 | channel defaults; retention periods |
+>
+> ### What I would do next if those were answered
+>
+> 1. **#67's other half** once there is a frequency — it is the only open p1.
+> 2. **Phase 4 is untouched and mostly buildable**: #35 (alert history), #36
+>    (who touched my account — the `events.actor` data already exists), #28
+>    (G-24 "that was me"), #38, #41, #46, #17. None are blocked; I ran out of
+>    session, not out of work.
+> 3. **#56** (move alarms to Alertmanager) is a real architectural question I
+>    did not open, because it deserves its own considered answer rather than a
+>    tired one.
+
+
 Running log of unattended work on the backlog. Newest session at the bottom
 until the run finishes, at which point a summary goes at the top.
 
@@ -31,6 +96,26 @@ things off silently, a config that reported a problem and used the bad value
 anyway — all of them *looked* fine because nothing was looking. Then I did it
 to my own workflow. Green locally is not evidence CI is green; the failure that
 caused this only appeared on a freshly booted machine.
+
+## Standing rule: confirm you are the only session, before each issue
+
+**Before starting any issue, run `ps aux | grep "[c]laude"` and confirm no other
+session is live in this tree.** One line.
+
+Two sessions editing one directory overwrite each other silently, and it has
+already cost a security fix that was reported as done while deleted. The
+design-guard probes make it worse than ordinary clobbering: they patch files in
+`sentinel/` in place and restore them afterwards, so a second session's edit
+landing inside that window is restored *away* — and what is left is a
+real-looking source change nobody made. That is how `snapshot_at <= ?` became
+`>= ?` in an incident query.
+
+`scripts/mutation-probe.py` takes an advisory `flock`, but that only protects
+probe against probe. It cannot protect a probe's restore against an ordinary
+edit from another session, which is the case this rule exists for.
+
+Cost of not doing it, measured: fourteen minutes on 2026-08-14, spent proving
+that a second `claude` process was not editing the tree.
 
 ---
 
@@ -2129,3 +2214,860 @@ red-lighting only its own guards. Full suite green at 418.
 
 `_last_prune` is `None` rather than `0`, per the monotonic lesson, with the
 reason in a comment beside it.
+
+---
+
+## Mutation survivors, fixed by consequence (#66)
+
+Decision-point mutation score **60% → 92%** across two commits. 43 survivors →
+8, and the 8 remaining are documented in `scripts/mutation-check.sh` as *not
+gaps*. Every non-equivalent decision point in the detection and alerting paths
+is now pinned by a test.
+
+**No production code changed.** That surprised me, and it is the finding worth
+recording: 35 surviving mutants, every one of them a correctness-relevant
+decision, and in every single case the code was already right. What was missing
+was anything holding it there. The suite tested that detectors *fire*; almost
+nothing tested the conditions under which they *don't*.
+
+### The order, and why
+
+Silent misses first, then false alarms, then evidence, then boundaries. Two of
+the clusters deserve naming:
+
+`_explained_outflow_for_coin` decides whether a balance drop is accounted for.
+Its `and`s mutate to `or` and survive — a sell of a *different coin* then
+explains this coin's drop. Balance leaves the account, the detector marks it
+explained, nobody is told. That is the worst thing this product can do, it was
+one operator away, and the whole suite stayed green.
+
+The eight `continue` → `break` survivors are the same failure at loop scope.
+Every detector skips records it can't judge. As `break`, the first unjudgeable
+record ends the scan and everything after it that poll is never examined —
+including, on a compromised account, the withdrawal. I confirmed reachability
+before writing the tests rather than assuming it: `reference_prices` only holds
+symbols whose ticker fetch succeeded, so a missing reference is ordinary.
+
+### Three survivors I did not kill, deliberately
+
+Per the standing instruction not to write a test that enshrines a fiction:
+
+- `off_market`'s `reference <= 0` → `< 0` and `quantity_drop`'s `drop <= 0` →
+  `< 0` are **equivalent mutants**. No reachable input distinguishes them
+  (`not reference` already catches zero; a zero drop can't exceed a
+  non-negative tolerance). Killing them needs an input production can't
+  produce.
+- Six `or` chains inside `_in_window`'s log arguments choose *wording*, not
+  behaviour. My classifier counts `or` as a decision point and can't tell that
+  this one only picks a string. Left as a known false positive.
+
+The floor is 90, below the measured 92, precisely so these eight have room. It
+is a ratchet against decisions *becoming* unpinned, not a target.
+
+### Judgment calls
+
+- **`quantity_drop` #108 guards only a log line, and I tested it anyway.** It
+  changes no alert. But the line it guards is the one that says a detection
+  would have been suppressed by a slightly longer settlement grace — the only
+  signal that the grace is set too tight. That is a log a human is expected to
+  act on, which is the bar I set for the `_in_window` ones and this clears it.
+- **`sms.py` at exactly three characters of room is a genuine coin flip.**
+  Current code sends nothing; the mutant sends `"..."`. Both fit. I pinned the
+  current behaviour with the reasoning written into the test rather than
+  leaving the decision unpinned — if someone later prefers the ellipsis, the
+  test tells them what they are trading away instead of just going red.
+- **The SMS tests probe for the character budget instead of recomputing it.**
+  Recomputing `max_len - len(prefix) - len(action)` in the test would make it
+  agree with `sms.py` by construction, and keep agreeing after either changed.
+  That is the exact failure this file exists to close.
+
+### A bookkeeping error, left uncorrected on purpose
+
+Both commits cite `#61` in their messages. There was no issue for this work when
+I made them, and #61 is an unrelated portal-scoping issue that now carries two
+stray cross-links. Fixing it would mean rewriting pushed history, which is off
+limits, so instead: the work is filed as #66, and #61 has a comment saying the
+links are mine and wrong. A wrong reference with a correction next to it is
+recoverable; a silently rewritten branch is not.
+
+### What to take from this
+
+Every one of these was invisible to review. Two rounds of it looked at
+`_explained_outflow_for_coin` and saw correct code — which it is. Review can't
+see the difference between code that is right and code that is right *and
+held*. Mutation testing is the only tool here that has found that difference,
+five times in Tier 1 and thirty-five times now.
+
+---
+
+## G-22 · Customers can acknowledge their own alerts (#26)
+
+Operators could already acknowledge (#54). The customer could not — which is
+backwards, because the customer is the one who knows whether the withdrawal was
+theirs.
+
+### The part that needed care
+
+This is the **first member-facing write in the portal**. Everything else there
+is read-only and scoped by `member_accounts`, so a scoping bug leaked data.
+Acknowledgement is different: it *suppresses escalation*. A scoping bug here
+lets one customer silence another customer's CRITICAL while their account is
+being drained — a read-scoped leak turning into a write that disarms the alarm.
+
+So the account scope is inside the UPDATE statement, not in a check before it:
+
+    UPDATE alerts SET acknowledged_at = ?, acknowledged_by = ?
+    WHERE id = ? AND acknowledged_at IS NULL AND account_id IN (...)
+
+The route *also* checks visibility first, to choose 404 vs redirect. Two guards
+in sequence — and that is exactly the arrangement where one quietly stops
+working, because the outer one hides the inner one's absence.
+
+### Mutation testing found two of my tests passing for the wrong reason
+
+Six mutations, four killed immediately. The two survivors were the two security
+guards:
+
+- **Removing the account scope from the UPDATE survived.** The route's
+  visibility check caught it first, so nothing failed. The inner guard — the
+  one that survives someone adding a JSON endpoint or a bulk action later —
+  was untested. Fixed by testing `acknowledge_alert_as_member` directly rather
+  than only through the route.
+- **Removing the session check survived.** My test asserted only that nothing
+  was acknowledged. With the check removed and the identity falling back to an
+  unknown email, `member_accounts` returns nothing and the acknowledgement
+  fails anyway — the right outcome by accident, and an accident that a real
+  member's address in the form would undo. Fixed by pinning the login page,
+  and by adding a *forged cookie naming the real owner*, which is the shape
+  this attack actually has.
+
+Same lesson as the detector work above: a test that asserts an absence
+(`is None`, `== []`) is the easiest kind to pass for the wrong reason.
+
+### Judgment call: "one tap from the alert" — from where?
+
+The criterion can be read as a tokenised link in the alert email that
+acknowledges without a login. I did not build that, and this is the
+stop-and-log rule rather than a preference: it would weaken a safety property.
+Account takeovers routinely start at the customer's mailbox, so an
+unauthenticated acknowledgement link hands the attacker a mute button for the
+alert about the compromise they just carried out — and it would arrive in the
+same inbox they already control.
+
+The button is one tap from the alert *in the portal*, behind the session. If
+the email link is wanted anyway, it needs a decision about single-use
+short-lived tokens and about what an acknowledgement from an unauthenticated
+tap is even worth as a record, which is a product decision and not mine.
+
+### Not in scope
+
+`acknowledged_by` is one free-text column holding either an operator username
+or a member email. Today they cannot collide meaningfully (operators are
+usernames, members are addresses) and the page each is shown on says which it
+is. If a third actor type ever appears, that column needs a role beside it.
+
+---
+
+## G-26 · Snooze (#30)
+
+Built, with one number deliberately left to the owner.
+
+### Why this one needed the most care
+
+Snooze is the only feature here whose *purpose* is to stop an alert reaching
+someone. Dedup and cooldown also suppress, but they suppress a repeat of
+something already delivered. A snooze suppresses a delivery outright, on
+request — and the request arrives at the exact moment a customer is least
+likely to be sure what is happening to their account.
+
+So the design is three properties rather than a feature:
+
+1. **Keyed on the alert, not the rule.** `dedup_key` already means "the same
+   underlying condition" — rule + evidence identity + account. Snoozing on
+   that key means the attacker's next withdrawal, to a different address, is a
+   different alert and stays loud. Keying on the rule would have silenced
+   exactly the thing the rule exists to catch, and would have looked correct.
+2. **Always expires.** `expires_at NOT NULL`, and the clamp is in
+   `snooze_alert` rather than in the form. The dropdown offers 1/4/24h; the
+   POST body is whatever the sender types.
+3. **Silences the phone, not the monitoring.** The detection runs, the row is
+   written, the portal shows it. `snoozed_until` is a separate column from
+   `delivered_to` on purpose — #57 established that `delivered_to = 0` means
+   "we tried and reached nobody", an operator-visible fault. A snooze is the
+   opposite: it worked as asked. One column for both would have made every
+   snooze look like a broken channel.
+
+Escalation holds while the snooze is live and resumes after. Ignoring the
+snooze would page the customer anyway and make the button a lie; suppressing
+escalation permanently would be the permanent mute this feature is not allowed
+to have.
+
+### What I did not decide
+
+A 24-hour cap on a CRITICAL is not something I can derive. The number I *can*
+derive is the digest cadence — no snooze outlives the next summary the customer
+receives — and that reasoning is honest for a MEDIUM. For a CRITICAL, the
+concrete case is: a customer recognises one leg of a drain, snoozes, and a
+continuing drain of the same coin produces the same dedup key and stays silent
+for the rest of the day. That is the feature working as specified, and it is
+also the worst sentence that could appear in an incident review.
+
+Picking a shorter CRITICAL cap by feel is choosing a security-relevant duration
+by guessing, which the working rules say to bring to the owner. Logged as
+decision 8 with four options and a recommendation (one hour, with
+page-the-operator-on-CRITICAL-snooze as the fast follow that actually removes
+the risk rather than shortening it). `MAX_SNOOZE_HOURS` is one line.
+
+### Surprises
+
+The retention coverage test from #60 failed the moment `snoozes` existed —
+"tables with no retention decision: {'snoozes'}". That guard was written three
+issues ago for exactly this and it is the first time it has fired on live work.
+Classified as prunable at 730 days: the *silence* lasts at most a day, the
+record of who asked for it lasts as long as the alert it silenced. Pruning on
+`created_at` is safe because no retention window shorter than the 24h cap is
+expressible — `days <= 0` means keep forever, so the shortest real window is a
+day.
+
+Seven mutations run against the new guards, all seven killed. The two most
+worth naming: keying the snooze on the rule instead of the dedup key, and
+returning early on a snooze instead of recording the alert. Both are the
+plausible shortcut a reviewer would wave through.
+
+---
+
+## G-12 · Threshold changes are recorded (#16, final criterion)
+
+Blocked since the issue was written, on there being nobody to attribute a
+change to. #54 landed operator identities, so this came unblocked — an example
+of the "decisions made under a constraint should be revisited when the
+constraint lifts" pattern actually paying out.
+
+### Two paths, and the honest one is the interesting one
+
+`sentinel set-threshold --as <operator>` is attributable. A `vi` edit is not.
+Both are recorded; only the first can say who.
+
+I deliberately did **not** try to attribute disk edits. The options were all
+bad: the process owner (says a person acted when a cron might have),
+`"system"` (same lie, wearing a hat), or a heuristic pairing a recent CLI
+invocation with the next reload (guesswork, in an audit trail). `actor` is
+NULL, and "this threshold changed and we cannot say who" is a finding worth
+surfacing rather than a hole worth filling.
+
+### Schema judgment call
+
+`events` was the obvious home, and it has an `actor` column already. But
+`events.account_id` is `NOT NULL`, and a threshold is fleet-wide — it belongs
+to no customer. Making that column nullable in SQLite means rebuilding the
+table, and that table is the append-only forensic log every baseline and every
+piece of alert evidence derives from. Rebuilding it to avoid creating a small
+new table is the wrong trade, and it is also the "migration that isn't
+reversible" case in the working rules. New `config_changes` table.
+
+### The guard I'm most glad about
+
+The `on_change` callback is wrapped in a bare `except` that logs and continues.
+Without it, a database hiccup while recording an audit line would leave the
+process running thresholds *older than the file* — which is precisely the G-12
+failure this whole issue exists to prevent, reintroduced through the logging of
+it. There is a test for it, and it was the third mutation I ran.
+
+### Ordering inside set-threshold
+
+The audit row is written **before** the file. A crash between the two leaves a
+recorded change that did not take effect — visible, and harmless because the
+next reload finds no diff. The other order leaves an unrecorded change that
+did, which is the thing the criterion exists to prevent.
+
+### Notes
+
+Six mutations, six killed — after one of them turned out to be a no-op because
+my replacement string had the wrong indentation and silently matched nothing.
+Worth writing down: a mutation that doesn't apply looks exactly like a test
+suite that caught it. Assert the mutation landed before believing the result.
+
+`settings_diff` compares stringified values on purpose. The two sides come from
+separate YAML loads, so `Decimal("15")` and `Decimal("15.0")` are the same
+threshold and must not read as a change.
+
+---
+
+## Decision 8 answered: per-severity snooze caps
+
+CRITICAL 1h, HIGH 4h, MEDIUM/LOW 24h, in `alerting.snooze_cap_hours` and fully
+wired — `serve_portal` takes `rules` and passes it to `snooze_alert`, with a
+test pinning that call site, because a config value the code never reads is the
+same defect as no config.
+
+### Two bugs found while building it, both by my own tests and probes
+
+**A falsy sentinel, in code I had just written.** `if configured:` made a cap of
+`0` — "this severity cannot be snoozed", which is a legitimate setting —
+indistinguishable from "not configured", so it silently fell back to the
+built-in one-hour cap and re-enabled the suppression an owner had turned off.
+Fifth instance of this pattern in this codebase, and the first one I have
+caught in my own code before committing rather than after. `is not None`.
+
+**A `0h` button.** With a zero cap, `snooze_choices` fell through its
+`or (cap,)` fallback and offered a duration of zero — a control that submits
+and is then refused, which is worse than no control. Found because a stale
+probe forced me to look at that function again.
+
+### The probe tool paid for itself immediately
+
+21 standing probes in `scripts/probes/design-guards.json`, covering the guards
+mutmut structurally cannot express. On the first full run one probe reported
+**DID NOT LAND** — it referenced comment text I had just rewritten. Under the
+old `sed` approach that would have printed as a pass. Chasing it is what
+surfaced the `0h` button.
+
+One probe legitimately survived: after the zero-cap guard was added, the earlier
+`hours <= 0` check became redundant. That is dead code, not a missing test, so
+the fix was to collapse the two guards rather than to write a test for an
+unreachable branch.
+
+---
+
+## #65 · withdrawal.py by hand
+
+The module the tooling cannot see, on the path where money leaves.
+
+### How I measured it
+
+`scripts/mutation-module.sh` (new) runs an **unrestricted** mutation score over
+one module against a chosen test selection — every mutant mutmut generates, not
+just decision points. Same mutant set before and after, so the numbers compare:
+
+| | mutants | survived | rate |
+|---|---|---|---|
+| before — `test_detectors_withdrawal.py` alone | 59 | 40 | **67.8%** |
+| after — plus `test_withdrawal_evidence.py` | 59 | 0 | **0.0%** |
+
+The decision-point floor did not move and cannot: `withdrawal.py` has no
+conditionals, so it produces none of the mutants that floor counts. That is the
+whole reason this issue existed — the silence read like coverage.
+
+### The method, since the tool could not supply one
+
+Field by field down the evidence dict, asking what a wrong or missing value
+costs. That framing is what produced the tests; the table is in the test file's
+docstring.
+
+`order_id` is the consequential one. `_dedup_key` **skips** evidence fields
+that are None, so an empty `order_id` does not fail — it silently *widens* the
+dedup identity to coin plus address. Two withdrawals become one alert and the
+second is suppressed for a full CRITICAL cooldown. That is G-11's shape, and
+G-11's fix was to put a derived identity in that field. Nothing had ever pinned
+that the derived identity actually distinguishes two withdrawals, which is the
+only reason it is there.
+
+### A defect found, filed not fixed: #67
+
+Two withdrawals with **no reference and no timestamp** collide. The digest
+falls back to coin, amount, address, tag, network, type, timestamp — with the
+timestamp also absent, two separate withdrawals of the same amount to the same
+address share one identity, and `record_seen_withdrawal` swallows the second.
+Nothing logs it, nothing counts it, no operator page. I checked `identity.py`,
+`baseline.py` and `poller.py`.
+
+`withdrawal_identity`'s docstring already describes this and calls it a format
+breakage "an operator should be looking at directly". Nobody is looking at it.
+A documented silent failure is still a silent failure — the documentation is
+not a notification.
+
+And the framing understates it. The docstring reasons about *accidental*
+collision. But coin, amount and address are exactly what an attacker draining
+an account in equal instalments to one destination repeats. It is not a
+coincidence to estimate, it is a pattern to expect.
+
+Filed as #67, p1, Phase 1. **Not fixed here**: the fix is in
+`identity.py`/`baseline.py`, outside #65's scope, and the sensible options
+trade against each other (option 2 stops the collision and can reintroduce
+repeat-paging). Marked in the suite with a `strict=True` xfail so fixing it
+turns the test red — which is the signal to delete the marker. A docstring
+comment would not have done that.
+
+### Both mutation scripts aborted on a perfect score
+
+`grep` exits 1 when it matches nothing. The survivor list is a grep. Under
+`set -o pipefail` the run died at exactly the moment every mutant was killed,
+printing no number at all.
+
+Latent in `mutation-check.sh` since I wrote it, and it would have fired the
+first time any run reached 100%. Found only because this module was the first
+to get there. Worth remembering: the failure mode of a measurement tool is
+often the extreme of its own scale, which is the one case nobody writes a test
+for.
+
+---
+
+## #67 · The silence, fixed. The collision, measured.
+
+Filed during #65, built immediately after because it is p1 and Phase 1 and
+milestone order says Phase 1 first.
+
+**What I fixed is the silence, not the collision.** Two withdrawals with no
+reference and no timestamp still collide; the second is still dropped. What
+changed is that an operator is now told, and the frequency is counted.
+
+That split is deliberate and is the interesting judgment. Options 2 and 3 in
+the issue both stop the collision, and both trade against the property
+`withdrawal_identity` exists to hold - that one settling withdrawal keeps one
+identity and does not page the customer on every poll. Choosing between them
+needs a number nobody has. The counter is how that number gets collected, and
+picking a fix now would have been guessing dressed as progress.
+
+### Ordering that matters
+
+The check runs **before** `record_seen_withdrawal`, because that call is what
+swallows the duplicate. After it, the record is gone and there is nothing left
+to notice. Probed - moving it after the filter kills a test.
+
+### Counted per record, paged per poll
+
+An exchange that has stopped sending references sends a whole page of them. One
+page per record would bury the operator in the thing they are being told about.
+But the metric counts every record, because the fix has to be chosen from real
+frequency and a deduped page is not a frequency.
+
+### Falsy values, again
+
+`id: ""` and `id: 0` are what an exchange sends when its schema requires the
+field and it has nothing to put there. `timestamp: 0` is Unix epoch, which is
+not a plausible withdrawal time and is what a missing integer becomes passing
+through a careless adapter. All of them count as absent - and they have to,
+because `withdrawal_identity` already treats them that way. A check that
+disagreed with the identity function about what counts as present would fire
+on none of the records that need it.
+
+### A harness bug worth naming
+
+My first version of `poll_once_with_withdrawals` used one stub client for both
+onboarding and polling. Onboarding baselines whatever the exchange returns -
+that is its job - so the records under test were marked seen before the poll
+ran, and the poll correctly detected nothing. The test failed for a reason that
+had nothing to do with the code. A harness that pre-seeds the state the test is
+about will keep producing that shape of confusion, so the split is commented
+where it lives.
+
+---
+
+# Session of 2026-08-13 (evening) — Phase 4: #35, #36, #28
+
+Three issues closed from the phase the previous summary called "untouched and
+mostly buildable". It was. None of the three was blocked, and each turned up
+something the issue did not mention.
+
+## Three sessions in one checkout
+
+This session started by colliding with another one. We both implemented #35 in
+`sentinel/portal.py` within minutes of each other; the file briefly held two
+complete alert-history implementations, one of which shadowed the other's
+`_history_filters` by name. Resolved by agreement — the other session removed
+its copy and handed the run over.
+
+Later a **third** session turned out to be editing `sentinel/alerts/` at the
+same time. I found its work mid-edit, in a state that left
+`tests/test_contact_router.py` red, and mistook it for the second session's.
+By the time I asked, it had already fixed itself. I did not touch those files.
+
+Worth recording as a fact about the setup rather than a mistake anyone made:
+**several agents editing one working tree is a lost-update race with no lock,
+and a red test may belong to somebody else's half-finished edit.** Two
+consequences learned the hard way:
+
+- The pre-push hook runs the suite against the **working tree**, not against
+  the commits being pushed. It can go red — or green — for reasons that have
+  nothing to do with what you are pushing. `git push` still only sends commits,
+  so nothing foreign gets published; the risk is a false gate in both
+  directions.
+- Before believing an unexpected failure is yours, check whose it is.
+  `git status`, file mtimes and `ListAgents` answer it in under a minute.
+
+If you run several sessions on one checkout again, give them disjoint files up
+front.
+
+## #35 · Alert history
+
+`/alerts` with filters, `/alerts.csv` for export. Two decisions worth the ink:
+
+**A filter that cannot be understood selects nothing, never everything.** The
+inviting implementation degrades garbage to "no filter" — it feels forgiving,
+and it shows the complete list under a heading claiming a selection. Same
+inversion as the falsy snooze cap, applied to a forensic record. The member
+scope stays an `IN (...)` list inside the query and filters narrow within it,
+so an account id from another customer intersects to nothing rather than
+escaping.
+
+**The CSV defangs formula cells.** The person opening the export is
+investigating an attacker whose withdrawal address can be `=HYPERLINK(...)`.
+And it is not paginated: half a spreadsheet handed to an exchange is worse than
+none.
+
+## #36 · Who has touched my account, and the thing that page cannot show
+
+Most settings changes were recorded nowhere. `sentinel set-contact` could
+rewrite where a customer's alerts go and leave a log line on a box the customer
+cannot read. Recording now sits at the choke points — `set_member_password`,
+`twofactor.confirm_enrolment`/`disable`, `cmd_set_contact` — because a record
+written by the caller is a record the next caller forgets.
+
+**The finding, which a test surfaced and I would not have predicted:**
+changing the alert email hides that change from the person it was taken from.
+Portal scope *is* the contact email, so redirecting the destination removes the
+previous contact's sight of the account along with the record of the change
+that removed them. An attacker who redirects the alerts silently removes the
+evidence from the only page built to reveal it.
+
+I did not widen the portal's scoping to fix it — that is decision 10 and not
+mine to make. The address being removed now gets a notice instead, on the same
+reasoning as the password-change tripwire: the last message it will ever
+receive about that account, sent precisely because nobody may have authorised
+it. Both behaviours are pinned by tests kept side by side so the limit stays
+visible rather than folded away.
+
+Criterion 3 ("cannot be edited or deleted") is not demonstrable by any test of
+a page, so it is checked in the writer: no `UPDATE` or `DELETE` against
+`events` anywhere in `sentinel/` except `retention.py`.
+
+## #28 · "That was me"
+
+The only signal this product can collect about whether its detectors are right,
+from the only person who can know. Three decisions:
+
+**It does not suppress anything.** The tempting version makes "that was me"
+stop the alert too — it reads as helpful, and it is how a customer would
+describe what they want. It would also be one reassuring click turning a
+detector off on the account of somebody who has just said they are not worried.
+A probe holds this.
+
+**It does not claim precision it does not have.** An unmarked alert is
+unjudged, not correct, and most alerts are judged by nobody. A ratio over all
+alerts would let a quiet week of no one looking read as a detector improving —
+the same "absence rendered as reassurance" this log is full of. So the metric
+counts confirmed false positives and `judged_counts` returns its population
+rather than a rate. The operator view shows "3 of 4", never "75%".
+
+**The mark reaches the incident page**, which is the document handed to an
+exchange. It must not describe as a theft something the owner has already
+called their own trading.
+
+An existing test refused to let the new table exist without a retention window.
+That test was written for exactly this and it worked.
+
+## #68 · What running the tests actually does on your machine
+
+`sentinel.cli.main()` calls `load_dotenv()`, and two tests invoke `main()`. So
+running the suite on a machine with a real `.env` loads **every production
+credential into the process for the rest of the run**, and later tests behave as
+if configured. Reproduced: a real SMTP server answered `535` during
+`test_password_reset.py`, and the `/forgot` timing-equality test — the one
+guarding "a stopwatch must not reveal whether an address is a customer" —
+measured 3.07s against 0.35s.
+
+The test was right. What it was reporting was not a regression in the padding
+but that the environment under test was not the environment the padding was
+written for.
+
+**It fails only on a developer's machine with real credentials, and never on
+CI**, which has no `.env`. That inversion — invisible exactly where it is
+dangerous — is why it is p2 and not housekeeping.
+
+Found while chasing what looked like an ordinary flake. Confirmed pre-existing
+by stashing this session's work and reproducing it at the previous commit,
+which is the step worth copying: **before believing your change caused a
+failure, or that it didn't, check.**
+
+Also: `.gitignore` matched `.env` exactly and not `.env.save`, and an untracked
+`.env.save` holding eleven real values was sitting in the root. One `git add
+-A` from being published. Widened to `.env.*`.
+
+**The history question is closed, not open:** `git log --all --diff-filter=A
+--name-only -- '.env*'` returns `.env.example` and nothing else, and
+`--diff-filter=A --all` catches a file added anywhere in history even if later
+deleted. No credential file has ever entered this repository. Nothing to
+rewrite and nothing to rotate — recorded explicitly because a lingering "we
+might have leaked credentials" note costs somebody an afternoon later.
+
+## A gap in my own class, found by somebody else reading it
+
+`_PlainNotice` in `sentinel/portal.py` adapts an account notice — a reset link,
+the two tripwires, the destination-change notice from #36 — into the shape
+`ContactRouter` expects. Its docstring said, in prose, "these are account
+notices, not detections". It did not say so in code.
+
+That was fine while nothing asked. Work now in flight to give customers a
+different email template asks exactly that question, via
+`getattr(detection, "is_notice", False)` — and every notice answered *false*,
+which renders it down the detection path and drops the `message` that is the
+entire content. A reset email with no link; a tripwire with no warning text.
+
+So `is_notice = True` is now declared on the adapter every notice in that
+module already goes through, with tests that assert the four **senders** carry
+it rather than that the attribute exists — a class attribute is trivially true
+and would prove nothing about the call sites. Two probes hold it.
+
+Worth naming the general shape: **a docstring is not an interface.** This one
+stated a property that mattered, correctly, for months, and the first piece of
+code to depend on it could not read it.
+
+## State at the end
+
+`main` green after #35, #36 and #28. #68 is open and unstarted by me; a third
+session had a conftest fix for it in the working tree when I finished, which is
+theirs to land.
+
+Phase 4 still has #38 (system status), #41 (operator alert triage), #46 (delete
+my data, blocked on decision 6) and #17 (per-customer thresholds) open, none of
+them blocked on a decision except #46. #56 — moving alarms to Alertmanager —
+is still the architectural question nobody has opened, and still deserves a
+considered answer rather than a tired one.
+
+
+# Session of 2026-08-14 — one command for every gate, and what it found
+
+## Three safety mechanisms have now died quietly. That is a pattern
+
+`scripts/health-check.sh` was meant to be plumbing: seven gates that already
+existed, one table, one exit code. Running it for the first time found that the
+mutation gate had been measuring nothing since `eb460b7` — the environment
+allowlist stripped `MUTANT_UNDER_TEST`, so every mutant ran as unmutated source,
+every test passed, and every mutant "survived". Four more defects were stacked
+behind that one, each hidden by the one before it.
+
+That is the third time in this log:
+
+- **The untimestamped counter** rose correctly and nothing called the alarm that
+  read it. A detector with no caller.
+- **CI was red for ten hours**, across about ten pushes, and I never looked. The
+  user found it.
+- **The mutation gate** printed a score for a run in which no mutant was ever
+  tested.
+
+None of them broke loudly. Each kept producing output that looked exactly like
+the output of a working check: a counter that rose, a workflow that ran, a score
+that printed. The shape is always the same — **the thing that was supposed to
+notice stopped noticing, and nothing was watching the watcher.**
+
+**The fix is not more checks.** An eighth gate in the table would have the same
+half-life as the other seven. The fix is periodically asking each existing check
+to prove it is still alive — that it can still fail. A gate that has not gone red
+in living memory is not evidence of health; it is an unfalsified claim.
+
+What that looked like in practice this session: the mutation gate now refuses to
+pass when it measured nothing, and refuses to pass when it has no floor to
+compare against — both used to read as green. The health check reports an
+unrunnable gate as `skipped` and exits non-zero, so an unasked question cannot
+count as an answer. And it keeps its logs on green runs, because a pass nobody
+can audit is the same unfalsified claim in miniature: the mutation gate reports
+108/119 in eight seconds off mutmut's cache, which is a real pass and looks
+identical to a hollow one.
+
+Worth adopting as a standing practice: **for each gate, know the last time it
+failed. If you cannot remember one, break it on purpose and check that it
+notices.** Every defect above would have been caught the first time that was
+done.
+
+## #12 (G-8) · The label was stale. Two of its tests were hollow
+
+The only `status: broken` issue in the backlog. Its open criterion — "only
+activity in the relevant time window is considered" — carried the annotation
+*"met by silently discarding undated fills (#51)"*, and #51 has been closed with
+every criterion ticked since. So the first question was whether the label was
+just stale.
+
+**It was.** `sentinel/poller.py` now answers two separate questions where it
+used to answer one: *have I judged this fill already* (by identity, via
+`record_seen_fill`) and *is the current ticker valid evidence about it* (by
+time, and only for fills that actually carry one). An undated fill is judged
+once, on first sighting. Seven tests in `tests/test_undated_fills.py` cover it
+and all pass.
+
+I nearly closed it there. What stopped me was that **none of the 103
+design-guard probes covered any of it** — the guarantee was tested but not
+pinned, and this log's own warning is that tests asserting an absence pass for
+the wrong reason. So I wrote the two probes that break each half of the pair
+and ran them.
+
+One was killed. **The other survived: deleting the identity gate entirely broke
+no test.** Both tests that exist to pin "judged exactly once" were hollow, each
+for its own reason.
+
+- `test_undated_fill_is_judged_once_not_every_cycle` counted delivered
+  `off_market_execution` alerts across three cycles and expected one. Off-market
+  is `HIGH`, and `alerting.cooldown_minutes.HIGH` is 30 — so cycles two and
+  three are suppressed by the cooldown regardless. It was passing on dispatch's
+  dedup, not on the gate it names.
+- `test_undated_fill_fee_enters_the_baseline_once` seeded the EMA at 10 and fed
+  a fee of 10. `update_ema` is `alpha * observation + (1 - alpha) * previous`,
+  so an observation **equal to the current EMA is a fixed point**: re-counting
+  the same fill every cycle moves the number not at all. The assertion held
+  whether or not the guarantee did.
+
+Both now assert something a re-examination would actually change. The first
+records what `detect_off_market_fills` is *handed* on each cycle — the detector
+is only called when the window is non-empty, so the batches it receives read
+the window directly, and no downstream dedup can rescue it. The second seeds
+the baseline at 100 against a fee of 10, so one sighting gives 82 and every
+re-count walks it further towards 10.
+
+With those changes both probes are killed. 103 → 105 standing probes.
+
+**Judgment calls.**
+
+*Closing rather than fixing.* No product code changed. The defect #12 named was
+fixed by #51; what remained was that nothing would have told us if it came
+back. Two probes and two honest tests is the whole of it.
+
+*Asserting on the detector's input rather than on alerts.* Slightly whiter-box
+than I would normally write. Justified because the thing being pinned is
+precisely "what enters the examination window", and every observable further
+downstream has a dedup or a cooldown between it and the guarantee.
+
+*Not chasing the third criterion's wording.* "Only activity in the relevant
+time window is considered" is, strictly, no longer true: an undated fill is
+considered even though it cannot be placed in the window. That is deliberate
+and documented in `poller.py` — the alternative is the silent miss that #51
+existed to fix — so I ticked it rather than reopening the argument.
+
+**What surprised me.** The fee test's fixed point. It looks like a careful test:
+it seeds a baseline, runs five more cycles, and asserts the number did not
+move. The arithmetic that makes it vacuous is one line away in a different
+file, and no amount of reading the test would show it. Only breaking the source
+did.
+
+**Two mistakes of my own, both caught by gates rather than by me.**
+
+I closed #12 with a `Closes #12` trailer and did not touch its label, so the
+issue-status gate failed the next run with exactly the drift CONTRIBUTING
+describes as the common mechanical cause. The gate was right.
+
+I also rewrote `scripts/probes/design-guards.json` with
+`json.dumps(indent=2)` when it has always been `indent=1`, reformatting all 103
+existing probes: 957 phantom deleted lines around an 18-line addition, on the
+one file that records every design guarantee this project holds. `git blame` on
+any probe would have pointed at the #12 commit. Restored in `053a3c2`; the net
+change against the pre-#12 version is now exactly the two new probes. Worth
+saying plainly because it is the kind of damage that is invisible in a passing
+test run and permanent in history.
+
+## #71 · The audit called every commit's CI a failure, and nobody could tell
+
+Found by pulling the thread on the gate failure above. The audit's row read
+*"CI failed on bd62fcb - verify the work before trusting the closure"*, and
+`gh run list` said that commit was `completed/success`.
+
+```python
+return "success" if all(c == "success" for c in conclusions) else "failure"
+```
+
+The weekly mutation workflow is conditional, so GitHub records it as `skipped`
+on every push. `all(c == "success")` is therefore false for **every commit in
+this repository**, permanently. I checked four; all identical.
+
+Two silent consequences. `recommend()` gates its actionable flag on
+`ci != "failure"`, so `--apply` could never act on anything — every run printed
+`0 of N evidenced` and the feature was dead from the day it shipped. And the
+reason it gave for refusing was a claim about CI that nobody cross-checks.
+
+The fix is three answers instead of two, because `skipped` is neither success
+nor failure: an explicit red list (`failure`, `cancelled`, `timed_out`,
+`action_required`, `startup_failure`) → failure; otherwise any real success →
+success; nothing conclusive → `None`, which the caller already reports as "CI
+unknown" and hands to a person.
+
+**Judgment call: red is a list, not a negation.** `not success` would have been
+shorter and would have swept up `cancelled` and `timed_out` for free. I wrote
+the list out because the failure I was fixing came *from* a catch-all — treating
+every non-success alike is what made `skipped` a failure in the first place, and
+the inverse mistake (treating every non-failure as clean) promotes an unverified
+commit unattended. Naming both sets means a conclusion GitHub adds later falls
+into neither and returns `None`, which is the safe answer.
+
+**Judgment call: all-skipped is `None`, not `success`.** Tempting to say "nothing
+went red, so it's fine". But nothing ran, and this value's only job is to decide
+whether a label may be changed without a human. "I don't know" is the honest
+answer and the caller already handles it.
+
+Three probes pin the three arms. 105 → 108.
+
+**What surprised me here.** This is the fourth signal-that-goes-nowhere in the
+log, and the first one I found by *disbelieving a gate's explanation* rather
+than its verdict. The gate was correctly failing on real drift; the sentence it
+printed about why was false. I nearly fixed the label and moved on, which would
+have left it.
+
+## #72 · A 2FA guard that could be deleted with the suite green
+
+The health-check run that carried #71's work came back with the design-guard
+probe **`#32 ATTACK sign in with an unconfirmed enrolment` surviving**. That
+probe deletes `not row["confirmed"]` from `check_second_factor` — the guard
+enforcing G-28's fourth criterion, that an operator without a confirmed
+enrolment cannot complete a sign-in. It survived. No test noticed. 107/108.
+
+**I could not reproduce it.** 15/15 killed running the probe alone, 8/8 killed
+running it immediately after its neighbour, 108/108 on a full re-run of the
+suite. I am not claiming to know what happened on that run, and I did not push
+on a green re-run and call it resolved.
+
+I had one specific theory and it was wrong, which is worth recording because it
+was seductive. Probes 63 and 64 mutate `twofactor.py` to *exactly* the same
+size, 10073 bytes, and run consecutively — and `.pyc` cache validation keys on
+(mtime-in-whole-seconds, size), so probe 64 importing probe 63's stale bytecode
+would explain everything. Testing the pair: 8/8 killed. Then I timed the runs:
+each probe's pytest takes ~2.4 seconds, so the two writes can never share a
+wall-clock second. Dead, and dead for a reason rather than for lack of evidence.
+
+**What does not need reproducing is why it can happen.** `check_second_factor`
+and `confirm_enrolment` read the clock themselves. The tests build a code from a
+separate reading:
+
+```python
+def _code(secret, offset=0):
+    return totp_at(secret, _now() + offset)              # one reading
+...
+step = verify_code(secret, code, at=datetime.now(...).timestamp(), ...)  # another
+```
+
+So the test kills the mutant only when two independent readings land in the same
+30-second step. Almost always true — which is exactly the danger. When it is
+not, the call returns False because the code *expired* rather than because the
+guard fired, and `is False` cannot tell those apart: a wrong code, a stale code
+and a rejected-because-unconfirmed enrolment are all False. The pin goes quietly
+green instead of red. This host is WSL2, where the clock can jump after host
+suspend; a candidate, not a conclusion.
+
+The fix removes the dependency rather than the symptom. `_clock()` is a named
+seam returning exactly what it returned before, and `tests/conftest.py` pins it
+globally to the instant the tests build codes for. One reading, not two.
+
+**Judgment calls.**
+
+*Two call sites, not one.* `confirm_enrolment` verifies a code the same way, so
+the `enrolled` fixture carried the same nondeterminism. Bugs come in pairs, and
+the `Edit` tool refusing an ambiguous match is what surfaced the second.
+
+*Global rather than per-file.* Three files share the shape —
+`test_twofactor.py`, `test_portal_two_factor_login.py`,
+`test_portal_activity.py` — and the next TOTP test written would have inherited
+it. An autouse fixture in `conftest.py` makes the whole class impossible rather
+than fixing three instances. A test that genuinely wants drift monkeypatches
+`_clock` itself and wins, exactly as the environment allowlist lets a test put
+its own transport back.
+
+*Only the readings feeding `totp_at`.* The portal files also call `time.time()`
+for the pending token's TTL, and one test deliberately pushes that past
+`PENDING_TTL_SECONDS`. Pinning that would have broken what those tests measure.
+
+*A seam in production code for a test's benefit.* Normally I would resist. It
+earns its place here because `verify_code` already takes `at` explicitly for the
+same reason — the module's own design says the verification instant is a
+parameter, and this just extends that one level up to its callers.
+
+**What surprised me.** That the assertion which made this possible is the same
+one this log keeps flagging: `is False` on a call with several ways to be false.
+The two new tests exist to close that specifically — one runs the same secret at
+the same instant through both confirmed states so the only difference is the
+guard, and the other pins the hazard by showing a *valid* enrolment also returns
+False when the code is judged far from its step.

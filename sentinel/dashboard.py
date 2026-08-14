@@ -89,7 +89,34 @@ _STYLE = """
   .sev-MEDIUM { color:var(--med); background:rgba(255,210,61,.13); }
   .sev-LOW { color:var(--low); background:rgba(124,138,165,.15); }
   .ack-yes { color:var(--ok); } .ack-no { color:var(--faint); }
+  /* Member acknowledgement button (G-22). Deliberately quiet: it sits in every
+     unacknowledged row, and a row of loud buttons reads as the page asking to
+     be clicked rather than as a list of things that happened. */
+  .ackbtn { font:inherit; font-size:12px; cursor:pointer; padding:3px 10px;
+            border:1px solid var(--line); border-radius:6px;
+            background:transparent; color:var(--txt); }
+  .ackbtn:hover { border-color:var(--ok); color:var(--ok); }
+  .snoozesel { font:inherit; font-size:12px; margin-right:6px; padding:3px 6px;
+               border:1px solid var(--line); border-radius:6px;
+               background:var(--panel-2); color:var(--txt); }
+  .snoozed { font-size:12px; color:var(--muted); }
   .fail { color:var(--high); font-weight:600; } .zero { color:var(--faint); }
+  /* An incident page is handed to an exchange, an insurer or the police, so it
+     has to survive being printed. Export is the browser's own print-to-PDF
+     rather than a generated file: a PDF library is a new dependency in a
+     security product, server-side rendering drifts from what the customer
+     actually saw, and the browser's footer carries the URL and a timestamp -
+     better provenance for evidence than a document we composed ourselves. */
+  @media print {
+    :root { --bg:#fff; --panel:#fff; --panel-2:#fff; --txt:#111; --muted:#444;
+            --faint:#666; --line:#bbb; --line-soft:#ddd; }
+    body { background:#fff !important; color:#111; }
+    .wrap { max-width:none; padding:0; }
+    .noprint, .nav form, .ackbtn, .snoozesel { display:none !important; }
+    .card { border:1px solid #bbb; break-inside:avoid; }
+    .kpi::after, .dot { display:none; }
+    a { color:#111; text-decoration:none; }
+  }
   .empty { padding:34px; text-align:center; color:var(--faint); font-size:13px; }
   footer { margin-top:28px; text-align:center; color:var(--faint); font-size:11.5px; }
   a.acctlink { color:var(--txt); text-decoration:none; font-weight:550; }
@@ -389,8 +416,46 @@ def _render(db: Database, rules=None) -> str:
         '<span class="count">latest 50</span></div><table><thead><tr><th>Time</th><th>Account</th>'
         f"<th>Severity</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
         + _operator_pages_section(db)
+        + _expected_activity_section(db)
     )
     return _page(nav, body)
+
+
+def _expected_activity_section(db: Database) -> str:
+    """What customers keep telling us was their own activity (G-24, #28).
+
+    The third criterion, and the one that makes the feature worth having: a
+    single "that was me" is a customer being polite about one withdrawal; the
+    same rule marked repeatedly is a detector firing on how somebody trades.
+
+    Shown with its denominator. "Marked 3 times" says nothing without "out of
+    how many" - 3 of 4 is a rule to fix, 3 of 900 is a customer who once
+    recognised three of their own transfers, and a bare count or a bare
+    percentage would render those identically."""
+    from sentinel.expected import patterns
+
+    rows = patterns(db, limit=20)
+    if not rows:
+        return ""
+    body = ""
+    for r in rows:
+        total = r["alerts_total"] or 0
+        share = f"{r['marks']} of {total}" if total else f"{r['marks']}"
+        # A rule whose alerts are mostly marked is the finding; flagged rather
+        # than left for somebody to divide in their head.
+        loud = total and r["marks"] / total >= 0.5 and r["marks"] >= 3
+        flag = ' <span class="fail" title="most of this rule\'s alerts on this account were marked as expected">mostly marked</span>' if loud else ""
+        body += (
+            f'<tr><td class="rule">{html.escape(r["rule"])}{flag}</td>'
+            f'<td>{_dd(r["label"])}</td><td class="mono">{share}</td>'
+            f'<td class="mono">{_ts(r["last_marked_at"])}</td></tr>'
+        )
+    return (
+        '<section><div class="card"><div class="card-head"><h2>Marked as expected activity</h2>'
+        '<span class="count">what customers keep saying was them · top 20</span></div>'
+        '<table><thead><tr><th>Rule</th><th>Account</th><th>Marked</th><th>Last</th>'
+        f"</tr></thead><tbody>{body}</tbody></table></div></section>"
+    )
 
 
 def _operator_pages_section(db: Database) -> str:
@@ -450,7 +515,19 @@ PORTAL_CONTACTS = {
 
 
 def _portal_access_row(db: Database, account_id: int, email: str | None, contact: str, title: str) -> str:
-    from sentinel.portal import member_exists
+    """One contact's portal-credential row, with its blast radius spelled out.
+
+    The button sits on one account's page and reads as an action on that
+    account. It is not: portal identity is the email, so the credential opens
+    every account that address is a contact on. That gap between what a control
+    looks like it does and what it does is where mistakes come from (#61), and
+    it widened when G-21 let a secondary contact hold their own credential.
+
+    So the accounts are listed BEFORE the button, by name. Not a generic
+    caution - a caution shown every time is a caution nobody reads, which is
+    how the real ones get missed - but the actual list, and only when there is
+    more than this account in it."""
+    from sentinel.portal import member_accounts, member_exists
 
     if not email or not email.strip():
         return (f'<div class="det"><span class="desc">{title}: no email on file — '
@@ -458,8 +535,24 @@ def _portal_access_row(db: Database, account_id: int, email: str | None, contact
     exists = member_exists(db, email)
     status = "login active" if exists else "no login yet"
     label = "Reset portal password" if exists else "Generate portal password"
+
+    rows = member_accounts(db, email)
+    reachable = [r["label"] for r in rows]
+    others = [r for r in rows if r["id"] != account_id]
+    if others:
+        scope = (
+            '<div class="det"><span class="desc">This credential opens '
+            f'<b>{len(reachable)} account(s)</b>, not just this one: '
+            + ", ".join(f"<b>{html.escape(str(lbl))}</b>" for lbl in reachable)
+            + ". Portal identity is the email address, so anyone holding this password "
+              "sees every account that address is a contact on.</span></div>"
+        )
+    else:
+        scope = ""
+
     return (
         f'<div class="det"><span class="desc">{title} — <b>{html.escape(email)}</b> · {status}</span></div>'
+        + scope +
         f'<form method="post" action="/portal-access" style="padding:0 22px 14px">'
         f'<input type="hidden" name="account_id" value="{account_id}">'
         f'<input type="hidden" name="contact" value="{contact}">'
@@ -724,7 +817,8 @@ def _render_result(label: str, exchange: str, account_id: int) -> str:
 
 
 def serve_dashboard(
-    db: Database, cipher: CredentialCipher, port: int, host: str = "127.0.0.1", rules=None
+    db: Database, cipher: CredentialCipher, port: int, host: str = "127.0.0.1", rules=None,
+    operator_alerter=None,
 ) -> ThreadingHTTPServer:
     """Internal ops page. Network-gated (Tailscale) — it has no login of its
     own by design. The /add form runs the same fail-closed read-only gate as
@@ -875,6 +969,7 @@ def serve_dashboard(
                 label = generate_unique_label(db, g("name"))
                 result = onboard_account(
                     db, cipher, actor=self._operator(),
+                    operator_alerter=operator_alerter,
                     label=label, topology=g("topology") or "independent",
                     exchange=g("exchange") or "bitget", api_key=g("api_key"), secret=g("secret"),
                     passphrase=g("passphrase"), customer_name=g("name"),

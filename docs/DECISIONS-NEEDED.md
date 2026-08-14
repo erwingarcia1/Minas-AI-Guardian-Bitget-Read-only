@@ -21,7 +21,7 @@ whoever builds one should build it to cover both.
 |---|---|---|---|
 | 1 | Escalation timings | #27 (G-23), part of #26/#30 | 15 / 30 / 60 min, secondary at 15 |
 | 2 | Fire drill cadence + what customers see | #37 (G-33) | Weekly, drill account, customers see result only |
-| 3 | Incident page "what to do next" wording | #29 (G-25) | Three fixed actions, exchange-specific link |
+| 3 | Incident page "what to do next" wording | #29 (G-25) · depends on #69 | Three fixed actions, exchange-specific link |
 | 4 | Alert channel defaults + quiet hours | #24 (G-20) | Quiet hours non-critical only, 22:00–07:00 local |
 | 5 | PDF export for incidents | #29 (G-25) | Defer — print stylesheet now |
 | 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), #46 (G-42) | Start legal review now; 24 months interim |
@@ -162,6 +162,88 @@ common path is agreed.
 **What I can build without this:** everything else on that page — the timeline,
 the balances, detection → notification → acknowledgement. Only the advice block
 is blocked. Say the word and I'll build the page with the advice block stubbed.
+
+### Update 2026-08-13: one defect in the shipped text fixed, the wording still open
+
+The alert runbook (`sentinel.alerts.base.runbook`) said, as step 2, *"revoke/
+rotate the API key(s) on this account"*. **The Guardian's own key is one of
+those keys.** It is read-only and cannot move funds, so revoking it takes
+nothing away from an attacker; what it does is switch the monitoring off at the
+moment it matters most — and silently, because nobody connects "I revoked my
+keys" with "I am no longer being watched". A frightened customer revoking
+everything is the likely reading, not an edge case.
+
+That is a safety defect rather than a phrasing preference, so it was fixed
+without waiting for this decision: step 2 now says to revoke keys you do not
+recognise, states that the Guardian's key is read-only, and says plainly that
+revoking everything leaves the account unwatched until a new key is issued. It
+closes with a link to the portal to check whether monitoring is still running.
+
+### Update 2026-08-13: the reading environment strips our hedging
+
+Worth having on the record before the advice-vs-instruction question is
+settled, because it changes what "advice" can even mean here.
+
+Gmail's AI Overview summarised our test alert as:
+
+> "You must immediately freeze account, revoke unrecognized API keys"
+
+The alert said no such thing. It carried a conditional heading — *"If this was
+not you:"* — followed by numbered steps written as imperatives. The summariser
+dropped the heading and kept the imperatives, converting advice we hedged into
+an instruction we never gave. A customer who reads only the summary — and on a
+phone, many will — receives a command from us.
+
+**The consequence for decision 3:** choosing "advice" wording is not enough,
+because a conditional *preamble* does not survive summarising, forwarding,
+screen-reading or skimming. The hedge has to be inside each sentence, where
+removing it would change the sentence rather than just drop a line.
+
+The runbook is now written that way — every step begins with its own "If…" and
+reads correctly in isolation — and a test pins it. That is a structural
+property, so it was fixed without waiting. **It does not decide the question**:
+whether these are "consider" or "do this now" is still yours, and the same
+hazard applies to any wording that replaces them. Whatever legal signs off has
+to survive being read one sentence at a time.
+
+Related: the alert is plain text on purpose. HTML mail is the phishing norm,
+and a plain-text security alert is harder to imitate convincingly. If multipart
+HTML+text is ever wanted, that is a decision with a phishing-surface argument
+attached, not a formatting preference.
+
+**This does not close decision 3.** Still owned by legal/comms, unchanged:
+
+- whether the text is advice ("consider") or instruction ("do this now");
+- "contact Bitget support" and "freeze the account" — the liability wording;
+- how certain any of it may sound, given a detection is evidence, not proof;
+- whether it should vary per rule.
+
+The runbook is now a single function so that review has one place to land, and
+the customer-facing gating (CRITICAL/HIGH only) is separate from the wording.
+
+### The advice depends on a page that does not exist — #69
+
+There is still **no self-serve way for a customer to replace a revoked Guardian
+key.** Onboarding is operator-driven end to end, so the link in the monitoring
+note points at the portal front door rather than at a flow, and "ask us for a
+new key" is the entire recovery path. Filed as **#69** (epic-01, p2, Phase 3).
+
+This is a dependency of decision 3 rather than a note beside it. The note tells
+a customer, correctly, that revoking every key leaves the account unwatched —
+and step 2 exists because we expect a frightened person to revoke everything.
+So the advice can put a customer into a state the product cannot recover from
+on its own, during a live incident, with the wait measured by whether an
+operator is awake.
+
+Whichever way the advice-versus-instruction question is settled, the wording of
+that note should be chosen knowing whether #69 exists by then: "ask us for a
+new key" is an honest sentence today and a poor one the moment there is a page
+that does it.
+
+(This section was written when the monitoring consequence was step 6 of the
+numbered list. It is now a note below the list — items 1–5 are actions, and
+numbering a consequence among them asked the reader to perform it. Nothing
+above changes except where the sentence sits.)
 
 ---
 
@@ -330,6 +412,183 @@ channels and will not be exercised except during a real outage. #63 carries an
 acceptance criterion requiring a scheduled drill for exactly this, sharing the
 mechanism with G-33 (#37). An alerting path exercised only when it matters is
 one you should assume is broken.
+
+---
+
+## 8. How long may a customer silence a CRITICAL? — **ANSWERED 2026-08-13**
+
+**Answer: CRITICAL 1 hour, HIGH 4 hours, MEDIUM and LOW 24 hours.** Shipped.
+
+### The reasoning, recorded because the numbers are meaningless without it
+
+Acknowledging already stops escalation and already says "I have seen this". A
+snooze only suppresses **repeats**. So the only legitimate reason to suppress
+repeats of a CRITICAL is that you are dealing with it *right now* — which is a
+short window by definition.
+
+A drain unfolds over minutes to hours. At 24 hours, a CRITICAL snooze is long
+enough for the rest of one to finish in silence. Re-snoozing costs one tap and
+forces a fresh decision, which is the right friction to put in front of
+continuing to ignore a CRITICAL.
+
+The 24 on MEDIUM and LOW keeps the original derivation: it is the digest
+cadence, so no snooze outlives the next summary the customer receives.
+
+### Where it lives
+
+`alerting.snooze_cap_hours` in `config/rules.yaml`, so the caps are tunable
+without a deploy (G-12) and every change to them is now recorded against a name
+(#16). `sentinel/snooze.py` carries the same table as the built-in fallback.
+
+A configured cap of **0** means that severity cannot be snoozed at all — option
+3 from the original writeup, still available without a code change. That
+required care: 0 is a falsy value standing for a real decision, so the lookup
+uses `is not None` rather than truthiness. Read the other way, a deliberate
+zero looks like "not set" and the built-in one-hour cap comes back, silently
+re-enabling the suppression the owner had turned off. That is the falsy-sentinel
+pattern in CONTRIBUTING.md, and it is pinned by a probe.
+
+An unrecognised severity gets the **shortest** cap, not the longest: for a
+feature whose purpose is suppression, the only safe direction to fail in is
+towards less of it.
+
+### Still open, smaller
+
+The durations offered in the dropdown are 1h / 4h / 24h, filtered by the
+severity's cap. Same species of question as G-23's escalation timings, and same
+answer needed from real usage rather than from this file.
+
+---
+
+## 9. What an incident page tells a customer to do next (G-25, #29)
+
+The incident page is built and shipped — one page per incident, the
+detection → notification → acknowledgement timeline, balances as they were at
+the time, and print-to-PDF export. **Three of the four criteria are done.**
+
+The fourth is not engineering. "It states in plain words what to do next
+(revoke the key, contact the exchange, move funds)" is advice with
+consequences, and the wording *is* the deliverable.
+
+### Why I did not write it
+
+Every candidate sentence commits us to something:
+
+- **"Revoke your API key."** Almost always right, and it destroys the
+  attacker's access — and ours. Monitoring stops at the moment the customer
+  most needs it, and a customer in a panic will not be reading about how to
+  issue a replacement.
+- **"Move your funds."** Moving funds during an active compromise can hand the
+  attacker a fresh destination to watch, and a customer moving to a wallet
+  they set up in a hurry is a second incident waiting to happen.
+- **"Contact the exchange."** Safe, and nearly useless on its own without
+  telling them what to ask for. Which reference do they quote? Do they ask for
+  a withdrawal freeze? That is exchange-specific.
+- **Saying nothing** leaves a page that describes a theft and offers no next
+  step, which is its own kind of failure.
+
+There is also a liability dimension I am not in a position to weigh. Advice
+that is followed and goes badly is different from advice that was never given.
+
+### What is needed
+
+The literal text, per severity or per rule, and a decision on whether it is
+advice ("consider") or instruction ("do this now"). Once there is text, wiring
+it in is an hour: the page already has the slot.
+
+### Recommendation
+
+Start with the narrowest true thing and expand later: for a CRITICAL
+withdrawal-path alert, name the exchange's own support route and the reference
+to quote, and say plainly that Minas monitors and does not act. Leave "revoke"
+and "move funds" out until there is a considered position on both.
+
+---
+
+## 10. Should a portal credential be scoped to an account? (#61)
+
+The **affordance** is fixed and shipped: the ops dashboard now lists, by name,
+every account a portal credential will open, before the operator clicks. An
+operator can no longer share three accounts while believing they shared one.
+
+The **model** is unchanged, and changing it is your call.
+
+Today portal identity is the email address. One credential, and
+`member_accounts` returns every account that address is a contact on. It is
+coherent, and it is what a customer with several accounts probably wants.
+
+### The question
+
+Is "one person, one login, everything they are a contact on" the right model,
+or should a credential grant exactly the accounts someone chose?
+
+### Options
+
+1. **Keep it.** Now honest about its scope. No migration. A customer with four
+   accounts signs in once. The risk is that sharing access to one account is
+   always sharing access to all of them, and the only remedy is to remove the
+   person as a contact — which also stops their alerts.
+2. **Per-account grants.** A join table between `portal_members` and
+   `accounts`; a credential opens exactly what was granted. Correct, and a
+   migration. Existing members would need grants backfilled from their current
+   contact rows, which is mechanical.
+3. **Per-account credentials.** One password per (email, account). Most
+   isolated, worst to live with — four accounts means four passwords for one
+   person.
+
+### Recommendation
+
+**2, and not urgently.** It is the right model and the migration is
+backfillable, but the affordance fix removes the acute risk: nobody can now
+share more than they intended without being told. Do it when a customer
+actually asks for account-scoped access, not before — the cost of guessing
+wrong here is a data model that has to change again.
+
+### Why it becomes expensive later
+
+Once customers routinely have several accounts with shared contacts, changing
+the scoping model is a migration that touches live credentials. It is cheaper
+now than it will be, which is an argument for deciding early even if building
+late.
+
+---
+
+## 11. Billing: provider, plans, prices, and what a lapse does (G-39/#43, G-40/#44)
+
+**No code written**, per the standing instruction. Full implementation plans are
+in the issues, ready to build once these are answered.
+
+### What I need
+
+1. **Provider.** Stripe and Paddle differ in whether they are merchant of
+   record, which decides who owes VAT on a UK-based service selling worldwide.
+   That is a tax question before it is an engineering one.
+2. **Plans and prices**, and specifically **per account or per customer**. The
+   data model differs and it is not a small change afterwards.
+3. **Trial?** And what happens at the end of one.
+4. **What a lapse does.** The honest options are different products:
+   keep monitoring and chase; stop monitoring after a grace period; or —
+   never — keep monitoring and stop alerting.
+5. **Grace period length and notice schedule**, if there is a grace period.
+
+### The engineering constraint, whichever you choose
+
+**Guardian must never stop monitoring because billing broke**, and **a customer
+must never believe they are monitored while they are not.**
+
+Detection reads `accounts.status`; billing must never write it. A lapse sets a
+separate flag that an explicit, attributable action acts on. The indirection
+exists so a webhook bug cannot silently switch off monitoring for the fleet —
+which is the same failure this project has now found technically three times
+(#57, #67, the ten-hour red CI), arrived at commercially.
+
+### Recommendation
+
+Grace period, then stop, with the stopping loud and repeated: a banner on
+**every** portal page, not a billing page; an email that says *monitoring has
+stopped* in those words rather than "your subscription has ended"; and an
+operator page, because ending monitoring for a customer who merely changed
+cards is a business event somebody should see.
 
 ---
 

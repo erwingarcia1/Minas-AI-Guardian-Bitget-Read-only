@@ -18,6 +18,37 @@ logger = logging.getLogger("sentinel.config")
 _UNSET = object()
 
 
+def settings_diff(before: dict, after: dict, _prefix: str = "") -> list[tuple[str, str | None, str | None]]:
+    """Every setting whose value differs, as (dotted.path, old, new).
+
+    Values are stringified rather than compared as objects because the two
+    sides come from separate YAML loads: `Decimal("15")` and `Decimal("15.0")`
+    are the same threshold and must not read as a change, and a value that
+    became a different *type* (a bare 15 replaced by the string "15") is not a
+    change to what any detector does either.
+
+    A setting that appears or disappears is reported with None on the missing
+    side. A removed threshold is not a no-op - the value falls back to the
+    schema default, which changes what the product does and is usually an
+    accident, so it has to read as a change rather than as an absence."""
+    changes: list[tuple[str, str | None, str | None]] = []
+    for key in sorted(set(before) | set(after)):
+        path = f"{_prefix}{key}"
+        old, new = before.get(key), after.get(key)
+        if isinstance(old, dict) or isinstance(new, dict):
+            changes.extend(settings_diff(
+                old if isinstance(old, dict) else {},
+                new if isinstance(new, dict) else {},
+                f"{path}.",
+            ))
+            continue
+        old_s = None if key not in before else str(old)
+        new_s = None if key not in after else str(new)
+        if old_s != new_s:
+            changes.append((path, old_s, new_s))
+    return changes
+
+
 class RulesConfigError(ValueError):
     """A rules file could not be read or parsed at all.
 
@@ -55,8 +86,13 @@ class RulesConfig:
     seconds old. A config that cannot be parsed must never reach a detector.
     """
 
-    def __init__(self, path: str | Path):
+    def __init__(self, path: str | Path, on_change=None):
         self._path = Path(path)
+        # Called with the list of (setting, old, new) whenever an accepted
+        # reload changes something. Not called on the first load - starting the
+        # service is not somebody editing the thresholds, and reporting every
+        # setting at boot would bury the one real change under a hundred.
+        self._on_change = on_change
         self._lock = threading.Lock()
         self._mtime: float | None = None
         self._data: dict[str, Any] = {}
@@ -115,6 +151,9 @@ class RulesConfig:
                 self._reject(mtime, problems, parsed=converted)
                 return
 
+            changes = (
+                settings_diff(self._data, converted) if self._loaded else []
+            )
             self._data = converted
             self._mtime = mtime
             if self._validation_error is not None:
@@ -125,6 +164,16 @@ class RulesConfig:
             self._validation_error = None
             self._rejected_at = None
             self._loaded = True
+            # Last, and guarded. The values on disk taking effect matters more
+            # than the audit line: a recorder that raises must not leave the
+            # process running thresholds older than the file, which is the
+            # exact G-12 failure this validation exists to prevent,
+            # reintroduced through the logging of it.
+            if changes and self._on_change is not None:
+                try:
+                    self._on_change(changes)
+                except Exception:  # noqa: BLE001 - never let the audit stop the reload
+                    logger.exception("failed to record config changes: %s", changes)
 
     def _reject(self, mtime: float | None, problems: list[str], parsed=None) -> None:
         """Refuses the file on disk. Never raises, and never stops the process.

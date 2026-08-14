@@ -70,6 +70,19 @@ alerting:
     HIGH: "30"
     MEDIUM: "720"
     LOW: "1440"
+  # Longest a customer may silence one alert, per severity (G-26, decision 8).
+  # Acknowledging already stops escalation and already says "I have seen this";
+  # a snooze only suppresses repeats. The only legitimate reason to suppress
+  # repeats of a CRITICAL is that you are dealing with it right now, which is a
+  # short window by definition - and a drain unfolds over minutes to hours, so
+  # a day-long CRITICAL snooze is long enough for the rest of one to finish in
+  # silence. Re-snoozing costs one tap and forces a fresh decision.
+  # 0 for a severity means it cannot be snoozed at all.
+  snooze_cap_hours:
+    CRITICAL: "1"
+    HIGH: "4"
+    MEDIUM: "24"
+    LOW: "24"
   escalation_unacknowledged_minutes: "15"
   # How often "your account is not being watched" repeats while it stays
   # unresolved (G-6). Daily: at HIGH's 30-minute cooldown a broken key would
@@ -130,6 +143,7 @@ retention:
   alerts_days: "730"
   operator_pages_days: "730"
   sms_deliveries_days: "730"
+  expected_activity_days: "730"  # "that was me" (#28); same window as the alert it judges
   dedup_days: "365"                   # see above - bounded below by correctness
   balance_snapshots_days: "7"         # only "what changed since the last poll" needs these
   permission_snapshots_days: "730"

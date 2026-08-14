@@ -31,11 +31,12 @@ class ContactRouter:
       - a CRITICAL alert with no phone on file is logged and recorded so the
         dashboard can nudge the operator to capture one."""
 
-    def __init__(self, db=None, rules=None) -> None:
+    def __init__(self, db=None, rules=None, operator_alerter=None) -> None:
         self._db = db
         self._rules = rules
         self._smtp = self._smtp_config()
         self._warned: set[str] = set()
+        self._operator_alerter = operator_alerter
 
     @staticmethod
     def _smtp_config() -> dict | None:
@@ -52,9 +53,35 @@ class ContactRouter:
         return None
 
     def _warn_once(self, key: str, msg: str) -> None:
-        if key not in self._warned:
-            self._warned.add(key)
-            logger.warning(msg)
+        """A missing provider is not a transient (#58, group A).
+
+        The per-event failures on this path - one email bounced, one SMS
+        rejected - are deliberately left as log lines: one is noise, and a
+        rising rate is a metric-and-alarm shape rather than a page. This is the
+        other kind. A contact channel that is *set on the account* but has no
+        provider configured means every alert that account should ever receive
+        through it silently does not happen, for the life of the process. It is
+        permanent, it is a configuration mistake somebody can fix in a minute,
+        and until now it was one log line at the moment of the first
+        undelivered alert.
+
+        Paged once per process, on the same key that suppresses the log."""
+        if key in self._warned:
+            return
+        self._warned.add(key)
+        logger.warning(msg)
+        if self._operator_alerter is None:
+            return
+        self._operator_alerter.page(
+            rule="contact_channel_has_no_provider",
+            severity="HIGH",
+            message=(
+                f"A customer contact channel is configured on at least one account but has no "
+                f"provider set, so those alerts are not being delivered: {msg}"
+            ),
+            evidence={"channel": key},
+            dedup_scope=key,
+        )
 
     # --- SMS delivery log ----------------------------------------------------
 
@@ -158,6 +185,10 @@ class ContactRouter:
             confidence=detection.confidence,
             message=detection.message,
             evidence=detection.evidence,
+            # Account notices (password reset, destination change) carry their
+            # whole meaning in `message` and must render it verbatim; a
+            # detection must not, because that text embeds addresses.
+            notice=getattr(detection, "is_notice", False),
         )
 
         if emails:
@@ -172,8 +203,14 @@ class ContactRouter:
                     EmailChannel(
                         self._smtp["host"], self._smtp["port"], self._smtp["username"],
                         self._smtp["password"], self._smtp["sender"], emails,
+                        audience="customer",
                     ).send(alert)
                 except Exception as exc:  # noqa: BLE001 - delivery failure must not stall detection
+                    # Stays a log line, decided in the #58 sweep. One bounced
+                    # email is noise - a wrong address, a full mailbox, a
+                    # greylisting retry. A *rising rate* is a broken SMTP
+                    # config, and that is metric-and-alarm shaped, not
+                    # page-shaped. Do not re-litigate this without the metric.
                     logger.warning("per-account email to %s failed: %s", emails, exc)
 
         if phones:
@@ -210,6 +247,10 @@ class ContactRouter:
         try:
             receipts = channel.send(alert)
         except Exception as exc:  # noqa: BLE001 - delivery failure must not stall detection
+            # Stays a log line for the same reason as the email path above
+            # (#58), and this one additionally leaves an `sms_deliveries` row
+            # with status='failed' - a queryable record, which is more than the
+            # email path has.
             logger.warning("per-account SMS to %s failed: %s", phones, exc)
             for phone in phones:
                 self._record_sms(

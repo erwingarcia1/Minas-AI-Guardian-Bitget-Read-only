@@ -41,6 +41,11 @@ class TriageEngine:
         except ImportError:
             logger.warning("triage enabled in config but the 'anthropic' package is not installed")
         except Exception as exc:  # noqa: BLE001 - missing key etc.; triage is optional
+            # Stays a log line, decided in the #58 sweep. Triage writes a
+            # narrative for a human who is already reading an alert; its
+            # absence costs convenience, not detection. Nothing is missed and
+            # no customer is uninformed, which is the bar the rest of that
+            # sweep is measured against.
             logger.warning("triage disabled: %s", exc)
 
     @property

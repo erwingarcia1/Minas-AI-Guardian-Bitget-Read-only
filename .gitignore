@@ -7,6 +7,10 @@ venv/
 .coverage
 htmlcov/
 .env
+# `.env` alone does not match `.env.save`, `.env.bak` or `.env.local`, and a
+# backup copy of a credential file is still a credential file (#68).
+.env.*
+!.env.example
 *.db
 *.db-journal
 sentinel_data/
@@ -14,5 +18,16 @@ sentinel_data/
 .claude/settings.local.json
 .DS_Store
 
-
 *.pem
+
+# mutmut's working copy of the package and the config scripts/mutation-check.sh
+# writes; both are regenerated and neither belongs in the repo.
+mutants/
+setup.cfg
+
+# scripts/mutation-probe.py's mutual exclusion; empty, and only ever locked.
+.mutation-probe.lock
+
+# scripts/health-check.sh keeps the output of every run, passes included, so a
+# green can be audited without re-running it. Self-pruning after 14 days.
+.health-check-logs/

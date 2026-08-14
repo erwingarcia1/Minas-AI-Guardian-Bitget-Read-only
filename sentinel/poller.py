@@ -41,6 +41,7 @@ from sentinel.detectors.unseen_address import detect_unseen_address
 from sentinel.detectors.withdrawal import detect_new_withdrawals
 from sentinel.events import append_event
 from sentinel.exchange import ExchangeClient, TamperSignal, make_client
+from sentinel.identity import is_unidentifiable
 from sentinel.numeric import to_decimal
 
 logger = logging.getLogger("sentinel.poller")
@@ -134,6 +135,59 @@ class AccountPoller:
         self._metrics = metrics
         self._contact_router = contact_router
         self._operator_alerter = operator_alerter
+
+    def _report_unidentifiable(self, account_id: int, label: str, account_row, withdrawals) -> None:
+        """Pages when the exchange sends a withdrawal we cannot tell apart from
+        another one (#67).
+
+        The collision is not fixed here - the options for fixing it trade
+        against the property that one settling withdrawal keeps one identity,
+        and none should be chosen without knowing how often this happens. What
+        is fixed is that it used to happen in complete silence: the second
+        withdrawal was dropped as already seen and the poll reported success.
+
+        Counted per record so the frequency is real, paged once per poll
+        because the condition is about the exchange's response format and not
+        about any one record. An exchange that has stopped sending references
+        sends a whole page of them, and one page per record would bury the
+        operator in the thing they are being told about."""
+        unidentifiable = [w for w in withdrawals if is_unidentifiable(w)]
+        if not unidentifiable:
+            return
+
+        exchange = (account_row["exchange"] if "exchange" in account_row.keys() else None) or "exchange"
+        if self._metrics is not None:
+            for _ in unidentifiable:
+                self._metrics.unidentifiable_withdrawal(exchange)
+
+        logger.warning(
+            "%s: %d withdrawal(s) arrived with neither a reference nor a timestamp - "
+            "these cannot be told apart, so all but the first are dropped as already seen",
+            label, len(unidentifiable),
+        )
+        if self._operator_alerter is None:
+            return
+        self._operator_alerter.page(
+            rule="withdrawal_cannot_be_identified",
+            severity="HIGH",
+            message=(
+                f"{exchange} sent {len(unidentifiable)} withdrawal(s) on {label} with neither an "
+                f"order id/txid nor a timestamp. Withdrawals like these cannot be told apart from "
+                f"each other, so only the first is alerted on and any further identical ones are "
+                f"dropped as already seen - a MISSED CRITICAL on the money-leaving path. This is "
+                f"an exchange response-format problem; check the adapter and the exchange's API "
+                f"changelog."
+            ),
+            evidence={
+                "account_label": label,
+                "exchange": exchange,
+                "count": len(unidentifiable),
+                "example": {k: unidentifiable[0].get(k)
+                            for k in ("currency", "amount", "address", "network")},
+            },
+            account_id=account_id,
+            dedup_scope=exchange,
+        )
 
     def _account_contact(self, account_id: int) -> tuple[list[str], list[str]]:
         with self._db.cursor() as cur:
@@ -299,6 +353,11 @@ class AccountPoller:
         last_run_iso = state.get("last_fast_loop_at")
 
         # --- Withdrawals: creation, unseen address, burst -------------------
+        # Checked BEFORE record_seen_withdrawal, because that call is what
+        # swallows the duplicate - by the time it has returned False the record
+        # is gone and there is nothing left to notice (#67).
+        self._report_unidentifiable(account_id, label, account_row, withdrawals)
+
         new_withdrawals = [w for w in withdrawals if record_seen_withdrawal(self._db, account_id, w)]
 
         for detection in detect_new_withdrawals(new_withdrawals):

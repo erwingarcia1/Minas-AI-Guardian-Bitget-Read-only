@@ -214,16 +214,39 @@ def commits_for(issue: dict) -> list[str]:
     return ordered
 
 
+# A check that went red. Deliberately a list of what *is* red rather than
+# "anything that isn't success": a cancelled or timed-out run proved nothing, and
+# treating either as clean is how an unverified commit gets promoted unattended.
+RED_CONCLUSIONS = frozenset({
+    "failure", "cancelled", "timed_out", "action_required", "startup_failure",
+})
+
+
 def ci_for(sha: str) -> str | None:
-    """'success', 'failure', or None when GitHub has no check runs for it."""
+    """'success', 'failure', or None when nothing conclusive ran.
+
+    Three answers, not two, because `skipped` is neither. This was
+    `all(c == "success")`, and the weekly mutation workflow is conditional - so
+    GitHub records it as `skipped` on every push and that expression returned
+    "failure" for every commit in this repository, permanently. The row it
+    gated then read "CI failed on <sha>" about commits whose CI was green, and
+    `--apply` could never act on anything. Nothing looked broken; the audit
+    printed its table either way.
+
+    A skipped or neutral check did not run, so it is not evidence of failure -
+    but neither is it evidence of success, which is why a commit where
+    *everything* was skipped returns None rather than "success". The caller
+    already reports None as "CI unknown" and hands that row to a person."""
     out = _run(["gh", "api", f"repos/:owner/:repo/commits/{sha}/check-runs",
                 "--jq", "[.check_runs[].conclusion] | join(\",\")"], check=False).strip()
-    if not out:
-        return None
-    conclusions = [c for c in out.split(",") if c]
+    conclusions = [c for c in out.split(",") if c] if out else []
     if not conclusions:
         return None
-    return "success" if all(c == "success" for c in conclusions) else "failure"
+    if any(c in RED_CONCLUSIONS for c in conclusions):
+        return "failure"
+    if any(c == "success" for c in conclusions):
+        return "success"
+    return None
 
 
 def tests_reference(issue: dict) -> bool:

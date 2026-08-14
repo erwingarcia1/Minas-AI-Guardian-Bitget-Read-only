@@ -42,6 +42,26 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     "alerts": ("sent_at", "alerts_days"),
     "operator_pages": ("sent_at", "operator_pages_days"),
     "sms_deliveries": ("created_at", "sms_deliveries_days"),
+    # Who silenced which alarm and until when (#30). Forensic, like `events`:
+    # the silence lasts at most a day, the record of who asked for it lasts as
+    # long as the alert it silenced. Keyed on `created_at`, which is safe
+    # because no retention shorter than the 24h snooze cap is expressible -
+    # `days <= 0` means keep forever, so the shortest real window is a day.
+    "snoozes": ("created_at", "snoozes_days"),
+    # Threshold changes (#16). History of what this product was tuned to
+    # notice, on the same long window as `events` - an incident review asks
+    # what the thresholds were at the time, not what they are now.
+    "config_changes": ("changed_at", "config_changes_days"),
+    # Reset tokens live an hour; the RECORD that somebody reset a password at
+    # a given moment is forensic and lives as long as `events`. Pruning on
+    # `created_at` cannot delete a live token: the shortest expressible window
+    # is a day (0 means keep forever) and the longest token life is an hour.
+    "password_resets": ("created_at", "password_resets_days"),
+    # "That was me" (#28). A customer's judgement about one alert, on the same
+    # window as the alert it judges - a mark that outlived its alert would show
+    # in the operator's pattern view with nothing behind it, and a mark deleted
+    # before its alert would make a rule look better than it was.
+    "expected_activity": ("created_at", "expected_activity_days"),
     # Dedup state, not history. See the module docstring: too short and old
     # movements re-alert.
     "seen_withdrawals": ("first_seen_at", "dedup_days"),
@@ -61,6 +81,11 @@ KEEP_LATEST_PER_ACCOUNT: dict[str, tuple[str, str]] = {
 # identity and configuration (deleting a row removes a person or a setting), and
 # state tables that hold exactly one row per account.
 NEVER_PRUNE = frozenset({
+    # Deleting an enrolment silently turns 2FA OFF for that person, and
+    # deleting a recovery code silently removes their way back in. Both are
+    # current state, not history (#32).
+    "totp_enrolments",
+    "totp_recovery_codes",
     "accounts",
     "poll_state",
     "known_addresses",     # a pruned address is a "never seen before" CRITICAL

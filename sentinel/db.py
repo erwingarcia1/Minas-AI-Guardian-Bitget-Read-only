@@ -10,6 +10,24 @@ from typing import Iterator
 SCHEMA_PATH = Path(__file__).parent / "schema.sql"
 
 
+def _migration_already_applied(exc: sqlite3.OperationalError) -> bool:
+    """True only for the ordinary no-op: a column that is already there.
+
+    Every open runs every migration, so re-adding an existing column raising is
+    expected. The problem was that it raises the *same exception class* as a
+    migration that genuinely failed - a renamed table, a locked database, a
+    typo in the DDL - and suppressing the class made those indistinguishable.
+    A database that had not actually migrated then started the service anyway,
+    and every query written against the new shape failed somewhere far from the
+    cause (#58, group D).
+
+    Matching on the message is narrow on purpose. An error this function does
+    not recognise is a reason to stop, not to guess: the cost of stopping is a
+    failed start an operator can read, and the cost of guessing is a schema
+    nobody knows is wrong."""
+    return "duplicate column name" in str(exc).lower()
+
+
 class Database:
     """Thin SQLite wrapper. Postgres replaces this in Phase 2 at scale;
     the schema is deliberately simple SQL so that move isn't a rewrite."""
@@ -89,6 +107,17 @@ class Database:
             # Nullable on purpose (G-50): a detector firing has no person behind
             # it, and existing rows are not backfilled with a guess.
             "ALTER TABLE alerts ADD COLUMN acknowledged_by TEXT",
+            # Set when a customer had snoozed this alert, so it was detected and
+            # recorded but deliberately not delivered. Distinct from
+            # delivered_to = 0, which means we tried and reached nobody (#57).
+            "ALTER TABLE alerts ADD COLUMN snoozed_until TEXT",
+            # Bumped whenever a member's password changes. Baked into every
+            # session cookie and checked on every request, so raising it
+            # retires every cookie ever issued to that member - the only way to
+            # "sign out all other sessions" when sessions are stateless HMACs
+            # with nothing server-side to delete (#33).
+            "ALTER TABLE portal_members ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 1",
+            "ALTER TABLE operators ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE events ADD COLUMN actor TEXT",
             "ALTER TABLE accounts ADD COLUMN exchange TEXT NOT NULL DEFAULT 'bitget'",
             "ALTER TABLE accounts ADD COLUMN alert_email TEXT",
@@ -102,9 +131,23 @@ class Database:
             "ALTER TABLE accounts ADD COLUMN sms_alerts_enabled INTEGER NOT NULL DEFAULT 1",
         )
         for ddl in migrations:
-            # Already-applied ALTERs raise; that is the no-op case, not a failure.
-            with contextlib.suppress(sqlite3.OperationalError):
+            # Re-adding an existing column raises, and that IS the ordinary
+            # no-op - every open runs every migration. But it raises the same
+            # exception class as a migration that genuinely failed: a renamed
+            # table, a locked database, a typo in the DDL. Suppressing the
+            # class made those indistinguishable, so a database that had not
+            # actually migrated started the service anyway and every query
+            # written against the new shape failed somewhere far from the
+            # cause (#58, group D).
+            #
+            # Match on the message rather than the class. Narrow on purpose: an
+            # error this code does not recognise is a reason to stop, not to
+            # guess.
+            try:
                 self._conn.execute(ddl)
+            except sqlite3.OperationalError as exc:
+                if not _migration_already_applied(exc):
+                    raise
         self._conn.commit()
 
     @contextmanager

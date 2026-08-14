@@ -13,6 +13,417 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Added
+- **`detectors/withdrawal.py` covered by hand (#65).** The CRITICAL
+  money-leaving path, and the module the automated mutation check is
+  structurally blind to: it has no conditionals, so it produces no
+  decision-point mutants and the silence read like coverage.
+
+  Unrestricted mutation score over the module alone, via the new
+  `scripts/mutation-module.sh`: **59 mutants, 40 surviving (67.8%) before, 0
+  surviving (0.0%) after.** The automated floor did not move and cannot.
+
+  The tests work down the evidence dict field by field, asking what a wrong or
+  missing value costs. `order_id` is the one that matters: `_dedup_key` skips
+  evidence fields that are `None`, so an empty `order_id` silently *widens* the
+  dedup identity rather than failing — two withdrawals become one alert and the
+  second is suppressed for a whole CRITICAL cooldown. That is G-11's shape, and
+  nothing had pinned that the derived identity introduced to fix G-11 actually
+  distinguishes two withdrawals.
+
+### Added
+- **Two-step sign-in and a member security page (G-28, #32).** `/security` in
+  the portal: turn two-factor on, see the recovery codes once, turn it off
+  again with a current code.
+
+  Sign-in is now two steps when 2FA is on. A correct password issues **no
+  session cookie** — only a short-lived signed *pending* token proving that
+  this browser presented a correct password moments ago. The session comes
+  after the code. If a cookie were issued at step one the second factor would
+  be decoration.
+
+  The pending token is deliberately not interchangeable with a session: it is
+  signed over a different context, expires in minutes rather than hours, and
+  the email comes from the token rather than from the form — reading it from a
+  form field would let anyone reaching the endpoint name whichever account they
+  liked.
+
+  Failed codes count on the same throttle as failed passwords. Six digits is a
+  million guesses, and an endpoint that accepts them as fast as they arrive is
+  not a second factor.
+
+- **Two-factor authentication (G-28, #32).** RFC 6238 TOTP on `hmac` and
+  `hashlib` — **no new dependency**. This is the module that decides whether
+  somebody gets into the thing protecting a customer's exchange accounts, and
+  a supply-chain dependency inside the authentication path of a security
+  product is a worse trade than forty lines of HMAC.
+
+  Built against a written list of attacks, each with a probe that breaks the
+  guard and confirms a test dies:
+
+  - **Replay.** A code is valid for up to ninety seconds — long enough for
+    somebody who read it over a shoulder or found it in a proxy log.
+    `verify_code` returns the *step* it matched, the caller stores it, and
+    every step at or below it is then refused. Blocking only the exact code
+    would leave the skew tolerance as a replay window.
+  - **A widened window.** ±1 step, and `SKEW_STEPS` is a constant rather than
+    a parameter — a call site that could widen it eventually will.
+  - **Reading the secret.** Encrypted at rest with the same cipher as exchange
+    API keys.
+  - **Turning it off with a stolen session.** Disabling requires a current
+    code — proof of possession, not proof of a cookie — and emails the owner.
+    2FA that whoever holds the session can remove protects nothing an attacker
+    cannot undo in one click.
+  - **Re-enrolling over live 2FA**, which would be a reset with no proof of
+    possession. Refused while a confirmed enrolment exists.
+  - **Locking the customer out during enrolment.** The secret is stored so it
+    can be scanned, but 2FA is not *in force* until a code has verified.
+  - **Recovery codes**, which bypass the second factor and are therefore worth
+    what the password is: 48 bits, hashed at rest, single-use, and retired
+    when the secret they were printed against is.
+
+  **Operator 2FA is not optional.** Both halves: an enrolled operator cannot
+  disable it, and `operator_login_requires_code` returns True regardless of
+  enrolment, so an *unenrolled* operator cannot complete a sign-in either.
+  Without the second half, "operators must have 2FA" would be satisfied by
+  nobody ever enrolling.
+
+### Added
+- **Customers can reset a forgotten password (G-29, #33).** `/forgot` and
+  `/reset` in the member portal, linked from the sign-in page.
+
+  A reset flow is an authentication bypass by design — it hands access to
+  someone who cannot prove who they are — so it is built against a written
+  list of attacks rather than against the four criteria:
+
+  - **Customer enumeration.** The response is one sentence, identical for a
+    known and an unknown address, and **both paths are padded to a common
+    timing floor**. Issuing a token writes twice and sends mail; an unknown
+    address does neither, and without equalisation a stopwatch answers the
+    question the wording refuses to. A Minas customer is by definition
+    somebody holding crypto worth monitoring.
+  - **Token theft from a database read, a backup or a log.** Only the SHA-256
+    of the token is stored. The plaintext exists once, in one email.
+  - **Reuse.** Single-use, one hour maximum, and the TTL is *capped* rather
+    than trusted — a caller passing a longer one cannot mint a link that
+    outlives the promise. Requesting a new link retires the old one, so a
+    mailbox does not accumulate standing bearer credentials.
+  - **Keeping a session obtained before the compromise was noticed.** New
+    `session_epoch` on `portal_members`, baked into every cookie and checked
+    on every request. Bumping it on a password change retires every cookie
+    ever issued to that member — including on the ops dashboard's reset, which
+    is the path used when a customer phones in compromised.
+  - **A silent password change.** Every change emails the owner. Not a
+    receipt — a tripwire. It is the only signal they will get that somebody
+    else has their mailbox, and it is guarded so a dead SMTP server cannot
+    leave a locked-out customer locked out.
+
+  The reset page renders identically for a valid and an invalid token:
+  validating on GET would burn a single-use token just to draw a form, and
+  would be an oracle for testing guesses without spending an attempt.
+
+  No session is issued on a successful reset. Setting a password proves
+  control of a mailbox, not knowledge of the password, and signing them
+  straight in would make the link a login.
+
+### Changed
+- **The ops dashboard now says what a portal credential will open (#61).**
+  The "Generate portal password" button sits on one account's page and read as
+  an action on that account. It is not — portal identity is the email, so the
+  credential opens every account that address is a contact on, including ones
+  the operator was not looking at.
+
+  The card now lists those accounts **by name, before the button**. Not a
+  generic caution: a warning shown every time is a warning nobody reads, so it
+  appears only when there is genuinely more than this account in scope.
+
+  The affordance is fixed; the *model* is unchanged and is logged as decision
+  10. Per-account credentials are a join table, a migration and a question
+  about what portal identity is — but nobody can now share three accounts
+  while believing they shared one.
+
+### Added
+- **Escalation reaches the customer's own contacts, and tells Minas it
+  happened (G-23, #27).** Two of that issue's four criteria; the *timings*
+  remain the product decision it is blocked on.
+
+  Escalation went to the **global** severity channels — the same ones the
+  original alert used. So an unacknowledged CRITICAL re-fired down exactly the
+  path that had already failed to get a response, and the customer's own email
+  and phone, including the secondary contact G-21 exists to provide, never saw
+  it. Escalation that repeats the unanswered channel is not escalation.
+
+  It now also goes through `ContactRouter` to both the primary and secondary
+  contacts, guarded on its own so a failing SMTP cannot take the global
+  escalation down with it (#57's rule).
+
+  And every escalation pages an operator, not only the ones that fail to
+  deliver. `escalation_delivered_to_nobody` is about our machinery breaking;
+  `critical_alert_escalated` is about the customer not answering a CRITICAL for
+  the full window. Both are worth knowing, and both fire when both are true.
+
+  `Engine` now accepts a `ContactRouter` rather than building one privately —
+  a private one could not be given to the escalator, and could not carry the
+  operator alerter it needs for #58's missing-provider page.
+
+### Added
+- **Every incident has its own page (G-25, #29).** `/incident?id=N` in the
+  member portal: what was detected, when, on which account, the balances as
+  they were **at the time**, the full evidence, and a
+  detection → notification → acknowledgement timeline. Linked from every alert
+  row.
+
+  The page is evidence — a customer hands it to an exchange, an insurer or the
+  police — so the constraint that shaped it is what it is *allowed to claim*.
+  An alert with `delivered_to = 0` was detected and reached nobody (#57), and
+  the page says exactly that rather than rendering it as "notified" because a
+  row exists. Undoing that distinction in the one document where it matters
+  most would be the worst thing this page could do. An unacknowledged incident
+  says "not acknowledged" rather than omitting the stage, because an absent
+  row reads as an unfinished page rather than as a fact.
+
+  Balances come from the snapshots either side of the alert, never the current
+  balance: the reader is reconstructing a past state.
+
+  **Export is the browser's print-to-PDF**, with print styles, not a generated
+  file. A PDF library is a new dependency in a security product, server-side
+  rendering drifts from what the customer actually saw, and the browser's own
+  footer carries the URL and a timestamp — better provenance for evidence than
+  a document we composed ourselves.
+
+  **Not built:** the "what to do next" wording. That is advice with
+  consequences and the wording is the whole of it — logged as decision 9.
+
+### Added
+- **Group A of the logged-and-swallowed sweep now pages (#58).** Three
+  conditions, chosen on one test: is this *permanent for the life of the
+  process* or *the last resort*, rather than a transient the next cycle
+  retries. A page for every entry in that issue would train an operator to
+  ignore the channel, which is the same outcome as not paging at all.
+
+  **Escalation reached nobody** — CRITICAL, and the only entry with a real
+  claim on it. Escalation is what happens when a CRITICAL goes unacknowledged;
+  there is nothing after it. Only on *zero* channels delivering: one dead
+  channel alongside a working one is degraded, not uninformed.
+
+  **A channel routed for a severity but never configured** — HIGH, at startup.
+  Every alert of that severity is under-delivered for the whole run. Also pages
+  when routing *falls back to defaults*, which is arguably worse: the alerts go
+  somewhere nobody chose.
+
+  **A contact channel set on an account with no provider** — HIGH, once per
+  channel per process. Every alert that account should receive through it
+  silently never happens.
+
+  Deliberately **not** paged, and commented so the next sweep doesn't
+  re-litigate it: per-event delivery failures. One bounced email is noise; a
+  rising rate is a broken SMTP config, which is a metric-and-alarm shape.
+
+- **An account onboarded with a partial baseline is now visible (#58, group
+  C).** Seeding trading and transfer history is best-effort on purpose — a
+  broken exchange endpoint should not block onboarding, and that is unchanged.
+  But the consequence lands later and on the customer: an account seeded
+  without its trading history false-positives on `never_touched_pair_activity`
+  for pairs they have always traded, and nothing distinguished it from an
+  account that started complete.
+
+  The gap is now recorded as a `baseline_seed_incomplete` event **on the
+  account**, so months later the reason is attached to the thing being
+  investigated rather than to whatever log file was open at the time — and
+  paged, because it is fixable now by re-seeding. `sentinel onboard` prints it
+  to stderr instead of paging: the operator who ran the command is standing in
+  front of the output, and paging someone about something they are currently
+  reading is how a channel gets muted.
+
+### Fixed
+- **A genuinely failed migration no longer looks like a no-op (#58, group D).**
+  Every migration ran under `contextlib.suppress(sqlite3.OperationalError)`
+  because re-adding an existing column raises — but so does a renamed table, a
+  locked database, or a typo in the DDL. Those were indistinguishable, so a
+  database that had not actually migrated started the service anyway and every
+  query against the new shape failed somewhere far from the cause. Only
+  "duplicate column name" is a no-op now; anything else stops the process.
+
+- **A withdrawal we cannot identify no longer disappears quietly (#67).** When
+  an exchange sends a withdrawal with neither an `id`/`txid` nor a timestamp,
+  its derived identity is a digest of coin, amount, address, tag, network and
+  type — so two separate withdrawals of the same amount to the same address
+  collide, and every one after the first is dropped as "already seen".
+
+  That is a missed CRITICAL on the money-leaving path, and it happened in
+  complete silence: no log, no metric, no page, and a poll that reported
+  success. The identity docstring described the limitation and called it
+  something an operator should look at directly. Nobody was looking, because
+  nothing told them — documentation is not notification.
+
+  The condition now pages the operator at HIGH and increments
+  `sentinel_unidentifiable_withdrawals_total`. **The collision itself is not
+  fixed**: the options for fixing it trade against the property that one
+  settling withdrawal keeps one identity and does not re-page the customer on
+  every poll, and none of them should be chosen without knowing how often this
+  happens. The counter is what makes that knowable.
+
+  Checked *before* `record_seen_withdrawal`, since that call is what swallows
+  the duplicate — after it there is nothing left to notice. Counted per record
+  so the frequency is real, paged once per poll because the condition is about
+  the exchange's response format rather than any one record.
+
+- **Both mutation scripts aborted on a perfect score.** `grep` exits 1 when it
+  matches nothing, and "nothing" here is the survivor list — so under
+  `set -o pipefail` the run died at exactly the moment every mutant was killed,
+  printing no number. Found by being the first module to reach zero.
+
+### Added
+- **Snooze caps are per severity (G-26, #30, decision 8 answered).** CRITICAL
+  1 hour, HIGH 4 hours, MEDIUM and LOW 24 hours, in
+  `alerting.snooze_cap_hours`.
+
+  Acknowledging already stops escalation and already says "I have seen this"; a
+  snooze only suppresses *repeats*. The only legitimate reason to suppress
+  repeats of a CRITICAL is that you are dealing with it right now — a short
+  window by definition. A drain unfolds over minutes to hours, so at 24 hours a
+  CRITICAL snooze was long enough for the rest of one to finish in silence.
+  Re-snoozing costs one tap and forces a fresh decision.
+
+  A configured cap of `0` means that severity cannot be snoozed at all. The
+  lookup reads it with `is not None` rather than truthiness — a deliberate zero
+  read as "not set" would hand back the built-in cap and silently re-enable
+  the suppression an owner had turned off. An unrecognised severity gets the
+  **shortest** cap, not the longest.
+
+- **Threshold changes are recorded, with a name where there is one (G-12,
+  #16).** The last criterion on #16, blocked since March on there being no
+  operator identities; #54 unblocked it.
+
+  A detection threshold is the difference between an alert and silence, so an
+  unrecorded threshold change is an unrecorded change to *what this product
+  notices*. Take `polling.fast_loop_seconds` from 45 to 3600 and the account is
+  effectively unwatched while every dashboard still reads healthy.
+
+  Two paths, deliberately distinguishable:
+
+  `sentinel set-threshold --as <operator> <setting> <value>` changes one
+  threshold attributably. It validates against the schema **before** writing —
+  a bad value on disk means the service falls back to defaults for that whole
+  section until somebody notices, which is the G-12 failure with an extra step,
+  and this command would have been the thing that caused it.
+
+  An edit made directly to `rules.yaml` is caught by the reload diff and
+  recorded with **no actor**. That is not a gap waiting to be filled: nobody
+  can say who edited a file on a server, and writing in the process owner or
+  `system` would make the log claim a person acted. An unattributed threshold
+  change is itself the finding.
+
+  New `config_changes` table rather than rows in `events`, whose `account_id`
+  is `NOT NULL` — a threshold is fleet-wide and belongs to no customer, and
+  relaxing that column means rebuilding the forensic log.
+
+  The recorder is wrapped so that a failure to write the audit line can never
+  stop the reload. Running thresholds older than the file is the exact failure
+  G-12 exists to prevent, and reintroducing it through the logging of it would
+  be a poor joke.
+
+- **Customers can snooze a specific alert (G-26, #30).** New `snoozes` table,
+  a control on every unacknowledged alert row, and a check in `dispatch` that
+  withholds the delivery while a snooze is live.
+
+  Three properties keep this from being a way to turn the product off:
+
+  A snooze is keyed on the alert's **dedup key**, not its rule. Snoozing
+  "withdrawal to an unrecognised address" because you recognise *this* address
+  leaves the next one — to a different address, which is the case the rule
+  exists for — as loud as ever.
+
+  A snooze **always expires**. `expires_at` is NOT NULL and the duration is
+  clamped where the row is written rather than in the form, so the table cannot
+  represent a permanent mute even if every caller is wrong. A cap enforced only
+  in a dropdown is not a cap; the form is a POST that can be retyped.
+
+  A snooze **silences the phone, not the monitoring**. The detection still
+  runs, the `alerts` row is still written, and the portal still shows it —
+  marked `snoozed_until`, which is deliberately a different column from
+  `delivered_to = 0`. That one means we tried to tell someone and reached
+  nobody (#57); sharing it would turn every snooze into a false report of a
+  broken alert channel.
+
+  Escalation holds while a snooze is live and resumes when it expires — which
+  is what snoozes expiring is *for*.
+
+  **Left undecided:** whether a CRITICAL should be snoozable for the same 24
+  hours as everything else. The cap is derived from the digest cadence, which
+  is honest for a MEDIUM and an assumption for a CRITICAL. Logged as decision
+  8 in `docs/DECISIONS-NEEDED.md` with the concrete risk written out, rather
+  than picking a shorter number by feel.
+
+- **Customers can acknowledge their own alerts from the portal (G-22, #26).**
+  Acknowledgement existed for operators (`sentinel acknowledge --as <name>`,
+  #54) but there was no way for the person the alert is *about* to say they
+  have seen it. Each unacknowledged alert now carries an Acknowledge button in
+  its own row; acknowledged ones show who acknowledged it and how long the
+  alert waited.
+
+  The elapsed time is the point of that last part: four minutes means someone
+  read the alert, nine hours means someone eventually found it, and until now
+  the two timestamps existed but nobody ever subtracted them.
+
+  This is the first member-facing **write** in the portal, and the first thing
+  a customer can do that makes the product quieter — acknowledging stops
+  escalation. So the account scope lives inside the UPDATE statement itself,
+  not in a check before it, and a member acknowledging an alert that isn't
+  theirs gets the same not-found page as one that doesn't exist.
+
+  **Not built: acknowledging from a link in the alert email.** "One tap from
+  the alert" could mean a tokenised URL that acknowledges without a login.
+  That would let anyone holding the email — including whoever compromised the
+  mailbox that the account takeover started from — silence the alarm about it.
+  The button is one tap from the alert *in the portal*, behind the session.
+
+- **13 more tests pinning thresholds and evidence (#66).** Decision-point
+  mutation score **81% → 92%**; combined with the commit below, **60% → 92%**.
+  Every threshold in the product is a comparison, and every one of them
+  survived being loosened or tightened by one notch. A boundary is the one
+  input an attacker can choose — a withdrawal timed to land exactly on the
+  window edge, a fee at exactly the multiplier — so these were the values most
+  worth checking and the ones nothing checked. Also pinned: alert evidence
+  reports the quantity that **executed**, not the quantity ordered. The alert
+  still fires with the wrong number otherwise, and the number is what the
+  recipient acts on.
+
+  One boundary was a live false-alarm risk: a fee baseline of exactly zero —
+  what every account has on its first observation — must seed rather than
+  alert. Tightened by one character it becomes `spent > 0`, and every account
+  alerts on the first fee it ever pays.
+
+  The eight remaining survivors are documented in `scripts/mutation-check.sh`
+  as not gaps: two equivalent mutants with no distinguishing input, and six
+  `or` chains that only pick wording for a log line.
+
+- **23 tests pinning the outflow-attribution and skip-vs-stop decisions
+  (mutation survivors, #66).** The decision-point mutation score went from
+  **60% to 81%** — 43 surviving mutants down to 20 — with no production code
+  changed, because in every case the code was already right and nothing was
+  holding it there.
+
+  Two clusters, chosen by consequence rather than by count:
+
+  `tests/test_outflow_attribution.py` covers
+  `quantity_drop._explained_outflow_for_coin`, the function that decides whether
+  a balance drop is *explained*. Mutating `and` to `or` in its side/currency
+  checks made a sell of a **different** coin count as an explanation for this
+  coin's drop — a real theft, silently marked accounted-for, no alert. That is
+  the worst failure this product has, and nothing failed. The tests are grouped
+  by which way the error runs: over-crediting (theft looks explained) and
+  under-crediting (the customer gets a CRITICAL about their own trade).
+
+  `tests/test_skip_does_not_stop.py` covers the eight `continue` statements that
+  survived mutation to `break`. Every detector loop skips records it can't judge
+  — no reference price, no timestamp, no currency. Turned into `break`, the
+  **first** unjudgeable record ends the scan and every later record in that poll
+  goes unexamined. Each test puts a skippable record first and a detectable one
+  second. Both are reachable in production: `reference_prices` only holds symbols
+  whose ticker fetch succeeded, and the poller's per-symbol fallback is capped at
+  ten.
+
 ### Changed
 - **A rejected rules config no longer stops the service from starting
   (revises G-12, #16).** The original behaviour — refuse to start when no valid

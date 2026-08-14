@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import getpass
 import json
 import logging
@@ -87,7 +88,7 @@ def _build_named_channels() -> dict[str, object]:
     return named
 
 
-def build_channels(rules: RulesConfig) -> dict[str, list]:
+def build_channels(rules: RulesConfig, problems: list | None = None) -> dict[str, list]:
     """severity -> [channel objects], from alerting.routing in rules.yaml.
     'digest' entries are intentionally skipped here: MEDIUM/LOW alerts are
     stored (dedup still applies) and delivered by the `sentinel digest`
@@ -103,6 +104,8 @@ def build_channels(rules: RulesConfig) -> dict[str, list]:
                 "channel is an alert that is never delivered.",
                 severity, ", ".join(routed),
             )
+            if problems is not None:
+                problems.append({"kind": "fallback", "channel": None, "severity": severity})
         resolved = []
         for name in routed:
             if name == "digest":
@@ -110,6 +113,13 @@ def build_channels(rules: RulesConfig) -> dict[str, list]:
             channel = named.get(str(name))
             if channel is None:
                 logger.warning("channel '%s' routed for %s but not configured (missing env vars)", name, severity)
+                # Collected rather than paged from here: the operator alerter
+                # is constructed *from* the channels this function returns, so
+                # paging inside it would need the thing being built. The caller
+                # pages once the alerter exists (#58, group A).
+                if problems is not None:
+                    problems.append({"kind": "unconfigured", "channel": str(name),
+                                     "severity": severity})
                 continue
             resolved.append(channel)
         channels[severity] = resolved
@@ -176,6 +186,30 @@ def cmd_onboard(args: argparse.Namespace) -> int:
         return 1
 
     print(f"Onboarded '{result.label}' ({exchange}) as account id {result.account_id}")
+
+    # No operator alerter on this path, and deliberately none: the person who
+    # ran this command is standing in front of the output, and paging somebody
+    # about something they are currently reading is how a channel gets muted.
+    # But the gap must not be silent, so it is printed loudly here and recorded
+    # as a `baseline_seed_incomplete` event on the account either way (#58,
+    # group C).
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT payload_json FROM events WHERE account_id = ? "
+            "AND event_type = 'baseline_seed_incomplete'",
+            (result.account_id,),
+        )
+        gaps = [r["payload_json"] for r in cur.fetchall()]
+    if gaps:
+        print(
+            f"\nWARNING: {len(gaps)} part(s) of this account's history could not be read from "
+            f"the exchange. It is monitored, but detectors that compare against history will "
+            f"raise false positives on activity this customer has always had:",
+            file=sys.stderr,
+        )
+        for gap in gaps:
+            print(f"  {gap}", file=sys.stderr)
+        print("Re-onboard or re-seed once the exchange endpoint is working.", file=sys.stderr)
     return 0
 
 
@@ -247,15 +281,24 @@ def _print_degraded_warning() -> None:
 
 def cmd_run(args: argparse.Namespace) -> int:
     _setup_logging()
+    from sentinel.alerts.contact import ContactRouter
     from sentinel.alerts.operator import OperatorAlerter
     from sentinel.dashboard import serve_dashboard
     from sentinel.engine import Engine
+    from sentinel.events import record_config_changes
     from sentinel.metrics import Metrics
 
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     cipher = CredentialCipher()
-    rules = RulesConfig(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
-    channels = build_channels(rules)
+    # Threshold changes go into the audit trail (G-12, #16). Wired here rather
+    # than inside RulesConfig so the config layer stays free of the database -
+    # it is constructed and validated before there is one.
+    rules = RulesConfig(
+        _env("SENTINEL_RULES_PATH", "./config/rules.yaml"),
+        on_change=lambda changes: record_config_changes(db, changes),
+    )
+    routing_problems: list = []
+    channels = build_channels(rules, problems=routing_problems)
 
     metrics = Metrics()
     metrics_port = int(_env("SENTINEL_METRICS_PORT", "9109"))
@@ -269,13 +312,49 @@ def cmd_run(args: argparse.Namespace) -> int:
     dashboard_host = _env("SENTINEL_DASHBOARD_HOST", "127.0.0.1")
     # `rules` so the page can say when config/rules.yaml was rejected and the
     # thresholds in force are older than the file (G-12).
-    serve_dashboard(db, cipher, dashboard_port, host=dashboard_host, rules=rules)
+    operator_alerter = OperatorAlerter(db, build_operator_channels(rules), rules)
+
+    # Routing problems are collected by build_channels above and paged here,
+    # once the alerter exists - it is built *from* those channels, so this
+    # cannot happen any earlier (#58, group A). A whole severity routed to a
+    # channel that was never configured is under-delivered for the entire run,
+    # and the log line it used to be is printed once into a file nobody reads.
+    for problem in routing_problems:
+        if problem["kind"] == "fallback":
+            operator_alerter.page(
+                rule="alert_routing_fell_back_to_defaults",
+                severity="HIGH",
+                message=(
+                    f"No usable alert routing is configured for {problem['severity']}, so the "
+                    f"built-in defaults are in use. Alerts of that severity are going wherever "
+                    f"the defaults point, which is not a choice anyone made for this deployment."
+                ),
+                evidence=problem,
+                dedup_scope=f"routing-fallback:{problem['severity']}",
+            )
+        else:
+            operator_alerter.page(
+                rule="alert_channel_routed_but_not_configured",
+                severity="HIGH",
+                message=(
+                    f"Channel '{problem['channel']}' is routed for {problem['severity']} alerts "
+                    f"but has no configuration, so it delivers nothing. Every {problem['severity']} "
+                    f"alert is under-delivered for as long as this process runs. Check the "
+                    f"environment variables for that channel."
+                ),
+                evidence=problem,
+                dedup_scope=f"{problem['channel']}:{problem['severity']}",
+            )
+
+    serve_dashboard(db, cipher, dashboard_port, host=dashboard_host, rules=rules,
+                    operator_alerter=operator_alerter)
 
     from sentinel.portal import serve_portal
 
     portal_port = int(_env("SENTINEL_PORTAL_PORT", "8391"))
     portal_host = _env("SENTINEL_PORTAL_HOST", "127.0.0.1")
-    serve_portal(db, portal_port, host=portal_host)
+    serve_portal(db, portal_port, host=portal_host, rules=rules, cipher=cipher,
+                 metrics=metrics)
     logger.info(
         "dashboard on %s:%d, member portal on %s:%d, metrics on %s:%d",
         dashboard_host, dashboard_port, portal_host, portal_port, metrics_host, metrics_port,
@@ -288,14 +367,20 @@ def cmd_run(args: argparse.Namespace) -> int:
             dashboard_host, dashboard_host, dashboard_port,
         )
 
-    escalation_minutes = rules.get_int("alerting", "escalation_unacknowledged_minutes", default=15)
-    escalator = Escalator(channels.get("CRITICAL", []), escalation_minutes)
+    # One router, shared. The escalator needs it to reach the customer's own
+    # contacts (#27) and it needs the alerter to report a channel with no
+    # provider (#58); a privately-constructed one inside Engine could do
+    # neither.
+    contact_router = ContactRouter(db=db, rules=rules, operator_alerter=operator_alerter)
 
-    operator_alerter = OperatorAlerter(db, build_operator_channels(rules), rules)
+    escalation_minutes = rules.get_int("alerting", "escalation_unacknowledged_minutes", default=15)
+    escalator = Escalator(channels.get("CRITICAL", []), escalation_minutes,
+                          operator_alerter=operator_alerter,
+                          contact_router=contact_router)
 
     engine = Engine(
         db, cipher, rules, channels, metrics=metrics, escalator=escalator,
-        operator_alerter=operator_alerter,
+        operator_alerter=operator_alerter, contact_router=contact_router,
     )
     engine.run()
     return 0
@@ -355,6 +440,85 @@ def cmd_ack(args: argparse.Namespace) -> int:
         return 0
     print(f"alert {args.alert_id} not found or already acknowledged", file=sys.stderr)
     return 1
+
+
+def cmd_set_threshold(args: argparse.Namespace) -> int:
+    """Change one threshold, attributably (G-12, #16).
+
+    The point of this command is not convenience - editing the YAML is easier -
+    it is that an edit made through here carries a name and an edit made with
+    `vi` cannot. Both are recorded; only this one can say who.
+
+    It writes the value and lets the running service pick the change up through
+    the normal mtime reload, rather than reaching into a process it does not
+    own. The audit row is written here, before the file, so a crash between the
+    two leaves a recorded change that did not take effect - visible and
+    harmless - rather than an unrecorded change that did."""
+    import yaml
+
+    from sentinel.config import _to_decimal_leaves, settings_diff
+    from sentinel.events import record_config_changes
+    from sentinel.operators import is_active_operator, list_operators, operator_count
+    from sentinel.rules_schema import validate
+
+    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    actor = getattr(args, "as_operator", None)
+    if operator_count(db) > 0:
+        if not actor:
+            names = ", ".join(o["username"] for o in list_operators(db) if o["status"] == "active")
+            print(
+                f"--as <operator> is required: a threshold change is recorded against a "
+                f"name. Active operators: {names or '(none active)'}",
+                file=sys.stderr,
+            )
+            return 2
+        if not is_active_operator(db, actor):
+            print(f"'{actor}' is not an active operator", file=sys.stderr)
+            return 2
+    elif actor:
+        print("no operator accounts exist - create one with `sentinel operator add`", file=sys.stderr)
+        return 2
+
+    path = Path(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+    try:
+        before = yaml.safe_load(path.read_text()) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        print(f"cannot read {path}: {exc}", file=sys.stderr)
+        return 1
+
+    segments = args.setting.split(".")
+    if len(segments) < 2:
+        print("setting must be dotted, e.g. polling.fast_loop_seconds", file=sys.stderr)
+        return 2
+
+    after = copy.deepcopy(before)
+    node = after
+    for segment in segments[:-1]:
+        node = node.setdefault(segment, {})
+        if not isinstance(node, dict):
+            print(f"{args.setting}: '{segment}' is a value, not a section", file=sys.stderr)
+            return 2
+    node[segments[-1]] = yaml.safe_load(args.value)
+
+    problems = validate(_to_decimal_leaves(after))
+    if problems:
+        # Refused here rather than written and rejected on reload. A bad value
+        # written to disk means the service runs on defaults for that section
+        # until someone notices, which is the G-12 failure with an extra step.
+        for problem in problems:
+            print(f"rejected: {problem}", file=sys.stderr)
+        return 2
+
+    changes = settings_diff(before, after)
+    if not changes:
+        print(f"{args.setting} is already {args.value}")
+        return 0
+
+    record_config_changes(db, changes, actor=actor)
+    path.write_text(yaml.safe_dump(after, sort_keys=False, default_flow_style=False))
+    for setting, old, new in changes:
+        print(f"{setting}: {old} -> {new}" + (f" (by {actor})" if actor else ""))
+    return 0
 
 
 def cmd_operator(args: argparse.Namespace) -> int:
@@ -424,33 +588,71 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
     --alert-email/--alert-phone to set; pass --clear to remove both. Pass
     --sms-alerts on|off to toggle the member's SMS notification preference
     (CRITICAL alerts may still page per alerting.sms_critical_overrides_optout)."""
+    from sentinel.events import append_event, notify_alert_destination_change
+
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    # (event_type, payload) rows to write once the UPDATE has landed. Where
+    # the alerts about an account go is a setting whose silent change is an
+    # attack (redirect the alerts, then drain the account), so every actual
+    # change leaves an event row the customer can read (G-32, #36). Only
+    # diffs are recorded: re-running the command with the same values is not
+    # a change and must not manufacture one in a forensic log.
+    changes: list[tuple[str, dict]] = []
     with db.cursor() as cur:
-        cur.execute("SELECT id FROM accounts WHERE label = ?", (args.label,))
-        if cur.fetchone() is None:
+        cur.execute(
+            "SELECT id, alert_email, alert_phone, sms_alerts_enabled FROM accounts WHERE label = ?",
+            (args.label,),
+        )
+        before = cur.fetchone()
+        if before is None:
             print(f"no account labeled '{args.label}'", file=sys.stderr)
             return 1
+        account_id = before["id"]
         now = datetime.now(timezone.utc).isoformat()
         # getattr: tests (and older callers) build the Namespace by hand
         # without the newer optional flag.
         sms_alerts = getattr(args, "sms_alerts", None)
+        preference_only = False
         if sms_alerts is not None:
+            enabled = 1 if sms_alerts == "on" else 0
             cur.execute(
                 "UPDATE accounts SET sms_alerts_enabled = ?, updated_at = ? WHERE label = ?",
-                (1 if sms_alerts == "on" else 0, now, args.label),
+                (enabled, now, args.label),
             )
+            if enabled != before["sms_alerts_enabled"]:
+                changes.append(("sms_alerts_changed",
+                                {"from": bool(before["sms_alerts_enabled"]),
+                                 "to": bool(enabled)}))
         if args.clear:
             email, phone = None, None
         elif args.alert_email is None and args.alert_phone is None and sms_alerts is not None:
             # Preference-only update: leave the stored destinations untouched.
-            print(f"sms alerts for '{args.label}': {sms_alerts}")
-            return 0
+            preference_only = True
         else:
             email, phone = args.alert_email, args.alert_phone
-        cur.execute(
-            "UPDATE accounts SET alert_email = ?, alert_phone = ?, updated_at = ? WHERE label = ?",
-            (email, phone, now, args.label),
-        )
+        if not preference_only:
+            cur.execute(
+                "UPDATE accounts SET alert_email = ?, alert_phone = ?, updated_at = ? WHERE label = ?",
+                (email, phone, now, args.label),
+            )
+            if (email, phone) != (before["alert_email"], before["alert_phone"]):
+                changes.append(("alert_contact_updated",
+                                {"email_from": before["alert_email"], "email_to": email,
+                                 "phone_from": before["alert_phone"], "phone_to": phone}))
+    for event_type, payload in changes:
+        # actor=None is the truth here: the CLI runs on the server and carries
+        # no operator identity. The unattributed row IS the record - see the
+        # actor note on `config_changes` in schema.sql for the same reasoning.
+        append_event(db, account_id, event_type, "LOW", payload, actor=None)
+        if event_type == "alert_contact_updated":
+            # The address being removed loses sight of this account the moment
+            # the change lands, so the record of it never reaches them. See
+            # notify_alert_destination_change.
+            notify_alert_destination_change(
+                db, args.label, payload["email_from"], payload["email_to"])
+    if preference_only:
+        print(f"sms alerts for '{args.label}': {sms_alerts}")
+        return 0
     suffix = f" sms_alerts={sms_alerts}" if sms_alerts is not None else ""
     print(f"contact for '{args.label}': email={email or '-'} phone={phone or '-'}{suffix}")
     return 0
@@ -530,6 +732,13 @@ def main() -> None:
     ack_parser.add_argument("--as", dest="as_operator", help="Operator acknowledging this alert")
     ack_parser.add_argument("alert_id", type=int)
     ack_parser.set_defaults(func=cmd_ack)
+
+    set_threshold_parser = sub.add_parser(
+        "set-threshold", help="Change one detection threshold, recorded against an operator")
+    set_threshold_parser.add_argument("--as", dest="as_operator", help="Operator making this change")
+    set_threshold_parser.add_argument("setting", help="Dotted path, e.g. polling.fast_loop_seconds")
+    set_threshold_parser.add_argument("value")
+    set_threshold_parser.set_defaults(func=cmd_set_threshold)
 
     triage_parser = sub.add_parser("triage", help="Print an AI incident narrative for an account's recent events")
     triage_parser.add_argument("--label", required=True)
