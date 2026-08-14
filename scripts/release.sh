@@ -197,6 +197,21 @@ open("pyproject.toml", "w").write(new_pp)
 print(f"release: CHANGELOG heading [{version}] — {today}, compare link vs v{prev}, pyproject {version}")
 EOF
 
+# `sentinel.__version__` is read from *installed* metadata, deliberately - a
+# hand-maintained copy in the package would be a third place to disagree. The
+# cost is that bumping pyproject.toml leaves an editable install still
+# reporting the old version, so refresh it before asserting the two agree.
+# Without this the consistency check below can never pass on a developer
+# machine, which the first real release caught.
+#
+# --no-deps because nothing about a version bump changes the dependency set,
+# and resolving them would turn a thirty-second release into a slow one.
+echo "release: refreshing the editable install so the version metadata matches"
+"$PY" -m pip install -e . --no-deps -q \
+  || die "could not refresh the install, so 'sentinel --version' and
+pyproject.toml cannot be shown to agree. The tree has been modified;
+'git checkout -- .' to undo."
+
 # The consistency test is the one that proves the surgery above agreed with
 # itself. Cheap, and it runs against what is about to be committed.
 "$PY" -m pytest tests/test_project_consistency.py -q \

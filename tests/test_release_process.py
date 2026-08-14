@@ -87,8 +87,19 @@ def repo(tmp_path: Path) -> Path:
     # directory produces a python with no site-packages and no pytest.
     venv_bin = repo / ".venv" / "bin"
     venv_bin.mkdir(parents=True)
+    #
+    # The shim also swallows `-m pip`: release.sh refreshes the editable
+    # install after bumping the version, and a fixture repo that declares
+    # itself as `sentinel` must never be installed into the developer's venv —
+    # it would replace the real package with an empty one.
     shim = venv_bin / "python"
-    shim.write_text(f'#!/bin/sh\nexec "{sys.executable}" "$@"\n')
+    shim.write_text(
+        "#!/bin/sh\n"
+        'case "$*" in\n'
+        "  '-m pip '*) exit 0 ;;\n"
+        "esac\n"
+        f'exec "{sys.executable}" "$@"\n'
+    )
     shim.chmod(0o755)
 
     _git(repo, "init", "-q", "-b", "main")
@@ -210,6 +221,27 @@ def test_a_second_release_is_refused_until_there_are_new_notes(repo: Path):
 
     assert result.returncode == 1
     assert "[Unreleased] is empty" in result.stderr
+
+
+def test_release_refreshes_the_install_before_checking_consistency():
+    """Pins the bug the first real release hit.
+
+    `sentinel.__version__` comes from installed metadata on purpose — a copy
+    inside the package would be a third place to disagree with pyproject.toml.
+    The consequence is that bumping the version leaves an editable install
+    still reporting the old one, so `test_the_importable_version_matches_the_
+    package` fails on a developer machine no matter how correct the surgery
+    was. release.sh refused to tag, which was the right call and a useless
+    release.
+
+    Asserted as an ordering rather than behaviour because the fixture repos
+    stub `pip` out — they declare themselves as `sentinel`, and letting them
+    install would replace the real package with an empty one.
+    """
+    script = RELEASE.read_text()
+    refresh = script.index("pip install -e .")
+    check = script.index("pytest tests/test_project_consistency.py")
+    assert refresh < check, "the install must be refreshed before the versions are compared"
 
 
 # --- the deploy gate ---------------------------------------------------------
