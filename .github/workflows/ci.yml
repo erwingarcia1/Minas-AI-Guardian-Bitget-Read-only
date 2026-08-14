@@ -83,8 +83,15 @@ jobs:
           if docker run --rm sentinel-ci-nosha sentinel version; then
             echo "::error::a build with no GIT_SHA reported success"; exit 1
           fi
-          docker run --rm sentinel-ci-nosha sentinel version 2>/dev/null | grep -q unknown \
+          out=$(docker run --rm sentinel-ci-nosha sentinel version 2>/dev/null || true)
+          echo "$out"
+          echo "$out" | grep -q "commit *unknown" \
             || { echo "::error::expected the commit to be reported as unknown"; exit 1; }
+          # And it must not claim the placeholder came from a build arg - the
+          # `source` field exists to say how we know, so it has to be right
+          # when the answer is "we don't".
+          echo "$out" | grep -q "source *unknown" \
+            || { echo "::error::a build given no commit claimed a provenance"; exit 1; }
 
   # Decision-point mutation score, as a floor that can only go up.
   #

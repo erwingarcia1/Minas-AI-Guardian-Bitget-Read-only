@@ -27,6 +27,13 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   code can reach production". Pushed is no longer sufficient: only released
   code can, because the deploy gate refuses any commit that is not exactly a
   tag.
+- **`sentinel version` claimed a provenance it did not have.** An image built
+  with no `GIT_SHA` reported `commit unknown` and exited non-zero — both right
+  — while reporting `source build-arg`, because the Dockerfile's
+  `ARG GIT_SHA=unknown` default arrives as the literal string and was taken
+  for a real answer. Nothing behavioural was wrong; the lie was in the one
+  field whose job is to say how we know. Found by the new image gate on its
+  first run.
 - **A brittle assertion in the deploy-gate tests.** It scanned the script's
   source for `--force` while stripping the prose that explains its absence, so
   rewording a comment failed the suite. The behavioural checks either side of

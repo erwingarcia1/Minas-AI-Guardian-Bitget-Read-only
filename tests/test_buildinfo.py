@@ -55,6 +55,25 @@ def test_an_unsupplied_commit_reports_unknown_rather_than_guessing(monkeypatch):
     assert buildinfo.short_commit() == "unknown"
 
 
+def test_the_dockerfile_placeholder_is_not_mistaken_for_an_answer(monkeypatch):
+    """`ARG GIT_SHA=unknown` reaches the process as the literal string.
+
+    Found by the CI image-build gate on its first run: an image built with no
+    build arg reported `commit unknown` and exited 1 — both right — while
+    saying `source build-arg`, claiming a provenance that never happened. The
+    exit code was already correct, so nothing behavioural was broken; the lie
+    was in the field that exists to say how we know.
+    """
+    monkeypatch.setenv("SENTINEL_GIT_SHA", "unknown")
+    monkeypatch.setenv("SENTINEL_GIT_TAG", "unknown")
+    monkeypatch.setattr(buildinfo, "_from_git", lambda *a: None)
+
+    info = buildinfo.build_info()
+
+    assert info["commit"] == "unknown"
+    assert info["source"] == "unknown", "a placeholder is not a build arg"
+
+
 def test_a_source_checkout_falls_back_to_git(monkeypatch):
     monkeypatch.delenv("SENTINEL_GIT_SHA", raising=False)
     monkeypatch.delenv("SENTINEL_GIT_TAG", raising=False)

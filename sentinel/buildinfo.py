@@ -57,8 +57,15 @@ def build_info() -> dict[str, str]:
       `git`        read from a checkout at runtime - local/source runs
       `unknown`    not supplied and no checkout to ask; reported as such
     """
+    # The Dockerfile's `ARG GIT_SHA=unknown` default arrives here as the
+    # literal string "unknown", not as an empty value. Treating it as a real
+    # answer would report `source: build-arg` for a build that was given
+    # nothing — naming a provenance that did not happen, in the one field whose
+    # whole job is to say how we know. Absent and "unknown" are the same thing.
     commit = os.environ.get("SENTINEL_GIT_SHA", "").strip()
     tag = os.environ.get("SENTINEL_GIT_TAG", "").strip()
+    commit = "" if commit == UNKNOWN else commit
+    tag = "" if tag == UNKNOWN else tag
     source = "build-arg"
 
     if not commit:
