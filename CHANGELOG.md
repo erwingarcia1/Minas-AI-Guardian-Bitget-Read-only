@@ -44,6 +44,24 @@ or Twilio credentials, terminate the retired us-east-1 instance._
     we can teach the opposite habit: sign in, then look.
 
 ### Fixed
+- **A half-configured SMS provider can no longer shadow a working one** (#70).
+  `build_sms_channel` prefers ClickSend when its credentials are present and
+  falls back to Twilio. Nothing in the suite ever configured a provider *half
+  way*, so nothing held the "both credentials" check in place — and if it ever
+  degraded to "either credential", a stray `CLICKSEND_USERNAME` with no API key
+  would select ClickSend, shadow a fully working Twilio fallback, and fail at
+  delivery time. SMS is CRITICAL-only in the default routing, so what would not
+  arrive is the page that matters most, and the only trace would be a delivery
+  failure after the fact. The behaviour was already correct; there is now
+  something keeping it that way, for ClickSend and for all three Twilio
+  credentials.
+- **The untimestamped-record warning is pinned to naming the record** (#70).
+  The metric an operator is alarmed on says an exchange stopped stamping times;
+  this log line is where whoever was paged looks next, and one that cannot say
+  *which* record lost its timestamp gives them nothing to work with. Decision
+  recorded rather than left open, and the mutation score moved 90% → 98% as a
+  result — the only two survivors left are the two documented equivalent
+  mutants, which stay documented rather than chased. The floor ratchets 88 → 96.
 - **A test run can no longer reach the network** (#68). The suite made real
   network calls with whatever credentials the machine had: `load_dotenv()` was
   the first line of `sentinel.cli.main`, two tests call `main()`, and

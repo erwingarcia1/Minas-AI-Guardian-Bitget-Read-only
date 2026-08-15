@@ -3344,3 +3344,66 @@ this feature inherits it, because a credential write inherits it more sharply
 than a read did.
 
 **Numbers.** 873 → 922 tests. 119 → 129 design-guard probes, all landing.
+
+## #70 · Eleven survivors, named: nine pinned, two left alone
+
+The gate scored 108/119 = 90% against a floor of 88, and the eleven survivors
+were an unexplained number rather than a known position. The issue had already
+split them three ways by reading the diffs; this was the work of acting on it.
+
+**Three real gaps, in `build_sms_channel`.** `cs_user and cs_key` and
+`sid and token and frm`, each able to degrade to `or` with nothing noticing,
+because nothing in the suite ever configured a provider *half way*. Not
+cosmetic: ClickSend is preferred when its credentials are present, so under the
+first mutant a stray `CLICKSEND_USERNAME` with no API key selects ClickSend,
+which then shadows a fully working Twilio fallback and fails at delivery time.
+SMS is CRITICAL-only in the default routing. What does not arrive is the page
+that matters most, and the only trace is a delivery failure after the fact.
+
+**Six that only choose a word, and the decision they posed.** All six are the
+`or` chain picking what to call a record in `_in_window`'s two warnings. They
+change no behaviour - the record is excluded either way, and the metric an
+operator is alarmed on is pinned elsewhere - so the question was whether that
+log line is meant to identify the record.
+
+Decided: it is. The metric says an exchange stopped stamping times; the log
+line is where whoever was paged looks next, and one that cannot say *which*
+record lost its timestamp gives them nothing to work with. Pinned as a property
+rather than as wording - an id where there is one, the symbol where there is
+not, an explicit `<unidentified>` where there is neither - across both
+warnings, since the expression appears twice.
+
+**Two equivalent, left documented.** Unchanged, and the header still explains
+why manufacturing an unreachable input to kill them would pin a fiction.
+
+**Result: 117/119 = 98%.** The only two survivors are those two equivalents,
+so a survivor appearing in this list now is news rather than backlog. Floor
+ratcheted 88 → 96, which is exactly what the script's own `score - 2` rule
+computes.
+
+**A mistake of mine, and what it cost.** I added the three new test files from
+#68 and #69 to the gate's test selection, assuming the new modules needed
+reaching. They do not: the scope is `classify_mutants.py sentinel.detectors
+sentinel.alerts`, so `keyreplacement.py`, `net.py` and `portal.py` produce no
+mutants here whatever they decide. The selection change bought nothing and made
+a slow gate slower. Reverted, and the header now says so, because the next
+person to add a module will make the same assumption.
+
+**The hour I spent guessing.** The first run printed nothing for an hour. I
+formed two confident theories about why - the AST scan in
+`test_no_live_traffic.py`, then the real `ccxt.bitget()` construction, both
+newly added to the selection - and measured them rather than acting: 0.85s and
+0.20s under a tracer. Both wrong. The actual answer is that generation takes
+~25 minutes for this package now, not the ~8 the header claimed when it was
+half the size, and stats collection takes about as long again. The header
+carries the measured numbers now.
+
+Worth recording as a process note rather than a defect: the cost was not the
+wrong theories, it was that a gate which prints nothing for an hour is
+indistinguishable from a hung one, and I killed a healthy run over it. The
+scoring run afterwards had to be done twice anyway - once to get the number,
+once to confirm it against the selection actually being committed, because a
+floor derived from a configuration that is not the one in the repository is a
+number measured against something else.
+
+**Numbers.** Mutation score 90% → 98%, floor 88 → 96. 922 → 932 tests.

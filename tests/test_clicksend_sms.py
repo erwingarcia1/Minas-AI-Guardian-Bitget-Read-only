@@ -71,3 +71,57 @@ def test_factory_none_when_unconfigured(monkeypatch):
         monkeypatch.delenv(k, raising=False)
     assert build_sms_channel(["+1555"]) is None
     assert build_sms_channel([]) is None
+
+
+# --- half-configured providers (#70) ------------------------------------------
+#
+# Three surviving mutants lived here: `cs_user and cs_key` degrading to `or`,
+# and either half of `sid and token and frm` degrading the same way. Nothing in
+# the suite configured a provider half way, so nothing noticed. The code was
+# right; there was simply nothing holding it there.
+
+
+@pytest.mark.parametrize("present,missing", [
+    ("CLICKSEND_USERNAME", "CLICKSEND_API_KEY"),
+    ("CLICKSEND_API_KEY", "CLICKSEND_USERNAME"),
+])
+def test_half_a_clicksend_credential_is_not_a_provider(monkeypatch, present, missing):
+    for key in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.delenv(missing, raising=False)
+    monkeypatch.setenv(present, "half")
+
+    assert build_sms_channel(["+1555"]) is None
+
+
+def test_a_half_configured_clicksend_does_not_shadow_a_working_twilio(monkeypatch):
+    """The one that costs a CRITICAL page.
+
+    ClickSend is *preferred* when its credentials are present, so "present"
+    degrading from both-of-two to either-of-two means a stray
+    CLICKSEND_USERNAME with no API key selects ClickSend - which then shadows a
+    fully working Twilio fallback and fails at delivery time. SMS is
+    CRITICAL-only in the default routing, so what does not arrive is the page
+    that matters most, and the only trace is a delivery failure after the
+    fact."""
+    monkeypatch.setenv("CLICKSEND_USERNAME", "u")
+    monkeypatch.delenv("CLICKSEND_API_KEY", raising=False)
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "sid")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "tok")
+    monkeypatch.setenv("TWILIO_FROM_NUMBER", "+1")
+
+    assert isinstance(build_sms_channel(["+1555"]), TwilioSmsChannel)
+
+
+@pytest.mark.parametrize("missing", ["TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"])
+def test_twilio_needs_all_three_credentials(monkeypatch, missing):
+    """A lone TWILIO_FROM_NUMBER used to be enough to construct a channel with
+    None for the SID and the token - a provider that exists, is chosen, and
+    cannot send."""
+    monkeypatch.delenv("CLICKSEND_USERNAME", raising=False)
+    monkeypatch.delenv("CLICKSEND_API_KEY", raising=False)
+    for key in ("TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER"):
+        monkeypatch.setenv(key, "set")
+    monkeypatch.delenv(missing, raising=False)
+
+    assert build_sms_channel(["+1555"]) is None

@@ -238,3 +238,77 @@ def test_dated_records_are_never_counted():
     )
 
     assert metrics.calls == []
+
+
+# --- the warning has to say WHICH record (#70) --------------------------------
+#
+# Six surviving mutants were all the same expression: the `or` chain choosing
+# what to call the record in these two `logger.warning` calls. They change no
+# behaviour - the record is excluded either way, and the metric an operator is
+# alarmed on is pinned elsewhere - so the question they pose is a decision
+# rather than a defect: is this line supposed to identify the record?
+#
+# It is. The metric says an exchange stopped stamping times; this line is where
+# the operator who was paged goes next, and a warning that cannot say which
+# record lost its timestamp gives them nothing to look at. The property is
+# pinned, not the wording: an id when there is one, the symbol when there is
+# not, and an explicit "<unidentified>" when there is neither - because a
+# message that trails off after "fill" reads like a truncation bug.
+
+
+def _drop_with(record, caplog):
+    import logging
+
+    caplog.set_level(logging.WARNING)
+    caplog.clear()
+    detect_quantity_drop(
+        {"BTC": Decimal("1.0")}, {"BTC": Decimal("0.5")}, [], [record], TOL_PCT, TOL_ABS,
+        window_start_ms=NOW_MS - MINUTE_MS, exchange="binance", account_label="acct-1",
+    )
+    return caplog.text
+
+
+def test_an_undated_record_is_named_by_its_id(caplog):
+    fill = trade_record(symbol="BTC/USDT", side="sell", amount="0.5")
+    fill["id"] = "fill-42"
+    fill.pop("timestamp", None)
+
+    assert "fill-42" in _drop_with(fill, caplog)
+
+
+def test_an_undated_record_with_no_id_is_named_by_its_symbol(caplog):
+    fill = trade_record(symbol="BTC/USDT", side="sell", amount="0.5")
+    fill.pop("id", None)
+    fill.pop("timestamp", None)
+
+    text = _drop_with(fill, caplog)
+    assert "BTC/USDT" in text
+    assert "<unidentified>" not in text
+
+
+def test_an_undated_record_with_neither_says_so_explicitly(caplog):
+    fill = trade_record(side="sell", amount="0.5")
+    fill.pop("id", None)
+    fill.pop("symbol", None)
+    fill.pop("timestamp", None)
+
+    assert "<unidentified>" in _drop_with(fill, caplog)
+
+
+def test_the_same_holds_for_an_unparseable_timestamp(caplog):
+    """The second warning, which is a separate copy of the same expression -
+    and so a separate set of survivors."""
+    fill = trade_record(symbol="BTC/USDT", side="sell", amount="0.5")
+    fill["id"] = "fill-99"
+    fill["timestamp"] = "not-a-number"
+
+    text = _drop_with(fill, caplog)
+    assert "fill-99" in text
+    assert "unparseable" in text
+
+    nameless = trade_record(side="sell", amount="0.5")
+    nameless.pop("id", None)
+    nameless.pop("symbol", None)
+    nameless["timestamp"] = "not-a-number"
+
+    assert "<unidentified>" in _drop_with(nameless, caplog)

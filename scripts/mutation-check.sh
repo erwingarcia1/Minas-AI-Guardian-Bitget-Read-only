@@ -32,8 +32,13 @@
 # 2. `pytest_add_cli_args_test_selection` must be NEWLINE-separated. Space
 #    separation is passed to pytest as a single argument, and pytest reports it
 #    as one unfindable path.
-# 3. Mutant *generation* takes ~8 minutes for this package and is independent of
-#    the tests. It is cached in `mutants/` and only redone with --regenerate,
+# 3. Mutant *generation* is independent of the tests, and slow: ~25 minutes for
+#    this package as of #70, plus a stats-collection pass of similar length
+#    before the first mutant runs. It was ~8 minutes when this note was
+#    written and the package has roughly doubled since; the number is recorded
+#    because a run that prints nothing for the best part of an hour looks
+#    exactly like a hung one, and guessing at the cause costs more than the
+#    wait does. It is cached in `mutants/` and only redone with --regenerate,
 #    when `mutants/` is absent, or when the drift check below finds a stale
 #    non-Python file. Generation always starts by deleting `mutants/`, because
 #    mutmut refreshes only *some* of what it copied - see 6.
@@ -74,8 +79,33 @@
 #   Worth a test only if the log line is something an operator is expected to
 #   act on by name.
 #
+#   Decided, and pinned (#70): it is. The metric an operator is alarmed on says
+#   an exchange stopped stamping times; this line is where whoever was paged
+#   goes next, and a warning that cannot say *which* record lost its timestamp
+#   gives them nothing to look at. `tests/test_detectors_quantity_drop.py` pins
+#   the property rather than the wording - an id where there is one, the symbol
+#   where there is not, and an explicit "<unidentified>" where there is
+#   neither - across both warnings, since the expression appears twice. Six
+#   survivors, one decision.
+#
 # The floor is set below the measured score to leave room for exactly these:
 # it is a ratchet against decisions *becoming* unpinned, not a target to reach.
+#
+# As of #70 those two equivalents are the *only* survivors: 117/119 = 98%. The
+# nine that were addressable are pinned - three in `build_sms_channel` (a
+# provider configured half way), six in the `_in_window` log line. A survivor
+# appearing here now is therefore news, not backlog.
+#
+# ## What this gate does not cover
+#
+# The scope is the two packages named in the `classify_mutants.py` call below:
+# `sentinel.detectors` and `sentinel.alerts`. Everything else in the package -
+# `keyreplacement.py`, `net.py`, `portal.py`, `exchange.py` - produces no
+# mutants here however many decisions it makes, and adding its tests to the
+# selection below buys nothing but a slower run. Those modules are covered by
+# `scripts/probes/design-guards.json` instead. Worth knowing before concluding
+# from a 98% that the security-critical paths are measured: they are, by the
+# other tool.
 #
 # ## Guards that mutmut cannot generate
 #
