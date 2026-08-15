@@ -1,5 +1,79 @@
 # Autonomous work log
 
+> ## Session summary — 2026-08-14/15
+>
+> **Closed:** #68 (the suite's real credentials), #69 (self-serve key
+> replacement), #70 (the eleven mutation survivors). Every unblocked issue in
+> the backlog is now done; what remains waits on decisions 1, 2, 3, 7, 10 and
+> 11, or is p4.
+>
+> ### Numbers
+>
+> Suite 855 → 932 tests. Design-guard probes 109 → 129, all landing. Mutation
+> score 90% → 98%, floor ratcheted 88 → 96. CI green after every push.
+>
+> ### The two defects found by fixing something else
+>
+> Both came from *measuring* rather than reasoning, and neither was the thing
+> being worked on.
+>
+> **The suite was calling Bitget for real.** Found by wrapping a counter around
+> #68's new refusal and running the suite once to see whether anything still
+> tried to open a socket. Nine refusals; eight were the new tests. The ninth
+> was `test_onboard_account_persists_encrypted_on_success`, making two live
+> HTTP requests on every run because `_client_with` mocked five of the seven
+> methods `seed_baseline` calls. Both failures were swallowed as best-effort
+> baseline gaps, so the test passed while onboarding an account with a
+> knowingly incomplete baseline.
+>
+> **A comment that stopped being true.** That helper's docstring said "never
+> hits a live exchange", and it was correct when written. `seed_baseline` grew
+> two more calls and nothing connected the two files. Same shape as everything
+> else in this log: a guarantee written as prose, somewhere with no way to
+> notice it had stopped holding.
+>
+> ### What I would tell someone arriving cold
+>
+> **The fix for a prose guarantee is a scan, not a better comment.**
+> `sentinel/net.py` is the only module allowed to import `requests` or
+> `smtplib`, and a test parses every file in `sentinel/` to keep it that way -
+> so the fifth transport is covered on the day it is written rather than the
+> day somebody remembers. The same shape appears in #69's mocking sweep and in
+> `test_cli_entrypoint.py`'s check that exactly one function calls
+> `load_dotenv`.
+>
+> **A feature that helps can open the failure the product exists to prevent.**
+> #69 accepted a replacement API key from a customer. A key can be genuinely
+> read-only, work perfectly, and be for a *different exchange account* - after
+> which polls succeed, no detector fires, the portal says "watching", and the
+> real account is drained unobserved. Binding the key to a recorded exchange
+> account id is most of that issue's code, and none of its acceptance criteria
+> said so.
+>
+> ### Blocked, and on what
+>
+> | Issue | Waiting on |
+> |---|---|
+> | #37, #63 | decisions 2 and 7 — fire-drill cadence, dead-man's switch |
+> | #27 | decision 1 — escalation timings |
+> | #29 | decision 3's remaining half — how much the runbook may instruct |
+> | #24, #47, #46 | channel defaults; retention periods (needs a lawyer) |
+> | #43, #44 | decision 11 — provider, plans, prices, lapse behaviour |
+> | #61 | decision 10 — per-account credential scoping |
+> | #67 | production frequency data; the counter exists to collect it |
+>
+> ### What I would do next if those were answered
+>
+> **#37 (fire drills) first.** It is the highest-value unbuilt feature in the
+> backlog and the only one that turns "nothing happened" into evidence. #63
+> (the dead-man's switch) is its infrastructure half and shares decision 7.
+>
+> One thing worth deciding early even if built late: **decision 10.** #69 now
+> writes a credential through a portal identity that is an email, so a member
+> who contacts three accounts can replace the key on all three. That model is
+> unchanged and is what decision 10 recommends keeping - but a credential write
+> inherits it more sharply than a read did.
+
 > ## Session summary — 2026-08-13
 >
 > **Closed:** #66 (mutation survivors), #26 (acknowledge), #30 (snooze), #16
