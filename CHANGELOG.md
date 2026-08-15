@@ -44,6 +44,13 @@ or Twilio credentials, terminate the retired us-east-1 instance._
     we can teach the opposite habit: sign in, then look.
 
 ### Fixed
+- **README described a pipeline that had moved on.** It claimed "169 tests
+  across 24 files" against an actual 933, and said CI "validates that `docker
+  compose config` parses" — true until CI started building the image and
+  checking it can name its own commit. Counts are now stated as bounds
+  (`900+`/`70+`) so they degrade gracefully instead of drifting five-fold
+  before anyone notices, and the network refusal that keeps the suite off the
+  wire (#68) is stated where the no-live-exchange claim is made.
 - **A half-configured SMS provider can no longer shadow a working one** (#70).
   `build_sms_channel` prefers ClickSend when its credentials are present and
   falls back to Twilio. Nothing in the suite ever configured a provider *half

@@ -158,9 +158,13 @@ logged and flagged on the dashboard's security-posture panel.
 .venv/bin/python scripts/soak_test.py    # 100 synthetic accounts through the engine
 ```
 
-The suite (169 tests across 24 files) never touches a live exchange — every
-CCXT response is a fixture. CI runs it on every push/PR to `main` and also
-validates that `docker compose config` parses. Latest soak: 100 accounts
+The suite (900+ tests across 70+ files) never touches a live exchange — every
+CCXT response is a fixture, and `sentinel/net.py` refuses to open a connection
+at all while `SENTINEL_ENV=test` or pytest is running, so a test that reaches
+for the network fails rather than sending. CI runs it on every push/PR to
+`main`, validates that `docker compose config` parses, and builds the image to
+check it can name the commit it was built from — a build given none must report
+`unknown` and exit non-zero rather than claim one. Latest soak: 100 accounts
 (5 permanently failing, 3 under scripted attack) — full-fleet cycle well under
 the target, only the attacked accounts fired CRITICALs.
 
