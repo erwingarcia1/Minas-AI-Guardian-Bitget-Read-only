@@ -13,6 +13,39 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+All of this comes from #69. The other entries below change no alerting.
+
+- **Two new HIGH operator pages**, both from the self-service key-replacement
+  door:
+  - `monitoring_key_replacement_wrong_account` — a submitted key is valid and
+    read-only but reports a different `exchange_uid` than the account it is
+    being attached to. Refused and paged, because the failure it prevents is
+    silent: the Guardian would poll somebody else's quiet account, report
+    "watching", and the real one would be drained unobserved.
+  - `monitoring_key_replacement_needs_an_operator` — the customer tried and we
+    could not verify them, so a human has to finish it. This one pages
+    **because a customer is waiting**, which is a queue nobody was watching
+    before.
+- **Accounts that went dark can come back without us.** A customer who
+  revoked our read-only key during a panic could only be restored by an
+  operator being awake; monitoring now resumes on the next poll after they
+  submit a replacement. Expect alerting to restart on accounts that have been
+  silent — including, at the moment monitoring resumes, whatever accumulated
+  while they were dark.
+
+**One transitional effect worth planning for.** The check depends on
+`accounts.exchange_uid`, which is learned at onboarding and refreshed by every
+slow loop. Until an existing account has been through a slow loop after this
+upgrade it has no recorded id, so **every account onboarded before this
+release takes the operator path rather than the self-service one**, and pages
+`..._needs_an_operator` when a customer tries. That clears itself as the slow
+loops run. It does **not** clear for **Binance**, whose API carries no account
+identifier at all — those accounts stay on the operator path permanently, by
+design. Refusing where we cannot verify is the correct trade, but it means the
+first day or so after this deploy is the period when the new door pages most.
+
 ### Added
 - **A customer can replace a revoked monitoring key themselves** (#69, G-3).
   The runbook on every CRITICAL and HIGH alert tells a frightened person to
