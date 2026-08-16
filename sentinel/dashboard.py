@@ -547,7 +547,14 @@ def _portal_access_row(db: Database, account_id: int, email: str | None, contact
     rows = member_accounts(db, email)
     reachable = [r["label"] for r in rows]
     others = [r for r in rows if r["id"] != account_id]
+    # The scope belongs on the button too, not only in the paragraph above it.
+    # The paragraph is read once; the button is what gets clicked, sometimes
+    # months later by somebody who scrolled past the paragraph. If the control
+    # is going to be pressed while thinking "this is an account A action", the
+    # words under the cursor are the last chance to say otherwise (#61).
+    scope = ""
     if others:
+        label += f" — opens {len(reachable)} accounts"
         scope = (
             '<div class="det"><span class="desc">This credential opens '
             f'<b>{len(reachable)} account(s)</b>, not just this one: '
@@ -555,8 +562,6 @@ def _portal_access_row(db: Database, account_id: int, email: str | None, contact
             + ". Portal identity is the email address, so anyone holding this password "
               "sees every account that address is a contact on.</span></div>"
         )
-    else:
-        scope = ""
 
     return (
         f'<div class="det"><span class="desc">{title} — <b>{html.escape(email)}</b> · {status}</span></div>'
@@ -1035,25 +1040,50 @@ def serve_dashboard(
 
             import secrets as _secrets
 
-            from sentinel.portal import set_member_password
+            from sentinel.portal import member_accounts, set_member_password
 
             password = _secrets.token_urlsafe(12)
             set_member_password(db, email, password)
             actor = self._operator()
+            # What this credential opens, resolved at the moment it is issued.
+            # The event below is a forensic record, and the question asked of
+            # it later is "what did this password reach", which the email alone
+            # cannot answer: contacts get added and removed, so replaying
+            # `member_accounts` next month gives a different set than the one
+            # actually handed over (#61).
+            granted = member_accounts(db, email)
+            granted_labels = [str(r["label"]) for r in granted]
             logger.info(
-                "portal password generated for account %d (%s contact) by %s",
+                "portal password generated for account %d (%s contact) by %s - opens %d account(s): %s",
                 aid, contact, actor or "an unattributed operator",
+                len(granted_labels), ", ".join(granted_labels),
             )
             # Handing someone a credential is an act with a person behind it,
             # and it now leaves a row naming them (G-50).
             append_event(
                 db, aid, "member_portal_password_generated", "LOW",
-                {"contact": contact, "email": email.strip().lower()}, actor=actor,
+                {
+                    "contact": contact,
+                    "email": email.strip().lower(),
+                    "granted_account_ids": [int(r["id"]) for r in granted],
+                    "granted_account_labels": granted_labels,
+                },
+                actor=actor,
             )
+            # The confirmation says what was handed over, not just to whom. The
+            # operator is about to send this password to somebody; if the blast
+            # radius is going to surprise them, this is the last moment it can.
+            scope_note = ""
+            if len(granted_labels) > 1:
+                scope_note = (
+                    " This password opens <b>"
+                    + html.escape(", ".join(granted_labels))
+                    + "</b>."
+                )
             notice = (
                 f'<div class="banner ok">✓ Member portal password — {html.escape(title)}, '
                 f"<b>{html.escape(email.strip().lower())}</b>: <code>{html.escape(password)}</code>"
-                " — copy it now, it is shown only once.</div>"
+                " — copy it now, it is shown only once." + scope_note + "</div>"
             )
             self._send(_render_account(db, aid, notice_html=notice).encode())
 

@@ -301,3 +301,103 @@ def test_ops_portal_access_missing_email_is_404(db, cipher):
         assert status == 404
     finally:
         ops.shutdown()
+
+
+# --- what the credential opened, said at issue time and recorded (#61) -------
+
+
+def test_the_confirmation_names_every_account_the_password_opens(db, cipher):
+    """The operator is about to send this password to somebody. If the blast
+    radius is going to surprise them, the confirmation is the last moment it
+    can — after this the credential is out of the building."""
+    from sentinel.dashboard import serve_dashboard
+
+    here = _member_account(db, "bob-trading", "bob@example.com")
+    _member_account(db, "bob-cold", "bob@example.com")
+
+    ops_port = _free_port()
+    ops = serve_dashboard(db, cipher, ops_port)
+    try:
+        status, body, _ = _request(("127.0.0.1", ops_port), "POST", "/portal-access",
+                                   {"account_id": here})
+    finally:
+        ops.shutdown()
+
+    assert status == 200
+    assert "bob-trading" in body and "bob-cold" in body
+    assert "This password opens" in body
+
+
+def test_a_single_account_confirmation_does_not_manufacture_a_warning(db, cipher):
+    from sentinel.dashboard import serve_dashboard
+
+    here = _member_account(db, "carol-only", "carol@example.com")
+
+    ops_port = _free_port()
+    ops = serve_dashboard(db, cipher, ops_port)
+    try:
+        _, body, _ = _request(("127.0.0.1", ops_port), "POST", "/portal-access",
+                              {"account_id": here})
+    finally:
+        ops.shutdown()
+
+    assert "This password opens" not in body
+
+
+def test_the_event_records_what_the_credential_opened(db, cipher):
+    """The forensic question asked later is "what did this password reach",
+    and the email alone cannot answer it. Contacts get added and removed, so
+    replaying `member_accounts` next month gives a different set than the one
+    actually handed over. The grant is recorded as it was at the time."""
+    import json
+
+    from sentinel.dashboard import serve_dashboard
+
+    here = _member_account(db, "dave-trading", "dave@example.com")
+    other = _member_account(db, "dave-cold", "dave@example.com")
+
+    ops_port = _free_port()
+    ops = serve_dashboard(db, cipher, ops_port)
+    try:
+        _request(("127.0.0.1", ops_port), "POST", "/portal-access", {"account_id": here})
+    finally:
+        ops.shutdown()
+
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT payload_json FROM events WHERE event_type = 'member_portal_password_generated'"
+        )
+        row = cur.fetchone()
+
+    assert row is not None, "handing out a credential left no record"
+    payload = json.loads(row["payload_json"])
+    assert sorted(payload["granted_account_ids"]) == sorted([here, other])
+    assert sorted(payload["granted_account_labels"]) == ["dave-cold", "dave-trading"]
+
+
+def test_the_recorded_grant_does_not_drift_when_contacts_change(db, cipher):
+    """The point of recording it. Removing the second account from the contact
+    afterwards must not rewrite history — the credential did open it."""
+    import json
+
+    from sentinel.dashboard import serve_dashboard
+
+    here = _member_account(db, "erin-trading", "erin@example.com")
+    other = _member_account(db, "erin-cold", "erin@example.com")
+
+    ops_port = _free_port()
+    ops = serve_dashboard(db, cipher, ops_port)
+    try:
+        _request(("127.0.0.1", ops_port), "POST", "/portal-access", {"account_id": here})
+    finally:
+        ops.shutdown()
+
+    with db.cursor() as cur:
+        cur.execute("UPDATE accounts SET alert_email = 'someone-else@example.com' WHERE id = ?",
+                    (other,))
+        cur.execute(
+            "SELECT payload_json FROM events WHERE event_type = 'member_portal_password_generated'"
+        )
+        payload = json.loads(cur.fetchone()["payload_json"])
+
+    assert other in payload["granted_account_ids"], "the record was rewritten by a later change"

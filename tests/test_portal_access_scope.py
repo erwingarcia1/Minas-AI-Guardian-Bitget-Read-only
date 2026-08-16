@@ -126,3 +126,33 @@ def test_a_blank_email_grants_nothing_and_claims_nothing(db, blank):
     card = _text(_portal_access_card(db, here, blank))
 
     assert "someone-else" not in card
+
+
+# --- the button itself, and the record left behind (#61, criterion 2) --------
+
+
+def test_the_button_says_how_much_it_opens(db):
+    """The list above the button is read once; the button is what gets clicked.
+
+    Somebody arriving months later, scrolling to the control on account A's
+    page, can press it without ever reading the paragraph. The words under the
+    cursor are the last chance to say this is not an account A action.
+    """
+    _account(db, "alice-trading", email="alice@example.com")
+    _account(db, "alice-cold", email="alice@example.com")
+    here = _account(db, "alice-futures", email="alice@example.com")
+
+    card = _portal_access_card(db, here, "alice@example.com")
+
+    assert "opens 3 accounts" in card
+
+
+def test_the_button_stays_plain_when_it_opens_only_this_account(db):
+    """A caution shown every time is a caution nobody reads. When the
+    credential really does open one account, the button says nothing extra."""
+    here = _account(db, "solo-1", email="solo@example.com")
+
+    card = _portal_access_card(db, here, "solo@example.com")
+
+    assert "opens" not in _text(card).lower()
+    assert "Generate portal password" in card

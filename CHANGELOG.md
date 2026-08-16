@@ -13,6 +13,32 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed
+- **A portal credential now says what it opens, on the button and in the
+  record** (#61). The "Generate portal password" control sits on one account's
+  page and reads as an action on that account. It is not: portal identity is
+  the email, so the credential opens every account that address is a contact
+  on. 1.1.0 listed those accounts above the button; this finishes the
+  affordance half of the issue.
+  - **The button itself now carries the scope** — *"Generate portal password —
+    opens 3 accounts"*. The paragraph above it is read once; the button is what
+    gets clicked, sometimes months later by somebody who scrolled past the
+    paragraph. Unchanged when the credential really does open only this
+    account, because a caution shown every time is a caution nobody reads.
+  - **The confirmation names them too.** The operator is about to send that
+    password to somebody, and it is the last moment a surprise is still
+    recoverable.
+  - **The forensic record says what was granted**, as it was at the moment of
+    issue — `granted_account_ids` and `granted_account_labels` on the
+    `member_portal_password_generated` event. The email alone could not answer
+    "what did this password reach", because contacts get added and removed:
+    replaying the lookup next month returns a different set than the one
+    actually handed over. A test pins that changing a contact afterwards does
+    not rewrite the record.
+
+  Per-account credentials — the model fix rather than the affordance fix —
+  remain the owner's call and are unchanged here, as the issue recommends.
+
 ## [1.2.0] — 2026-08-15
 
 ### Changed detection behaviour
