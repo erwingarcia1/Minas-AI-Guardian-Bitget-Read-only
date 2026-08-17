@@ -417,3 +417,26 @@ CREATE TABLE IF NOT EXISTS totp_recovery_codes (
 );
 CREATE INDEX IF NOT EXISTS idx_recovery_lookup
     ON totp_recovery_codes(subject_kind, subject, used_at);
+
+-- Minas-side triage of an alert (G-37, #41). Deliberately NOT a column on
+-- `alerts`, and deliberately not `acknowledged_at`.
+--
+-- Acknowledgement is the customer's act: it means the person whose money is
+-- moving has seen the alert, and `Escalator` keys on `acknowledged_at IS NULL`
+-- to decide whether to escalate a CRITICAL. If an operator working a queue
+-- wrote to that column, marking an alert "I have looked at this" would
+-- silently stop the customer-facing escalation ladder - an operator's internal
+-- bookkeeping disabling the mechanism that exists for when the customer has
+-- NOT responded. Two different questions, two different columns.
+--
+-- One row per alert: triage is a current state ("who is on this, and is it
+-- done"), not a history. Who did it and when is recorded here; the durable
+-- forensic trail is the `events` row written alongside.
+CREATE TABLE IF NOT EXISTS alert_triage (
+    alert_id INTEGER PRIMARY KEY REFERENCES alerts(id),
+    note TEXT NOT NULL DEFAULT '',
+    handled_at TEXT,
+    handled_by TEXT,
+    updated_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_triage_handled ON alert_triage(handled_at);

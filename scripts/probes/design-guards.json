@@ -1206,5 +1206,14 @@
   "tests": [
    "tests/test_no_prevention_claims.py"
   ]
+ },
+ {
+  "name": "#41 marking an alert handled answers for the customer, and the escalation ladder stops",
+  "file": "sentinel/alert_triage.py",
+  "old": "        if handled is not None:\n            cur.execute(\n                \"UPDATE alert_triage SET handled_at = ?, handled_by = ?, updated_at = ? \"",
+  "new": "        if handled is not None:\n            cur.execute(\"UPDATE alerts SET acknowledged_at = ? WHERE id = ?\", (now, alert_id))\n            cur.execute(\n                \"UPDATE alert_triage SET handled_at = ?, handled_by = ?, updated_at = ? \"",
+  "tests": [
+   "tests/test_alert_triage.py"
+  ]
  }
 ]

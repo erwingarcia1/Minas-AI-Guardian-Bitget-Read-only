@@ -48,6 +48,14 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     # because no retention shorter than the 24h snooze cap is expressible -
     # `days <= 0` means keep forever, so the shortest real window is a day.
     "snoozes": ("created_at", "snoozes_days"),
+    # Minas-side triage bookkeeping (#41): one row per alert, so it lives on
+    # the alert's own window. `updated_at` rather than the alert's `sent_at`
+    # because that is the column this table has; the drift is at most the gap
+    # between an alert firing and the last time somebody touched its triage,
+    # and a triage row briefly outliving its pruned alert is harmless where
+    # the reverse - annotations deleted while their alert is still kept -
+    # would throw away who worked on it.
+    "alert_triage": ("updated_at", "alerts_days"),
     # Threshold changes (#16). History of what this product was tuned to
     # notice, on the same long window as `events` - an incident review asks
     # what the thresholds were at the time, not what they are now.

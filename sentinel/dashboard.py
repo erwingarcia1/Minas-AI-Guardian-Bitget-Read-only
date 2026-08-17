@@ -398,6 +398,7 @@ def _render(db: Database, rules=None) -> str:
     ) or "<tr><td colspan=5 class='empty'>No alerts — all clear</td></tr>"
 
     nav = (
+        '<a class="live" href="/triage">Triage queue</a>'
         '<a class="live primary" href="/add">+ Add customer</a>'
         '<a class="live" href="/metrics">Metrics</a>'
         f'<span class="live"><span class="dot"></span> Live · <span id="liveclock">{now.strftime("%H:%M:%S UTC")}</span></span>'
@@ -595,6 +596,89 @@ def _portal_access_card(db: Database, account_id: int, email: str | None,
             )
     return ('<section><div class="card"><div class="card-head"><h2>Member portal access</h2>'
             '<span class="count">read-only member view</span></div>' + inner + "</div></section>")
+
+
+def _render_triage(db: Database, rules=None, show_handled: bool = False) -> str:
+    """G-37 (#41): the queue of alerts nobody has answered, across every
+    customer.
+
+    Until this page, alerts were only visible per account, so working the
+    backlog meant knowing which pages to open - and an alert nobody opens
+    looks identical to an alert nobody needed to. This is the other side of
+    the portal status page: that one lets a customer see they are being
+    watched, this one makes sure somebody at Minas is doing the watching.
+
+    "Handled" here is Minas-side bookkeeping and never touches
+    `acknowledged_at` - see sentinel/triage.py for why an operator must not be
+    able to stop a customer's escalation ladder by tidying their queue.
+    """
+    from sentinel.alert_triage import muted_channels, open_alerts, stale_after_minutes
+
+    queue = open_alerts(db, rules, include_handled=show_handled)
+    muted = muted_channels(db)
+    overdue_after = stale_after_minutes(rules)
+
+    rows = ""
+    for a in queue:
+        age = "\u2014" if a["age_minutes"] is None else (
+            f"{a['age_minutes']}m" if a["age_minutes"] < 120 else f"{a['age_minutes'] // 60}h"
+        )
+        age_cell = (f'<td class="mono" style="color:var(--bad);font-weight:600">{age} \u26a0</td>'
+                    if a["overdue"] else f'<td class="mono">{age}</td>')
+        flags = []
+        if a["delivered_to"] == 0:
+            flags.append("delivered to nobody")
+        if a["escalated"]:
+            flags.append("escalated")
+        if a["handled"]:
+            flags.append(f"handled by {html.escape(str(a['handled_by'] or '?'))}")
+        note = html.escape(a["note"][:80]) if a["note"] else ""
+        rows += (
+            f"<tr><td class='mono'>{_ts(a['sent_at'])}</td>"
+            f"<td class='lbl'><a class='acctlink' href='/account?id={a['account_id']}'>"
+            f"{html.escape(a['label'])} \u203a</a></td>"
+            f"<td><span class='pill sev-{a['severity']}'>{a['severity']}</span></td>"
+            f"<td class='rule'>{html.escape(a['rule'])}</td>"
+            + age_cell +
+            f"<td class='mono'>{html.escape(', '.join(flags))}</td>"
+            "<td>"
+            f"<form method='post' action='/triage' style='display:flex;gap:6px;margin:0'>"
+            f"<input type='hidden' name='alert_id' value='{a['alert_id']}'>"
+            f"<input type='text' name='note' value='{note}' placeholder='note' "
+            "style='width:150px;background:var(--bg);color:inherit;border:1px solid var(--line);"
+            "border-radius:4px;padding:3px 6px;font-size:12px'>"
+            + ("<button class='submit' name='act' value='unhandle' type='submit'>Reopen</button>"
+               if a["handled"] else
+               "<button class='submit' name='act' value='handle' type='submit'>Mark handled</button>")
+            + "</form></td></tr>"
+        )
+    if not rows:
+        rows = "<tr><td colspan=7 class='empty'>Nothing waiting \u2014 every alert is acknowledged</td></tr>"
+
+    muted_rows = "".join(
+        f"<tr><td class='lbl'><a class='acctlink' href='/account?id={m['account_id']}'>"
+        f"{html.escape(m['label'])} \u203a</a></td>"
+        f"<td>{html.escape(', '.join(m['snoozed_rules']) or chr(0x2014))}</td>"
+        f"<td>{'SMS off' if m['sms_off'] else chr(0x2014)}</td></tr>"
+        for m in muted
+    ) or "<tr><td colspan=3 class='empty'>Nobody is muting anything</td></tr>"
+
+    toggle = ('<a class="acctlink" href="/triage">hide handled \u203a</a>' if show_handled
+              else '<a class="acctlink" href="/triage?handled=1">show handled too \u203a</a>')
+
+    body = (
+        '<section><div class="card"><div class="card-head"><h2>Unacknowledged alerts \u2014 all customers</h2>'
+        f'<span class="count">{len(queue)} open \u00b7 \u26a0 after {overdue_after} min \u00b7 {toggle}</span></div>'
+        "<table><thead><tr><th>Sent</th><th>Account</th><th>Severity</th><th>Rule</th>"
+        "<th>Age</th><th>Flags</th><th>Triage</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></div></section>"
+        '<section><div class="card"><div class="card-head"><h2>Who is muting what</h2>'
+        '<span class="count">the early warning for a noise problem</span></div>'
+        "<table><thead><tr><th>Account</th><th>Snoozed rules (live)</th><th>Channels</th></tr></thead>"
+        f"<tbody>{muted_rows}</tbody></table></div></section>"
+    )
+    nav = '<a class="live" href="/">\u2190 Dashboard</a>'
+    return _page(nav, body)
 
 
 def _render_account(db: Database, account_id: int, notice_html: str = "") -> str | None:
@@ -920,6 +1004,10 @@ def serve_dashboard(
                 from sentinel.metrics import render_metrics_html
 
                 self._send(render_metrics_html(dash_port=port).encode())
+            elif path == "/triage":
+                qs = parse_qs(urlparse(self.path).query)
+                show_handled = qs.get("handled", ["0"])[0] == "1"
+                self._send(_render_triage(db, rules, show_handled).encode())
             elif path == "/add":
                 self._send(_render_add_form().encode())
             elif path == "/account":
@@ -950,6 +1038,9 @@ def serve_dashboard(
                 return
             if post_path == "/portal-access":
                 self._portal_access()
+                return
+            if post_path == "/triage":
+                self._triage()
                 return
             if post_path != "/add":
                 self._send(b"not found", 404)
@@ -1003,6 +1094,44 @@ def serve_dashboard(
                 self._send(_render_add_form(
                     values, error="Onboarding failed unexpectedly - check the service logs (secrets redacted)."
                 ).encode(), 500)
+
+        def _triage(self):
+            """Note + handled marker for one alert (G-37, #41).
+
+            Same-origin like every other state-changing POST here, and the
+            actor comes from the session. Writes through
+            `sentinel.alert_triage.set_triage`, which cannot touch
+            `acknowledged_at` - the escalation ladder is the customer's, not
+            the operator's to tidy away.
+            """
+            if not _same_origin(self):
+                self._send(b"cross-origin POST rejected", 403)
+                return
+            length = int(self.headers.get("Content-Length", 0))
+            if length <= 0 or length > 16 * 1024:
+                self._send(b"bad request", 400)
+                return
+            form = parse_qs(self.rfile.read(length).decode())
+            try:
+                alert_id = int(form.get("alert_id", ["0"])[0])
+            except ValueError:
+                alert_id = 0
+            act = form.get("act", [""])[0]
+            note = form.get("note", [None])[0]
+
+            from sentinel.alert_triage import set_triage
+
+            handled = {"handle": True, "unhandle": False}.get(act)
+            try:
+                set_triage(db, alert_id, note=note, handled=handled,
+                           actor=self._operator())
+            except ValueError:
+                self._send(b"no such alert", 404)
+                return
+            self.send_response(303)
+            self.send_header("Location", "/triage")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
 
         def _portal_access(self):
             """Generate/reset the member-portal password for an account's

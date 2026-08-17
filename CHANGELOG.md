@@ -13,6 +13,39 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Added
+- **An operator can work the alert queue across every customer** (#41, G-37).
+  New `/triage` on the ops dashboard: every unacknowledged alert fleet-wide,
+  CRITICAL first and oldest first within a severity, with an inline note and a
+  handled/reopen marker per alert. Alerts older than the escalation threshold
+  are highlighted as overdue — the same number the ladder acts on, derived
+  from config, because a queue that calls an alert overdue on a different
+  clock teaches the operator a deadline the product does not keep. A second
+  table shows who is muting what (live snoozes, SMS opt-outs) — the early
+  warning for a noise problem. Flags surface `delivered to nobody` (#57) and
+  `escalated` where they apply.
+  - **"Handled" is Minas-side bookkeeping and is invisible to escalation.**
+    `Escalator` keys on `acknowledged_at IS NULL` — the customer's state. If
+    marking an alert handled touched that column, an operator tidying their
+    queue would silently stop the escalation ladder for a customer who has
+    still not responded. Triage lives in its own `alert_triage` table; a
+    handled alert still escalates, still counts as overdue, and still appears
+    to the escalator's query. Pinned by tests and a design-guard probe.
+  - Every triage action writes an `alert_triaged` event naming the operator
+    (G-50); the triage row is current state, the event log is the history.
+  - `alert_triage` is pruned on the alerts window (`alerts_days`) — caught by
+    the retention pairs-test, which exists for exactly this.
+- **Every module imports, and every lazy import resolves**
+  (`tests/test_every_module_imports.py`). Written after this feature's module
+  was nearly shipped over the top of `sentinel/triage.py` — the AI incident
+  narrative behind `sentinel triage --label`. The full suite stayed green with
+  `TriageEngine` deleted, because `cmd_triage` imports it lazily and nothing
+  ever executed that import; the command would have crashed in production
+  instead. The new guard resolves every function-level `from sentinel.X
+  import Y` against the real module, so a name deleted from a module that
+  still imports cleanly is caught by CI rather than by the next person to run
+  the command. The queue module now lives at `sentinel/alert_triage.py`.
+
 ## [1.3.0] — 2026-08-17
 
 ### Changed detection behaviour
