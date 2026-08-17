@@ -13,6 +13,42 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched. Everything in
+this release is tooling and documentation: no code the engine runs is
+modified, no schema change, no config change. PATCH rather than MINOR for
+the same reason — an operator upgrades at will and the running product
+behaves identically; the one new script is run by hand, not by the service.
+
+### Added
+
+- **`scripts/retention-boundary.py`** — read-only report of every table
+  `prune_all` governs: the configured window, the oldest row, and how many
+  days until that row crosses its retention boundary. Table-driven from
+  `sentinel.retention`'s own `PRUNABLE`, `KEEP_LATEST_PER_ACCOUNT` and
+  `ALERT_CHILDREN`, with windows read through `RulesConfig`'s fallback
+  chain, so a table added later appears automatically and the report cannot
+  disagree with the deletion job. Opens the database with SQLite `mode=ro`,
+  so it cannot write, and reports a table it cannot answer as unanswered
+  (exit 2), never as a pass. **Operational note:** because it imports those
+  constants from `sentinel.retention`, it only runs against a deployment
+  that already carries them — on an older build it fails with
+  `ImportError`. The production retention boundary reading the v1.4.0
+  handoff owes can therefore only be taken after this release is deployed.
+- **`CLAUDE.md`** — the owner's standing operating constraints for
+  autonomous sessions (never deploy, never touch credentials beyond an
+  issue's needs, a red CI is a stop condition, …), which previously existed
+  nowhere in the repository. It deliberately references CONTRIBUTING.md
+  rather than duplicating its hard rules, so the two copies cannot drift.
+
+### Documentation
+
+- The v1.4.0 session handoff in docs/AUTONOMOUS-LOG.md, and the three
+  process patterns it paid for written into CONTRIBUTING.md: a process
+  check that matches itself always reports busy; a killed check is not a
+  passed check; registration guards need execution guards.
+
 ## [1.4.0] — 2026-08-17
 
 ### Changed detection behaviour
