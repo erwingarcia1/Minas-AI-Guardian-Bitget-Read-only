@@ -13,6 +13,41 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Added
+- **A customer can see whether they are actually being watched** (#38, G-34).
+  New `/status` in the member portal. The product's claim is that no news is
+  good news, and that claim is worth nothing unless silence can be told apart
+  from a dead poller — which the customer previously had no way to do. This is
+  the failure this codebase keeps closing on its own behalf, pointed at the
+  person paying for it.
+  - One headline — *monitoring is running normally* / *some accounts are not
+    being watched* / *your accounts are NOT being watched* — plus every
+    account's last successful check and, where something is wrong, what is
+    wrong in a sentence.
+  - **A partially-dark member reads as `degraded`, never as healthy.** One
+    freshly-polled account must not let the page say everything is fine while
+    another has been dark for hours.
+  - **The staleness window is derived from the heartbeat detector's own
+    threshold and poll interval**, not typed in. If the page and the alert
+    disagree about whether an account is watched, the page is the one the
+    customer believes. (The account detail page still uses a literal 300s for
+    its own freshness pill — noted, not changed here.)
+  - **Reasons are ordered by what the customer can do.** A rejected key is
+    theirs to replace and links straight to the replacement door; an
+    unreachable exchange is not, and telling someone to re-issue a working key
+    is wrong advice (G-6). A rejected key counts as unwatched even when the
+    poll timestamp is fresh — the poll ran, it just could not see anything.
+  - **`tamper_suspected` is stated in words, not printed as a column value.**
+    Only `active` accounts are polled, so flagging an account for suspected
+    interference *stops it being checked*: the account we most suspect is
+    being interfered with is the one we stop looking at. The customer is now
+    told that plainly.
+  - **The page states what it cannot prove.** It is served by the Guardian, so
+    if it loaded the Guardian is running — but it can never report the
+    opposite, because a dead host looks exactly like a closed laptop. It is
+    evidence that monitoring works, not the alarm that would say it stopped;
+    that alarm is #63 and does not exist yet.
+
 ### Changed
 - **A portal credential now says what it opens, on the button and in the
   record** (#61). The "Generate portal password" control sits on one account's

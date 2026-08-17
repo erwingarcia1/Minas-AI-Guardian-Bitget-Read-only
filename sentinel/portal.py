@@ -23,11 +23,13 @@ from sentinel.dashboard import (
     _account_type_label,
     _status_pill,
     _ts,
+    _watch_threshold,
 )
 from sentinel.db import Database
 from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
 from sentinel.passwords import LoginThrottle
+from sentinel.rules_schema import default_for
 from sentinel.snooze import active_snoozes_for_accounts, snooze_alert, snooze_choices
 from sentinel.twofactor import MEMBER as TWOFACTOR_MEMBER
 from sentinel.twofactor import check_second_factor
@@ -611,6 +613,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     )
     nav = (
         f'<span class="live">{html.escape(email)}</span>'
+        '<a class="live" href="/status">System status</a>'
         '<a class="live" href="/alerts">Alert history</a>'
         '<a class="live" href="/activity">Account activity</a>'
         '<a class="live" href="/security">Security</a>'
@@ -776,6 +779,207 @@ def _activity_detail(event_type: str, payload: dict) -> str:
     if event_type == "customer_added":
         return f"{shown(payload.get('exchange'))} · {shown(payload.get('topology'))}"
     return ""
+
+
+def _stale_after_seconds(rules=None) -> int:
+    """How long a silent account may go before this page stops calling it
+    watched: the same window the heartbeat detector alarms on.
+
+    Derived, never a literal. The number here has to mean the same thing as
+    the number `detect_unreachable` fires on, or the page and the alert
+    disagree about whether an account is being watched — and the page is the
+    one the customer believes. `_watch_threshold` exists in the dashboard for
+    exactly this reason; this is the portal's side of it.
+    """
+    threshold = _watch_threshold(rules)
+    interval = (
+        rules.get_int("polling", "fast_loop_seconds") if rules is not None
+        else int(default_for("polling", "fast_loop_seconds") or 45)
+    )
+    return threshold * interval
+
+
+_STATUS_REASON = {
+    "tamper_suspected": (
+        "flagged for suspected interference with our monitoring key, and checks are "
+        "paused while Minas investigates — Minas has been alerted"
+    ),
+    "disabled": "monitoring is switched off for this account",
+}
+
+
+def member_status(db: Database, email: str, rules=None, now: datetime | None = None) -> dict:
+    """What this member's monitoring is actually doing, as data.
+
+    Split from the rendering so the judgement can be tested without a server,
+    and so the page cannot quietly say something the data does not support.
+
+    Returns `{overall, accounts, problems, checked_at}` where `overall` is one
+    of `watching` / `degraded` / `not_watching`:
+
+      `watching`      every account polled inside the heartbeat window
+      `degraded`      some accounts are watched and some are not
+      `not_watching`  none of this member's accounts are being watched
+
+    A member with no accounts is `not_watching`: nothing is being watched,
+    which is the truthful answer and not an error state.
+    """
+    now = now or datetime.now(timezone.utc)
+    window = _stale_after_seconds(rules)
+    rows = member_accounts(db, email)
+
+    accounts, problems = [], []
+    watched = 0
+    for r in rows:
+        last_ok = r["last_success_at"]
+        age = None
+        if last_ok:
+            try:
+                age = (now - datetime.fromisoformat(last_ok)).total_seconds()
+            except ValueError:
+                age = None
+
+        label = str(r["label"])
+        fresh = age is not None and age < window and r["status"] == "active"
+        auth_failing = (r["consecutive_auth_failures"] or 0) > 0
+
+        # Ordered by what the customer can do about it. A rejected key is
+        # theirs to replace; an unreachable exchange is not; and telling
+        # somebody to re-issue a working key is wrong advice (G-6).
+        if auth_failing:
+            reason = "our monitoring key is being rejected — replace it and monitoring restarts"
+        elif r["status"] != "active":
+            # Only `active` accounts are polled at all (engine.py, poller.py),
+            # so any other status means this account is not being watched -
+            # including `tamper_suspected`, which is the alarming one: the
+            # account we most suspect is being interfered with is the account
+            # we stop looking at. Said in words rather than by printing the
+            # column value, because "tamper_suspected" is our jargon and this
+            # page is read by the customer.
+            reason = _STATUS_REASON.get(
+                r["status"], f"this account is {r['status']}, so it is not being checked"
+            )
+        elif last_ok is None:
+            reason = "this account has never completed a check"
+        elif not fresh:
+            reason = "no successful check recently — the exchange may be unreachable"
+        else:
+            reason = None
+
+        if fresh and not auth_failing:
+            watched += 1
+        else:
+            problems.append({"account_id": int(r["id"]), "label": label, "reason": reason})
+
+        accounts.append({
+            "account_id": int(r["id"]),
+            "label": label,
+            "last_success_at": last_ok,
+            "watched": bool(fresh and not auth_failing),
+            "reason": reason,
+        })
+
+    if rows and watched == len(rows):
+        overall = "watching"
+    elif watched:
+        overall = "degraded"
+    else:
+        overall = "not_watching"
+
+    return {
+        "overall": overall,
+        "accounts": accounts,
+        "problems": problems,
+        "checked_at": now.isoformat(),
+        "stale_after_seconds": window,
+    }
+
+
+_OVERALL_COPY = {
+    "watching": ("ok", "✓", "Monitoring is running normally",
+                 "Every one of your accounts was checked within the last few minutes."),
+    "degraded": ("warn", "!", "Some accounts are not being watched",
+                 "Monitoring is running, but not every account is being checked. "
+                 "The ones affected are listed below."),
+    "not_watching": ("warn", "!", "Your accounts are NOT being watched",
+                     "Movements on them are not currently being detected. "
+                     "Minas has been alerted; what to do is listed below."),
+}
+
+
+def _render_status(db: Database, email: str, rules=None) -> str:
+    """G-34 (#38): so the customer can trust the silence.
+
+    The product's whole claim is that no news is good news. That claim is only
+    worth anything if "no news" can be told apart from "nobody is watching",
+    and until this page the customer had no way to tell — which is precisely
+    the failure this codebase keeps closing on its own behalf, pointed at the
+    person paying for it.
+
+    What this page deliberately does NOT claim: that the Guardian is up. It is
+    *served by* the Guardian, so if it renders, the process is alive — but a
+    page that cannot load also cannot tell you why, and a dead host looks
+    identical to a closed laptop. Saying so plainly is the honest version;
+    external dead-man's-switch monitoring is #63, and until that exists this
+    page is evidence and not an alarm.
+    """
+    status = member_status(db, email, rules)
+    tone, icon, headline, sub = _OVERALL_COPY[status["overall"]]
+
+    rows = "".join(
+        "<tr><td class='lbl'>" + html.escape(a["label"]) + "</td>"
+        + ("<td><span class='pill sev-LOW'>watched</span></td>" if a["watched"]
+           else "<td><span class='pill sev-HIGH'>not watched</span></td>")
+        + f"<td class='mono'>{_ts(a['last_success_at'])}</td>"
+        + "<td>" + (html.escape(a["reason"]) if a["reason"] else "—") + "</td></tr>"
+        for a in status["accounts"]
+    ) or "<tr><td colspan=4 class='empty'>No accounts yet — contact the Minas team</td></tr>"
+
+    problems_html = ""
+    if status["problems"]:
+        items = "".join(
+            f'<div class="check"><span class="ic warn">!</span><span class="txt">'
+            f'<b>{html.escape(p["label"])}</b> — {html.escape(p["reason"] or "not being watched")}'
+            + (f' <a class="acctlink" href="/key?id={p["account_id"]}">Replace the monitoring key ›</a>'
+               if p["reason"] and "key is being rejected" in p["reason"] else "")
+            + "</span></div>"
+            for p in status["problems"]
+        )
+        problems_html = (
+            '<section><div class="card"><div class="card-head"><h2>What is wrong right now</h2>'
+            f'<span class="count">{len(status["problems"])} to look at</span></div>'
+            f'<div class="checks">{items}</div></div></section>'
+        )
+
+    body = (
+        '<section><div class="card"><div class="card-head"><h2>System status</h2></div>'
+        f'<div class="checks"><div class="check"><span class="ic {tone}">{icon}</span>'
+        f'<span class="txt"><b>{headline}</b> — {sub}</span></div></div></div></section>'
+        + problems_html +
+        '<section><div class="card"><div class="card-head"><h2>Your accounts</h2>'
+        f'<span class="count">checked every {status["stale_after_seconds"] // 60 or 1} min or better</span></div>'
+        "<table><thead><tr><th>Account</th><th>Watched</th><th>Last successful check</th>"
+        "<th>Note</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></div></section>"
+        '<section><div class="card"><div class="card-head"><h2>What this page cannot tell you</h2></div>'
+        '<div class="checks"><div class="check"><span class="ic ok">i</span><span class="txt">'
+        "This page is served by the Guardian itself, so if it loaded, the Guardian is running. "
+        "It cannot tell you the opposite: if the Guardian were completely down this page would "
+        "not load at all, and that looks the same as any other connection problem. Treat it as "
+        "evidence that monitoring is working, not as the alarm that would tell you it stopped."
+        "</span></div></div></div></section>"
+    )
+    nav = (
+        f'<span class="live">{html.escape(email)}</span>'
+        '<a class="live" href="/">Overview</a>'
+        '<a class="live" href="/status">System status</a>'
+        '<a class="live" href="/alerts">Alert history</a>'
+        '<a class="live" href="/activity">Account activity</a>'
+        '<a class="live" href="/security">Security</a>'
+        '<form method="post" action="/logout" style="margin:0">'
+        '<button class="live" type="submit" style="cursor:pointer;font-family:inherit">Sign out</button></form>'
+    )
+    return _page(body, nav)
 
 
 def _render_activity(db: Database, email: str) -> str:
@@ -1650,6 +1854,9 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             elif path == "/alerts":
                 qs = parse_qs(urlparse(self.path).query)
                 self._send(_render_alert_history(db, email, qs).encode())
+            elif path == "/status":
+                body = _render_status(db, email, rules)
+                self._send(body.encode())
             elif path == "/activity":
                 self._send(_render_activity(db, email).encode())
             elif path == "/alerts.csv":
