@@ -3481,3 +3481,162 @@ floor derived from a configuration that is not the one in the repository is a
 number measured against something else.
 
 **Numbers.** Mutation score 90% → 98%, floor 88 → 96. 922 → 932 tests.
+
+# Session — 2026-08-17 · v1.4.0, and a pruner that would have stopped in 2028
+
+Written for someone with none of this session's context. Everything below is
+either on `main` or listed as owed.
+
+## What shipped: v1.4.0
+
+Tag `v1.4.0` is annotated and on the remote, pointing at `7960c48`. CI run
+**#114** on that commit is green, and the release health-check passed all seven
+gates (ruff, suite, coverage floor 78%, pip-audit, issue-status audit,
+design-guard probes 132/132, mutation floor 96% — scored 98%). `pyproject.toml`
+reads 1.4.0.
+
+Four commits beyond `a869646`:
+
+| Commit | What |
+|---|---|
+| `232528d` | The pruning fix and its execution guard |
+| `28fe3e1` | The "Enforcement assurance" note in `docs/data-retention.md` |
+| `f77d9f5` | CHANGELOG entries for both |
+| `7960c48` | The release commit `scripts/release.sh 1.4.0` produced |
+
+MINOR rather than PATCH because `/triage` and the `/limits` retention section
+are new capability and `alert_triage` is an additive `CREATE TABLE IF NOT
+EXISTS` — which CONTRIBUTING puts under MINOR, since the previous image can
+still read the database.
+
+### The defect `232528d` fixes
+
+`Database` opens every connection with `PRAGMA foreign_keys = ON`. No table in
+`sentinel/schema.sql` declares `ON DELETE CASCADE`. Three tables reference
+`alerts(id)` — `sms_deliveries`, `expected_activity` (both first shipped in
+1.1.0) and `alert_triage` (new in this release). `prune_all` iterated its table
+list parent-first, so SQLite refused `DELETE FROM alerts` whenever any of the
+three still had a row pointing at it, and the resulting `IntegrityError`
+propagated out of `prune_all` entirely — meaning **every table after `alerts`
+in the list stopped being pruned as well**: dedup state, config changes,
+password resets, the `seen_*` tables.
+
+The fix deletes an alert's annotations in the same transaction as the alert,
+keyed on the alert's own cutoff. `ON DELETE CASCADE` would be the tidier schema
+and is unavailable: SQLite cannot add a constraint without rebuilding the
+table, on a live database holding customer credentials, and
+`Database._init_schema`'s migration list only knows `ADD COLUMN`.
+
+**Nothing was lost.** The defect needs an alert past `alerts_days` (730) that
+carries an annotation, and none can exist before 2028 (see *Owed* below). It
+was found by inspection.
+
+### Why the existing guard did not catch it
+
+`test_every_growing_table_is_covered` asks whether a table has a retention
+*decision recorded*. `alert_triage` had one — added deliberately in `b60c65d`
+— so the guard was green while the pruner threw on every run. A registration
+test cannot ask whether the decision executes. That is now
+`test_every_prunable_table_actually_prunes` (a row past its own window in every
+prunable table, one `prune_all`, all gone), table-driven from `PRUNABLE`, with
+`test_every_prunable_table_has_a_row_factory` so a table added later cannot be
+silently missing from the population the guard claims to cover. Both verified
+negatively against `a869646`, where the execution guard fails with the exact
+foreign-key error. Generalised in CONTRIBUTING as *Registration guards need
+execution guards*.
+
+## Open: #73 (p1, not built) — a retention failure is invisible
+
+Filed this session, **not fixed**. `Engine._prune_if_due` calls `prune_all`
+with no handler of its own; anything it raises lands in `_scheduler_tick`'s
+blanket `except` and becomes one `logger.error` line an hour. No page, no
+metric, no alert. Three things make it worse than a missed log line:
+
+1. `self._last_prune = now` is set **before** `prune_all` runs, so a failing
+   prune still resets its own timer — it fails hourly, indefinitely, at no
+   severity.
+2. `self._metrics.set_table_rows(table_counts(db))` is the next line and is the
+   **only** place that gauge is published. Pruning failure freezes the
+   table-growth metric at its last good value: the one signal that would reveal
+   the unbounded growth is switched off by the thing causing it. A dashboard
+   shows flat, healthy row counts while the tables grow without limit.
+3. `self._untimestamped_alarm.evaluate(...)` sits after `_prune_if_due()` in
+   the same `try`, so it is skipped on every cycle where the prune raises.
+
+`232528d` removed today's *trigger*. The *silence* is untouched and would
+swallow the next cause just as completely.
+
+**When #73 ships, delete the "Enforcement assurance" paragraph from
+`docs/data-retention.md`.** It exists only to describe this gap to the legal
+reviewer, it names #73 so it clears with the issue, and #73's own notes say the
+same — whichever is read first points at the other. That paragraph is
+deliberately **not** on the customer-facing `/limits` page: an internal
+monitoring gap is not customer disclosure, and the customer's question (what is
+kept, for how long) is unchanged and true.
+
+## Owed: the production retention boundary reading
+
+**2028-07-09 is a bound, not a measurement.** It is derived from schema
+history — the earliest table carrying an `alert_id` FK (`sms_deliveries`) was
+created 2026-07-10, plus the 730-day `alerts_days` window — on the reasoning
+that production cannot hold an alert older than the table storing it.
+
+It was *not* read from the production database. The local
+`sentinel_data/sentinel.db` has zero accounts and is stale: it predates five of
+the tables in `PRUNABLE` (`snoozes`, `alert_triage`, `config_changes`,
+`password_resets`, `expected_activity` all return "no such table"). Production
+is on the AWS VM at `/opt/minas-guardian` and was not reachable from where this
+session ran.
+
+**Someone should run this on the VM**: for every table in `PRUNABLE`, the
+oldest row's timestamp against that table's window, to confirm nothing has
+crossed a boundary and to get the real date rather than the earliest possible
+one.
+
+## Production runs the July build; v1.4.0 is tagged and undeployed
+
+`v1.4.0` exists on the remote and **has not been deployed**. Deploy is manual
+and the owner's — this session did not attempt it and no autonomous session
+should. The deploy gate will accept `7960c48` because it is exactly a tag, and
+will refuse the commit after it until another release is cut.
+
+## The other open p1: #67
+
+*"Two withdrawals with no reference and no timestamp become one alert,
+silently"* — `status: partial`. Untouched this session. #73 and #67 are the
+only open p1s.
+
+## Session hygiene: start inside the repository
+
+**This session ran with its working directory at `/home/johngreat`, not
+`/home/johngreat/Minas-AI-Guardian-Bitget-Read-only`.** Future sessions should
+start from inside the repository.
+
+Stated precisely, because the obvious version of this note would be wrong:
+**there is no `CLAUDE.md` in this repository** — not at the root, not in any
+subdirectory, and never in git history (checked). So no project instruction
+file went unread, because none exists. What running from the parent directory
+actually costs is that repo-scoped configuration and permissions do not apply,
+and any `CLAUDE.md` added later would not load either. If this project wants
+standing instructions honoured automatically, the file has to be created *and*
+sessions have to start in the directory containing it.
+
+## Three process patterns, now in CONTRIBUTING.md
+
+All three cost time this session and are written up so they cost the next
+person less:
+
+- **A process check that matches itself always reports busy.** A dead PID was
+  reported as "still running, 2h 10m" off a `ps aux | grep` that matched the
+  wrapper shell running the grep; the elapsed time was the wrapper's own. Use
+  `kill -0` / `test -d /proc/$PID` for a known PID. The `[c]laude` bracket trick
+  works only while the bracketed form is the sole occurrence of the pattern in
+  your own command line — put the plain word in a `for` list or an `echo` in the
+  same command and it self-matches anyway. Otherwise snapshot `ps` to a file and
+  search the file.
+- **A killed check is not a passed check.** A `timeout 1200` on a health check
+  this repo documents as ~20 minutes produced exit **143** with a truncated log.
+  143 is not 0 and is not a failure — it is *no result*, and reporting it as
+  anything else is the same class of error as a skipped gate printed in green.
+- **Registration guards need execution guards.** Above, and in its own
+  CONTRIBUTING section.

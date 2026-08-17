@@ -225,6 +225,23 @@ month-old run. And the floor and the suite are checked separately instead of via
 `--cov-fail-under`, because otherwise a coverage shortfall and a failing test
 are the same red and the first question is always which one it was.
 
+**A killed check is not a passed check.** The health check takes about twenty
+minutes and the design-guard probes alone take thirteen, so wrapping it in a
+timeout shorter than that produces exit **143** — SIGTERM — with a truncated log
+and no summary table. 143 is not 0. It is not a failure either: it is *no
+result*, and it must be reported as no result and re-run, never summarised as
+"it didn't fail". Same for any gate you interrupt.
+
+```bash
+{ timeout 3600 scripts/health-check.sh; echo "EXIT=$?"; } > run.log 2>&1
+```
+
+Capture the code explicitly rather than reading the tail of the output. A run
+killed part-way through still leaves a plausible-looking log of the gates that
+did finish, and the gates that never ran leave nothing at all — which reads
+identically to a clean run of a shorter suite. This cost a re-run on 2026-08-17,
+after a `timeout 1200` on a gate this file documents as ~20 minutes.
+
 Note that `--check` on the mutation gate **ratchets**: it raises
 `scripts/mutation-floor.txt` to `max(floor, score - 2)`, never lowers it, and
 that file is tracked — so a completely clean health check can leave you a change
@@ -427,6 +444,43 @@ if reference:
     return f"id:{reference}"
 return "sha256:" + _digest(...)       # explicit, not a fallback value
 ```
+
+## A process check that matches itself always reports busy
+
+**Never decide "is it still running" from a bare `grep` over a pattern that also
+appears in your own command line.** Your shell, the `grep`, and the wrapper that
+launched them are all processes, and all of them carry the pattern you are
+searching for. The check then finds itself, reports the thing as alive, and
+keeps reporting it alive forever — including long after it exited.
+
+Liveness, when you have a PID, is the kernel's answer and nothing else:
+
+```bash
+kill -0 "$PID" 2>/dev/null   # exit 0 = alive
+test -d "/proc/$PID"
+```
+
+Searching by name is the harder case. The `[c]laude` bracket trick used by the
+standing rule above works, but **only while the bracketed form is the sole
+occurrence of the pattern in your own command line.** Put the plain word
+anywhere else in the same command — a `for n in mutmut pytest …` list, an
+`echo`, a comment — and the plain word self-matches regardless of the brackets.
+That is exactly how a dead PID got reported as "still running, 2h 10m" on
+2026-08-17, where the elapsed time was the wrapper shell's own.
+
+When in doubt, snapshot first and search the snapshot, so the pattern does not
+exist in any running command line by the time the search runs:
+
+```bash
+ps -eo pid,etime,cmd --no-headers > /tmp/snap.txt   # then, separately:
+grep -E "mutmut|health-check" /tmp/snap.txt
+```
+
+The general shape is the one this file keeps coming back to: a check whose
+positive result can be produced by the check itself is not evidence. Compare
+`test_the_scan_can_see_the_source_it_claims_to_scan` in
+`tests/test_no_live_traffic.py`, which states its population before asserting an
+absence, for the same reason.
 
 ## Registration guards need execution guards
 
