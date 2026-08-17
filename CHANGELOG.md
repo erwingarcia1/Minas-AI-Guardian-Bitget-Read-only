@@ -13,6 +13,14 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**None.** This release changes no alerting: which alerts fire, when, and to
+whom is untouched. It adds two read-only pages to the member portal and makes
+an ops control describe itself more accurately. Stated rather than left to be
+inferred from an absent heading — "nothing changed" and "nobody checked" look
+identical otherwise, which is the distinction this product exists to make.
+
 ### Added
 - **The product says what it cannot do, and a guard keeps it that way**
   (#48, G-44). New `/limits` in the member portal — *What the Guardian does*,
@@ -48,13 +56,6 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   A guard that fires on the honest page gets suppressed, and a suppressed
   guard protects nothing.
 
-### Changed
-- **The member portal's navigation is built in one place.** It was duplicated
-  across pages, which is how a new page ends up reachable from some and not
-  others — and the reader who most needs "what are the limits of this thing"
-  is the one who arrived somewhere that does not link to it.
-
-### Added
 - **A customer can see whether they are actually being watched** (#38, G-34).
   New `/status` in the member portal. The product's claim is that no news is
   good news, and that claim is worth nothing unless silence can be told apart
@@ -90,6 +91,11 @@ or Twilio credentials, terminate the retired us-east-1 instance._
     that alarm is #63 and does not exist yet.
 
 ### Changed
+- **The member portal's navigation is built in one place.** It was duplicated
+  across pages, which is how a new page ends up reachable from some and not
+  others — and the reader who most needs "what are the limits of this thing"
+  is the one who arrived somewhere that does not link to it.
+
 - **A portal credential now says what it opens, on the button and in the
   record** (#61). The "Generate portal password" control sits on one account's
   page and reads as an action on that account. It is not: portal identity is
