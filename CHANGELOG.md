@@ -17,7 +17,8 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 
 **None.** Which alerts fire, when, and to whom is untouched. This release
 adds the operator triage queue (deliberately invisible to the escalation
-ladder) and the retention disclosure. Stated rather than inferred from an
+ladder) and the retention disclosure, and repairs the deletion job — none of
+which touches detection or delivery. Stated rather than inferred from an
 absent heading.
 
 ### Added
@@ -53,7 +54,10 @@ absent heading.
   - Every triage action writes an `alert_triaged` event naming the operator
     (G-50); the triage row is current state, the event log is the history.
   - `alert_triage` is pruned on the alerts window (`alerts_days`) — caught by
-    the retention pairs-test, which exists for exactly this.
+    the retention pairs-test, which exists for exactly this. That test asks
+    whether a decision was *recorded*, and it could not ask whether the
+    decision *ran*; see the pruning fix under **Fixed** below, which is the
+    half it could not see.
 - **Every module imports, and every lazy import resolves**
   (`tests/test_every_module_imports.py`). Written after this feature's module
   was nearly shipped over the top of `sentinel/triage.py` — the AI incident
@@ -77,6 +81,45 @@ absent heading.
   chose". The factual half is rewritten to match the running system; the
   legal questions and the NOT-REVIEWED flag are unchanged, because that
   criterion needs a lawyer, not a commit.
+
+- **Retention would have stopped dead at the first alert anyone had annotated,
+  and taken every table after it down too.** `Database` opens every connection
+  with `PRAGMA foreign_keys = ON`, no table in the schema declares `ON DELETE
+  CASCADE`, and three tables carry an `alert_id` referencing `alerts` —
+  `sms_deliveries` and `expected_activity` (both shipped in 1.1.0) and now
+  `alert_triage`. `prune_all` walked its table list parent-first, so SQLite
+  refused the `DELETE FROM alerts` and the `IntegrityError` left `prune_all`
+  altogether: dedup state, config changes, password resets and the `seen_*`
+  tables all stopped being pruned as well. The pruner now deletes an alert's
+  annotations in the same transaction as the alert, keyed on the alert's own
+  cutoff, so a child cannot outlive its parent — and each child keeps its own
+  window, so a *shorter* one still applies. `ON DELETE CASCADE` would be the
+  tidier schema and is not available: SQLite cannot add a constraint without
+  rebuilding the table, on a live database holding customer credentials.
+
+  **Nothing was lost.** The defect needed an alert older than `alerts_days`
+  (730 days) carrying an annotation, and the earliest one possible is
+  2028-07-09 — deletion has been running correctly throughout and would have
+  kept working for another 692 days. Found by inspection, not by damage.
+
+  The guard is the general lesson: **a registration test needs a paired
+  execution test.** `test_every_prunable_table_actually_prunes` puts a row past
+  its own window in every prunable table, runs `prune_all`, and asserts all of
+  them are gone — table-driven from `PRUNABLE`, with a second test so a table
+  added later cannot be silently absent from the population it claims to
+  cover. Written up in CONTRIBUTING.md; verified negatively against the parent
+  commit, where it fails with the exact foreign-key error.
+
+- **The retention policy document now states the limit of its own assurance**
+  (#73). A failure of the hourly prune is written to the log and nowhere else
+  — no page, no metric, and the growth gauge that would show the consequence
+  is published inside the same call, so it freezes with it. Every window in
+  `docs/data-retention.md` is a claim about what we delete, so the reviewer is
+  told what stands behind those claims. Deliberately **not** on the customer's
+  `/limits` page: an internal monitoring gap is not customer disclosure, and
+  the customer's question — what we keep and for how long — is unchanged and
+  true. The note is referenced to #73 so it clears when the alarm ships; an
+  unreferenced caveat outlives the condition it describes.
 
 ## [1.3.0] — 2026-08-17
 
