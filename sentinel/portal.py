@@ -987,6 +987,46 @@ def _render_status(db: Database, email: str, rules=None) -> str:
     return _page(body, nav)
 
 
+def retention_summary(rules=None) -> list[tuple[str, str]]:
+    """What we keep and for how long, in customer terms, from the live config.
+
+    Derived from the same settings `prune_all` enforces (G-43, #47) - via
+    `RulesConfig`, which falls back to the declared defaults, so the page and
+    the pruner cannot disagree. The grouping is by what the customer would
+    call the data, not by table name; the mapping is pinned by a test against
+    `sentinel.retention.PRUNABLE` so a new table cannot be silently absent
+    from the page.
+    """
+    def days(setting: str) -> int:
+        if rules is not None:
+            return rules.get_int("retention", setting)
+        return int(default_for("retention", setting) or 0)
+
+    def phrase(n: int) -> str:
+        if n <= 0:
+            return "kept indefinitely"
+        if n % 365 == 0:
+            years = n // 365
+            return f"{years} year{'s' if years != 1 else ''}"
+        return f"{n} days"
+
+    return [
+        ("Activity records and alert history",
+         phrase(max(days("events_days"), days("alerts_days")))
+         + " — the forensic log an incident review is built from"),
+        ("Balance snapshots",
+         phrase(days("balance_snapshots_days"))
+         + " — only \"what changed since the last check\" needs these; the latest is always kept"),
+        ("Duplicate-detection records",
+         phrase(days("dedup_days"))
+         + " — bounded below by correctness: shorter, and an old movement could alert twice"),
+        ("Your API key (encrypted) and contact details",
+         "until your account is deleted"),
+        ("Baselines of your normal activity (addresses, pairs, routes)",
+         "kept while your account is monitored — deleting one would make your own history look like an attack"),
+    ]
+
+
 def _render_limits(db: Database, email: str, rules=None) -> str:
     """G-44 (#48): what the Guardian can and cannot do, said plainly.
 
@@ -1079,6 +1119,21 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
         f'<div class="checks">{why}</div></div></section>'
         '<section><div class="card"><div class="card-head"><h2>Timing, honestly</h2></div>'
         f'<div class="checks">{timing}</div></div></section>'
+        '<section><div class="card"><div class="card-head"><h2>What we keep, and for how long</h2>'
+        '<span class="count">read from the running configuration</span></div>'
+        '<div class="checks">'
+        + "".join(
+            f'<div class="check"><span class="ic ok">i</span><span class="txt">'
+            f"<b>{html.escape(what)}</b> — {html.escape(how_long)}</span></div>"
+            for what, how_long in retention_summary(rules)
+        )
+        + '<div class="check"><span class="ic warn">!</span><span class="txt">'
+        "<b>These periods are our current practice, not yet reviewed policy.</b> "
+        "They are enforced automatically on the schedule shown, but a legal review "
+        "of retention obligations is still pending - if it changes these numbers, "
+        "this page changes with them, because it reads the same configuration the "
+        "deletion job runs on.</span></div>"
+        '</div></div></section>'
     )
     return _page(body, _member_nav(email, home_link=True))
 

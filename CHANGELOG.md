@@ -14,6 +14,32 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
+- **What we keep is now published where a customer can read it** (#47, G-43).
+  The `/limits` page gains *What we keep, and for how long*, derived from the
+  same `retention:` config `prune_all` enforces hourly — via the same
+  fallback chain, so the page and the deletion job cannot disagree. Stated in
+  customer terms (activity records, snapshots, dedup records, keys,
+  baselines), with the honesty attached: **these are current practice, not
+  yet reviewed policy** — publishing the numbers without saying so would
+  convert engineering defaults into an implied promise, the overstatement
+  this page family exists to avoid (#48). A pairs-style test asserts every
+  setting the pruner enforces sits behind a disclosure line, so a table added
+  to `PRUNABLE` without a disclosure decision fails CI.
+
+### Fixed
+- **The retention policy document described a system that no longer exists**
+  (#47). `docs/data-retention.md` still said "no retention pruning
+  implemented — data accumulates" — untrue since pruning began running
+  hourly — plus Alibaba Cloud hosting (it is AWS Tokyo) and contact details
+  in env config (they are in the database). A policy document that
+  understates what the system deletes misleads the lawyer it is written for:
+  the erasure-vs-forensics question reads very differently against "we keep
+  everything" than against "we already delete on a schedule engineering
+  chose". The factual half is rewritten to match the running system; the
+  legal questions and the NOT-REVIEWED flag are unchanged, because that
+  criterion needs a lawyer, not a commit.
+
+### Added
 - **An operator can work the alert queue across every customer** (#41, G-37).
   New `/triage` on the ops dashboard: every unacknowledged alert fleet-wide,
   CRITICAL first and oldest first within a severity, with an inline note and a
