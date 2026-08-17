@@ -14,6 +14,47 @@ Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Added
+- **The product says what it cannot do, and a guard keeps it that way**
+  (#48, G-44). New `/limits` in the member portal — *What the Guardian does*,
+  *What it cannot do*, *Why it is built this way*, *Timing, honestly* — linked
+  from every signed-in page.
+
+  The important sentence is that **it cannot stop an attack**. It has no power
+  to freeze, cancel, block or reverse anything on an exchange. A customer who
+  believes otherwise will not act on an alert with the urgency that decides
+  the outcome — they will assume something is already being done — so a
+  prevention claim does not merely oversell the product, it disarms it.
+
+  The read-only key is stated with **both halves**: it cannot trade or
+  withdraw, so a compromise of Minas cannot cost anyone money — and the price
+  of that guarantee is that the same key cannot be used to rescue funds
+  either. Stating only the first half would be marketing. Timing comes from
+  the running config (`fast_loop_seconds`, `slow_loop_seconds`) rather than a
+  number typed into copy, and is stated as measured from when the *exchange*
+  reports something, since we cannot be faster than the source we read.
+
+  **`tests/test_no_prevention_claims.py` enforces the fourth criterion.** The
+  claim was already absent — it held because whoever wrote the copy happened
+  to be careful, which is the same as not holding. The scan walks the AST of
+  the customer-facing modules and reads only string literals that can reach a
+  page, so comments and docstrings explaining the rule do not trip it.
+
+  A verb alone is not a claim, which the first two attempts got wrong. Both
+  false positives were sentences the product must keep saying: *"It cannot
+  stop an attack"* on the limits page, and *"If you did not authorise this,
+  freeze the account in the Bitget app"* in the alert runbook — advice to the
+  customer, which is the honest model stated out loud. A claim now requires
+  the product as subject, the verb, and no negation, all in the same clause.
+  A guard that fires on the honest page gets suppressed, and a suppressed
+  guard protects nothing.
+
+### Changed
+- **The member portal's navigation is built in one place.** It was duplicated
+  across pages, which is how a new page ends up reachable from some and not
+  others — and the reader who most needs "what are the limits of this thing"
+  is the one who arrived somewhere that does not link to it.
+
+### Added
 - **A customer can see whether they are actually being watched** (#38, G-34).
   New `/status` in the member portal. The product's claim is that no news is
   good news, and that claim is worth nothing unless silence can be told apart

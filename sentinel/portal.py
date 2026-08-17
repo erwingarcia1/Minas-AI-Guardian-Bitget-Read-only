@@ -563,6 +563,28 @@ def _render_login(error: str | None = None) -> str:
     return _page(body)
 
 
+def _member_nav(email: str, *, home_link: bool = False) -> str:
+    """The signed-in member's navigation, in one place.
+
+    It was duplicated across three pages, which is how a new page ends up
+    reachable from some of them and not others - the reader who most needs
+    "what are the limits of this thing" is the one who arrived on a page that
+    does not link to it.
+    """
+    return (
+        f'<span class="live">{html.escape(email)}</span>'
+        + ('<a class="live" href="/">Overview</a>' if home_link else "")
+        + '<a class="live" href="/status">System status</a>'
+          '<a class="live" href="/alerts">Alert history</a>'
+          '<a class="live" href="/activity">Account activity</a>'
+          '<a class="live" href="/limits">What we can and cannot do</a>'
+          '<a class="live" href="/security">Security</a>'
+          '<form method="post" action="/logout" style="margin:0">'
+          '<button class="live" type="submit" style="cursor:pointer;font-family:inherit">'
+          "Sign out</button></form>"
+    )
+
+
 def _render_home(db: Database, email: str, rules=None) -> str:
     accounts = member_accounts(db, email)
     ids = [r["id"] for r in accounts]
@@ -611,15 +633,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
         "<th>Acknowledged</th></tr></thead>"
         f"<tbody>{alert_rows}</tbody></table></div></section>"
     )
-    nav = (
-        f'<span class="live">{html.escape(email)}</span>'
-        '<a class="live" href="/status">System status</a>'
-        '<a class="live" href="/alerts">Alert history</a>'
-        '<a class="live" href="/activity">Account activity</a>'
-        '<a class="live" href="/security">Security</a>'
-        '<form method="post" action="/logout" style="margin:0">'
-        '<button class="live" type="submit" style="cursor:pointer;font-family:inherit">Sign out</button></form>'
-    )
+    nav = _member_nav(email)
     return _page(body, nav)
 
 
@@ -969,17 +983,104 @@ def _render_status(db: Database, email: str, rules=None) -> str:
         "evidence that monitoring is working, not as the alarm that would tell you it stopped."
         "</span></div></div></div></section>"
     )
-    nav = (
-        f'<span class="live">{html.escape(email)}</span>'
-        '<a class="live" href="/">Overview</a>'
-        '<a class="live" href="/status">System status</a>'
-        '<a class="live" href="/alerts">Alert history</a>'
-        '<a class="live" href="/activity">Account activity</a>'
-        '<a class="live" href="/security">Security</a>'
-        '<form method="post" action="/logout" style="margin:0">'
-        '<button class="live" type="submit" style="cursor:pointer;font-family:inherit">Sign out</button></form>'
-    )
+    nav = _member_nav(email, home_link=True)
     return _page(body, nav)
+
+
+def _render_limits(db: Database, email: str, rules=None) -> str:
+    """G-44 (#48): what the Guardian can and cannot do, said plainly.
+
+    The product detects and tells you. It cannot stop anything. A customer who
+    believes otherwise will not act on an alert with the urgency it needs,
+    because they will assume something is already being done - and the whole
+    value of the alert is that they act on it.
+
+    So this page exists to be *unflattering*, and the honesty is load-bearing
+    rather than decorative. The read-only key is the clearest case: it is a
+    real safety property worth stating, and its cost is precisely the
+    limitation on this page. Stating only the first half would be marketing.
+
+    Numbers come from the running config, never typed in. A page that promises
+    a response time the poller does not keep is worse than a page that promises
+    nothing.
+    """
+    fast = (
+        rules.get_int("polling", "fast_loop_seconds") if rules is not None
+        else int(default_for("polling", "fast_loop_seconds") or 45)
+    )
+    slow = (
+        rules.get_int("polling", "slow_loop_seconds") if rules is not None
+        else int(default_for("polling", "slow_loop_seconds") or 600)
+    )
+
+    def _check(icon_class, icon, title, text):
+        return (f'<div class="check"><span class="ic {icon_class}">{icon}</span>'
+                f"<span class=\"txt\"><b>{title}</b> — {text}</span></div>")
+
+    does = "".join([
+        _check("ok", "✓", "It watches for money leaving",
+               "withdrawals, transfers, and balance drops that no trade explains."),
+        _check("ok", "✓", "It watches your account's security settings",
+               "API permissions and IP allowlists changing are how a takeover starts."),
+        _check("ok", "✓", "It tells you, on the channels you have configured",
+               "and tells a second contact, and escalates if nobody acknowledges."),
+        _check("ok", "✓", "It keeps the record",
+               "every alert and every check is stored, so you can reconstruct what "
+               "happened and when afterwards."),
+    ])
+
+    cannot = "".join([
+        _check("warn", "!", "It cannot stop an attack",
+               "This is the important one. The Guardian has no power to freeze, "
+               "cancel, block or reverse anything on your exchange account. If "
+               "somebody is taking your funds, it tells you they are taking your "
+               "funds. Acting on that is yours to do, and the speed you do it at "
+               "is what decides the outcome."),
+        _check("warn", "!", "It cannot see what the exchange does not report",
+               "Every check reads the exchange's own API. If the exchange is slow "
+               "to show a withdrawal, omits a reference, or is unreachable, the "
+               "Guardian is that much later or that much blinder. It says so "
+               "rather than guessing — see "
+               "<a class=\"acctlink\" href=\"/status\">System status</a>."),
+        _check("warn", "!", "It cannot recover money that has gone",
+               "There is no reversal. The Guardian shortens the time between a "
+               "theft starting and you knowing about it. That is the whole "
+               "product."),
+    ])
+
+    why = (
+        _check("ok", "✓", "The key we hold is read-only, on purpose",
+               "It cannot trade, withdraw, or move anything. That means a "
+               "compromise of Minas itself still cannot cost you money — we are "
+               "not a way in to your funds. "
+               "<b>The cost of that guarantee is this page:</b> a key that cannot "
+               "move your money also cannot be used to rescue it. We chose the "
+               "side that cannot hurt you.")
+    )
+
+    timing = (
+        _check("ok", "i", "How quickly you hear",
+               f"Your balances and recent movements are checked about every "
+               f"<b>{fast} seconds</b>; permissions and allowlists about every "
+               f"<b>{slow // 60} minutes</b>. An alert is sent as soon as a check "
+               "finds something, so in normal conditions you hear within a minute "
+               "or so of the exchange showing it. That is measured from when the "
+               "<i>exchange</i> reports it, not from when it happened — we cannot "
+               "be faster than the source we read.")
+    )
+
+    body = (
+        '<section><div class="card"><div class="card-head"><h2>What the Guardian does</h2></div>'
+        f'<div class="checks">{does}</div></div></section>'
+        '<section><div class="card"><div class="card-head"><h2>What it cannot do</h2>'
+        '<span class="count">read this one</span></div>'
+        f'<div class="checks">{cannot}</div></div></section>'
+        '<section><div class="card"><div class="card-head"><h2>Why it is built this way</h2></div>'
+        f'<div class="checks">{why}</div></div></section>'
+        '<section><div class="card"><div class="card-head"><h2>Timing, honestly</h2></div>'
+        f'<div class="checks">{timing}</div></div></section>'
+    )
+    return _page(body, _member_nav(email, home_link=True))
 
 
 def _render_activity(db: Database, email: str) -> str:
@@ -1854,6 +1955,8 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             elif path == "/alerts":
                 qs = parse_qs(urlparse(self.path).query)
                 self._send(_render_alert_history(db, email, qs).encode())
+            elif path == "/limits":
+                self._send(_render_limits(db, email, rules).encode())
             elif path == "/status":
                 body = _render_status(db, email, rules)
                 self._send(body.encode())
