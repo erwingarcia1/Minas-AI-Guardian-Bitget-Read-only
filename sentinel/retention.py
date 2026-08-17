@@ -50,11 +50,10 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     "snoozes": ("created_at", "snoozes_days"),
     # Minas-side triage bookkeeping (#41): one row per alert, so it lives on
     # the alert's own window. `updated_at` rather than the alert's `sent_at`
-    # because that is the column this table has; the drift is at most the gap
-    # between an alert firing and the last time somebody touched its triage,
-    # and a triage row briefly outliving its pruned alert is harmless where
-    # the reverse - annotations deleted while their alert is still kept -
-    # would throw away who worked on it.
+    # because that is the column this table has, which lets a triage row
+    # touched late outlive the alert it annotates - see ALERT_CHILDREN below
+    # for why that is a foreign-key failure and not the harmless drift this
+    # comment used to claim.
     "alert_triage": ("updated_at", "alerts_days"),
     # Threshold changes (#16). History of what this product was tuned to
     # notice, on the same long window as `events` - an incident review asks
@@ -106,6 +105,35 @@ NEVER_PRUNE = frozenset({
     "portal_meta",
 })
 
+# Tables holding a row *about* one alert. Every one of them declares
+# `alert_id ... REFERENCES alerts(id)`, `Database` opens every connection with
+# `PRAGMA foreign_keys = ON`, and no table in this schema declares
+# `ON DELETE CASCADE`. So SQLite refuses to delete an alert while any of these
+# still points at it, and `DELETE FROM alerts` raises IntegrityError rather
+# than skipping the row.
+#
+# That is not a theoretical ordering nit. `prune_all` walked PRUNABLE in
+# insertion order, where `alerts` sits at index 1 and its three children at 3,
+# 5 and 8 - so the parent was always deleted first, and the very first alert
+# old enough to prune that carried an SMS-delivery record, a "that was me"
+# mark or a triage note aborted the whole retention pass. Every table after
+# `alerts` then went unpruned too, because the exception left `prune_all`
+# entirely: a housekeeping job that silently stops housekeeping, which is the
+# unbounded growth #60 exists to prevent.
+#
+# Fixing it with `ON DELETE CASCADE` would be the tidier schema, but SQLite
+# cannot add a constraint to an existing table - it needs the 12-step rebuild,
+# on a live database holding customer credentials, and `Database._init_schema`
+# only knows how to add columns. So the cascade is written here instead, as an
+# explicit delete keyed on the parent's own cutoff, which needs no migration
+# and works on the deployed database as it stands.
+#
+# Each of these keeps its own PRUNABLE entry as well, and that is deliberate:
+# this list stops a child outliving its parent, while the PRUNABLE entry lets
+# a *shorter* child window still delete a child early. The effective retention
+# of a child is min(its own window, the alert's).
+ALERT_CHILDREN = ("alert_triage", "expected_activity", "sms_deliveries")
+
 
 def _cutoff(days: float) -> str:
     return (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
@@ -122,9 +150,21 @@ def prune_all(db: Database, rules) -> dict[str, int]:
         days = rules.get_int("retention", setting)
         if days <= 0:
             continue  # 0 means "keep forever", a legitimate choice
+        cutoff = _cutoff(days)
         with db.cursor() as cur:
-            cur.execute(f"DELETE FROM {table} WHERE {column} < ?", (_cutoff(days),))
-            deleted[table] = cur.rowcount
+            if table == "alerts":
+                # The cascade SQLite will not do for us. Runs inside the same
+                # transaction as the parent delete, so a failure here cannot
+                # leave children orphaned by a parent that went anyway.
+                for child in ALERT_CHILDREN:
+                    cur.execute(
+                        f"DELETE FROM {child} WHERE alert_id IN "
+                        f"(SELECT id FROM alerts WHERE {column} < ?)",
+                        (cutoff,),
+                    )
+                    deleted[child] = deleted.get(child, 0) + cur.rowcount
+            cur.execute(f"DELETE FROM {table} WHERE {column} < ?", (cutoff,))
+            deleted[table] = deleted.get(table, 0) + cur.rowcount
 
     for table, (column, setting) in KEEP_LATEST_PER_ACCOUNT.items():
         days = rules.get_int("retention", setting)

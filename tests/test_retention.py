@@ -340,3 +340,241 @@ def test_never_run_is_none_not_zero(db, cipher):
 
     engine = Engine(db, cipher, RulesConfig("config/rules.yaml"), {})
     assert engine._last_prune is None
+
+
+# --- alerts and the rows that annotate them -----------------------------------
+#
+# Three tables carry an `alert_id ... REFERENCES alerts(id)`, `Database` opens
+# every connection with `PRAGMA foreign_keys = ON`, and nothing in the schema
+# declares `ON DELETE CASCADE`. So the parent delete is refused by SQLite while
+# a child still points at it - and because `prune_all` deleted `alerts` before
+# any of its children, the refusal aborted the entire retention pass.
+
+
+def _alert(db, account_id, *, age):
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, "
+            "evidence_json, confidence, sent_at) "
+            "VALUES (?, 'withdrawal_initiated', 'CRITICAL', 'd', 'm', '{}', 'high', ?)",
+            (account_id, _ago(age)),
+        )
+        return cur.lastrowid
+
+
+def _triage(db, alert_id, *, age):
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO alert_triage (alert_id, note, handled_at, handled_by, updated_at) "
+            "VALUES (?, 'working it', ?, 'john', ?)",
+            (alert_id, _ago(age), _ago(age)),
+        )
+
+
+def _sms(db, account_id, alert_id, *, age):
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO sms_deliveries (account_id, alert_id, rule, phone, status, created_at) "
+            "VALUES (?, ?, 'withdrawal_initiated', '+15550000', 'sent', ?)",
+            (account_id, alert_id, _ago(age)),
+        )
+
+
+def _expected(db, account_id, alert_id, *, age):
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO expected_activity (alert_id, account_id, rule, dedup_key, marked_by, created_at) "
+            "VALUES (?, ?, 'withdrawal_initiated', 'd', 'customer', ?)",
+            (alert_id, account_id, _ago(age)),
+        )
+
+
+def _count(db, table):
+    with db.cursor() as cur:
+        cur.execute(f"SELECT count(*) c FROM {table}")
+        return cur.fetchone()["c"]
+
+
+def test_a_pruned_alert_takes_its_annotations_with_it(db, rules):
+    """The rows actually leave. Asserting that `alert_triage` appears in
+    PRUNABLE would only re-assert the config; this watches the table empty."""
+    account_id = _account(db)
+    alert_id = _alert(db, account_id, age=5000)
+    _triage(db, alert_id, age=5000)
+    _sms(db, account_id, alert_id, age=5000)
+    _expected(db, account_id, alert_id, age=5000)
+
+    prune_all(db, rules)
+
+    assert _count(db, "alerts") == 0
+    for child in ("alert_triage", "sms_deliveries", "expected_activity"):
+        assert _count(db, child) == 0, f"{child} outlived the alert it annotates"
+
+
+def test_a_late_touched_triage_row_does_not_abort_the_whole_pass(db, rules):
+    """The regression, and the reason this is worth a test at all.
+
+    An alert old enough to prune whose triage row was touched recently is the
+    ordinary case - an operator works a queue long after the alert fired. The
+    parent delete used to raise IntegrityError, which left `prune_all`
+    altogether, so every table sitting after `alerts` in PRUNABLE kept its old
+    rows forever and the log said nothing."""
+    account_id = _account(db)
+    alert_id = _alert(db, account_id, age=5000)
+    _triage(db, alert_id, age=1)  # touched yesterday, alert is years old
+
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO seen_fills (account_id, fill_key, first_seen_at) VALUES (?, 'f', ?)",
+            (account_id, _ago(5000)),
+        )
+
+    deleted = prune_all(db, rules)
+
+    assert _count(db, "alerts") == 0
+    assert _count(db, "alert_triage") == 0
+    # seen_fills sits after `alerts` in PRUNABLE: the proof the pass ran on.
+    assert deleted["seen_fills"] == 1
+    assert _count(db, "seen_fills") == 0
+
+
+def test_a_recent_alert_keeps_its_triage(db, rules):
+    """The other direction. A cascade that fires on rows inside the window
+    would pass the test above and quietly delete live triage state."""
+    account_id = _account(db)
+    alert_id = _alert(db, account_id, age=1)
+    _triage(db, alert_id, age=1)
+
+    prune_all(db, rules)
+
+    assert _count(db, "alerts") == 1
+    assert _count(db, "alert_triage") == 1
+
+
+def test_every_foreign_key_child_of_alerts_is_in_the_cascade(db):
+    """The pairs-test for the cascade itself.
+
+    `alert_triage` was the third table to reference `alerts(id)` and the third
+    to be left out of the deletion order. A fourth is a schema change away, and
+    it would fail exactly as the first three did - at a customer's 730-day
+    mark, in a background job, on the deployed database."""
+    from sentinel.retention import ALERT_CHILDREN
+
+    with db.cursor() as cur:
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+        tables = [r["name"] for r in cur.fetchall()]
+        children = set()
+        for table in tables:
+            cur.execute(f"PRAGMA foreign_key_list({table})")
+            if any(row["table"] == "alerts" for row in cur.fetchall()):
+                children.add(table)
+
+    assert children, "the scan found no children of `alerts` - it is looking in the wrong place"
+    assert children == set(ALERT_CHILDREN), (
+        f"tables referencing alerts(id) but not cascaded: {sorted(children - set(ALERT_CHILDREN))}; "
+        f"cascaded but no longer referencing: {sorted(set(ALERT_CHILDREN) - children)}"
+    )
+
+
+# --- the execution guard ------------------------------------------------------
+#
+# `test_every_growing_table_is_covered` asks whether somebody made a decision.
+# It cannot ask whether the decision executes, and those came apart in exactly
+# the way that matters: `alert_triage` was registered in PRUNABLE by b60c65d,
+# the registration guard went green, and `prune_all` still could not delete a
+# single alert - `PRAGMA foreign_keys = ON` with no `ON DELETE CASCADE` meant
+# the parent delete raised, and the raise left `prune_all` altogether, so every
+# table after `alerts` stopped being pruned too.
+#
+# So: one row per table, past its own window, one `prune_all`, and every table
+# must be empty afterwards. Table-driven from PRUNABLE rather than a list
+# written out by hand, because a hand-written list is the thing that was
+# already wrong.
+
+def _stamp(rules, setting, extra_days=30):
+    """A timestamp comfortably past `setting`'s window."""
+    return _ago(rules.get_int("retention", setting) + extra_days)
+
+
+# One row per prunable table. Each factory writes its table's own timestamp
+# column to `ts`, so the row is unambiguously past that table's window.
+_ROW_FACTORIES = {
+    "events": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO events (account_id, event_type, severity, payload_json, created_at) "
+        "VALUES (?, 'withdrawal_initiated', 'CRITICAL', '{}', ?)", (acct, ts)),
+    "alerts": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, evidence_json, "
+        "confidence, sent_at) VALUES (?, 'r', 'HIGH', 'd2', 'm', '{}', 'high', ?)", (acct, ts)),
+    "operator_pages": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO operator_pages (account_id, rule, severity, dedup_key, message, "
+        "evidence_json, sent_at) VALUES (?, 'r', 'HIGH', 'd', 'm', '{}', ?)", (acct, ts)),
+    "sms_deliveries": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO sms_deliveries (account_id, alert_id, rule, phone, status, created_at) "
+        "VALUES (?, ?, 'r', '+15550000', 'sent', ?)", (acct, alert, ts)),
+    "snoozes": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO snoozes (account_id, dedup_key, rule, requested_by, created_at, expires_at) "
+        "VALUES (?, 'd', 'r', 'customer', ?, ?)", (acct, ts, ts)),
+    "alert_triage": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO alert_triage (alert_id, note, handled_at, handled_by, updated_at) "
+        "VALUES (?, 'n', ?, 'john', ?)", (alert, ts, ts)),
+    "config_changes": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO config_changes (setting, old_value, new_value, actor, changed_at) "
+        "VALUES ('polling.fast_loop_seconds', '45', '60', 'john', ?)", (ts,)),
+    "password_resets": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO password_resets (email, token_hash, created_at, expires_at) "
+        "VALUES ('a@b.test', 'h', ?, ?)", (ts, ts)),
+    "expected_activity": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO expected_activity (alert_id, account_id, rule, dedup_key, marked_by, created_at) "
+        "VALUES (?, ?, 'r', 'd', 'customer', ?)", (alert, acct, ts)),
+    "seen_withdrawals": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO seen_withdrawals (account_id, order_id, status, raw_json, first_seen_at) "
+        "VALUES (?, 'o1', 'success', '{}', ?)", (acct, ts)),
+    "seen_transfers": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO seen_transfers (account_id, transfer_id, raw_json, first_seen_at) "
+        "VALUES (?, 't1', '{}', ?)", (acct, ts)),
+    "seen_fills": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO seen_fills (account_id, fill_key, first_seen_at) VALUES (?, 'f1', ?)",
+        (acct, ts)),
+}
+
+
+def test_every_prunable_table_has_a_row_factory():
+    """Without this, a table added to PRUNABLE with no factory would be silently
+    absent from the execution guard below - which would then prove that eleven
+    tables prune while reading as though it proved twelve. The same hole the
+    registration guard had, reintroduced one level down."""
+    from sentinel.retention import PRUNABLE
+
+    assert set(_ROW_FACTORIES) == set(PRUNABLE), (
+        f"no row factory for: {sorted(set(PRUNABLE) - set(_ROW_FACTORIES))}; "
+        f"factory for a table no longer pruned: {sorted(set(_ROW_FACTORIES) - set(PRUNABLE))}"
+    )
+
+
+def test_every_prunable_table_actually_prunes(db, rules):
+    """The execution half. Registration guards need paired execution guards.
+
+    Fails on b60c65d alone with `IntegrityError: FOREIGN KEY constraint failed`,
+    because `alerts` is deleted before the three tables that reference it."""
+    from sentinel.retention import PRUNABLE
+
+    account_id = _account(db)
+    with db.cursor() as cur:
+        # The parent every child factory needs, aged past the alerts window so
+        # it is eligible in the same pass as its children.
+        cur.execute(
+            "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, evidence_json, "
+            "confidence, sent_at) VALUES (?, 'r', 'CRITICAL', 'd1', 'm', '{}', 'high', ?)",
+            (account_id, _stamp(rules, "alerts_days")),
+        )
+        alert_id = cur.lastrowid
+        for table, factory in _ROW_FACTORIES.items():
+            factory(cur, account_id, alert_id, _stamp(rules, PRUNABLE[table][1]))
+
+    before = {t: _count(db, t) for t in PRUNABLE}
+    assert all(before.values()), f"setup failed to populate: {[t for t, n in before.items() if not n]}"
+
+    prune_all(db, rules)
+
+    remaining = {t: _count(db, t) for t in PRUNABLE if _count(db, t)}
+    assert remaining == {}, f"past their window and still present: {remaining}"

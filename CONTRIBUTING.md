@@ -428,6 +428,42 @@ if reference:
 return "sha256:" + _digest(...)       # explicit, not a fallback value
 ```
 
+## Registration guards need execution guards
+
+**A test that a thing is *listed* is not a test that the thing *works*.** When
+you add a guard asserting some registry is complete — every table has a
+retention decision, every setting has a disclosure line, every module imports —
+add its pair: run the machinery the registry feeds and assert the effect.
+
+The defect that named this: `alert_triage` was added to `retention.PRUNABLE`
+(#41), and `test_every_growing_table_is_covered` went green because the key was
+present. The pruner still could not delete a single alert. `PRAGMA
+foreign_keys = ON` with no `ON DELETE CASCADE` meant `DELETE FROM alerts` was
+refused while any of the three tables referencing it still had a row, and the
+`IntegrityError` propagated out of `prune_all` entirely — so **every table after
+`alerts` in the dict stopped being pruned too**. Registration guard green,
+retention dead, the growth metric that would have shown it frozen by the same
+exception. Two tables (`sms_deliveries`, `expected_activity`) had been in that
+state since long before `alert_triage` joined them.
+
+The shape: a registry is a claim about intent, and a guard over it can only
+check that somebody wrote the intent down. Whether the intent is *carried out*
+is a different assertion against different code, and the gap between them is
+invisible precisely because the first guard is green.
+
+**The pair, for `PRUNABLE`** (`tests/test_retention.py`) — the pattern to copy:
+
+- `test_every_growing_table_is_covered` — registration: every table has a decision.
+- `test_every_prunable_table_actually_prunes` — execution: one row per table past
+  its own window, one `prune_all`, every table empty afterwards.
+- `test_every_prunable_table_has_a_row_factory` — the execution guard's own
+  registration guard, because a table with no factory would be silently absent
+  from the population it claims to cover.
+
+**Prove the pair is load-bearing**: the execution guard must fail against the
+tree *without* your fix. One that passes both ways is testing the registry
+again, in more lines.
+
 ## Mutation testing
 
 ```bash
