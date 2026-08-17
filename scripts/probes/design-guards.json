@@ -380,8 +380,8 @@
  {
   "name": "#61: the blast radius is never shown",
   "file": "sentinel/dashboard.py",
-  "old": "    if others:\n        scope = (",
-  "new": "    if False:\n        scope = (",
+  "old": "    scope = \"\"\n    if others:\n        label +=",
+  "new": "    scope = \"\"\n    if False:\n        label +=",
   "tests": [
    "tests/test_portal_access_scope.py"
   ]
@@ -1187,6 +1187,24 @@
   "new": "    where = f\" Replace it here: {url}/key\" if url else \" Sign in to Minas AI Guardian\"",
   "tests": [
    "tests/test_customer_email_template.py"
+  ]
+ },
+ {
+  "name": "#38 one healthy account makes the status page say everything is fine",
+  "file": "sentinel/portal.py",
+  "old": "    if rows and watched == len(rows):",
+  "new": "    if rows and watched:",
+  "tests": [
+   "tests/test_member_status.py"
+  ]
+ },
+ {
+  "name": "#48 a prevention claim reaches the customer",
+  "file": "sentinel/portal.py",
+  "old": "\"It watches for money leaving\",",
+  "new": "\"The Guardian protects your funds around the clock\",",
+  "tests": [
+   "tests/test_no_prevention_claims.py"
   ]
  }
 ]
