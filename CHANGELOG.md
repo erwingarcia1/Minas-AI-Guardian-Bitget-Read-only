@@ -1284,6 +1284,14 @@ misrouted:
   not be able to push code that our own next deploy would install. Docs and
   the EC2 bootstrap script now describe the key-first setup; the bootstrap
   no longer attempts the unauthenticated clone that a private repo 404s.
+- **`scripts/deploy.sh` — the whole deploy as one command on the server.**
+  Pull (`--ff-only`), deploy gate, build stamped with `GIT_SHA`/`GIT_TAG`,
+  `validate-config` against the new image, `up -d`, wait for the
+  healthcheck, report `sentinel version`. Self-elevates via sudo. It
+  automates the documented sequence and decides nothing new — the gate's
+  tag-only rule and missing `--force` apply exactly as when typed by hand —
+  and any failure before the switchover leaves the previous version running
+  untouched, because the build and config check happen off to the side.
 
 ## [1.0.0] — 2026-07-05
 

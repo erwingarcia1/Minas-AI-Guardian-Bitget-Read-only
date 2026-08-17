@@ -175,10 +175,34 @@ typo at your desk and finding out from a page.
 The VM holds a read-only deploy key and `/opt/minas-guardian` is a real
 clone, so a deploy is a pull on the server — nothing is shipped from a
 laptop, and only what is committed *and pushed* to `main` can reach
-production:
+production. The whole thing is one command:
 
 ```bash
-ssh ubuntu@minas-guardian            # Tailscale SSH
+# From your machine — a deploy ships a RELEASE, not a bare push (see the
+# gate below), so cut one if HEAD isn't tagged yet:
+scripts/release.sh X.Y.Z             # level rules: CONTRIBUTING.md
+git push && git push --tags
+
+# On the server:
+ssh ubuntu@minas-guardian            # Tailscale SSH (preferred)
+#   — or, off the tailnet, the EC2 key pair (IP must be in the SG rule):
+# ssh -i "Minas-AI-Guardian-Key-Tokyo.pem" ubuntu@ec2-54-168-212-44.ap-northeast-1.compute.amazonaws.com
+sudo /opt/minas-guardian/scripts/deploy.sh
+```
+
+`scripts/deploy.sh` (plain `scripts/deploy.sh` also works — it re-runs
+itself under sudo) runs the sequence below, stops at the first failure, and
+prints what is live when it's done. Its one property to internalize: **any
+failure before its "Switching over" step leaves the previous version
+running untouched** — the build and the config check happen off to the
+side, so a refused gate or a rejected config costs nothing but the time to
+fix it. After the switchover it waits for the container's healthcheck and
+prints the logs if that fails.
+
+The manual sequence — for understanding what the script does, or for the
+day the script itself is what's broken:
+
+```bash
 cd /opt/minas-guardian
 sudo git pull
 scripts/deploy-gate.sh               # STEP ONE: refuses anything that is not a release
@@ -435,6 +459,6 @@ every docker command takes `sudo`:
 | Send digest now | `sudo docker compose exec -T sentinel sentinel digest` |
 | Tune thresholds | edit `config/rules.yaml` on the host — hot-reloads, no restart |
 | AI triage narrative for an account | `sudo docker compose exec sentinel sentinel triage --label <label>` |
-| Update to latest code | `sudo git pull`, `scripts/deploy-gate.sh`, build + `validate-config`, then `sudo docker compose up -d` — full sequence in "Deploying code changes" above |
+| Update to latest code | `sudo /opt/minas-guardian/scripts/deploy.sh` — the full documented sequence, one command ("Deploying code changes" above) |
 | What is running right now | `sudo docker compose exec -T sentinel sentinel version` (also in the dashboard footer) |
 | Stop the stack | `sudo docker compose down` — **never with `-v`**: that flag also deletes the volumes, i.e. the customer database (see the warning section above) |

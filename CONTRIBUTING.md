@@ -149,19 +149,28 @@ release, and cutting a release produces the note as a side effect. There is no
 ## Deploying
 
 The production host holds a **read-only deploy key** for this repo, so a
-deploy is a pull on the server — nothing is shipped from a laptop:
+deploy is a pull on the server — nothing is shipped from a laptop. After
+cutting and pushing a release (above), it is one command:
 
 ```bash
-ssh ubuntu@minas-guardian     # Tailscale SSH
-cd /opt/minas-guardian
-sudo git pull                 # root's key: /root/.ssh/id_ed25519
-scripts/deploy-gate.sh        # refuses unless HEAD is exactly a release tag
-eval "$(scripts/deploy-gate.sh --export)"   # GIT_SHA/GIT_TAG for the build
-sudo -E docker compose build sentinel
-sudo docker compose run --rm sentinel sentinel validate-config /app/config/rules.yaml
-sudo docker compose up -d
-sudo docker compose exec -T sentinel sentinel version   # confirm what is running
+# On the tailnet:
+ssh ubuntu@minas-guardian
+# Not on the tailnet — EC2 key pair (chmod 400 the .pem; your IP must be in
+# the security group's port-22 rule):
+ssh -i "Minas-AI-Guardian-Key-Tokyo.pem" ubuntu@ec2-54-168-212-44.ap-northeast-1.compute.amazonaws.com
+
+sudo /opt/minas-guardian/scripts/deploy.sh
 ```
+
+`deploy.sh` runs the documented sequence — pull, deploy gate (release tags
+only, no `--force`), image build stamped with `GIT_SHA`/`GIT_TAG`,
+`validate-config` against the new image, `up -d`, wait for the healthcheck,
+report `sentinel version` — and any failure before the switchover leaves
+the previous version running untouched. If the gate refuses, your commit
+has no release tag: cut one (`scripts/release.sh X.Y.Z`, then
+`git push && git push --tags`) and rerun. The manual sequence and the
+reasoning behind each step: [docs/deployment.md](docs/deployment.md)
+"Deploying code changes".
 
 Push first: the server pulls from GitHub `main`, so unpushed work cannot
 deploy — GitHub and production stay in lockstep by construction. Don't edit

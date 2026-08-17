@@ -61,8 +61,9 @@ cat > /etc/motd <<'MOTD'
         sudo tailscale serve --bg 8390          # serve, NEVER funnel
       then in the admin console: disable key expiry for this machine.
 
- Updates from now on: cd /opt/minas-guardian && sudo git pull, validate
- config, sudo docker compose up -d --build   (docs/deployment.md)
+ Updates from now on, one command (docs/deployment.md "Deploying code
+ changes" - ships release tags only):
+   sudo /opt/minas-guardian/scripts/deploy.sh
 
  Break-glass dashboard access (only needs the EC2 key pair):
    ssh -i your-key.pem -L 8390:127.0.0.1:8390 -L 9109:127.0.0.1:9109 \

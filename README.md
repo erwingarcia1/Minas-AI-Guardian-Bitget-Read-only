@@ -61,7 +61,8 @@ the gate instead.
 Docker (same image as production): `docker compose up -d --build`.
 Production deployment (AWS): see [docs/deployment.md](docs/deployment.md) —
 the server pulls from this repo via a read-only deploy key, so a deploy is
-`sudo git pull` + rebuild on the box. **Only released code can reach
+one command on the box: `sudo /opt/minas-guardian/scripts/deploy.sh`
+(pull → gate → build → config check → switchover). **Only released code can reach
 production**: the deploy refuses any commit that is not exactly a release tag,
 and tags are only cut by `scripts/release.sh`, which refuses an empty
 `[Unreleased]`. So everything running in production has notes describing it.
