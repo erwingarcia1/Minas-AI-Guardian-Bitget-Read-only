@@ -55,6 +55,14 @@ def _open_readonly(path: str) -> sqlite3.Connection:
     return conn
 
 
+def _span(days: float) -> str:
+    """'5h' under a day, '3d' from there up. 'PAST 0d' read as a day-scale
+    breach rounded down — the opposite of the minutes it actually was (#78)."""
+    if days < 1:
+        return f"{days * 24:.0f}h"
+    return f"{days:.0f}d"
+
+
 def _parse(ts: str) -> datetime:
     parsed = datetime.fromisoformat(ts)
     if parsed.tzinfo is None:
@@ -134,6 +142,10 @@ def main() -> int:
         return 2
 
     now = datetime.now(timezone.utc)
+    # The pruner's own cadence is the report's tolerance: between hourly
+    # passes the oldest surviving row legitimately drifts up to one interval
+    # past its window (#78).
+    tolerance_days = max(rules.get_int("retention", "prune_interval_minutes"), 0) / 1440
     crossed = 0
     unanswered = 0
     rows: list[tuple[str, str, str, str, str]] = []
@@ -165,11 +177,17 @@ def main() -> int:
             continue
 
         remaining = (oldest_dt + timedelta(days=days) - now).total_seconds() / 86400
-        if remaining < 0:
-            crossed += 1
-            boundary = f"PAST {-remaining:.0f}d"
+        if remaining >= 0:
+            boundary = f"in {_span(remaining)}"
+        elif -remaining <= tolerance_days:
+            # Rows age across their window continuously between prune runs,
+            # so overshoot up to one prune interval is steady state — the
+            # next pass deletes this row. Flagging it as PAST made the
+            # report cry wolf on its first production run (#78).
+            boundary = f"due ({_span(-remaining)} past; within one prune interval)"
         else:
-            boundary = f"in {remaining:.0f}d"
+            crossed += 1
+            boundary = f"PAST {_span(-remaining)}"
         rows.append((table, window, oldest_dt.date().isoformat(), boundary, note))
 
     conn.close()

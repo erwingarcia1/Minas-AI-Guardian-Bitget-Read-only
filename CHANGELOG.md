@@ -28,6 +28,15 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Fixed
 
+- **The retention boundary report no longer cries wolf at the boundary**
+  (#78). Rows age across their window continuously between hourly prune
+  runs, so the oldest surviving row can legitimately sit up to one prune
+  interval past its window — the report flagged any negative remainder as
+  PAST and rendered minutes of overshoot as "PAST 0d". Overshoot within
+  one `prune_interval_minutes` now reads `due (…past; within one prune
+  interval)` and exits 0; sub-day amounts print in hours; a real backlog
+  still flags and exits 1. Behaviour at exactly the boundary is pinned by
+  tests in both directions.
 - **`scripts/retention-boundary.py` now ships in the Docker image** (#77),
   so it can run where `/data/sentinel.db` lives. This also corrects
   v1.4.1's release note, which promised the production retention boundary
