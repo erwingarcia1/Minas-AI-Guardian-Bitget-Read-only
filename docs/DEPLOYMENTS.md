@@ -74,7 +74,7 @@ build" — three answers, none checked against each other for six weeks.
 
 | Issue | Finding |
 |---|---|
-| [#74](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/issues/74) (p1) | `paula-garavillas`: **5,668 consecutive OKX poll failures**, "API key doesn't exist" — at least **three days dark**; needs a replacement read-only key |
+| [#74](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/issues/74) | `paula-garavillas`: **5,668 consecutive OKX poll failures**, "API key doesn't exist". *Corrected 2026-08-18: a **test account**, not a customer — reclassified p1 → p3; the fix is to disable it (offboarding is disable, never delete, G-50). It still matters because a warning every 45 seconds forever trains operators to ignore poll-failure warnings* |
 | [#75](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/issues/75) | SMS unconfigured (ClickSend/Twilio) while accounts carry phone contacts — CRITICAL now reaches Telegram **and email**; the SMS leg is still routed and absent |
 | [#76](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/issues/76) | Ops dashboard bound to **0.0.0.0 with no login of its own**; the tailnet carries ten devices across five people — establish who can reach port 8390 |
 | [#77](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/issues/77) | `scripts/` is not in the Docker image, so `retention-boundary.py` runs only mounted — contradicting v1.4.1's own release note; fix the Dockerfile or correct the note |
