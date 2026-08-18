@@ -173,13 +173,13 @@ typo at your desk and finding out from a page.
 ## Deploying code changes (routine update)
 
 The VM holds a read-only deploy key and `/opt/minas-guardian` is a real
-clone, so a deploy is a pull on the server — nothing is shipped from a
-laptop, and only what is committed *and pushed* to `main` can reach
-production. The whole thing is one command:
+clone, so a deploy is a fetch on the server — nothing is shipped from a
+laptop, and only what is committed *and pushed* can reach production. The
+whole thing is one command:
 
 ```bash
 # From your machine — a deploy ships a RELEASE, not a bare push (see the
-# gate below), so cut one if HEAD isn't tagged yet:
+# gate below), so cut one if there is no tag for what you want to ship:
 scripts/release.sh X.Y.Z             # level rules: CONTRIBUTING.md
 git push && git push --tags
 
@@ -187,31 +187,52 @@ git push && git push --tags
 ssh ubuntu@minas-guardian            # Tailscale SSH (preferred)
 #   — or, off the tailnet, the EC2 key pair (IP must be in the SG rule):
 # ssh -i "Minas-AI-Guardian-Key-Tokyo.pem" ubuntu@ec2-54-168-212-44.ap-northeast-1.compute.amazonaws.com
-sudo /opt/minas-guardian/scripts/deploy.sh
+sudo /opt/minas-guardian/scripts/deploy.sh            # latest release tag
+sudo /opt/minas-guardian/scripts/deploy.sh v1.5.0     # or that specific tag
 ```
 
 `scripts/deploy.sh` (plain `scripts/deploy.sh` also works — it re-runs
-itself under sudo) runs the sequence below, stops at the first failure, and
-prints what is live when it's done. Its one property to internalize: **any
-failure before its "Switching over" step leaves the previous version
-running untouched** — the build and the config check happen off to the
-side, so a refused gate or a rejected config costs nothing but the time to
-fix it. After the switchover it waits for the container's healthcheck and
-prints the logs if that fails.
+itself under sudo) **deploys a release tag, never a branch tip**: it fetches
+tags and checks out the requested tag (or the latest release by version
+order, with no argument), and what sits at the end of `main` is irrelevant.
+This is deliberate and load-bearing — the workflow commits a log handoff
+*after* cutting each tag, so main's tip is routinely one commit past the
+release, and the old pull-main flow handed that untagged tip to the gate,
+which correctly refused it (it blocked the v1.4.1 and v1.5.0 deploys).
+
+It stops at the first failure and refuses: a dirty working tree (naming the
+files — fix it in git, never on the server), a tag that does not exist, and
+— without a typed confirmation at the terminal — a tag *older* than the
+running version, so an accidental downgrade is not one typo away. Its one
+property to internalize: **any failure before its "Switching over" step
+leaves the previous version running untouched** — the build and the config
+check happen off to the side, so a refused gate or a rejected config costs
+nothing but the time to fix it. After the switchover it waits for the
+container's real healthcheck, then **asserts** the running container's
+`sentinel version` names the tag it was asked to deploy — a deploy that ran
+the wrong image exits non-zero rather than printing it.
+
+**The server stays detached at the deployed tag.** Deliberate: `git
+describe --tags` then answers "what is deployed" with exactly one name — no
+`-2-g1234abc` drift suffix — which is the property docs/DEPLOYMENTS.md
+exists to protect. `git fetch --tags` works fine from a detached HEAD, so
+the next deploy needs nothing done first. To put the clone back on a branch,
+should anyone need to: `sudo git -C /opt/minas-guardian checkout main`.
 
 The manual sequence — for understanding what the script does, or for the
 day the script itself is what's broken:
 
 ```bash
 cd /opt/minas-guardian
-sudo git pull
-scripts/deploy-gate.sh               # STEP ONE: refuses anything that is not a release
+sudo git fetch --tags
+sudo git checkout vX.Y.Z             # the release you are deploying — detached, on purpose
+scripts/deploy-gate.sh               # refuses anything that is not exactly a release tag
 eval "$(scripts/deploy-gate.sh --export)"
 sudo -E docker compose build sentinel
 sudo docker compose run --rm sentinel sentinel validate-config /app/config/rules.yaml
 sudo docker compose up -d
 sudo docker compose ps               # wait for "healthy"
-sudo docker compose exec -T sentinel sentinel version   # confirm what is running
+sudo docker compose exec -T sentinel sentinel version   # must name vX.Y.Z — if not, the wrong image is serving
 ```
 
 Why each step is shaped that way:
@@ -241,8 +262,11 @@ Why each step is shaped that way:
   `sentinel version` will report its commit as `unknown` and exit non-zero,
   because a build that misreports what it is would be worse than one that
   admits it does not know.
-- **`sudo git pull`** — the checkout and the deploy key are root's
-  (`/root/.ssh/id_ed25519`), so the pull must run under sudo too.
+- **`sudo git fetch --tags`, then check out the tag** — the checkout and the
+  deploy key are root's (`/root/.ssh/id_ed25519`), so both run under sudo.
+  Never `git pull`: it moves the checkout to main's tip, which is usually
+  *past* the release (the post-tag log handoff), and cannot run at all once
+  the server is detached at a tag.
 - **Build, then `validate-config`, then switch** — the check runs *the new
   image* against the box's live config, which is the order that catches a
   schema tightened since the running build (see the section above). Exit 0
@@ -254,12 +278,16 @@ Why each step is shaped that way:
   volume, which container recreation does not touch. The one flag that
   *does* touch it is `down -v` — see the warning section below.
 
-Two operational consequences of pull-based deploys:
+Two operational consequences of fetch-based deploys:
 
-- **Don't edit tracked files on the server.** `git pull` refuses to
-  overwrite local modifications, so a threshold tweaked directly in the
+- **Don't edit tracked files on the server.** `deploy.sh` refuses a dirty
+  tree outright (naming the files), so a threshold tweaked directly in the
   box's `config/rules.yaml` blocks the next deploy. Tune thresholds in git
-  and pull them — they still hot-reload on arrival, no restart.
+  and deploy them — they still hot-reload on arrival, no restart. Stated
+  plainly, because the old pull-based flow blurred it: a config change
+  reaches the box the same way code does, inside a release tag. A
+  threshold tweak worth shipping is a PATCH release, which takes thirty
+  seconds and writes the note that says what was tuned and why.
 - **The directory name is load-bearing.** Compose derives volume names from
   it (`minas-guardian_sentinel-data`), so the checkout must stay at
   `/opt/minas-guardian` — a re-clone under another name would come up with

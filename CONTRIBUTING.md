@@ -149,7 +149,7 @@ release, and cutting a release produces the note as a side effect. There is no
 ## Deploying
 
 The production host holds a **read-only deploy key** for this repo, so a
-deploy is a pull on the server — nothing is shipped from a laptop. After
+deploy is a fetch on the server — nothing is shipped from a laptop. After
 cutting and pushing a release (above), it is one command:
 
 ```bash
@@ -159,23 +159,30 @@ ssh ubuntu@minas-guardian
 # the security group's port-22 rule):
 ssh -i "Minas-AI-Guardian-Key-Tokyo.pem" ubuntu@ec2-54-168-212-44.ap-northeast-1.compute.amazonaws.com
 
-sudo /opt/minas-guardian/scripts/deploy.sh
+sudo /opt/minas-guardian/scripts/deploy.sh            # latest release tag
+sudo /opt/minas-guardian/scripts/deploy.sh vX.Y.Z     # or a specific one
 ```
 
-`deploy.sh` runs the documented sequence — pull, deploy gate (release tags
-only, no `--force`), image build stamped with `GIT_SHA`/`GIT_TAG`,
-`validate-config` against the new image, `up -d`, wait for the healthcheck,
-report `sentinel version` — and any failure before the switchover leaves
-the previous version running untouched. If the gate refuses, your commit
-has no release tag: cut one (`scripts/release.sh X.Y.Z`, then
-`git push && git push --tags`) and rerun. The manual sequence and the
-reasoning behind each step: [docs/deployment.md](docs/deployment.md)
-"Deploying code changes".
+`deploy.sh` **deploys a release tag, never main's tip** — it fetches tags
+and checks the tag out (the server stays detached at it, so `git describe`
+names what is deployed with no drift suffix), which is why the log-handoff
+commit that routinely follows every tag cannot block a deploy. The rest is
+the documented sequence — deploy gate (release tags only, no `--force`),
+image build stamped with `GIT_SHA`/`GIT_TAG`, `validate-config` against the
+new image, `up -d`, wait for the healthcheck, then **assert** the container
+reports the requested tag — and any failure before the switchover leaves
+the previous version running untouched. It refuses a dirty tree (naming
+the files) and asks for typed confirmation before deploying a tag older
+than what is running. If the tag you want does not exist: cut a release
+(`scripts/release.sh X.Y.Z`, then `git push && git push --tags`) and rerun.
+The manual sequence and the reasoning behind each step:
+[docs/deployment.md](docs/deployment.md) "Deploying code changes".
 
-Push first: the server pulls from GitHub `main`, so unpushed work cannot
-deploy — GitHub and production stay in lockstep by construction. Don't edit
-tracked files on the server (it blocks the next pull); tune `rules.yaml`
-through git, it hot-reloads on arrival.
+Push first: the server fetches from GitHub, so unpushed work cannot
+deploy — GitHub and production stay in lockstep by construction. Don't
+edit tracked files on the server (the deploy refuses a dirty tree); tune
+`rules.yaml` through git and ship it in a release — it hot-reloads on
+arrival, no restart.
 
 Full procedure, region notes, and the DB-migration recipe:
 [docs/deployment.md](docs/deployment.md).

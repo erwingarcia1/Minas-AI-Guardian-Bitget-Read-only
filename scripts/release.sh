@@ -234,6 +234,9 @@ Next:
   git show $TAG          # read it before it leaves the machine
   git push && git push --tags
 
-The deploy gate accepts this commit because it is exactly a tag. It will
-refuse the next one until you cut another release.
+Then deploy it, on the VM:
+  sudo /opt/minas-guardian/scripts/deploy.sh $TAG
+
+deploy.sh checks the tag out itself, so commits made after this one (a log
+handoff, say) cannot block the deploy.
 EOF

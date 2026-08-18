@@ -13,6 +13,46 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched. Everything in
+this release is deploy tooling on the server's side of the fence: nothing
+the running service executes is modified — no engine code, no schema
+change, no config change. PATCH for the same reason.
+
+### Fixed
+
+- **`scripts/deploy.sh` deploys a release tag, never main's tip.** The old
+  script pulled `main` and handed HEAD to the deploy gate — but the
+  workflow commits a log handoff after cutting every tag, so main's tip
+  was routinely one commit past the release and the gate (correctly)
+  refused it. This was the normal path, not an edge case: it blocked the
+  v1.4.1 and v1.5.0 deploys, and v1.5.0 had to be completed by hand —
+  exactly the error-prone sequence the script exists to prevent. The gate
+  is unchanged and still has no `--force`; what changed is that the script
+  now offers it the right commit: `git fetch --tags`, then check out the
+  requested tag (`deploy.sh v1.5.0`) or the latest release by version
+  order (`deploy.sh` with no argument). The server stays detached at the
+  deployed tag, so `git describe` answers "what is deployed" with exactly
+  one name; `git checkout main` puts it back on a branch if ever needed.
+- **The deploy refuses more, and asserts instead of reporting.** A dirty
+  working tree is refused with the files named (fix it in git, never on
+  the server). A tag older than the running version requires "downgrade"
+  typed at the terminal, so an accidental downgrade of a monitoring
+  product is not one typo away — and is refused outright when there is no
+  terminal to ask. After the switchover, the script compares the running
+  container's `sentinel version` against the tag it was asked to deploy
+  and exits non-zero on mismatch: a deploy that ran the wrong image now
+  fails instead of printing what happened. Any failure before "Switching
+  over" still leaves the previous version running untouched, and the
+  healthy-wait still requires the real compose healthcheck, not
+  "started". Eight new tests exercise the refusals against throwaway
+  clones — the dirty tree, the missing tag, the tipless resolution, the
+  unconfirmed downgrade, the wrong-image assert — not just the happy path.
+- **`scripts/release.sh` now prints the deploy command for the tag it just
+  cut**, so the release hands the operator the next step instead of
+  leaving them to reconstruct it.
+
 ## [1.5.0] — 2026-08-18
 
 ### Changed detection behaviour

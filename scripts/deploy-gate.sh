@@ -66,7 +66,7 @@ side effect:
 
   scripts/release.sh <version>     # see CONTRIBUTING.md for the level
   git push && git push --tags
-  sudo git pull                    # on the server, then run this again
+  sudo scripts/deploy.sh           # on the server - it checks out the tag itself
 
 There is no --force. If this is urgent, it is a PATCH release, not an
 exception - the note matters most for the changes that felt too urgent to
