@@ -3710,3 +3710,46 @@ whole point of the release. #78's boundary-report fix also ships; the
 re-run-and-verify half of that issue can finally happen on the VM. And #74's
 fix is now one command: `sentinel disable-account paula-garavillas --as <you>`
 (mind #83 — its /status row will then show the wrong reason).
+
+# Session — 2026-08-18 (evening) · v1.5.1: the deploy path deploys releases
+
+**v1.5.1 is tagged at `3cc4aee`, pushed, CI green (run 32152863672), and
+undeployed.** It fixes the defect that blocked the v1.4.1 and v1.5.0 deploys:
+`deploy.sh` pulled main and offered HEAD to the gate, while the workflow
+commits a log handoff after every tag — so the tip was always one commit past
+the release and the gate, correctly, refused. The gate is unchanged; the
+script now fetches tags and checks out the requested tag (or the latest by
+version order), leaving the server detached at it.
+
+What the new deploy.sh does beyond that: refuses a dirty tree naming the
+files; requires "downgrade" typed at a real TTY before deploying a tag older
+than what runs (a plain `ssh host '…'` one-liner is refused — the `ssh -t`
+rollback one-liner is in docs/deployment.md beside the downgrade paragraph);
+and after the switchover ASSERTS the container reports the requested tag,
+via a new `sentinel version --machine` key=value contract pinned by tests on
+the CLI side, with a reverse guard that deploy.sh still consumes it. Images
+predating the flag (rollback targets) are parsed by their human output —
+safe because a built image's format is frozen. Pre-switchover failures still
+leave the old version running; the healthy-wait is unchanged. Eight deploy
+tests run the script against throwaway clones with a stubbed docker; the
+refusals are tested, not just the happy path.
+
+Worth knowing, made explicit in the docs: under tag-checkout deploys a
+`rules.yaml` tweak reaches the box inside a release (the old flow delivered
+config edits as a side effect of the pull, even on refused deploys). A
+threshold change worth shipping is a PATCH release.
+
+Process notes. The first 1.5.1 health check REFUSED the release: #78 had
+been closed with its label still `status: broken`, and the issue-status gate
+caught the drift — `audit-issue-status.sh --apply` fixed it (evidenced).
+The second run was deliberately stopped mid-probes to take two review
+additions (the --machine contract, the ssh -t doc); the probes' signal
+handler restored the tree cleanly — verified with `git status` before
+continuing, per the standing rule about probe restores. A killed check is no
+result, so the third run started from the top; all seven gates passed
+(mutation gate 83s off cache — a real pass, log kept in
+`.health-check-logs/20260818T144917Z-39e3232`).
+
+Production runs v1.5.0 (deployed by hand this morning, detached at the tag —
+exactly the state the new script both starts from and produces). To ship
+this: `sudo /opt/minas-guardian/scripts/deploy.sh v1.5.1`.
