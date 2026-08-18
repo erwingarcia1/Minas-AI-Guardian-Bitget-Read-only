@@ -13,6 +13,36 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched. This release
+is operator tooling and documentation only: the one new script runs in the
+server's shell, not inside the service — no engine code, no schema change,
+no config change. PATCH for the same reason.
+
+### Added
+
+- **`scripts/deploy.sh` — the whole deploy as one command on the server.**
+  Pull (`--ff-only`), deploy gate, build stamped with `GIT_SHA`/`GIT_TAG`,
+  `validate-config` against the new image, `up -d`, wait for the
+  healthcheck, report `sentinel version`. Self-elevates via sudo. It
+  automates the sequence already documented in docs/deployment.md
+  "Deploying code changes" and decides nothing new — the gate's tag-only
+  rule and missing `--force` apply exactly as when typed by hand — and any
+  failure before the switchover leaves the previous version running
+  untouched, because the build and config check happen off to the side.
+  After the switchover it accepts only a container reporting **healthy**
+  (the compose healthcheck, not merely "started"), and it ends by asking
+  the running container `sentinel version` so the operator confirms what
+  is live rather than assuming it.
+
+### Fixed
+
+- **This entry's own location.** `4db4134` recorded the deploy script
+  under the released `[1.1.0] — 2026-08-14` heading, retroactively
+  claiming a shipped release contained it — production runs 1.1.0 and has
+  no `deploy.sh`. Moved here, where it is true.
+
 ## [1.4.1] — 2026-08-17
 
 ### Changed detection behaviour
@@ -1322,14 +1352,6 @@ misrouted:
   not be able to push code that our own next deploy would install. Docs and
   the EC2 bootstrap script now describe the key-first setup; the bootstrap
   no longer attempts the unauthenticated clone that a private repo 404s.
-- **`scripts/deploy.sh` — the whole deploy as one command on the server.**
-  Pull (`--ff-only`), deploy gate, build stamped with `GIT_SHA`/`GIT_TAG`,
-  `validate-config` against the new image, `up -d`, wait for the
-  healthcheck, report `sentinel version`. Self-elevates via sudo. It
-  automates the documented sequence and decides nothing new — the gate's
-  tag-only rule and missing `--force` apply exactly as when typed by hand —
-  and any failure before the switchover leaves the previous version running
-  untouched, because the build and config check happen off to the side.
 
 ## [1.0.0] — 2026-07-05
 
