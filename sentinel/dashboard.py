@@ -941,6 +941,15 @@ def serve_dashboard(
         return urlparse(origin).netloc == (handler.headers.get("Host") or "")
 
     class Handler(BaseHTTPRequestHandler):
+        def finish(self):
+            # This thread dies when the connection does; its DB connection has
+            # to die with it, or every request leaks a file descriptor until
+            # the process cannot open any socket - alerts included (#79).
+            try:
+                super().finish()
+            finally:
+                db.release_thread_connection()
+
         def _send(self, body: bytes, status: int = 200):
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")

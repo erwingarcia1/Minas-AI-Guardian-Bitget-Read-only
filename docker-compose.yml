@@ -49,6 +49,14 @@ services:
       - no-new-privileges:true
     pids_limit: 256
     mem_limit: 1g
+    # Headroom over the 1024 default that the request-path fd leak exhausted
+    # in ~90 minutes (#79). The leak is fixed; this is defence in depth so the
+    # NEXT descriptor bug degrades the dashboard before it starves alert
+    # delivery, which shares this budget.
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
     healthcheck:
       # python-slim has no curl; stdlib does the job
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8390', timeout=5)"]

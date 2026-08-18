@@ -186,6 +186,31 @@ class Database:
             finally:
                 cur.close()
 
+    def release_thread_connection(self) -> None:
+        """Close and forget the calling thread's connection.
+
+        For thread-per-request servers (the dashboard and the portal): a
+        ThreadingHTTPServer thread dies after its connection, but `_all_conns`
+        holds a strong reference to the thread's SQLite connection, so nothing
+        was ever freed and every request cost the process a file descriptor
+        until it could not open ANY socket - the exchange API's and SMTP's
+        included (#79). The engine's worker pool is exempt from the problem
+        because its threads are fixed and reuse their connections; it must
+        never call this per task, which would turn reuse into churn.
+
+        Safe to call from a thread that never touched the pool, and the next
+        use from a released thread transparently opens a fresh connection."""
+        if self._shared:
+            return  # :memory: - one shared connection, closing it kills the DB
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            return
+        self._local.conn = None
+        with self._conns_lock, contextlib.suppress(ValueError):
+            self._all_conns.remove(conn)
+        with contextlib.suppress(sqlite3.Error):
+            conn.close()
+
     def close(self) -> None:
         """Closes every connection this database handed out, not just the
         caller's. A thread-local pool would otherwise leak file handles for

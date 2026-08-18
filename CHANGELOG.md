@@ -13,6 +13,26 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Fixed
+
+- **Every dashboard and portal request leaked a file descriptor** (#79).
+  ThreadingHTTPServer runs each connection in a fresh thread; `Database`
+  gave each thread its own SQLite connection and kept a strong reference so
+  `close()` could find it — which meant a dead request thread's connection
+  was never freed. In production the process hit its 1024-descriptor
+  ceiling roughly ninety minutes after every restart, after which it could
+  not open **any** socket: the dashboard's, and also SMTP, Telegram and the
+  exchange API. The healthcheck correctly reported unhealthy, and nothing
+  acts on unhealthy, so it ran that way for six weeks of restarts. Request
+  handlers now close their thread's connection when the thread finishes
+  (`Database.release_thread_connection`), pinned by socket-level tests that
+  hammer the real dashboard root and a real signed-in portal session and
+  require the process's descriptor count to stay flat.
+- **Defence in depth for the next descriptor bug:** the container now runs
+  with `nofile` raised to 8192 (docker-compose), so a future leak degrades
+  the dashboard long before it starves alert delivery, which shares the
+  budget.
+
 ## [1.4.2] — 2026-08-18
 
 ### Changed detection behaviour

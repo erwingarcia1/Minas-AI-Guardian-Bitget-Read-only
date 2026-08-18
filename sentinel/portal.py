@@ -1927,6 +1927,15 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
         return urlparse(origin).netloc == (handler.headers.get("Host") or "")
 
     class Handler(BaseHTTPRequestHandler):
+        def finish(self):
+            # Same leak as the dashboard's (#79): the portal serves from the
+            # same process and the same fd budget, so its requests leaked into
+            # the ceiling too even while it still answered 200.
+            try:
+                super().finish()
+            finally:
+                db.release_thread_connection()
+
         def _send(self, body: bytes, status: int = 200, extra_headers: list[tuple[str, str]] | None = None,
                   content_type: str = "text/html; charset=utf-8"):
             self.send_response(status)
