@@ -400,13 +400,10 @@ def cmd_run(args: argparse.Namespace) -> int:
         "dashboard on %s:%d, member portal on %s:%d, metrics on %s:%d",
         dashboard_host, dashboard_port, portal_host, portal_port, metrics_host, metrics_port,
     )
-    if dashboard_host not in ("127.0.0.1", "localhost", "::1"):
-        logger.warning(
-            "ops dashboard is bound to %s, not loopback - it has no login of its own, "
-            "so anything that can reach %s:%d can add customers and read customer contact "
-            "details. Ensure a VPN, SSH tunnel or authenticating proxy is in front of it.",
-            dashboard_host, dashboard_host, dashboard_port,
-        )
+    level, message = bind_disclosure(
+        dashboard_host, dashboard_port, _env("SENTINEL_BIND_GATE"))
+    if level:
+        getattr(logger, level)(message)
 
     # One router, shared. The escalator needs it to reach the customer's own
     # contacts (#27) and it needs the alerter to report a channel with no
@@ -481,6 +478,43 @@ def cmd_ack(args: argparse.Namespace) -> int:
         return 0
     print(f"alert {args.alert_id} not found or already acknowledged", file=sys.stderr)
     return 1
+
+
+def bind_disclosure(host: str, port: int, gate: str | None) -> tuple[str | None, str | None]:
+    """What startup says about the dashboard's bind (#76).
+
+    A security warning that always fires is how a real one gets scrolled
+    past. docker-compose deliberately binds the container to 0.0.0.0 and
+    gates it with a 127.0.0.1: publish on the host - a boundary this process
+    cannot see - so warning on the internal bind alone cried wolf on every
+    correctly-secured deployment. The deployment therefore DECLARES its
+    boundary: SENTINEL_BIND_GATE, set in docker-compose.yml next to the
+    publish it describes, so the two travel in the same diff. Three states,
+    kept distinct:
+
+    - loopback: nothing to disclose (the info line above logs every bind);
+    - wide with a declared gate: INFO naming the gate and the one host-side
+      command that verifies it - stated as unverifiable from in here,
+      because it is; claiming safety would be assuming, not saying;
+    - wide with no declared gate: the warning, at full volume. That case is
+      the real G-36 exposure, and the fix for a warning that always fires
+      is precision, never deletion.
+    """
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return (None, None)
+    if gate:
+        return ("info", (
+            f"ops dashboard binds {host}:{port} inside its container; the declared "
+            f"boundary is: {gate}. This process cannot verify the host side - "
+            f"confirm with `ss -tlnp | grep {port}` on the host "
+            f"(expect 127.0.0.1:{port})."))
+    return ("warning", (
+        f"ops dashboard is bound to {host}:{port}, not loopback, with no declared "
+        f"boundary (SENTINEL_BIND_GATE is unset). Sign-in is required once operator "
+        f"accounts exist, but until the first operator is created the page is open - "
+        f"and a sign-in page need not face every network either. Put a VPN, SSH "
+        f"tunnel or authenticating proxy in front, or declare the external gate in "
+        f"SENTINEL_BIND_GATE next to the publish that provides it."))
 
 
 def cmd_account_status(args: argparse.Namespace) -> int:

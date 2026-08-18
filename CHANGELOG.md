@@ -35,6 +35,21 @@ unchanged.
 
 ### Fixed
 
+- **The "dashboard bound to 0.0.0.0" warning no longer fires on every
+  correctly-secured deployment** (#76). It read the container's internal
+  bind and could not see the `127.0.0.1:` publish in front of it, so every
+  correct Docker deployment logged a security warning — and a warning that
+  always fires is how a real one gets scrolled past. The deployment now
+  declares who holds the boundary (`SENTINEL_BIND_GATE`, set in
+  docker-compose.yml next to the publish it describes; a test holds the
+  two together and asserts the loopback publish is really there). Startup
+  distinguishes three states: loopback needs no disclosure; a wide bind
+  with a declared gate logs INFO naming the gate and the one host-side
+  command that verifies it — stated as unverifiable from inside, because
+  it is; a wide bind with no declared gate keeps the warning at full
+  volume, its text updated to the truth that sign-in is required once
+  operator accounts exist. Precision, not deletion.
+
 - **/status no longer tells the customer of a disabled or tamper-flagged
   account to replace their key** (#83). Only `active` accounts are polled,
   so any non-active status freezes the auth-failure counter at whatever it

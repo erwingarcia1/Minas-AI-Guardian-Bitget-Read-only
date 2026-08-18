@@ -3818,3 +3818,30 @@ Cadence note: first issue under the new tiered pipeline — new test file
 only, no probe-covered code touched, so pre-push suite + CI is the gate.
 The #83 health check before it ran the mutation gate cold at 3,610s, which
 is the duplication the cadence change removes.
+
+## #76 · A security warning that always fires protects nothing
+
+Re-scoped by the owner from the original observation: the host publish is
+loopback-only and tailscaled does not serve 8390 (owner-measured); the
+defect is the warning, which read the container-internal bind and cried
+wolf on every correct deployment.
+
+**Fix**: the deployment declares its boundary. `SENTINEL_BIND_GATE` in
+docker-compose.yml, placed next to the publish it describes so the two
+travel in one diff; `bind_disclosure()` in cli.py keeps three states
+distinct — loopback silent, declared-gate INFO naming the gate and the
+`ss -tlnp` verification (unverifiable from in-process, and it says so),
+undeclared wide bind keeps the full warning. The compose pairing test
+asserts both halves: gate declared AND the loopback publish it promises
+actually present — a declaration without its publish would soothe the log
+while the port faces the network.
+
+**Verified along the way, correcting the issue's premise**: the dashboard
+DOES have sign-in — required once an operator account exists
+(dashboard.py, `operator_count == 0 or _operator()`), built in #54/#40.
+The old warning's "it has no login of its own" was stale. What it does
+not have is 2FA on that login (portal has #32's, dashboard does not) —
+filed separately rather than batched here.
+
+Cadence: no probe covers the warning (checked design-guards.json); not
+detection behaviour. Pre-push suite + CI.

@@ -34,6 +34,11 @@ services:
       SENTINEL_DASHBOARD_HOST: "0.0.0.0"
       SENTINEL_PORTAL_HOST: "0.0.0.0"
       SENTINEL_METRICS_HOST: "0.0.0.0"
+      # Declares WHO holds the boundary for the wide binds above, so startup
+      # can say so instead of warning on every correct deployment (#76). It
+      # describes the `ports:` publishes below - if the publish changes,
+      # change this in the same diff; a test holds the two together.
+      SENTINEL_BIND_GATE: "docker-compose publishes 127.0.0.1:8390 on the host; the container-internal bind is unreachable off-host"
     volumes:
       - sentinel-data:/data
       - ./config:/app/config:ro   # rules.yaml stays hot-reloadable from the host

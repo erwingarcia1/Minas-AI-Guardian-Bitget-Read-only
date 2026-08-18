@@ -99,3 +99,67 @@ def _routable_address() -> str | None:
         except OSError:
             return None
     return None if addr.startswith("127.") else addr
+
+
+# --- the bind disclosure says what it means (#76) ----------------------------
+#
+# docker-compose deliberately binds the container wide and gates it with a
+# 127.0.0.1: publish on the host - a boundary this process cannot see. The
+# old startup warning read only the internal bind, so it fired on every
+# correctly-secured deployment; a security warning that always fires is how
+# a real one gets scrolled past. The deployment now DECLARES its boundary
+# (SENTINEL_BIND_GATE), and the disclosure distinguishes three states
+# instead of collapsing them into one cry of wolf.
+
+def test_loopback_bind_needs_no_disclosure():
+    from sentinel.cli import bind_disclosure
+    assert bind_disclosure("127.0.0.1", 8390, None) == (None, None)
+    assert bind_disclosure("127.0.0.1", 8390, "some gate") == (None, None)
+
+
+def test_wide_bind_with_a_declared_gate_is_info_naming_gate_and_check():
+    """Not silence, and not the warning: an INFO that names the declared
+    boundary and the one host-side command that verifies it, because
+    nothing in-process can see the host side of a container boundary -
+    the disclosure says what to check rather than claiming safety."""
+    from sentinel.cli import bind_disclosure
+    level, message = bind_disclosure("0.0.0.0", 8390, "compose publishes 127.0.0.1:8390")
+    assert level == "info"
+    assert "compose publishes 127.0.0.1:8390" in message
+    assert "cannot verify" in message
+    assert "ss -tlnp" in message
+
+
+def test_wide_bind_with_no_declared_gate_is_still_the_warning():
+    """The real G-36 exposure: wide bind, no declared boundary. This case
+    must stay loud - the fix for a warning that always fires is precision,
+    never deletion."""
+    from sentinel.cli import bind_disclosure
+    level, message = bind_disclosure("0.0.0.0", 8390, None)
+    assert level == "warning"
+    assert "0.0.0.0" in message
+    assert "SENTINEL_BIND_GATE" in message
+
+
+def test_composes_wide_bind_declares_its_gate_and_the_publish_is_real():
+    """The pairing (registration + execution, in the compose file): if
+    docker-compose binds the dashboard wide, it must both declare the
+    boundary (so startup can say who holds it) and actually contain the
+    loopback publish the declaration describes. A declaration without its
+    publish would soothe the log while the port faces the network."""
+    from pathlib import Path
+
+    import yaml
+
+    compose = yaml.safe_load((Path(__file__).parent.parent / "docker-compose.yml").read_text())
+    sentinel = compose["services"]["sentinel"]
+    env = sentinel.get("environment", {})
+    host = str(env.get("SENTINEL_DASHBOARD_HOST", "127.0.0.1")).strip()
+    if host in ("127.0.0.1", "localhost", "::1"):
+        return  # loopback container bind needs no gate
+    gate = str(env.get("SENTINEL_BIND_GATE", "")).strip()
+    assert gate, "wide container bind with no declared boundary (SENTINEL_BIND_GATE)"
+    ports = [str(p) for p in sentinel.get("ports", [])]
+    assert any(p.startswith("127.0.0.1:8390:") for p in ports), (
+        "the declared gate promises a loopback publish for 8390 and the ports "
+        "list does not contain one")
