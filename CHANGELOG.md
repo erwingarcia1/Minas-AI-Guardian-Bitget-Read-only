@@ -15,6 +15,16 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Fixed
 
+- **A failing retention prune is no longer silent** (#73). It used to be one
+  ERROR line an hour: the failure escaped to the scheduler's blanket except,
+  froze the table-rows gauge at its last good value (switching off the one
+  signal that would have shown the resulting growth), and skipped the
+  untimestamped-records alarm behind it on every failing cycle. A failure
+  now pages the operator (HIGH), drops a new `sentinel_retention_ok` gauge
+  to 0 until a pass succeeds, and the table-rows gauge and the alarm run
+  regardless. The hourly retry pacing is unchanged — what was removed is
+  the silence, not the interval. The "Enforcement assurance" caveat in
+  docs/data-retention.md is replaced by the assurance itself.
 - **Every dashboard and portal request leaked a file descriptor** (#79).
   ThreadingHTTPServer runs each connection in a fresh thread; `Database`
   gave each thread its own SQLite connection and kept a strong reference so

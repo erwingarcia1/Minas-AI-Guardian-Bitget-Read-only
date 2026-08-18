@@ -92,6 +92,16 @@ class Metrics:
         self.table_rows = Gauge(
             "sentinel_table_rows", "Rows per table", ["table"], registry=reg,
         )
+        # Resting value 1, drops to 0 while the last retention pass failed
+        # (#73). Same shape as rules_config_valid, for the same reason: a
+        # failing housekeeping job used to be one log line an hour, and
+        # nobody reads logs on a quiet day.
+        self.retention_ok = Gauge(
+            "sentinel_retention_ok",
+            "1 while the most recent retention prune completed; 0 after a failure",
+            registry=reg,
+        )
+        self.retention_ok.set(1)
 
     def set_table_rows(self, counts: dict) -> None:
         if _AVAILABLE:
@@ -101,6 +111,10 @@ class Metrics:
     def set_rules_config_valid(self, ok: bool) -> None:
         if _AVAILABLE:
             self.rules_config_valid.set(1 if ok else 0)
+
+    def set_retention_ok(self, ok: bool) -> None:
+        if _AVAILABLE:
+            self.retention_ok.set(1 if ok else 0)
 
     def poll_ok(self) -> None:
         if _AVAILABLE:

@@ -226,15 +226,53 @@ class Engine:
         """Retention, on its own interval rather than the scheduler's.
 
         Full-table deletes on a 45-second loop would be wasted I/O against the
-        very tables the fast loop queries."""
+        very tables the fast loop queries.
+
+        A failure here must be loud and contained (#73). It used to escape to
+        the scheduler's blanket except: one ERROR line an hour, the table-rows
+        gauge frozen at its last good value (published on the line after the
+        prune, so the failure switched off the one signal that would have
+        shown the growth), and the untimestamped alarm behind it skipped every
+        failing cycle. The timer still advances on failure - retrying a broken
+        prune every 45-second tick would hammer the tables the fast loop
+        reads, and hourly retry is enough precisely because failure now pages
+        and drops a gauge instead of vanishing."""
         interval = self._rules.get_seconds("retention", "prune_interval_minutes") * 60
         now = time.monotonic()
         if self._last_prune is not None and now - self._last_prune < interval:
             return
         self._last_prune = now
-        prune_all(self._db, self._rules)
+        try:
+            prune_all(self._db, self._rules)
+        except Exception as exc:  # noqa: BLE001 - a failed prune must be loud, not fatal
+            logger.error("retention prune failed: %s", exc)
+            if self._metrics is not None:
+                self._metrics.set_retention_ok(False)
+            if self._operator_alerter is not None:
+                self._operator_alerter.page(
+                    rule="retention_prune_failed",
+                    severity="HIGH",
+                    message=(
+                        f"The hourly retention prune failed and will retry next "
+                        f"interval: {exc}. Until it succeeds, every prunable table "
+                        f"grows unbounded and the published retention periods are "
+                        f"not being enforced. HIGH rather than CRITICAL: detection "
+                        f"and alerting are unaffected - this is data hygiene and a "
+                        f"kept promise, not funds at risk."
+                    ),
+                    evidence={"error": str(exc)},
+                )
+        else:
+            if self._metrics is not None:
+                self._metrics.set_retention_ok(True)
+        # Published on success AND failure: a prune failure must not freeze
+        # the gauge that would reveal the growth it causes. Its own guard is
+        # narrow so a counting failure still cannot skip the alarm after it.
         if self._metrics is not None:
-            self._metrics.set_table_rows(table_counts(self._db))
+            try:
+                self._metrics.set_table_rows(table_counts(self._db))
+            except Exception as exc:  # noqa: BLE001 - same containment reasoning
+                logger.error("table-rows publish failed: %s", exc)
 
     def _check_config_health(self) -> None:
         """Pages CRITICAL while the rules file on disk is rejected.

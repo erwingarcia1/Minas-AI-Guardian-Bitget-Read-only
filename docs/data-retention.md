@@ -24,14 +24,10 @@ declared defaults in `sentinel/rules_schema.py`, and is enforced hourly by
 legal review, not reviewed policy. A live, customer-readable summary derived
 from the same config is on the member portal (`/limits`).
 
-**Enforcement assurance.** Retention is enforced hourly by `prune_all`, and the
-windows below are what it deletes against today. A failure of that job is
-currently written to the log only, with no alarm, so a sustained failure could
-go unnoticed — the deletion described here would stop without anyone being told.
-Relevant to a reviewer because everything above is a statement about what we
-delete, and this is the limit of our assurance that the deleting happens.
-Tracked by #73; when the alarm ships, that issue closes and this paragraph comes
-out with it.
+**Enforcement assurance.** Retention is enforced hourly by `prune_all`. A
+failure of that job pages the operator (HIGH) and drops the
+`sentinel_retention_ok` metric to 0 until a pass succeeds, so the deletion
+described below cannot stop silently (#73).
 
 | Data | Where | Current retention |
 |---|---|---|
