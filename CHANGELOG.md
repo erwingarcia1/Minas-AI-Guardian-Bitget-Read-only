@@ -13,6 +13,21 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+- **Alerts keep arriving however long the process has been up.** Before this
+  release, the dashboard's descriptor leak (#79, details under Fixed) starved
+  the process of sockets roughly ninety minutes after every restart — and
+  alert delivery shares those sockets, so email, Telegram and exchange
+  polling all failed from that point until the next restart. An alert raised
+  in hour two used to go nowhere; now it arrives.
+- **A failing retention prune pages the operator at HIGH** (#73, details
+  under Fixed). It used to be one ERROR log line an hour, reaching nobody.
+- **A disabled account stops alerting entirely** (#80). `sentinel
+  disable-account` removes the account from the polling queue, so nothing
+  fires for it — including the poll-failure warnings a dead key generates —
+  until `enable-account` restores it, baselines intact.
+
 ### Added
 
 - **`sentinel disable-account <label>` / `enable-account <label>`** (#80).
