@@ -26,6 +26,7 @@ whoever builds one should build it to cover both.
 | 5 | PDF export for incidents | #29 (G-25) | Defer — print stylesheet now |
 | 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), #46 (G-42) | Start legal review now; 24 months interim |
 | 7 | External uptime monitoring: latency, vendor, what customers hear | #63 | Dead-man's switch, 15 min, third-party vendor |
+| 12 | Restart-on-unhealthy: sidecar, systemd timer, or page-only | #81 | systemd timer with a restart cap; never the sidecar |
 
 ---
 
@@ -607,6 +608,29 @@ Grace period, then stop, with the stopping loud and repeated: a banner on
 stopped* in those words rather than "your subscription has ended"; and an
 operator page, because ending monitoring for a customer who merely changed
 cards is a business event somebody should see.
+
+---
+
+## 12. What acts on an unhealthy container (#81)
+
+**The question.** The compose healthcheck correctly reported unhealthy for
+six weeks (#79, FailingStreak 148) and nothing consumed the verdict —
+`restart: unless-stopped` acts on exit, not health. Sidecar, host timer, or
+page-only?
+
+**Options and the recommendation** are on the issue
+([#81](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/issues/81#issuecomment-5334893642)),
+in short: a **systemd timer** on the host (restart on unhealthy, capped to
+once per N minutes so a flapping container becomes visible instead of
+perpetually revived, journald as the record). **Not** the autoheal sidecar —
+a third-party image with docker.sock (root-equivalent) access next to a
+credential-holding product is a large supply-chain surface for 15 lines of
+shell. Page-only is not an alternative but #63's other half: restart is
+mitigation, the dead-man's switch is detection, and decision 7 already
+covers it — a restart loop nobody knows about is #79's six weeks with
+extra steps.
+
+**What it blocks:** #81.
 
 ---
 
