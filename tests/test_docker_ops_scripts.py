@@ -62,8 +62,9 @@ def test_every_copied_script_exists():
 # The defect these pin: the old deploy.sh pulled main and handed HEAD to the
 # gate, and the workflow commits a log handoff after every tag — so main's
 # tip was routinely one commit past the release and the gate (correctly)
-# refused it. It blocked the v1.4.1 and v1.5.0 deploys; v1.5.0 was completed
-# by hand, which is the error-prone thing the script exists to prevent.
+# refused it. It blocked the v1.4.1 and v1.5.0 deploys outright — production
+# sat on 1.4.2 until this fix shipped in v1.5.1, whose deploy then carried
+# both releases' changes in one step.
 #
 # Run against throwaway clones in tmp_path, per test_release_process.py's
 # reasoning. `docker` and `id` are stubbed on PATH so the script's git

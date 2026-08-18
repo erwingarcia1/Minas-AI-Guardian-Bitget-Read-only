@@ -21,6 +21,44 @@ Newest entry first.
 
 ---
 
+## 2026-08-18 · v1.5.1 (from 1.4.2)
+
+Deployed **2026-08-18 ~15:5x UTC** by the owner via
+`sudo /opt/minas-guardian/scripts/deploy.sh v1.5.1` — the first run of the
+tag-checkout deploy that this release itself ships, and the first deploy
+whose final step **asserted** the version instead of reporting it.
+
+### Before (measured by the deploy itself)
+
+| What | Evidence |
+|---|---|
+| Container | deploy.sh "Currently running": **1.4.2** — commit `3419ffb97f6fa17264890150c985bbf13ce185b8`, tag `v1.4.2` |
+
+### Deploy
+
+| What | Evidence |
+|---|---|
+| Refusal first | The first attempt was **refused by the new dirty-tree check**: a DB backup sat inside the checkout. Filed and fixed as [#85] — backups now have a named home, `/var/backups/minas-guardian/`, and the refusal tells the untracked case where files belong |
+| Method | `deploy.sh v1.5.1`: clean tree → `fetch --tags` → checkout `v1.5.1` (detached — the server now stays detached at the deployed tag by design) → gate → build → `validate-config` → switchover → healthy wait → version assert |
+
+### After (asserted by the deploy, not read afterwards)
+
+| What | Evidence |
+|---|---|
+| Container | `sentinel version`: **1.5.1**, commit `3cc4aee06448e5ae4ca93ce9c0174b463062ebb5`, tag `v1.5.1`, source **build-arg** — compared against the requested tag by the script itself, which exits non-zero on mismatch |
+
+### v1.5.0: tagged, CI-green, never deployed
+
+Its deploy was refused by the gate — HEAD was the post-tag log-handoff
+commit, which is exactly the defect v1.5.1 fixes — and the refusal was
+abandoned rather than worked around: no hand deploy happened. (A session
+note claiming one is corrected inline in docs/AUTONOMOUS-LOG.md; the claim
+had no entry in this file, which is the tell this file exists to provide.)
+v1.5.0's changes — the #79 descriptor-leak fix among them — first reached
+production inside this deploy, 1.4.2 → 1.5.1 in one step.
+
+[#85]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/issues/85
+
 ## 2026-08-18 · v1.4.2 (from 1.1.0)
 
 Deployed **2026-08-18 ~01:06 UTC** by the owner via

@@ -3753,3 +3753,18 @@ result, so the third run started from the top; all seven gates passed
 Production runs v1.5.0 (deployed by hand this morning, detached at the tag —
 exactly the state the new script both starts from and produces). To ship
 this: `sudo /opt/minas-guardian/scripts/deploy.sh v1.5.1`.
+
+*Corrected 2026-08-18, the same day: **v1.5.0 never reached production.**
+The paragraph above repeats a claim from this session's brief — that the
+refused v1.5.0 deploy was "completed by hand" — and it was not: the refusal
+was abandoned and the owner went straight to having the deploy path fixed.
+Production ran 1.4.2 until ~15:5x UTC and went **1.4.2 → 1.5.1 in one
+step**, confirmed by deploy.sh's own "Currently running: 1.4.2" line — the
+real entry is in docs/DEPLOYMENTS.md. The same false claim is baked into
+commit `9eeeb4e`'s message and the released [1.5.1] notes (corrected inline
+there); a commit message cannot be edited, so this note is its correction.
+Worth the discomfort of writing down: I repeated an unevidenced deployment
+claim in the very session that leaned on DEPLOYMENTS.md's rule — measured,
+not recalled — and the tell was available: no DEPLOYMENTS.md entry for the
+claimed deploy existed, and I had written this morning's entry rule myself.
+A deploy with no evidence row is a deploy that should not be believed.*

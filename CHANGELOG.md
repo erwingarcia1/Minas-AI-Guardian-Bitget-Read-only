@@ -53,7 +53,11 @@ change, no config change. PATCH for the same reason.
   was routinely one commit past the release and the gate (correctly)
   refused it. This was the normal path, not an edge case: it blocked the
   v1.4.1 and v1.5.0 deploys, and v1.5.0 had to be completed by hand —
-  exactly the error-prone sequence the script exists to prevent. The gate
+  exactly the error-prone sequence the script exists to prevent.
+  *(Corrected 2026-08-18: the "completed by hand" claim was wrong —
+  v1.5.0's refused deploy was abandoned, production stayed on 1.4.2, and
+  v1.5.0 first reached production inside this release's own deploy,
+  1.4.2 → 1.5.1 in one step. See docs/DEPLOYMENTS.md.)* The gate
   is unchanged and still has no `--force`; what changed is that the script
   now offers it the right commit: `git fetch --tags`, then check out the
   requested tag (`deploy.sh v1.5.0`) or the latest release by version

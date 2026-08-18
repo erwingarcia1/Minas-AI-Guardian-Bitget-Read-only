@@ -21,9 +21,9 @@
 # exactly one name and no "-2-g1234abc" drift suffix, which is the property
 # docs/DEPLOYMENTS.md exists to protect. Nothing on the server needs a branch:
 # deploys go tag to tag, and the next `git fetch --tags` works fine from a
-# detached HEAD (the old `git pull --ff-only` did not — that is what forced
-# today's deploy to be typed by hand). To put the clone back on a branch,
-# should anyone need to: `sudo git -C /opt/minas-guardian checkout main`.
+# detached HEAD (the old `git pull --ff-only` could not have). To put the
+# clone back on a branch, should anyone need to:
+# `sudo git -C /opt/minas-guardian checkout main`.
 #
 # Note the repo checkout and the running container are separate facts: a
 # failure after checkout but before the switchover leaves the repo at the new
