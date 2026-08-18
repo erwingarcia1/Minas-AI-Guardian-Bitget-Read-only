@@ -3845,3 +3845,52 @@ filed separately rather than batched here.
 
 Cadence: no probe covers the warning (checked design-guards.json); not
 detection behaviour. Pre-push suite + CI.
+
+## #67 · The only open p1: instalments in one response now each alert
+
+**The gate the issue set was data, and the data now exists.** Measured on
+production (read-only over tailnet SSH): zero `withdrawal_cannot_be_
+identified` rows in `operator_pages` across its whole history, and both
+counters exported with zero samples since today's restart — not one
+untimestamped record of any kind in ~1,700 polls. The condition is
+format-breakage-rare, which is what the issue's own recommendation (option
+4, gated on rarity) was waiting to know.
+
+**The fix is narrower and stronger than the issue's options 2/3**: within
+ONE response, N identical unidentifiable records are provably N
+withdrawals — a response does not list one movement twice — so
+`annotate_batch_occurrences` stamps the 2nd..Nth with ordinals and
+`withdrawal_identity` folds the ordinal into the digest. The first
+occurrence's identity is byte-identical to what earlier versions recorded
+(no re-alert storm on upgrade; pinned). The identity SET is stable across
+re-polls (no re-paging while settling; pinned end-to-end). The ordinal
+rides into `evidence_reference`, so dispatch's dedup key differs too —
+the G-11 pair-of-gates lesson applied in advance; the end-to-end test
+counts DELIVERED alerts, not detections.
+
+**The residual, stated and paged rather than hidden**: across responses,
+aged-out-then-replaced hands the newcomer a used identity. No scheme
+closes that with nothing stable to key on (the 2026-08-12 analysis of the
+multiset scheme stands). The HIGH operator page remains the alarm for it,
+its message rewritten to the new truth, and a test documents the residual
+so its closure would fail loudly and demand the message be rewritten.
+
+Option 3 (always-new, alert every time) was rejected with reasons on the
+issue: a fresh identity per poll defeats dispatch's cooldown and re-pages
+every 45 seconds for as long as the record sits in the exchange's window
+— unusable even at frequency zero, because a single occurrence persists.
+
+**The probe that caught my fix improving things.** The first #67 health
+check failed: 131/132 probes — the standing probe that moves
+`_report_unidentifiable` after the already-seen filter SURVIVED. Before the
+fix, that mutation starved the report of the swallowed duplicate and a
+single-poll test died; after the fix, identical records all pass the filter
+on the first poll, so the single-poll test could no longer tell the orders
+apart. The mutation still breaks the RE-POLL case — the report fed the
+filtered list goes quiet the moment records are already seen, which stops
+the metric counting and understates the very frequency the fix was chosen
+from. New pin: `poll_once_with_withdrawals(..., polls=2)` asserts the
+counter reaches 2 across two polls of one record. Verified by running
+mutation-probe.py against a single-probe file: killed. A probe surviving
+because the code got better is still a hole in the net — the net is for
+the next change, not this one.

@@ -22,12 +22,15 @@ class _Recording:
         self.sent.append(alert)
 
 
-def poll_once_with_withdrawals(db, rules, withdrawals, label="acct-1", cipher=None):
-    """Runs one fast loop with `withdrawals` returned by the exchange.
+def poll_once_with_withdrawals(db, rules, withdrawals, label="acct-1", cipher=None, polls=1):
+    """Runs `polls` fast loops with `withdrawals` returned by the exchange.
 
     Returns (operator_pages, metric_counts). Pages are read back out of the
     `operator_pages` table rather than from a spy, so the test covers the row
-    that an operator would actually be shown."""
+    that an operator would actually be shown. `polls > 1` re-polls the same
+    account with the same response, which is what the exchange actually does
+    while a withdrawal settles - the already-seen path only exists on the
+    second poll."""
     import sentinel.onboarding as onboarding_module
     import sentinel.poller as poller_module
 
@@ -67,8 +70,10 @@ def poll_once_with_withdrawals(db, rules, withdrawals, label="acct-1", cipher=No
         channels = {"CRITICAL": [_Recording()], "HIGH": [_Recording()],
                     "MEDIUM": [_Recording()], "LOW": [_Recording()]}
         alerter = OperatorAlerter(db, {"CRITICAL": [_Recording()], "HIGH": [_Recording()]}, rules)
-        AccountPoller(db, key_holder, rules, channels, metrics=metrics,
-                      operator_alerter=alerter).run_fast_loop(row)
+        poller = AccountPoller(db, key_holder, rules, channels, metrics=metrics,
+                               operator_alerter=alerter)
+        for _ in range(polls):
+            poller.run_fast_loop(row)
     finally:
         onboarding_module.make_client = original_onboard
         poller_module.make_client = original_poll

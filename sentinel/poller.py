@@ -42,7 +42,7 @@ from sentinel.detectors.unseen_address import detect_unseen_address
 from sentinel.detectors.withdrawal import detect_new_withdrawals
 from sentinel.events import append_event
 from sentinel.exchange import ExchangeClient, TamperSignal, exchange_account_uid, make_client
-from sentinel.identity import is_unidentifiable
+from sentinel.identity import annotate_batch_occurrences, is_unidentifiable
 from sentinel.numeric import to_decimal
 
 logger = logging.getLogger("sentinel.poller")
@@ -138,14 +138,19 @@ class AccountPoller:
         self._operator_alerter = operator_alerter
 
     def _report_unidentifiable(self, account_id: int, label: str, account_row, withdrawals) -> None:
-        """Pages when the exchange sends a withdrawal we cannot tell apart from
-        another one (#67).
+        """Pages when the exchange sends withdrawals with neither a reference
+        nor a timestamp (#67).
 
-        The collision is not fixed here - the options for fixing it trade
-        against the property that one settling withdrawal keeps one identity,
-        and none should be chosen without knowing how often this happens. What
-        is fixed is that it used to happen in complete silence: the second
-        withdrawal was dropped as already seen and the poll reported success.
+        Identical such records visible in one response are now told apart by
+        `annotate_batch_occurrences` and each is alerted on. What this page
+        covers is the residual no identity scheme can close: a record that
+        ages out of the exchange's window and is later replaced by an
+        identical newcomer hands the newcomer a used identity, and it is
+        dropped as already seen. The choice to accept that residual loudly -
+        rather than re-alert on every poll - was made against production
+        data: zero occurrences measured (operator_pages and both counters,
+        2026-08-18), so the condition is format-breakage-rare and this page
+        IS the alarm for it.
 
         Counted per record so the frequency is real, paged once per poll
         because the condition is about the exchange's response format and not
@@ -163,7 +168,9 @@ class AccountPoller:
 
         logger.warning(
             "%s: %d withdrawal(s) arrived with neither a reference nor a timestamp - "
-            "these cannot be told apart, so all but the first are dropped as already seen",
+            "identical ones in this response are told apart by their ordinal (#67), but "
+            "one that ages out of the exchange's window and is later replaced by an "
+            "identical newcomer is dropped as already seen",
             label, len(unidentifiable),
         )
         if self._operator_alerter is None:
@@ -173,11 +180,12 @@ class AccountPoller:
             severity="HIGH",
             message=(
                 f"{exchange} sent {len(unidentifiable)} withdrawal(s) on {label} with neither an "
-                f"order id/txid nor a timestamp. Withdrawals like these cannot be told apart from "
-                f"each other, so only the first is alerted on and any further identical ones are "
-                f"dropped as already seen - a MISSED CRITICAL on the money-leaving path. This is "
-                f"an exchange response-format problem; check the adapter and the exchange's API "
-                f"changelog."
+                f"order id/txid nor a timestamp. Identical ones visible together are told apart "
+                f"and each is alerted on (#67), but one that leaves the exchange's response "
+                f"window and is later replaced by an identical newcomer is dropped as already "
+                f"seen - a possible MISSED CRITICAL on the money-leaving path while this "
+                f"condition lasts. This is an exchange response-format problem; check the "
+                f"adapter and the exchange's API changelog."
             ),
             evidence={
                 "account_label": label,
@@ -354,9 +362,13 @@ class AccountPoller:
         last_run_iso = state.get("last_fast_loop_at")
 
         # --- Withdrawals: creation, unseen address, burst -------------------
-        # Checked BEFORE record_seen_withdrawal, because that call is what
-        # swallows the duplicate - by the time it has returned False the record
-        # is gone and there is nothing left to notice (#67).
+        # Ordinals first: identical unidentifiable records in this one
+        # response are provably distinct withdrawals, and the annotation is
+        # what lets record_seen_withdrawal and the detectors tell them apart
+        # (#67). Then the report, still BEFORE record_seen_withdrawal - the
+        # cross-response collision remains, and after that call has returned
+        # False the record is gone and there is nothing left to notice.
+        annotate_batch_occurrences(withdrawals)
         self._report_unidentifiable(account_id, label, account_row, withdrawals)
 
         new_withdrawals = [w for w in withdrawals if record_seen_withdrawal(self._db, account_id, w)]

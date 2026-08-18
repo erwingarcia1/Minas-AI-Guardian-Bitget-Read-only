@@ -198,3 +198,56 @@ def test_identified_withdrawals_are_unaffected(db, cipher, monkeypatch):
     initiated = [a for a in channel.sent if a.rule == "withdrawal_initiated"]
     assert len(initiated) == 1
     assert initiated[0].evidence["order_id"] == "wd-real"
+
+
+def test_two_identical_undated_withdrawals_in_one_response_both_alert(db, cipher, monkeypatch):
+    """#67, end to end through BOTH gates. Two byte-identical withdrawals -
+    no id, no txid, no timestamp - arrive in one poll. They are provably two
+    movements (a response does not list one twice), and the customer must
+    hear about two: the batch ordinal makes their identities distinct at
+    record_seen_withdrawal, and rides into the evidence reference so
+    dispatch's dedup key differs too. This class of bug comes in pairs; a
+    fix at the first gate alone would pass detection and die at dispatch."""
+    account_id, account_row = _account(db, cipher, monkeypatch, "noid-67")
+
+    monkeypatch.setattr(
+        "sentinel.poller.make_client",
+        lambda *a, **k: _client(
+            withdrawals=[
+                _unidentified(amount="0.5", address="bc1qattacker", timestamp=None),
+                _unidentified(amount="0.5", address="bc1qattacker", timestamp=None),
+            ]
+        ),
+    )
+    channel = RecordingChannel()
+    _poller(db, cipher, channel).run_fast_loop(account_row)
+
+    initiated = [a for a in channel.sent if a.rule == "withdrawal_initiated"]
+    assert len(initiated) == 2, (
+        f"only {len(initiated)} of 2 identical instalments were alerted - "
+        f"the drain-in-equal-instalments case is silent again"
+    )
+    assert initiated[0].evidence["order_id"] != initiated[1].evidence["order_id"]
+
+
+def test_the_same_undated_pair_re_polled_does_not_re_alert(db, cipher, monkeypatch):
+    """The property the fix must not break: the exchange keeps returning the
+    same two records while they settle, and the customer was already told
+    twice. A third page for the same two movements is the re-paging failure
+    the identity function exists to prevent."""
+    account_id, account_row = _account(db, cipher, monkeypatch, "noid-67b")
+
+    client = _client(
+        withdrawals=[
+            _unidentified(amount="0.5", address="bc1qattacker", timestamp=None),
+            _unidentified(amount="0.5", address="bc1qattacker", timestamp=None),
+        ]
+    )
+    monkeypatch.setattr("sentinel.poller.make_client", lambda *a, **k: client)
+    channel = RecordingChannel()
+    poller = _poller(db, cipher, channel)
+    poller.run_fast_loop(account_row)
+    poller.run_fast_loop(account_row)
+
+    initiated = [a for a in channel.sent if a.rule == "withdrawal_initiated"]
+    assert len(initiated) == 2

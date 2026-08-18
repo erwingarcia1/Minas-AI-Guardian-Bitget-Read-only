@@ -31,8 +31,6 @@ the only reason it is there.
 """
 from __future__ import annotations
 
-import pytest
-
 from sentinel.alerts.dispatch import _dedup_key
 from sentinel.detectors.withdrawal import detect_new_withdrawals
 
@@ -255,29 +253,90 @@ def test_the_rule_name_is_exact():
 # --- a collision this detector cannot see, recorded here rather than hidden ---
 
 
-@pytest.mark.xfail(strict=True, reason="#67: reference-less, undated withdrawals collide silently")
-def test_two_identical_undated_reference_less_withdrawals_are_distinguishable():
-    """**Currently fails on purpose.** This is the behaviour we want, not the
-    behaviour we have — see #67.
-
-    `withdrawal_identity` digests coin, amount, address, tag, network, type and
-    timestamp when there is no exchange reference. With the timestamp also
-    missing, two genuinely separate withdrawals of the same amount to the same
-    address share one identity, so `record_seen_withdrawal` swallows the second
-    before it reaches this detector. Nothing logs it.
-
-    The identity docstring calls that an unlikely accident. It is not an
-    accident: coin, amount and address are precisely what an attacker draining
-    an account in equal instalments to one destination repeats. Every
-    instalment after the first is silent.
-
-    Marked `strict` so that fixing #67 turns this red — which is the signal to
-    delete the marker rather than leave a passing test claiming to be broken.
-    A comment in a docstring would not have done that."""
-    from sentinel.identity import withdrawal_identity
+def test_two_identical_undated_reference_less_withdrawals_in_one_response_are_distinguishable():
+    """#67, fixed for the case that is provable: a response does not list one
+    movement twice, so two identical unidentifiable records arriving TOGETHER
+    are two withdrawals - an attacker draining an account in equal
+    instalments to one destination produces exactly these. The batch
+    annotation is what makes the identities distinct; bare records remain
+    indistinguishable because they genuinely are."""
+    from sentinel.identity import annotate_batch_occurrences, withdrawal_identity
 
     first = {"currency": "BTC", "amount": "0.5", "address": "bc1qattacker",
              "network": "BTC", "type": "withdrawal"}
     second = dict(first)
+    annotate_batch_occurrences([first, second])
 
     assert withdrawal_identity(first) != withdrawal_identity(second)
+
+
+def test_the_same_batch_re_polled_keeps_the_same_identities():
+    """The property the ordinals must not break: one settling withdrawal
+    keeps one identity, or every poll re-pages the customer for the same
+    movement. The identity SET is stable across polls."""
+    from sentinel.identity import annotate_batch_occurrences, withdrawal_identity
+
+    def batch():
+        first = {"currency": "BTC", "amount": "0.5", "address": "bc1qattacker",
+                 "network": "BTC", "type": "withdrawal"}
+        return [first, dict(first)]
+
+    poll1, poll2 = batch(), batch()
+    annotate_batch_occurrences(poll1)
+    annotate_batch_occurrences(poll2)
+
+    assert {withdrawal_identity(w) for w in poll1} == {withdrawal_identity(w) for w in poll2}
+
+
+def test_the_first_occurrence_keeps_its_pre_fix_identity():
+    """Upgrade safety: the first occurrence's identity must stay
+    byte-identical to what earlier versions recorded, or every already-seen
+    unreferenced withdrawal re-alerts on deploy."""
+    from sentinel.identity import annotate_batch_occurrences, withdrawal_identity
+
+    record = {"currency": "BTC", "amount": "0.5", "address": "bc1qattacker",
+              "network": "BTC", "type": "withdrawal"}
+    before = withdrawal_identity(record)
+    annotate_batch_occurrences([record, dict(record)])
+
+    assert withdrawal_identity(record) == before
+
+
+def test_records_with_a_reference_or_a_timestamp_are_never_annotated():
+    """The ordinal exists only where the identity can genuinely collide.
+    A referenced or dated record is already unique; touching it would
+    change identities that are working."""
+    from sentinel.identity import annotate_batch_occurrences, withdrawal_identity
+
+    dated = {"currency": "BTC", "amount": "0.5", "address": "bc1qx",
+             "network": "BTC", "type": "withdrawal", "timestamp": 1755500000000}
+    referenced = {"currency": "BTC", "amount": "0.5", "address": "bc1qx",
+                  "network": "BTC", "type": "withdrawal", "id": "W123"}
+    d2, r2 = dict(dated), dict(referenced)
+    before = [withdrawal_identity(x) for x in (dated, d2, referenced, r2)]
+    annotate_batch_occurrences([dated, d2, referenced, r2])
+
+    assert [withdrawal_identity(x) for x in (dated, d2, referenced, r2)] == before
+    # Identical dated records still collide - the timestamp is the exchange's
+    # claim they are one movement re-listed, and second-guessing it would
+    # re-page settling withdrawals.
+    assert withdrawal_identity(dated) == withdrawal_identity(d2)
+
+
+def test_across_responses_the_residual_collision_remains_and_is_the_paged_case():
+    """Stated, not hidden: a record that ages out and is replaced by an
+    identical newcomer hands the newcomer its identity. No scheme can tell
+    "aged out then replaced" from "still there" with nothing stable to key
+    on - which is exactly why _report_unidentifiable pages on every poll
+    carrying such records. If this test ever fails, the residual has been
+    closed and that page's message needs rewriting."""
+    from sentinel.identity import annotate_batch_occurrences, withdrawal_identity
+
+    departed = {"currency": "BTC", "amount": "0.5", "address": "bc1qattacker",
+                "network": "BTC", "type": "withdrawal"}
+    annotate_batch_occurrences([departed])
+    newcomer = {"currency": "BTC", "amount": "0.5", "address": "bc1qattacker",
+                "network": "BTC", "type": "withdrawal"}
+    annotate_batch_occurrences([newcomer])
+
+    assert withdrawal_identity(newcomer) == withdrawal_identity(departed)

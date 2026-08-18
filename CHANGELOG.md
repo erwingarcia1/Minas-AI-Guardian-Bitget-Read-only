@@ -15,10 +15,25 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Changed detection behaviour
 
-**None.** Which alerts fire, when, and to whom is untouched. #83 changes
-what the customer /status page *says* about an account that is not being
-watched — the watched/not-watched judgment itself, and all alerting, are
-unchanged.
+- **Every instalment of a drain now alerts, when the exchange strips both
+  the reference and the timestamp** (#67). Before: two identical
+  withdrawals — same coin, same amount, same address, no id, no txid, no
+  timestamp — arriving in one poll produced ONE alert; the second was
+  silently dropped as already seen. That shape is precisely an attacker
+  draining an account in equal instalments to one destination. After
+  upgrading, identical unidentifiable withdrawals visible together are
+  told apart and each raises its own alert, and re-polling the same
+  records while they settle does not re-alert. The residual that no
+  identity scheme can close — a record aging out of the exchange's window
+  replaced later by an identical newcomer — still collides, and the
+  existing HIGH operator page (which fires on every poll carrying such
+  records) now says exactly that instead of "only the first is alerted".
+  Chosen against production data: zero unidentifiable withdrawals in the
+  measured window, so the condition is format-breakage-rare and loud.
+
+Nothing else in this release changes which alerts fire, when, or to whom:
+#83 changes only what the customer /status page *says* about an unwatched
+account, and #76 only a startup log line.
 
 ### Added
 

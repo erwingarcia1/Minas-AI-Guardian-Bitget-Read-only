@@ -27,6 +27,40 @@ import json
 # three times for one movement.
 _WITHDRAWAL_IDENTITY_FIELDS = ("currency", "amount", "address", "tag", "network", "type", "timestamp")
 
+# Stamped onto the 2nd..Nth identical unidentifiable records of one exchange
+# response by `annotate_batch_occurrences`, and read back by
+# `withdrawal_identity`. Never sent by an exchange (the `_minas_` prefix is
+# ours), never stored, and absent from the first occurrence on purpose - the
+# first occurrence's identity must stay byte-identical to what earlier
+# versions recorded, or every already-seen unreferenced withdrawal would
+# re-alert on upgrade.
+_OCCURRENCE_KEY = "_minas_batch_occurrence"
+
+
+def annotate_batch_occurrences(withdrawals: list[dict]) -> None:
+    """Within ONE exchange response, N identical unidentifiable records are
+    provably N distinct withdrawals - a response does not list one movement
+    twice. Stamp the 2nd..Nth with their ordinal, in place, so
+    `withdrawal_identity` tells them apart and each reaches the detectors
+    (#67: an attacker draining an account in equal instalments to one
+    destination produces exactly these records).
+
+    Stability across polls, which is the property the ordinals must not
+    break: the same K records re-polled produce the same K identities. The
+    ordinal follows response order, and identical records are
+    interchangeable - the *set* of identities {digest, digest#2, ... #K} is
+    order-independent - so a settling withdrawal keeps one identity and is
+    never re-alerted. Records with a reference or a timestamp are never
+    touched."""
+    counts: dict[str, int] = {}
+    for record in withdrawals:
+        if not is_unidentifiable(record):
+            continue
+        base = _digest({f: record.get(f) for f in _WITHDRAWAL_IDENTITY_FIELDS})
+        counts[base] = counts.get(base, 0) + 1
+        if counts[base] > 1:
+            record[_OCCURRENCE_KEY] = counts[base]
+
 
 def _digest(parts: object) -> str:
     return hashlib.sha256(json.dumps(parts, sort_keys=True, default=str).encode()).hexdigest()
@@ -41,17 +75,31 @@ def withdrawal_identity(record: dict) -> str:
     which meant it never reached the withdrawal-created or unseen-address
     detectors at all.
 
-    Residual limitation, stated rather than hidden: two withdrawals identical
-    in coin, amount, destination, network *and* millisecond timestamp collapse
-    into one. With a timestamp present that is effectively impossible. With one
-    missing too, it stops being impossible - and that case is the exchange
-    sending us records with neither a reference nor a time, which is a format
-    breakage an operator should be looking at directly.
+    Two withdrawals identical in coin, amount, destination, network *and*
+    millisecond timestamp collapse into one. With a timestamp present that is
+    effectively impossible. With one missing too it stops being impossible -
+    and for the case where both such records are visible in ONE exchange
+    response, `annotate_batch_occurrences` (below) stamps each with its
+    ordinal so this function tells them apart (#67).
+
+    Residual limitation, stated rather than hidden: ACROSS responses the
+    ordinals cannot help. If one such record ages out of the exchange's
+    window and another identical one later arrives, the newcomer takes the
+    ordinal - and therefore the identity - the departed one already used,
+    and is dropped as already seen. No scheme can distinguish "aged out then
+    replaced" from "still there" with nothing stable to key on; that
+    residual is why `_report_unidentifiable` pages the operator on every
+    poll that carries such records, measured in production at zero
+    occurrences as of 2026-08-18.
     """
     reference = str(record.get("id") or record.get("txid") or "")
     if reference:
         return f"id:{reference}"
-    return "sha256:" + _digest({f: record.get(f) for f in _WITHDRAWAL_IDENTITY_FIELDS})
+    identity = "sha256:" + _digest({f: record.get(f) for f in _WITHDRAWAL_IDENTITY_FIELDS})
+    occurrence = record.get(_OCCURRENCE_KEY)
+    if occurrence:
+        identity += f"#{occurrence}"
+    return identity
 
 
 # A transfer describes a movement between two internal accounts. None of these

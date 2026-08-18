@@ -140,3 +140,22 @@ def test_two_colliding_withdrawals_page_once_not_twice(db, rules):
     # The metric still counts every record, so the real frequency is knowable
     # even though the paging is deduped.
     assert metrics["unidentifiable_withdrawals"] == 3
+
+
+def test_the_condition_is_counted_on_every_poll_not_only_while_records_are_new(db, rules):
+    """The report is about the exchange's RESPONSE, not about novelty. The
+    exchange re-sends the same records while a withdrawal settles, and the
+    metric must count them each poll or the frequency the #67 fix was chosen
+    from understates reality by however long records sit in the window.
+
+    This is also the pin for the design probe '#67: the unidentifiable check
+    runs after record_seen_withdrawal' - feeding the report the already-seen-
+    filtered list goes quiet on the second poll, exactly when the filter is
+    the thing swallowing information. (Since the batch-ordinal fix, identical
+    records in one response all pass the filter on the FIRST poll, so a
+    single-poll test can no longer tell the two apart; the re-poll can.)"""
+    from tests.helpers.poller_harness import poll_once_with_withdrawals
+
+    _, metrics = poll_once_with_withdrawals(db, rules, [_record()], polls=2)
+
+    assert metrics["unidentifiable_withdrawals"] == 2
