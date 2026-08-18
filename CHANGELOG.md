@@ -20,6 +20,19 @@ what the customer /status page *says* about an account that is not being
 watched — the watched/not-watched judgment itself, and all alerting, are
 unchanged.
 
+### Added
+
+- **A guard that every `accounts.status` value has a writer or a recorded
+  reason not to** (#84). Both `disabled` (until #80) and `tamper_suspected`
+  (still) shipped as declarations only — in the schema's CHECK constraint,
+  styled, worded, and unwritable. The new guard parses the constraint out
+  of schema.sql (never retyped), asserts both containment directions, and
+  proves each claimed writer in two halves: the value round-trips through
+  `set_account_status`, and the named product caller's source carries the
+  literal. `tamper_suspected` sits on the explicit unreachable list with
+  its reason — a recorded decision that fails loudly when someone later
+  assumes the status works, instead of silence that reads as coverage.
+
 ### Fixed
 
 - **/status no longer tells the customer of a disabled or tamper-flagged

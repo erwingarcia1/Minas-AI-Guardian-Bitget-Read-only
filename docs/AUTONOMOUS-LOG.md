@@ -3797,3 +3797,24 @@ pinned by the existing only-where-it-is-the-answer test.
 **Verified**: both new tests green after the reorder; the 17 existing
 member-status tests unchanged-green (including active+auth-failing keeping
 the replace-key advice — the non-trigger case).
+
+## #84 · The status-value guard: registration needs execution, for enums too
+
+`tests/test_account_status_writers.py`, 6 tests. The constraint is parsed
+from schema.sql rather than restated; both containment directions are
+asserted; a claimed writer is proven in two halves (round-trip through
+`set_account_status`, and the named caller's source carries the literal —
+because the CLI passes a computed variable, a naive AST literal-scan finds
+nothing, and the two halves together are what #80's defect lacked).
+`tamper_suspected` sits on `INTENTIONALLY_UNREACHABLE` with its reason;
+whether the tamper detector should write the status automatically is a
+product decision, recorded as such rather than guessed at.
+
+**Negative proofs, all three directions**: removing the allowlist entry
+fails 2 tests; a stale claim fails 4; pointing a writer claim at a caller
+that never passes the literal fails 1. Restored, 6 green.
+
+Cadence note: first issue under the new tiered pipeline — new test file
+only, no probe-covered code touched, so pre-push suite + CI is the gate.
+The #83 health check before it ran the mutation gate cold at 3,610s, which
+is the duplication the cadence change removes.
