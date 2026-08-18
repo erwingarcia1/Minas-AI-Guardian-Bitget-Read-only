@@ -224,8 +224,20 @@ def cmd_version(args: argparse.Namespace) -> int:
 
     Exits 1 when the commit is unknown - a build that cannot say what it is
     should not report success to a script checking whether the deploy landed.
+
+    `--machine` prints `key=value` lines instead. That form is a CONTRACT:
+    scripts/deploy.sh greps it to assert the running container is the tag it
+    was asked to deploy, so its shape is pinned by tests on this side - the
+    side a reformat would happen on - and the human block above it is free
+    to change. (Images older than this flag are parsed by their human
+    output instead, which is safe precisely because those images are already
+    built and their format can never change.)
     """
     info = build_info()
+    if getattr(args, "machine", False):
+        for key in ("version", "commit", "tag", "source"):
+            print(f"{key}={info[key]}")
+        return 1 if info["commit"] == "unknown" else 0
     print(f"Minas AI Guardian {info['version']}")
     print(f"  commit   {info['commit']}")
     print(f"  tag      {info['tag']}")
@@ -781,6 +793,9 @@ def main() -> None:
         "version",
         help="Print the running version and the commit it was built from",
     )
+    version_parser.add_argument(
+        "--machine", action="store_true",
+        help="key=value lines for scripts (deploy.sh asserts against this)")
     version_parser.set_defaults(func=cmd_version)
 
     validate_parser = sub.add_parser(

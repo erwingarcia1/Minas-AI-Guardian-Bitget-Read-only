@@ -43,7 +43,16 @@ change, no config change. PATCH for the same reason.
   terminal to ask. After the switchover, the script compares the running
   container's `sentinel version` against the tag it was asked to deploy
   and exits non-zero on mismatch: a deploy that ran the wrong image now
-  fails instead of printing what happened. Any failure before "Switching
+  fails instead of printing what happened. The comparison reads a new
+  machine form, `sentinel version --machine` (key=value lines, pinned by
+  tests on the CLI side — the side a reformat would happen on), so
+  changing the human output can never fail a deploy with a false "wrong
+  image is serving"; images predating the flag (rollback targets) are
+  parsed by their human output, which is safe precisely because a built
+  image's format is frozen. A rollback typed from your machine needs
+  `ssh -t` — the downgrade confirmation is read from the TTY, and a plain
+  `ssh host '…'` one-liner allocates none; the working one-liner is in
+  docs/deployment.md next to the downgrade paragraph. Any failure before "Switching
   over" still leaves the previous version running untouched, and the
   healthy-wait still requires the real compose healthcheck, not
   "started". Eight new tests exercise the refusals against throwaway

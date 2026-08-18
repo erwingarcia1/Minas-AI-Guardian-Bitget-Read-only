@@ -77,9 +77,12 @@ DEPLOY_GATE = ROOT / "scripts" / "deploy-gate.sh"
 
 _DOCKER_STUB = """\
 #!/usr/bin/env bash
-# Test stub. The version report is read from $DOCKER_STUB_DIR/version so the
-# test controls what "the container" claims to be running.
+# Test stub. The version reports are read from $DOCKER_STUB_DIR so the test
+# controls what "the container" claims to be running. A missing `machine`
+# file plays a pre---machine image: argparse would exit 2 with nothing on
+# stdout, which is what deploy.sh's fallback keys on.
 case "$*" in
+  "compose exec -T sentinel sentinel version --machine") cat "$DOCKER_STUB_DIR/machine" 2>/dev/null || exit 2 ;;
   "compose exec -T sentinel sentinel version") cat "$DOCKER_STUB_DIR/version" 2>/dev/null || exit 1 ;;
   "compose ps -q sentinel") echo stubcid ;;
   inspect*) echo "running healthy" ;;
@@ -136,10 +139,17 @@ def server(tmp_path):
     return SimpleNamespace(repo=clone, env=env, state=state)
 
 
-def _container_reports(server, version, tag):
+def _container_reports(server, version, tag, machine=True):
+    """machine=False plays an image built before `sentinel version --machine`
+    existed — a rollback target — whose human output is all there is."""
     (server.state / "version").write_text(
         f"Minas AI Guardian {version}\n  commit   abcdef0\n"
         f"  tag      {tag}\n  source   build-arg\n")
+    if machine:
+        (server.state / "machine").write_text(
+            f"version={version}\ncommit=abcdef0\ntag={tag}\nsource=build-arg\n")
+    else:
+        (server.state / "machine").unlink(missing_ok=True)
 
 
 def _deploy(server, *args):
@@ -231,3 +241,14 @@ def test_the_gate_still_refuses_an_untagged_head(server):
         capture_output=True, text=True, cwd=str(server.repo), timeout=30)
     assert result.returncode != 0
     assert "REFUSED" in result.stderr
+
+
+def test_a_pre_machine_image_is_parsed_by_its_frozen_human_format(server):
+    """A rollback target predates `sentinel version --machine`. Its image is
+    already built, so its human format can never change — deploy.sh falls
+    back to parsing it, and the deploy still verifies rather than failing
+    with a false 'wrong image'."""
+    _container_reports(server, "1.0.0", "v1.0.0", machine=False)
+    result = _deploy(server, "v1.0.0")
+    assert result.returncode == 0, result.stderr + result.stdout
+    assert "is live and verified" in result.stdout

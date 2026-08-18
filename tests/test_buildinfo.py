@@ -142,3 +142,68 @@ def test_version_command_exits_nonzero_when_it_cannot_say(tmp_path):
     assert result.returncode == 1
     assert "unknown" in result.stdout
     assert "does not know which commit" in result.stderr
+
+
+# --- the --machine contract with scripts/deploy.sh ---------------------------
+
+def _run_version_machine(env_extra: dict[str, str]) -> subprocess.CompletedProcess:
+    import os
+
+    return subprocess.run(
+        [sys.executable, "-c", "from sentinel.cli import main; main()",
+         "version", "--machine"],
+        capture_output=True, text=True, env={**os.environ, **env_extra},
+    )
+
+
+def test_version_machine_emits_exactly_the_lines_deploy_sh_parses():
+    """scripts/deploy.sh asserts a deploy landed by grepping this output
+    (`sed -n 's/^tag=//p'`). Pinned HERE, on the CLI side, because this is
+    the side a reformat would happen on: without this test, a change to the
+    output would make every future deploy die at its last step with a false
+    "wrong image is serving". The human block is deliberately not pinned —
+    freeing it to change is the point of having a machine form."""
+    import re
+
+    result = _run_version_machine(
+        {"SENTINEL_GIT_SHA": "e" * 40, "SENTINEL_GIT_TAG": "v1.2.3"})
+
+    assert result.returncode == 0, result.stderr
+    lines = result.stdout.splitlines()
+    assert [line.split("=", 1)[0] for line in lines] == [
+        "version", "commit", "tag", "source"]
+    values = dict(line.split("=", 1) for line in lines)
+    assert values["commit"] == "e" * 40
+    assert values["tag"] == "v1.2.3"
+    assert values["source"] == "build-arg"
+    for line in lines:  # each line must survive `sed -n "s/^key=//p"` intact
+        assert re.fullmatch(r"[a-z]+=\S+", line), f"unparseable line: {line!r}"
+
+
+def test_version_machine_still_exits_nonzero_when_it_cannot_say(tmp_path):
+    """Same rule as the human form: a build that cannot say what it is must
+    not hand a zero exit to a script checking whether the deploy landed."""
+    import os
+
+    result = subprocess.run(
+        [sys.executable, "-c", "from sentinel.cli import main; main()",
+         "version", "--machine"],
+        capture_output=True, text=True, cwd=tmp_path,
+        env={**os.environ, "SENTINEL_GIT_SHA": "", "SENTINEL_GIT_TAG": "",
+             "PATH": "/nonexistent"},
+    )
+
+    assert result.returncode == 1
+    assert "commit=unknown" in result.stdout
+
+
+def test_deploy_sh_actually_consumes_the_machine_form():
+    """The contract's other direction (one-directional containment, again):
+    the format pin above is only worth keeping while deploy.sh reads this
+    form. If the consumer ever moves off it, this fails and both halves get
+    reconsidered together instead of the pin outliving its purpose."""
+    from pathlib import Path
+
+    text = (Path(__file__).parent.parent / "scripts" / "deploy.sh").read_text()
+    assert "sentinel version --machine" in text
+    assert 'sed -n "s/^$1=//p"' in text

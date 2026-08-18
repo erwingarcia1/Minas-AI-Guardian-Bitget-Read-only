@@ -203,7 +203,17 @@ which correctly refused it (it blocked the v1.4.1 and v1.5.0 deploys).
 It stops at the first failure and refuses: a dirty working tree (naming the
 files — fix it in git, never on the server), a tag that does not exist, and
 — without a typed confirmation at the terminal — a tag *older* than the
-running version, so an accidental downgrade is not one typo away. Its one
+running version, so an accidental downgrade is not one typo away.
+
+**Rolling back needs a real terminal.** The confirmation is read from the
+TTY, and `ssh host 'sudo … deploy.sh v1.4.2'` allocates none — it is
+refused outright. Rollback is the emergency path, so the one-liner that
+works is worth having ready:
+
+```bash
+ssh -t ubuntu@minas-guardian 'sudo /opt/minas-guardian/scripts/deploy.sh v1.4.2'
+#   ^ -t allocates the TTY the downgrade confirmation is typed into
+``` Its one
 property to internalize: **any failure before its "Switching over" step
 leaves the previous version running untouched** — the build and the config
 check happen off to the side, so a refused gate or a rejected config costs

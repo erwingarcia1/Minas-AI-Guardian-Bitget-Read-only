@@ -44,7 +44,9 @@
 # Deploying a tag OLDER than what is running asks for confirmation, typed at
 # the terminal. An accidental downgrade of a monitoring product should not be
 # one typo away; a deliberate one is sometimes right (rolling back a bad
-# release) and stays possible.
+# release) and stays possible. That read needs a real TTY: a one-liner like
+# `ssh host 'sudo … deploy.sh v1.4.2'` allocates none and is refused — use
+# `ssh -t` for a rollback typed from your machine (docs/deployment.md).
 #
 # If the tag you want is missing: cut a release first (`scripts/release.sh
 # X.Y.Z`, then `git push && git push --tags`; thirty seconds) and run this
@@ -69,6 +71,25 @@ esac
 trap 'printf "\ndeploy: FAILED — see output above. A failure before \"Switching over\" leaves the previous version running.\n" >&2' ERR
 
 step() { printf '\n== %s\n' "$*"; }
+
+# One field ('version' or 'tag') of what the running container reports.
+# `sentinel version --machine` (key=value lines) is the contract, pinned by
+# tests on the CLI side; images predating the flag fall back to their human
+# output, which is safe to parse precisely because those images are already
+# built — their format is frozen. Empty output means no container answered.
+container_field() {
+  local machine
+  machine=$(docker compose exec -T sentinel sentinel version --machine 2>/dev/null || true)
+  if [ -n "$machine" ]; then
+    printf '%s\n' "$machine" | sed -n "s/^$1=//p" | head -n1
+    return 0
+  fi
+  case "$1" in
+    version) docker compose exec -T sentinel sentinel version 2>/dev/null | sed -n 's/^Minas AI Guardian //p' | head -n1 || true ;;
+    tag)     docker compose exec -T sentinel sentinel version 2>/dev/null | sed -n 's/^  tag  *//p'          | head -n1 || true ;;
+  esac
+  return 0
+}
 
 step "Preflight: clean tree"
 # The server must never carry local edits. If this refuses, someone changed
@@ -104,7 +125,7 @@ echo "deploy: target is $TARGET_TAG$([ $# -eq 0 ] && echo ' (latest release)')"
 step "Currently running"
 RUNNING_REPORT=$(docker compose exec -T sentinel sentinel version 2>/dev/null || true)
 printf '%s\n' "${RUNNING_REPORT:-  (no running container answered)}"
-RUNNING_VERSION=$(printf '%s\n' "$RUNNING_REPORT" | sed -n 's/^Minas AI Guardian //p' | head -n1)
+RUNNING_VERSION=$(container_field version)
 
 # --- Downgrade guard ---------------------------------------------------------
 # Confirmation comes from the terminal, not stdin, so it cannot be piped past;
@@ -165,11 +186,10 @@ done
 
 step "Asserting the deployed version"
 # Assert, don't report: the running container must name the tag we were asked
-# to deploy. `|| true` because a build that cannot identify itself exits 1 —
-# that case must fail the ASSERT with both names printed, not die mid-read.
-DEPLOYED_REPORT=$(docker compose exec -T sentinel sentinel version 2>&1 || true)
-printf '%s\n' "$DEPLOYED_REPORT"
-DEPLOYED_TAG=$(printf '%s\n' "$DEPLOYED_REPORT" | sed -n 's/^  tag  *//p' | head -n1)
+# to deploy. The human block is printed for the operator; the comparison uses
+# container_field, so a reformat of the human output cannot fail a deploy.
+docker compose exec -T sentinel sentinel version || true
+DEPLOYED_TAG=$(container_field tag)
 if [ "$DEPLOYED_TAG" != "$TARGET_TAG" ]; then
   die "the running container reports tag '${DEPLOYED_TAG:-unknown}', not the $TARGET_TAG this deploy was asked for. The wrong image is serving."
 fi
