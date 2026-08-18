@@ -47,6 +47,18 @@ whose final step **asserted** the version instead of reporting it.
 |---|---|
 | Container | `sentinel version`: **1.5.1**, commit `3cc4aee06448e5ae4ca93ce9c0174b463062ebb5`, tag `v1.5.1`, source **build-arg** — compared against the requested tag by the script itself, which exits non-zero on mismatch |
 
+### Verified after deploy
+
+- **The descriptor leak is closed in production** (#79 — the six-week
+  outage this release shipped the fix for). Descriptor counts on the
+  running container, measured by the owner (times UTC): **35 at 15:49**
+  (immediately post-deploy), **30 at 16:05**, **30 at 20:46**. Five hours
+  flat. At the pre-fix rate of ~11/min that window would have leaked
+  ~3,300 descriptors and the container would have hit its 1024 ceiling and
+  gone dark around 17:20 — as it had after every restart since early July.
+  This is the measurement that closes the outage, not merely the fix that
+  should have.
+
 ### v1.5.0: tagged, CI-green, never deployed
 
 Its deploy was refused by the gate — HEAD was the post-tag log-handoff
