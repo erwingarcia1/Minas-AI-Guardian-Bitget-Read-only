@@ -7,6 +7,11 @@ sentinel_data/
 __pycache__/
 tests/
 docs/
+# scripts/ stays out of the build context except the ops scripts the
+# container itself needs (#77): each one the Dockerfile COPYs must be
+# re-included here, and tests/test_docker_ops_scripts.py keeps the two
+# lists agreeing so a cleanup of one cannot silently break the other.
 scripts/
+!scripts/retention-boundary.py
 .claude/
 .pytest_cache/

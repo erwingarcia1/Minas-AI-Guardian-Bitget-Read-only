@@ -5,6 +5,12 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY sentinel/ sentinel/
 COPY config/ config/
+# Ops scripts that must run where /data/sentinel.db lives (#77). v1.4.1's
+# release note promised the retention boundary reading could be taken on the
+# deployment; without this line it could not. Deliberately per-file, not
+# scripts/: the dev tooling (probes, hooks, release) has no business in a
+# production image holding customer credentials.
+COPY scripts/retention-boundary.py scripts/retention-boundary.py
 
 # [triage] pulls the anthropic SDK so the documented `sentinel triage`
 # command works when an API key is configured; harmless when it isn't.

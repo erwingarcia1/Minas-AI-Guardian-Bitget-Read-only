@@ -28,6 +28,16 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Fixed
 
+- **`scripts/retention-boundary.py` now ships in the Docker image** (#77),
+  so it can run where `/data/sentinel.db` lives. This also corrects
+  v1.4.1's release note, which promised the production retention boundary
+  reading could be taken "after this release is deployed" — it could not:
+  `.dockerignore` excluded `scripts/` wholesale and the Dockerfile copied
+  none of it, so the reading had to be taken by mounting the script by
+  hand. The copy is deliberately per-file (dev tooling has no business in
+  a production image holding customer credentials), and paired tests keep
+  the Dockerfile COPY list and the `.dockerignore` re-include list
+  agreeing in both directions.
 - **A failing retention prune is no longer silent** (#73). It used to be one
   ERROR line an hour: the failure escaped to the scheduler's blanket except,
   froze the table-rows gauge at its last good value (switching off the one
