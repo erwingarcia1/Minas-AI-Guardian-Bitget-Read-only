@@ -230,3 +230,45 @@ def test_the_page_escapes_account_labels(db, rules):
 
     assert "<script>x</script>" not in page
     assert "&lt;" in page
+
+
+# --- current state beats stale counters (#83) --------------------------------
+#
+# Only `active` accounts are polled, so any non-active status FREEZES the
+# poll_state counters at whatever they held when polling stopped. A reason
+# derived from a frozen counter is a fact about "whenever we last looked";
+# the status is a fact about now — and the two disagree exactly when an
+# account is disabled or flagged mid-key-failure. The auth-failure advice
+# ("replace it and monitoring restarts") is FALSE while non-active:
+# replacing the key restarts nothing; only a status change does.
+
+def test_a_disabled_account_with_a_frozen_auth_counter_gets_the_disabled_reason(db, rules):
+    """Disable-pending-resolution is a normal operator move against an
+    account whose key is failing (#74 is exactly this). The counter stops
+    updating the moment polling stops, so without the ordering fix the
+    customer is told to replace a key, replaces it, and nothing happens."""
+    _account(db, "alice-off-failing", "alice@example.com",
+             last_ok=NOW - timedelta(seconds=5), status="disabled", auth_failures=5668)
+
+    status = member_status(db, "alice@example.com", rules, now=NOW)
+
+    reason = status["problems"][0]["reason"]
+    assert "switched off" in reason
+    assert "replace" not in reason, "false advice: replacing the key restarts nothing while disabled"
+
+
+def test_a_tamper_flagged_account_gets_the_tamper_reason_not_key_advice(db, rules):
+    """Definitionally the worst case: detect_tamper IS the auth-failure
+    counter crossing its threshold, so every realistically-flagged account
+    carries the counter that flagged it. Without the ordering fix the
+    carefully-worded tamper reason is dead copy in every real path, and the
+    account we most suspect of interference is the one whose customer is
+    told the problem is their key."""
+    _account(db, "alice-tampered", "alice@example.com",
+             last_ok=NOW - timedelta(seconds=5), status="tamper_suspected", auth_failures=3)
+
+    status = member_status(db, "alice@example.com", rules, now=NOW)
+
+    reason = status["problems"][0]["reason"]
+    assert "suspected interference" in reason
+    assert "replace" not in reason

@@ -857,22 +857,34 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
         fresh = age is not None and age < window and r["status"] == "active"
         auth_failing = (r["consecutive_auth_failures"] or 0) > 0
 
-        # Ordered by what the customer can do about it. A rejected key is
-        # theirs to replace; an unreachable exchange is not; and telling
-        # somebody to re-issue a working key is wrong advice (G-6).
-        if auth_failing:
-            reason = "our monitoring key is being rejected — replace it and monitoring restarts"
-        elif r["status"] != "active":
-            # Only `active` accounts are polled at all (engine.py, poller.py),
-            # so any other status means this account is not being watched -
-            # including `tamper_suspected`, which is the alarming one: the
-            # account we most suspect is being interfered with is the account
-            # we stop looking at. Said in words rather than by printing the
-            # column value, because "tamper_suspected" is our jargon and this
-            # page is read by the customer.
+        # Ordered by what the customer can do about it, with one rule above
+        # that (#83): CURRENT STATE BEATS STALE COUNTERS. Only `active`
+        # accounts are polled, so any non-active status freezes the
+        # poll_state counters at whatever they held when polling stopped —
+        # `status` is a fact about now, `consecutive_auth_failures` is a
+        # fact about whenever we last looked, and they disagree exactly when
+        # an account is disabled or flagged mid-key-failure. The status
+        # check therefore comes first: "replace it and monitoring restarts"
+        # is FALSE while non-active (only a status change restarts
+        # anything), and for tamper_suspected the frozen counter is the very
+        # one that raised the flag, so the key advice would win every time.
+        # The next signal that freezes when polling stops belongs below the
+        # status check too.
+        if r["status"] != "active":
+            # This account is not being watched - including
+            # `tamper_suspected`, which is the alarming one: the account we
+            # most suspect is being interfered with is the account we stop
+            # looking at. Said in words rather than by printing the column
+            # value, because "tamper_suspected" is our jargon and this page
+            # is read by the customer.
             reason = _STATUS_REASON.get(
                 r["status"], f"this account is {r['status']}, so it is not being checked"
             )
+        elif auth_failing:
+            # A rejected key is the customer's to replace; an unreachable
+            # exchange is not; and telling somebody to re-issue a working
+            # key is wrong advice (G-6).
+            reason = "our monitoring key is being rejected — replace it and monitoring restarts"
         elif last_ok is None:
             reason = "this account has never completed a check"
         elif not fresh:

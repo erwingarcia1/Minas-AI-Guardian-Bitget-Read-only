@@ -3768,3 +3768,32 @@ claim in the very session that leaned on DEPLOYMENTS.md's rule — measured,
 not recalled — and the tell was available: no DEPLOYMENTS.md entry for the
 claimed deploy existed, and I had written this morning's entry rule myself.
 A deploy with no evidence row is a deploy that should not be believed.*
+
+# Autonomous run — 2026-08-18 (evening), started after v1.5.1 deployed
+
+Preconditions measured, not carried forward: production answers
+`version=1.5.1 commit=3cc4aee… tag=v1.5.1 source=build-arg` over tailnet SSH
+via the new `sentinel version --machine` contract — the claim in the run
+brief, verified against the running system. Tree clean at `5a79093`, CI
+green, one claude process (this one).
+
+## #83 · /status: current state beats stale counters
+
+**Reproduced first**: two tests written against the tree as it stood — a
+disabled account with a frozen auth counter, and a tamper-flagged account
+with the counter that flagged it — both failed with the replace-key advice
+where the status reason belonged.
+
+**The fix is the ordering plus the rule that generalises it.** `status !=
+"active"` is now checked before `auth_failing` in `member_status`, with the
+rule in the comment: only `active` accounts are polled, so a non-active
+status freezes every poll_state counter — the status is a fact about now,
+the counter a fact about whenever we last looked, and the next signal that
+freezes when polling stops belongs below the status check too. The
+replace-key link needed no separate fix: it keys off the reason string, so
+it stops being offered exactly where replacing the key would do nothing —
+pinned by the existing only-where-it-is-the-answer test.
+
+**Verified**: both new tests green after the reorder; the 17 existing
+member-status tests unchanged-green (including active+auth-failing keeping
+the replace-key advice — the non-trigger case).

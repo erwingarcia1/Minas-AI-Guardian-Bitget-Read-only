@@ -15,11 +15,27 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Changed detection behaviour
 
-**None.** Which alerts fire, when, and to whom is untouched — this is a
-runbook fix and a deploy-script message, nothing the running service
-executes.
+**None.** Which alerts fire, when, and to whom is untouched. #83 changes
+what the customer /status page *says* about an account that is not being
+watched — the watched/not-watched judgment itself, and all alerting, are
+unchanged.
 
 ### Fixed
+
+- **/status no longer tells the customer of a disabled or tamper-flagged
+  account to replace their key** (#83). Only `active` accounts are polled,
+  so any non-active status freezes the auth-failure counter at whatever it
+  held when polling stopped — and the reason ordering checked that frozen
+  counter first. An account disabled mid-key-failure (a normal
+  disable-pending-resolution move) permanently showed "replace it and
+  monitoring restarts", which is false while disabled: replacing the key
+  restarts nothing. Worse for `tamper_suspected`, whose detector *is* that
+  counter crossing a threshold, so the tamper wording was dead copy in
+  every realistic path. The rule, now stated in the code: **current state
+  beats stale counters** — status is a fact about now; a counter frozen by
+  that very status is a fact about whenever we last looked. The
+  replace-key link follows the reason, so it also stops being offered
+  where replacing the key would do nothing.
 
 - **Backups have a named home outside the checkout** (#85). The runbook
   never said where a database backup goes, and the one written precedent
