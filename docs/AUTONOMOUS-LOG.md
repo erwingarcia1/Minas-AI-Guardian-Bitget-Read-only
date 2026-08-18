@@ -3640,3 +3640,73 @@ person less:
   anything else is the same class of error as a skipped gate printed in green.
 - **Registration guards need execution guards.** Above, and in its own
   CONTRIBUTING section.
+
+# Session — 2026-08-18 (afternoon) · v1.5.0 cut and pushed
+
+One task: cut the release the overnight session left ready. Done — **v1.5.0
+is tagged, pushed, CI green (run 32143087571), and undeployed.** Deploy is the
+owner's: `sudo /opt/minas-guardian/scripts/deploy.sh` on the VM will accept
+`feb9a5f` because it is exactly the tag. Production is still running 1.4.2,
+which dies of #79's descriptor leak ~90 minutes after every restart — this
+release is the fix, so the tag-to-deploy gap is worth keeping short.
+
+## The record this log was missing
+
+**The overnight session of 2026-08-18 wrote no handoff here.** It closed #79
+(the six-week FD-leak outage), #73, #80, #77 and fixed #78 — all real, all
+verified this session against GitHub and `main` rather than trusted — and was
+reportedly about to cut v1.5.0 when it stopped over its alone-check. None of
+that reached this file. This entry is the substitute: the work is evidenced by
+the issues themselves (closed 05:07–06:01 UTC), commits `f8e8541..ba8af4e`,
+and the CHANGELOG's `[1.5.0]` section, which is unusually complete because it
+was written per-fix as the session went.
+
+## What this session did
+
+- **Alone-check**: `ps` snapshotted to a file first, then searched
+  (CONTRIBUTING's method — the bare-grep way self-matches). One `claude`
+  process: this one. No mutmut/probe/pytest running.
+- **CHANGELOG, before cutting** (`f69484a`): `[Unreleased]` had no
+  `### Changed detection behaviour` section while containing exactly what the
+  heading exists for. Every release since 1.4.1 opens with it, "None." when
+  none. Added three operator-experience entries: #79 (alerts actually arrive
+  past ninety minutes of uptime), #73 (a failing prune pages at HIGH), #80 (a
+  disabled account stops alerting entirely). Mechanics stayed under Fixed.
+- **`scripts/release.sh 1.5.0`**: exit 0, tree left clean. All seven gates
+  pass; the mutation gate ran 2951s — a full run, not the 8-second cache pass
+  the CONTRIBUTING warns is indistinguishable without the log. Evidence in
+  `.health-check-logs/20260818T122520Z-f69484a`. MINOR is right: #80's new CLI
+  verbs are new capability.
+- **Read `git show v1.5.0` before pushing.** Heading placed correctly, the
+  standing ops note carried forward under `[Unreleased]`, compare links
+  rewritten, pyproject bumped in `[project]` only.
+- Pushed commit + tag (pre-push suite ran twice, 1019 passed each time);
+  CI green on the release commit.
+
+## Found while answering the owner's questions about #80: two issues filed
+
+**#83 (p2)** — `/status` orders `auth_failing` before `status != "active"`,
+and disabling freezes `consecutive_auth_failures` forever (the poller stops
+visiting). An account disabled mid-key-failure permanently reads "replace it
+and monitoring restarts" — false while disabled, on the one page built to be
+believed (G-34). Worse for `tamper_suspected`: `detect_tamper` fires *on* that
+counter crossing its threshold, so every realistically-flagged tamper account
+hits the same hole and the portal's tamper copy is dead in every real path.
+The generalisable rule is in the issue: **current state beats stale counters**
+— a status is a fact about now; a counter frozen by that very status is a fact
+about whenever we last looked.
+
+**#84 (p3)** — `tamper_suspected` is the *second* `accounts.status` value
+shipped with no writer (`disabled` was the first, from schema day until #80).
+Two of the CHECK constraint's three values have shipped as declarations only.
+Proposed guard, filed not built: every constraint value has a code path
+setting it, or sits on an explicit intentionally-unreachable allowlist with a
+reason — registration-guards-need-execution-guards, applied to enum values.
+
+## For whoever deploys v1.5.0
+
+Watch descriptor count and uptime past the ninety-minute mark — that is the
+whole point of the release. #78's boundary-report fix also ships; the
+re-run-and-verify half of that issue can finally happen on the VM. And #74's
+fix is now one command: `sentinel disable-account paula-garavillas --as <you>`
+(mind #83 — its /status row will then show the wrong reason).
