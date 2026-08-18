@@ -471,6 +471,51 @@ def cmd_ack(args: argparse.Namespace) -> int:
     return 1
 
 
+def cmd_account_status(args: argparse.Namespace) -> int:
+    """Disable an account (offboarding, G-50) or re-enable it.
+
+    Disable, never delete: the baselines survive, so re-enabling resumes
+    monitoring without the false CRITICALs an empty baseline produces. The
+    `--as` gate is `cmd_ack`'s, verbatim in spirit: attribution becomes
+    mandatory the moment operator accounts exist, and not before."""
+    from sentinel.onboarding import set_account_status
+    from sentinel.operators import is_active_operator, list_operators, operator_count
+
+    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    actor = getattr(args, "as_operator", None)
+
+    if operator_count(db) > 0:
+        if not actor:
+            names = ", ".join(o["username"] for o in list_operators(db) if o["status"] == "active")
+            print(
+                f"--as <operator> is required: this change is recorded against a name. "
+                f"Active operators: {names or '(none active)'}",
+                file=sys.stderr,
+            )
+            return 2
+        if not is_active_operator(db, actor):
+            print(f"'{actor}' is not an active operator", file=sys.stderr)
+            return 2
+    elif actor:
+        print("no operator accounts exist - create one with `sentinel operator add`", file=sys.stderr)
+        return 2
+
+    status = "disabled" if args.action == "disable" else "active"
+    try:
+        changed = set_account_status(db, args.label, status, actor)
+    except LookupError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    verb = "disabled" if status == "disabled" else "enabled"
+    if changed:
+        by = f" by {actor}" if actor else ""
+        extra = " - it will not be polled or alerted on until re-enabled" if status == "disabled" else ""
+        print(f"account '{args.label}' {verb}{by}{extra}")
+    else:
+        print(f"account '{args.label}' was already {verb} - nothing recorded")
+    return 0
+
+
 def cmd_set_threshold(args: argparse.Namespace) -> int:
     """Change one threshold, attributably (G-12, #16).
 
@@ -776,6 +821,16 @@ def main() -> None:
     ack_parser.add_argument("--as", dest="as_operator", help="Operator acknowledging this alert")
     ack_parser.add_argument("alert_id", type=int)
     ack_parser.set_defaults(func=cmd_ack)
+
+    for action, help_text in (
+        ("disable-account", "Stop polling and alerting on an account (offboarding - disable, never delete)"),
+        ("enable-account", "Resume polling and alerting on a disabled account"),
+    ):
+        account_status_parser = sub.add_parser(action, help=help_text)
+        account_status_parser.add_argument("--as", dest="as_operator", help="Operator making this change")
+        account_status_parser.add_argument("label", help="The account's label")
+        account_status_parser.set_defaults(func=cmd_account_status,
+                                           action=action.split("-", 1)[0])
 
     set_threshold_parser = sub.add_parser(
         "set-threshold", help="Change one detection threshold, recorded against an operator")

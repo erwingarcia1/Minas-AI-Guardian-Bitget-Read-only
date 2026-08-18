@@ -207,6 +207,47 @@ def verify_read_only(client: ExchangeClient, exchange: str = "bitget") -> tuple[
     return _bitget_read_only(authorities)
 
 
+# The statuses the schema's CHECK constraint declares. Mirrored here so a
+# typo'd status fails with a named error before it reaches SQL, and so this
+# module - not each caller - owns the list when it grows.
+ACCOUNT_STATUSES = frozenset({"active", "tamper_suspected", "disabled"})
+
+
+def set_account_status(db: Database, label: str, status: str, actor: str | None) -> bool:
+    """Offboarding and its inverse (G-50: disable, never delete).
+
+    Deleting an account would take its baselines with it, and a re-onboarded
+    account with empty baselines alerts CRITICAL on its own cold wallet. A
+    disabled account keeps everything and simply stops being visited: the
+    engine and poller already select `status = 'active'` only, so this write
+    is the whole mechanism (#80 - the column was declared, styled, filtered
+    on, and never written).
+
+    Returns True when the status changed, False when it was already there -
+    and writes the event only on a change, because an event log that records
+    a change that did not happen is lying (same rule as G-50's refusal to
+    backfill actors). Raises LookupError for an unknown label rather than
+    returning False: "nothing needed doing" and "you disabled a typo" must
+    not share a return value."""
+    if status not in ACCOUNT_STATUSES:
+        raise ValueError(f"unknown account status {status!r} (one of: {', '.join(sorted(ACCOUNT_STATUSES))})")
+    now = datetime.now(timezone.utc).isoformat()
+    with db.cursor() as cur:
+        cur.execute("SELECT id, status FROM accounts WHERE label = ?", (label,))
+        row = cur.fetchone()
+        if row is None:
+            raise LookupError(f"no account labelled {label!r}")
+        if row["status"] == status:
+            return False
+        cur.execute("UPDATE accounts SET status = ?, updated_at = ? WHERE id = ?",
+                    (status, now, row["id"]))
+    event = "account_disabled" if status == "disabled" else (
+        "account_enabled" if status == "active" else "account_status_changed")
+    append_event(db, row["id"], event, "INFO",
+                 {"from": row["status"], "to": status}, actor=actor)
+    return True
+
+
 def onboard_account(
     db: Database,
     cipher: CredentialCipher,

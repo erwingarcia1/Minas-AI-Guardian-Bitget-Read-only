@@ -13,6 +13,19 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Added
+
+- **`sentinel disable-account <label>` / `enable-account <label>`** (#80).
+  G-50's "offboarding is disable, never delete" finally has its mechanism:
+  the schema declared the status, the dashboard styled it, the poll loops
+  filtered on it, and nothing could write it. The verb writes it, records
+  an `account_disabled`/`account_enabled` event naming the operator (the
+  `--as` gate is `ack`'s: mandatory once operator accounts exist), and the
+  account's baselines survive so re-enabling resumes monitoring without
+  the false CRITICALs an empty baseline produces. Pinned at the level the
+  defect lived: a disabled account disappears from the scheduler's queue,
+  not merely from a SELECT.
+
 ### Fixed
 
 - **A failing retention prune is no longer silent** (#73). It used to be one
