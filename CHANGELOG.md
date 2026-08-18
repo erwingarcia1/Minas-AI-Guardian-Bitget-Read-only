@@ -13,6 +13,29 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched — this is a
+runbook fix and a deploy-script message, nothing the running service
+executes.
+
+### Fixed
+
+- **Backups have a named home outside the checkout** (#85). The runbook
+  never said where a database backup goes, and the one written precedent
+  put it inside `/opt/minas-guardian` — where, being an untracked file, it
+  tripped `deploy.sh`'s dirty-tree refusal on the check's first production
+  run and blocked the next deploy. docs/deployment.md now names
+  `/var/backups/minas-guardian/` in both places a backup is instructed,
+  with the rule that keeps this from recurring: a git working tree is not
+  a storage location, and no instruction in the docs may create an
+  untracked file in the tree. The refusal itself deliberately still covers
+  untracked files — `COPY sentinel/ sentinel/` sweeps them into the image,
+  so they are not harmless here (reasoning recorded in the script and on
+  #85) — but its message now tells the untracked case where the file
+  belongs instead of offering "revert", which only fits edited tracked
+  files.
+
 ## [1.5.1] — 2026-08-18
 
 ### Changed detection behaviour

@@ -252,3 +252,17 @@ def test_a_pre_machine_image_is_parsed_by_its_frozen_human_format(server):
     result = _deploy(server, "v1.0.0")
     assert result.returncode == 0, result.stderr + result.stdout
     assert "is live and verified" in result.stdout
+
+
+def test_an_untracked_backup_is_refused_with_where_it_belongs(server):
+    """#85: the check's first production run tripped on a DB backup left in
+    the checkout. The refusal stays — COPY sentinel/ sweeps untracked files
+    into the image, so untracked is not harmless here — but the advice must
+    fit the case: 'revert' means nothing for an untracked file; 'move it
+    out of the checkout' is the fix."""
+    (server.repo / "sentinel_data.backup-2026-08-18").write_text("the db copy\n")
+    result = _deploy(server)
+    assert result.returncode != 0
+    assert "sentinel_data.backup-2026-08-18" in result.stderr
+    assert "/var/backups/minas-guardian" in result.stderr
+    assert "not a storage location" in result.stderr

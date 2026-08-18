@@ -94,10 +94,25 @@ container_field() {
 step "Preflight: clean tree"
 # The server must never carry local edits. If this refuses, someone changed
 # files on the box — fix it in git, never on the server (docs/deployment.md).
-if [ -n "$(git status --porcelain)" ]; then
+#
+# Untracked files are refused too, on purpose (#85, decided after the check's
+# first production run tripped on a DB backup left in the checkout). The
+# tempting exemption — "untracked can't change what gets built" — is false:
+# `COPY sentinel/ sentinel/` and `COPY config/ config/` sweep untracked files
+# into the image, and .dockerignore is a blacklist that cannot exclude a file
+# it never heard of. Narrowing the refusal to shipped paths would mean this
+# script keeping a second copy of the Dockerfile's COPY list, which drifts and
+# then fails open. git-ignored files already pass (porcelain omits them);
+# everything else belongs outside the checkout — the docs' standing rule is
+# that no instruction may create an untracked file in the tree.
+STATUS=$(git status --porcelain)
+if [ -n "$STATUS" ]; then
   echo "deploy: REFUSED — the working tree has local changes:" >&2
   git status --short >&2
-  die "revert them (or land them in git and cut a release); never edit on the server"
+  if printf '%s\n' "$STATUS" | grep -q '^??'; then
+    echo "deploy: untracked files (??): move them out of the checkout — backups belong in /var/backups/minas-guardian (docs/deployment.md 'Where backups go'). A git working tree is not a storage location." >&2
+  fi
+  die "revert tracked changes (or land them in git and cut a release); never edit on the server"
 fi
 
 step "Fetching tags"

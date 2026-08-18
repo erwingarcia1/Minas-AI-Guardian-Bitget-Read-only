@@ -330,9 +330,10 @@ Three properties make this worth its own section rather than a footnote:
   be re-onboarded — new keys, new baselines, history unrecoverable.
 
 If you genuinely need to destroy the state on a production box, say so
-explicitly instead of reaching for a cleanup flag: take a backup, then
-`sudo docker volume rm minas-guardian_sentinel-data` — a command that can
-only mean the thing it does.
+explicitly instead of reaching for a cleanup flag: take a backup (to
+`/var/backups/minas-guardian/` — see "Where backups go" below, and never
+into the checkout), then `sudo docker volume rm minas-guardian_sentinel-data`
+— a command that can only mean the thing it does.
 
 ## First deployment (any host)
 
@@ -408,6 +409,24 @@ rotation procedure before enforcing it.
   `docker run --rm -v minas-guardian_sentinel-data:/data ... tar` job) — the
   DB is useless to a thief without the master key, but you still need it to
   restore service.
+
+### Where backups go: `/var/backups/minas-guardian/`, never the checkout
+
+**A git working tree is not a storage location.** `/opt/minas-guardian` is
+a checkout: anything dropped into it is exposed to everything git does — a
+re-clone or a cleanup wipes the backup along with the tree — and an
+untracked file there trips `deploy.sh`'s dirty-tree refusal, blocking the
+next deploy (#85; it happened on the check's first production run). The
+refusal is deliberate and stays: `COPY sentinel/ sentinel/` sweeps
+untracked files into the image, tracked or not, so a file dropped in the
+checkout can ship to production described nowhere. The rule that keeps the
+two consistent: **no instruction in these docs may create an untracked
+file in the tree.**
+
+```bash
+sudo mkdir -p /var/backups/minas-guardian
+sudo cp -a /path/to/copy /var/backups/minas-guardian/sentinel_data.backup-$(date -u +%Y-%m-%d)
+```
 
 ## Email authentication (SPF, DKIM, DMARC)
 
