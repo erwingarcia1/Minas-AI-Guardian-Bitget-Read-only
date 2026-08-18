@@ -3894,3 +3894,38 @@ counter reaches 2 across two polls of one record. Verified by running
 mutation-probe.py against a single-probe file: killed. A probe surviving
 because the code got better is still a hole in the net — the net is for
 the next change, not this one.
+
+## Run summary — closed 2026-08-19 (UTC 23:4x on the 18th)
+
+**v1.5.2 is tagged at `8bb1f61`, pushed, CI green (run 32198342819), and
+undeployed.** Deploy: `sudo /opt/minas-guardian/scripts/deploy.sh v1.5.2`.
+
+Closed, one commit each, CI watched by run id every time: **#83**
+(`1abeed9`, /status reason ordering — current state beats stale counters),
+**#84** (`5a84c74`, the status-writer guard), **#76** (`7155be8`, the bind
+disclosure — SENTINEL_BIND_GATE), **#67** (`dd27b3d`, batch ordinals for
+unidentifiable withdrawals — was the only open p1), **#74** (closed by
+measurement: the owner had already disabled paula in production at
+15:51:00Z; event 31661, warnings stopped at 15:50:35Z).
+
+Filed: **#86** (expensive gates → scheduled CI; deliberately post-release),
+**#87** (dashboard login has no 2FA — sharpened by the measured fact that
+production has ZERO operator accounts, so no dashboard login is active
+there at all today; the tailnet is the only boundary). Blocked on the
+owner: **#81** (decision 12 — restart-on-unhealthy shape; analysis and
+recommendation on the issue). Deferred with reasons on the issue: **#29**
+(buildable ¾ deserves a fresh session, not a run's tail). #43/#44 already
+carry their billing plans from 2026-08-13 — verified, nothing added.
+
+Contradictions with the written record, both corrected in place: the #83
+issue predicted paula would surface the frozen-counter defect — measured
+`auth_failures: 0`, her failures were unreachable-failures, prediction
+wrong, corrected on the issue. Nothing in DEPLOYMENTS.md contradicted
+measurement: production answered v1.5.1/`3cc4aee` exactly as recorded.
+
+Cadence: this run adopted the tiered pipeline mid-run — pre-push + CI per
+commit; the full check only for probe-covered/detection changes and the
+release. Both #67 checks were owed and run; #84 and the doc commits went
+on the fast path. The probes earned their keep once (the report-after-
+filter mutant surviving my own fix), which is the argument for #86 putting
+them on a schedule rather than in the inner loop.
