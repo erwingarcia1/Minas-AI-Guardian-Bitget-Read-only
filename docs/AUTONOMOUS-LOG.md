@@ -3967,3 +3967,36 @@ blocks the next release instead of reading as green forever.
 **Execution evidence** (the part a workflow test cannot give): a
 workflow_dispatch run of the extended job, watched by run id, recorded on
 the issue with both gates' timings.
+
+## #82 (foundation) · The portal owns its design
+
+The state found was the inverse of the owner's decision 2: ONE stylesheet,
+defined in dashboard.py, imported wholesale by the portal — with the Minas
+brand (gold/violet, the infinity mark) decorating the ops surface. The
+foundation work was therefore ownership first, colours second.
+
+What shipped: `sentinel/brand.py` (the identity's single home);
+`_PORTAL_STYLE` in portal.py — tokenised type scale, spacing, colour roles,
+one table, one pill, one banner, check rows, forms, print — applied to all
+existing portal pages; the portal's own `_status_pill`; docs/portal-design.md
+as the contract screens inherit from. Interface over presentation, per
+decision 3's escape clause: the pulse animation, glow gradients and gradient
+panels are gone from the portal; the dark brand ground stays (recognisability
+is part of the anti-phishing story); the new signature is a 2px gold
+hairline at the top of the page, absent from the dashboard on purpose.
+
+Guards (tests/test_surface_styles.py, 7): stylesheet independence in both
+directions (logic imports stay legal — the dashboard reads member_accounts;
+style/brand/pill imports do not); the brand lives in brand.py and the portal
+draws from it; each surface keeps its distinguishing marks (.portal-tag
+never in the dashboard sheet, .kpis never in the portal's); and the
+execution pair for CSS — every class the portal emits is styled by its own
+sheet, dynamic families asserted by value, with `ts` on a
+deliberately-unstyled allowlist with its reason.
+
+Verification: no browser on this box, so no screenshots — rendered five
+real pages (login, login-error, home, status, limits) with seeded data to
+scratchpad/portal-samples/ for the owner to open; asserted structurally
+that the rendered home page carries the new signature and zero occurrences
+of kpi/pulse/radial-gradient. Reported to the owner before any screen
+issue, as instructed.

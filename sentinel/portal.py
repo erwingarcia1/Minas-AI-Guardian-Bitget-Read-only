@@ -16,12 +16,13 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlencode, urlparse
 
+# Logic helpers only, deliberately: the portal owns its stylesheet, its pill
+# and its brand usage (#82 — tests/test_surface_styles.py refuses a shared
+# stylesheet, so the two surfaces cannot quietly converge again).
+from sentinel.brand import MARK_SVG
 from sentinel.dashboard import (
     _LOCAL_TIME_SCRIPT,
-    _MARK_SVG,
-    _STYLE,
     _account_type_label,
-    _status_pill,
     _ts,
     _watch_threshold,
 )
@@ -388,15 +389,204 @@ def verify_session_token(secret: bytes, token: str, now: float | None = None,
 
 # --- pages -------------------------------------------------------------------
 
+# The portal design foundation (#82). Tokens first, primitives second, and
+# every screen inherits: a page that needs a new colour or size adds a token
+# WITH A ROLE NAME here, never a hex in situ. The system is documented in
+# docs/portal-design.md; the decisions it implements (no framework, brand
+# the portal not the dashboard, interface over presentation) are recorded on
+# #82. Deliberately interface-oriented where the shared ancestor stylesheet
+# was presentation-oriented: no animation, no glow, no gradient panels — a
+# customer opens this page frightened at 3am, and it is printed as evidence.
+# The one decorative element is the gold hairline at the top of the page:
+# the portal's signature, cheap to recognise and absent from the ops
+# dashboard on purpose.
+_PORTAL_STYLE = """
+  :root {
+    /* -- colour roles ---------------------------------------------------- */
+    --bg:#0e0a17; --surface:#161022; --surface-2:#1c1530;
+    --line:#2a2140; --line-soft:#221a36;
+    --ink:#efeaf7; --ink-muted:#a79bc2; --ink-faint:#6f6390;
+    --gold:#f0b429;            /* brand: identity moments only            */
+    --accent:#8b5cf6;          /* brand: interactive accents              */
+    --ok:#34d399; --warn:#ffa63d; --crit:#ff5d6c;
+    --med:#ffd23d; --low:#8a7fa5;
+    /* -- type scale ------------------------------------------------------ */
+    --t-display:22px; --t-title:15px; --t-body:14px;
+    --t-small:12.5px; --t-micro:11px;
+    /* -- spacing scale (4px base) ---------------------------------------- */
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:22px; --s6:32px; --s7:48px;
+    --radius:12px; --radius-pill:999px;
+  }
+  * { box-sizing:border-box; }
+  body {
+    margin:0; background:var(--bg); color:var(--ink);
+    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+    font-size:var(--t-body); line-height:1.55;
+    -webkit-font-smoothing:antialiased; min-height:100vh;
+    border-top:2px solid var(--gold);   /* the portal signature */
+  }
+  .wrap { max-width:1080px; margin:0 auto; padding:var(--s6) var(--s6) var(--s7); }
+  a { color:var(--accent); }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+
+  /* -- header / brand ---------------------------------------------------- */
+  header { display:flex; align-items:center; justify-content:space-between;
+           gap:var(--s4); margin-bottom:var(--s6); }
+  .brand { display:flex; align-items:center; gap:var(--s3); }
+  .mark { width:38px; height:38px; border-radius:10px; background:var(--surface);
+          border:1px solid var(--line); display:grid; place-items:center; }
+  .mark svg { width:24px; height:24px; }
+  .brand h1 { font-size:17px; font-weight:650; margin:0; letter-spacing:.2px; }
+  .brand h1 .minas { color:var(--gold); font-weight:780; letter-spacing:3px; }
+  .brand .sub { margin-top:2px; }
+  .portal-tag { font-size:var(--t-micro); letter-spacing:1.5px;
+                text-transform:uppercase; color:var(--gold); }
+  .nav { display:flex; align-items:center; gap:var(--s2); }
+  .live { display:inline-flex; align-items:center; gap:var(--s2);
+          font-size:var(--t-small); color:var(--ink-muted);
+          background:var(--surface); border:1px solid var(--line);
+          padding:7px var(--s4); border-radius:var(--radius-pill);
+          text-decoration:none; }
+  a.live:hover { border-color:var(--accent); color:var(--ink); }
+  a.live.primary { color:var(--bg); background:var(--gold);
+                   border-color:transparent; font-weight:650; }
+  a.live.primary:hover { filter:brightness(1.06); }
+  footer { margin-top:var(--s7); font-size:var(--t-small); color:var(--ink-faint); }
+
+  /* -- the banner (one style; tones ok / warn / err) ---------------------- */
+  .banner { display:flex; align-items:baseline; gap:var(--s2);
+            padding:var(--s3) var(--s4); margin-bottom:var(--s4);
+            border-radius:var(--radius); border:1px solid var(--line);
+            background:var(--surface); font-size:var(--t-body); }
+  .banner.ok   { border-color:rgba(52,211,153,.4);  color:var(--ok); }
+  .banner.warn { border-color:rgba(255,166,61,.4);  color:var(--warn); }
+  .banner.err  { border-color:rgba(255,93,108,.45); color:var(--crit); }
+
+  /* -- cards and sections ------------------------------------------------- */
+  section { margin-top:var(--s5); }
+  .card { background:var(--surface); border:1px solid var(--line);
+          border-radius:var(--radius); overflow:hidden; }
+  .card-head { display:flex; align-items:baseline; justify-content:space-between;
+               padding:var(--s4) var(--s5); border-bottom:1px solid var(--line-soft); }
+  .card-head h2 { font-size:var(--t-title); font-weight:640; margin:0; letter-spacing:.2px; }
+  .card-head .count { font-size:var(--t-small); color:var(--ink-faint);
+                      font-variant-numeric:tabular-nums; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:var(--s4); }
+  @media (max-width:760px) { .cols { grid-template-columns:1fr; } }
+
+  /* -- the table (one style) ---------------------------------------------- */
+  table { width:100%; border-collapse:collapse; }
+  thead th { font-size:var(--t-micro); text-transform:uppercase; letter-spacing:.7px;
+             color:var(--ink-faint); text-align:left; font-weight:600;
+             padding:var(--s3) var(--s5); }
+  tbody td { padding:var(--s4) var(--s5); font-size:var(--t-body);
+             border-top:1px solid var(--line-soft); }
+  tbody tr:hover { background:var(--surface-2); }
+  td.empty, .empty { color:var(--ink-faint); }
+
+  /* -- the status pill (one style; role modifiers) ------------------------ */
+  .pill { display:inline-flex; align-items:center; gap:6px;
+          font-size:var(--t-micro); font-weight:600; letter-spacing:.3px;
+          padding:4px 11px; border-radius:var(--radius-pill); }
+  .pill::before { content:""; width:6px; height:6px; border-radius:50%;
+                  background:currentColor; }
+  .s-active   { color:var(--ok);        background:rgba(52,211,153,.12); }
+  .s-disabled { color:var(--ink-faint); background:rgba(111,99,144,.16); }
+  .s-tamper   { color:var(--crit);      background:rgba(255,93,108,.12); }
+  .sev-CRITICAL { color:var(--crit); background:rgba(255,93,108,.13); }
+  .sev-HIGH     { color:var(--warn); background:rgba(255,166,61,.13); }
+  .sev-MEDIUM   { color:var(--med);  background:rgba(255,210,61,.13); }
+  .sev-LOW      { color:var(--low);  background:rgba(138,127,165,.15); }
+
+  /* -- check rows (posture and status statements) -------------------------- */
+  .checks { padding:var(--s2) 0; }
+  .check { display:flex; gap:var(--s3); padding:var(--s3) var(--s5);
+           align-items:baseline; }
+  .check + .check { border-top:1px solid var(--line-soft); }
+  .ic { flex:none; width:20px; height:20px; border-radius:50%; display:grid;
+        place-items:center; font-size:var(--t-micro); font-weight:700; }
+  .ic.ok   { color:var(--ok);   background:rgba(52,211,153,.12); }
+  .ic.warn { color:var(--warn); background:rgba(255,166,61,.14); }
+  .ic.crit { color:var(--crit); background:rgba(255,93,108,.13); }
+  .check .txt { color:var(--ink-muted); }
+  .check .txt b { color:var(--ink); font-weight:620; }
+
+  /* -- text roles ---------------------------------------------------------- */
+  .mono, .rule { font-family:"SF Mono","JetBrains Mono",ui-monospace,Menlo,monospace;
+                 font-size:var(--t-small); font-variant-numeric:tabular-nums; }
+  .mono { color:var(--ink-muted); }
+  .lbl { font-weight:550; }
+  .meta { font-size:var(--t-small); color:var(--ink-faint); }
+  .desc { color:var(--ink-muted); }
+  .det { padding:var(--s3) var(--s5); }
+  .hint { font-size:var(--t-small); color:var(--ink-faint); }
+  .acctlink { color:var(--accent); text-decoration:none; }
+  .acctlink:hover { text-decoration:underline; }
+  .ack-yes { color:var(--ok); } .ack-no { color:var(--ink-faint); }
+  .snoozed { font-size:var(--t-small); color:var(--ink-muted); }
+
+  /* -- definition lists ----------------------------------------------------- */
+  .dl { margin:0; padding:var(--s2) var(--s5) var(--s4); }
+  .dl dt { font-size:var(--t-micro); text-transform:uppercase; letter-spacing:.7px;
+           color:var(--ink-faint); margin-top:var(--s3); }
+  .dl dd { margin:var(--s1) 0 0; }
+
+  /* -- forms ---------------------------------------------------------------- */
+  .loginbox { max-width:420px; margin:56px auto 0; }
+  .loginbox .card, .addf .card { padding-bottom:var(--s2); }
+  .addf, .fld { font-size:var(--t-body); }
+  .fld { padding:var(--s2) var(--s5) 0; }
+  .fld label { display:block; font-size:var(--t-micro); text-transform:uppercase;
+               letter-spacing:.7px; color:var(--ink-faint); margin-bottom:var(--s1); }
+  .fld input, .fld select {
+    width:100%; font:inherit; color:var(--ink); background:var(--surface-2);
+    border:1px solid var(--line); border-radius:8px; padding:9px var(--s3); }
+  .fld input:focus, .fld select:focus { outline:none; border-color:var(--accent); }
+  .actions { padding:var(--s4) var(--s5) var(--s4); }
+  .submit { font:inherit; font-weight:650; color:var(--bg); background:var(--gold);
+            border:none; border-radius:8px; padding:10px var(--s5); cursor:pointer; }
+  .submit:hover { filter:brightness(1.06); }
+  .ackbtn { font:inherit; font-size:var(--t-small); cursor:pointer;
+            padding:3px 10px; border:1px solid var(--line); border-radius:6px;
+            background:transparent; color:var(--ink); }
+  .ackbtn:hover { border-color:var(--ok); color:var(--ok); }
+  .snoozesel { font:inherit; font-size:var(--t-small); margin-right:6px;
+               padding:3px 6px; border:1px solid var(--line); border-radius:6px;
+               background:var(--surface-2); color:var(--ink); }
+
+  /* -- print: an incident page is handed to an exchange, an insurer or the
+        police, so it has to survive being printed. Export stays the
+        browser's own print-to-PDF (decision 5): a PDF library is a new
+        dependency in a security product, server-side rendering drifts from
+        what the customer actually saw, and the browser's footer carries the
+        URL and a timestamp - better provenance than a document we composed
+        ourselves. ------------------------------------------------------------ */
+  @media print {
+    :root { --bg:#fff; --surface:#fff; --surface-2:#fff; --ink:#111;
+            --ink-muted:#444; --ink-faint:#666; --line:#bbb; --line-soft:#ddd; }
+    body { background:#fff !important; color:#111; border-top:none; }
+    .wrap { max-width:none; padding:0; }
+    .noprint, .nav form, .ackbtn, .snoozesel { display:none !important; }
+    .card { border:1px solid #bbb; break-inside:avoid; }
+    a { color:#111; text-decoration:none; }
+  }
+"""
+
+
+def _status_pill(status: str) -> str:
+    """The portal's own pill - the dashboard has its own. One primitive, role
+    modifiers; a new status gets a role class in _PORTAL_STYLE, not an
+    inline colour."""
+    cls = {"active": "s-active", "disabled": "s-disabled", "tamper_suspected": "s-tamper"}.get(status, "s-disabled")
+    return f'<span class="pill {cls}">{html.escape(status.replace("_", " "))}</span>'
+
+
 def _page(body_html: str, nav_html: str = "") -> str:
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        "<title>Minas AI Guardian — Member Portal</title><style>" + _STYLE + """
-  .loginbox { max-width:420px; margin:60px auto 0; }
-  .loginbox .card { padding:8px 0; }
-  .portal-tag { font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:var(--gold); }
-</style></head><body><div class="wrap"><header><div class="brand">""" + _MARK_SVG
+        "<title>Minas AI Guardian — Member Portal</title><style>" + _PORTAL_STYLE
+        + '</style></head><body><div class="wrap"><header><div class="brand">' + MARK_SVG
         + '<div><h1><span class="minas">MINAS</span> AI Guardian</h1>'
         '<div class="sub"><span class="portal-tag">Member portal</span></div></div></div>'
         '<div class="nav">' + nav_html + "</div></header>"

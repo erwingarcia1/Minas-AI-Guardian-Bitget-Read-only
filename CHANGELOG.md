@@ -20,6 +20,22 @@ here is the gating system around the code, not the code.
 
 ### Added
 
+- **The portal owns its design** (#82, foundation). The member portal and
+  the ops dashboard shared one stylesheet — defined in the dashboard,
+  imported by the portal, with the Minas brand decorating the internal ops
+  surface. The two have opposite trust models, and looking identical is an
+  anti-phishing liability: an ops screenshot could pass for a customer
+  page. The portal now carries its own design foundation — documented
+  tokens (type scale, spacing, colour roles), one table style, one status
+  pill, one banner — applied to every existing portal page,
+  interface-oriented where the shared sheet was presentation-oriented (no
+  animation, no glow, flat surfaces; the print block for incident evidence
+  is kept). The Minas identity lives in `sentinel/brand.py`, carried by the
+  portal; the dashboard's own unbranding pass waits on its access model
+  (#87). Guards refuse the surfaces sharing a stylesheet again and fail
+  when portal markup emits a class its own sheet never styles. The full
+  design contract: docs/portal-design.md.
+
 - **The slow gates now run in scheduled CI, with failure titles that tell a
   regression from a broken gate** (#86). The weekly mutation job gained the
   design-guard probes; both run provably cold (the job asserts a fresh
