@@ -70,6 +70,15 @@ def test_the_surfaces_keep_their_distinguishing_marks():
     assert ".kpis" not in portal._PORTAL_STYLE
     assert ".auth-card" in portal._PORTAL_STYLE
     assert 'aria-current="page"' in portal._PORTAL_STYLE  # the gold underline
+    # The "Member portal" brand tag: the qualifier under the wordmark, in the
+    # tab title, and on the printed masthead. The dashboard may TALK about
+    # the member portal in ops copy; it must never wear the lockup.
+    assert '<span class="brand__tag">Member portal</span>' in PORTAL_SRC
+    assert ".brand__tag" in portal._PORTAL_STYLE
+    assert "— Member portal</title>" in PORTAL_SRC
+    assert "member portal — Monitoring status report" in PORTAL_SRC
+    assert "brand__tag" not in DASHBOARD_SRC
+    assert "brand__tag" not in dashboard._STYLE
 
 
 def _portal_emitted_classes() -> set[str]:

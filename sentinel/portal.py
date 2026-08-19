@@ -459,6 +459,10 @@ _PORTAL_STYLE = """
   .brand:hover { text-decoration:none; }
   .brand__mark { width:28px; height:28px; flex:none; color:var(--gold); }
   .brand__name span { color:var(--text-muted); font-weight:600; }
+  .brand__stack { display:flex; flex-direction:column; line-height:1.25; }
+  .brand__tag { font-size:var(--text-xs); font-weight:700; letter-spacing:var(--tracking-wide);
+                text-transform:uppercase; color:var(--gold); }
+  .auth-card__brand .brand__tag { margin-top:-6px; }
   .topbar__meta { font-size:var(--text-sm); color:var(--text-muted); text-align:right; }
   .topbar__meta a { white-space:nowrap; }
   .linkbtn { font:inherit; background:none; border:none; padding:0; cursor:pointer;
@@ -770,7 +774,8 @@ def _page(body_html: str, email: str | None = None, active: str = "",
     replaces the subnav with a single return link (alert detail)."""
     brand = (
         '<a class="brand" href="/" aria-label="Minas AI Guardian home">' + MARK_SVG
-        + '<span class="brand__name">Minas AI <span>Guardian</span></span></a>'
+        + '<span class="brand__stack"><span class="brand__name">Minas AI <span>Guardian</span></span>'
+        '<span class="brand__tag">Member portal</span></span></a>'
     )
     meta = ""
     if back:
@@ -810,7 +815,7 @@ def _page(body_html: str, email: str | None = None, active: str = "",
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
         '<meta name="color-scheme" content="dark">'
-        f"<title>{html.escape(title)}</title><style>" + _PORTAL_STYLE + "</style></head>"
+        f"<title>{html.escape(title)} — Member portal</title><style>" + _PORTAL_STYLE + "</style></head>"
         f'<body class="{body_cls}">'
         '<a class="skip-link" href="#main">Skip to content</a>'
         + topbar + main + footer
@@ -979,7 +984,8 @@ _ICON_SHIELD = (
 def _auth_brand() -> str:
     return (
         '<div class="auth-card__brand">' + MARK_SVG
-        + '<div class="brand__name">Minas AI <span>Guardian</span></div></div>'
+        + '<div class="brand__name">Minas AI <span>Guardian</span></div>'
+        '<div class="brand__tag">Member portal</div></div>'
     )
 
 
@@ -1423,7 +1429,7 @@ def _render_status(db: Database, email: str, rules=None) -> str:
 
     masthead = (
         '<div class="print-masthead">'
-        '<p class="print-masthead__title">Minas AI Guardian — Monitoring status report</p>'
+        '<p class="print-masthead__title">Minas AI Guardian member portal — Monitoring status report</p>'
         f'<p class="print-masthead__sub">Account: {html.escape(email)}</p>'
         f'<p class="print-masthead__sub">Generated: {generated}</p>'
         '<p class="print-masthead__sub">This report reflects the monitoring status at the '
