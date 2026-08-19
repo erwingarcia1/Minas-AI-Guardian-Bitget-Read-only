@@ -2029,35 +2029,6 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         for k, v in sorted(evidence.items())
     ) or '<div class="kv__row"><dt>Evidence</dt><dd class="muted">No structured evidence recorded</dd></div>') + "</dl>"
 
-    # "What to do now": the owner's copy, from design/portal/alert.html —
-    # decision 9's wording, answered by the owner's own design pass.
-    todo = (
-        '<section aria-labelledby="steps-title"><h2 id="steps-title">What to do now</h2>'
-        '<p class="muted" style="margin-top:.5rem">Do these in order. Don\'t stop to '
-        "investigate fully before securing the account.</p>"
-        '<ol class="steps">'
-        "<li><div><strong>Open the exchange yourself.</strong>"
-        "<span>Type the exchange's URL into your browser or use their official app. Do not "
-        "click any link in an email or message about this alert.</span></div></li>"
-        "<li><div><strong>Disable or delete the API keys you don't recognise.</strong>"
-        "<span>In your exchange's API settings, revoke anything unfamiliar. Minas's own key "
-        "is read-only and cannot move funds — but revoke it too if in doubt; you can issue "
-        "a fresh one later.</span></div></li>"
-        "<li><div><strong>Secure your login.</strong>"
-        "<span>Change your password and confirm two-factor authentication is on. If 2FA was "
-        "changed, contact the exchange to lock the account immediately.</span></div></li>"
-        "<li><div><strong>Check withdrawals and addresses.</strong>"
-        "<span>Review recent and pending withdrawals. Remove any address you don't recognise "
-        "and cancel anything pending if the exchange allows it.</span></div></li>"
-        "<li><div><strong>Contact the exchange directly.</strong>"
-        "<span>Ask them to freeze or restrict withdrawals while you secure the account. They "
-        "are the only ones who can stop an outflow in progress.</span></div></li>"
-        "<li><div><strong>Acknowledge this alert below.</strong>"
-        "<span>Acknowledging tells us you've seen it and stops repeat notifications. It does "
-        "not stop anything on the exchange — that's step five.</span></div></li>"
-        "</ol></section>"
-    )
-
     unack = not alert["acknowledged_at"]
     if unack:
         actionbar = (
@@ -2097,7 +2068,6 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         f"{_balance_kv(before, 'before')}</section>"
         '<section class="panel" aria-labelledby="bal2-title"><h2 id="bal2-title">Balances after</h2>'
         f"{_balance_kv(after, 'after')}</section>"
-        + todo +
         '<div class="notice notice--info">' + _ICON_INFO
         + '<div><p class="notice__title">Minas cannot do this for you.</p>'
         '<p class="notice__body">Guardian is read-only. It can\'t revoke keys, cancel '

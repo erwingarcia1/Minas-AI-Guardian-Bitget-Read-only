@@ -4083,3 +4083,13 @@ until the real customer-facing domain is decided.
 
 Also: the incident page's window.print() button is the second standing JS
 exception (kept; listed in docs/portal-design.md next to the first).
+
+**Correction to the round-3 entry, owner-directed**: the "What to do now"
+steps were pulled from the incident page — mockup copy is not decision 9,
+and one found error means the rest is unread. The full text sits on #29 as
+a clearly-marked unreviewed draft; the `.steps` primitive stays in the
+stylesheet ready for the reviewed wording. And the guardian.minas.ai flag
+became **#88**: the anti-phishing story has no stable portal address to
+point at — recorded as a dependency (domain → TLS → SENTINEL_PORTAL_URL,
+which today leaves reset emails with relative links and SMS without a
+portal link) so nobody later "fixes" the copy by inventing a domain.

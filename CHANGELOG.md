@@ -33,8 +33,9 @@ here is the gating system around the code, not the code.
   accounts are NOT being watched.") over per-account cards whose problem
   callouts say explicitly whether the customer can fix it; printed, it
   becomes a monochrome serif report with a masthead. The alert page gains
-  the owner's "What to do now" steps and a fixed acknowledge bar on
-  phones. Behaviour is unchanged: same forms, same routes, same escaping,
+  a fixed acknowledge bar on phones. (The mockup's "What to do now" steps
+  are NOT shipped: that wording is decision 9, and the draft sits on #29
+  for the owner's review.) Behaviour is unchanged: same forms, same routes, same escaping,
   same data. Guards enforce the system (no shared stylesheet with the ops
   dashboard, every emitted class styled, gold reserved for the primary,
   touch floors, mobile-first, no tables, no motion); the full contract is
