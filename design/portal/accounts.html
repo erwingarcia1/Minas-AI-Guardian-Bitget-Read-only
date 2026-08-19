@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>My accounts — Minas AI Guardian</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to accounts</a>
+
+  <header class="topbar">
+    <div class="container topbar__inner">
+      <a class="brand" href="accounts.html" aria-label="Minas AI Guardian home">
+        <svg class="brand__mark" viewBox="0 0 48 24" fill="none" aria-hidden="true">
+          <path d="M8 12 C8 5 15 5 24 12 C33 19 40 19 40 12 C40 5 33 5 24 12 C15 19 8 19 8 12 Z"
+                stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand__name">Minas AI <span>Guardian</span></span>
+      </a>
+      <div class="topbar__meta">
+        <span class="subtle">Signed in as</span> customer@example.com<br>
+        <a href="signin.html">Sign out</a>
+      </div>
+    </div>
+    <nav class="subnav" aria-label="Primary">
+      <div class="container subnav__inner">
+        <a href="accounts.html" aria-current="page">My accounts</a>
+        <a href="status.html">Am I being watched?</a>
+        <a href="limits.html">Limits</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main" class="main">
+    <div class="container stack-lg">
+
+      <!-- PRIMARY, four-account case -->
+      <section aria-labelledby="accounts-title">
+        <div class="page-head">
+          <span class="eyebrow">Returning customer</span>
+          <h1 id="accounts-title">My accounts</h1>
+          <p class="muted">Four exchange accounts connected. Read-only keys only.</p>
+        </div>
+
+        <div class="primary-row no-print">
+          <a href="status.html" class="btn btn--primary">Check now</a>
+          <a href="#" class="btn btn--tertiary">Connect an exchange account</a>
+        </div>
+
+        <div style="height:var(--space-5)"></div>
+
+        <div class="acct-list">
+          <article class="acct">
+            <div class="acct__head">
+              <div>
+                <p class="acct__label">Main</p>
+                <p class="acct__exchange">Coinbase</p>
+              </div>
+              <span class="badge badge--ok"><span class="dot" aria-hidden="true"></span>Active</span>
+            </div>
+            <dl class="kv">
+              <div class="kv__row">
+                <dt>Last successful check</dt>
+                <dd>Today, 02:41 WAT · 2 minutes ago</dd>
+              </div>
+              <div class="kv__row">
+                <dt>Key permissions</dt>
+                <dd>Read-only</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="acct">
+            <div class="acct__head">
+              <div>
+                <p class="acct__label">Trading</p>
+                <p class="acct__exchange">Binance</p>
+              </div>
+              <span class="badge badge--ok"><span class="dot" aria-hidden="true"></span>Active</span>
+            </div>
+            <dl class="kv">
+              <div class="kv__row">
+                <dt>Last successful check</dt>
+                <dd>Today, 02:40 WAT · 3 minutes ago</dd>
+              </div>
+              <div class="kv__row">
+                <dt>Key permissions</dt>
+                <dd>Read-only</dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="acct">
+            <div class="acct__head">
+              <div>
+                <p class="acct__label">Cold storage backup</p>
+                <p class="acct__exchange">Kraken</p>
+              </div>
+              <span class="badge badge--danger"><span class="dot" aria-hidden="true"></span>Suspected tampering</span>
+            </div>
+            <dl class="kv">
+              <div class="kv__row">
+                <dt>Last successful check</dt>
+                <dd>Today, 02:39 WAT · 4 minutes ago</dd>
+              </div>
+              <div class="kv__row">
+                <dt>Detection</dt>
+                <dd><a href="alert.html">A new withdrawal address was added — 03:07 WAT</a></dd>
+              </div>
+            </dl>
+          </article>
+
+          <article class="acct">
+            <div class="acct__head">
+              <div>
+                <p class="acct__label">Old — Europe</p>
+                <p class="acct__exchange">Bitstamp</p>
+              </div>
+              <span class="badge badge--neutral"><span class="dot" aria-hidden="true"></span>Disabled</span>
+            </div>
+            <dl class="kv">
+              <div class="kv__row">
+                <dt>Last successful check</dt>
+                <dd class="muted">15 August 2026 · 4 days ago</dd>
+              </div>
+              <div class="kv__row">
+                <dt>Watching</dt>
+                <dd class="muted">No — you paused monitoring on 15 August.</dd>
+              </div>
+            </dl>
+            <div class="problem problem--warn" style="margin-top:1rem">
+              <p class="problem__title">This account is not being watched.</p>
+              <p class="problem__body">Monitoring is disabled, so Minas cannot see or alert on changes here.</p>
+              <p class="problem__fix">
+                <span class="fix-tag">You can fix this</span>
+                <a href="#" class="btn btn--secondary btn--sm">Re-enable monitoring</a>
+              </p>
+            </div>
+          </article>
+        </div>
+      </section>
+
+      <!-- ONE-ACCOUNT CASE -->
+      <section class="state-section" aria-labelledby="one-title">
+        <span class="variation-label">Design reference — new customer, one account</span>
+        <div class="page-head">
+          <h2 id="one-title" style="font-size:var(--text-xl)">My accounts</h2>
+          <p class="muted">One exchange account connected.</p>
+        </div>
+
+        <article class="acct">
+          <div class="acct__head">
+            <div>
+              <p class="acct__label">Main</p>
+              <p class="acct__exchange">Coinbase</p>
+            </div>
+            <span class="badge badge--ok"><span class="dot" aria-hidden="true"></span>Active</span>
+          </div>
+          <dl class="kv">
+            <div class="kv__row">
+              <dt>Last successful check</dt>
+              <dd>Today, 02:41 WAT · 2 minutes ago</dd>
+            </div>
+            <div class="kv__row">
+              <dt>Key permissions</dt>
+              <dd>Read-only</dd>
+            </div>
+          </dl>
+        </article>
+      </section>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__row">
+      <span class="footer__tag">Minas AI Guardian</span>
+      <a href="limits.html">What this product can and cannot do</a>
+      <span class="subtle">Read-only monitoring. We cannot move your funds.</span>
+    </div>
+  </footer>
+</body>
+</html>

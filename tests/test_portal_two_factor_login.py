@@ -133,7 +133,7 @@ def test_the_pending_token_is_not_a_session(portal, db, alice_with_2fa):
 
     _, page = _get(portal, "/", cookie=pending)
 
-    assert "Member sign-in" in page
+    assert 'id="signin-title"' in page
     assert "alice-1" not in page
 
 
@@ -206,7 +206,7 @@ def test_the_security_routes_ignore_a_form_supplied_identity(portal, db, cipher)
 
     _, body, _ = _post(portal, "/security/2fa/start", {"email": ALICE})
 
-    assert "Member sign-in" in body
+    assert 'id="signin-title"' in body
     from sentinel.twofactor import is_enabled
     assert is_enabled(db, MEMBER, ALICE) is False
 
@@ -279,7 +279,7 @@ def test_a_member_can_enrol_and_is_shown_recovery_codes_once(portal, db, cipher)
     cookie = _signed_in(portal, db)
 
     _, setup, _ = _post(portal, "/security/2fa/start", {}, cookie=cookie)
-    secret = setup.split('desc mono">', 1)[1].split("<", 1)[0]
+    secret = setup.split('id="totp-secret"', 1)[1].split(">", 1)[1].split("<", 1)[0]
 
     _, done, _ = _post(portal, "/security/2fa/confirm",
                        {"code": totp_at(secret, PINNED_TOTP_NOW)}, cookie=cookie)
@@ -312,8 +312,8 @@ def test_the_security_page_needs_a_session(portal, db, cipher):
     status, body = _get(portal, "/security")
     _, start, _ = _post(portal, "/security/2fa/start", {})
 
-    assert "Member sign-in" in body and status == 200
-    assert "Member sign-in" in start
+    assert 'id="signin-title"' in body and status == 200
+    assert 'id="signin-title"' in start
     from sentinel.twofactor import is_enabled
     assert is_enabled(db, MEMBER, ALICE) is False
 

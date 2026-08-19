@@ -186,7 +186,7 @@ def test_an_unauthenticated_post_acknowledges_nothing(portal, db, alice):
     status, body = _request(portal, "POST", "/acknowledge", body={"alert_id": str(alert_id)})
 
     assert _ack_row(db, alert_id)["acknowledged_at"] is None
-    assert "Member sign-in" in body and status == 200
+    assert 'id="signin-title"' in body and status == 200
 
 
 def test_a_tampered_cookie_acknowledges_nothing(portal, db, alice):
@@ -200,7 +200,7 @@ def test_a_tampered_cookie_acknowledges_nothing(portal, db, alice):
                        body={"alert_id": str(alert_id)}, cookie=forged)
 
     assert _ack_row(db, alert_id)["acknowledged_at"] is None
-    assert "Member sign-in" in body
+    assert 'id="signin-title"' in body
 
 
 def test_a_cross_origin_post_acknowledges_nothing(portal, db, alice):

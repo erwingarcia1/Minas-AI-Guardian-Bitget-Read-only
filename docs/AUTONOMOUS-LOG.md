@@ -4000,3 +4000,86 @@ scratchpad/portal-samples/ for the owner to open; asserted structurally
 that the rendered home page carries the new signature and zero occurrences
 of kpi/pulse/radial-gradient. Reported to the owner before any screen
 issue, as instructed.
+
+## #82 (foundation, round 2) · Mobile-first and touchable, per owner review
+
+The owner's review of the foundation: phone is the primary case (alert
+emails land there), and the buttons were desktop buttons. Fixed in the
+foundation, not per screen.
+
+Mobile: the sheet is now genuinely mobile-first — base rules ARE the 375px
+design (--s4 page padding, single-column .cols, wrapping header/nav), one
+`@media (min-width:761px)` block enhances upward, and the guard refuses
+max-width queries so narrow cannot become the afterthought again. THE table
+answer, decided and recorded in docs/portal-design.md: wide tables scroll
+inside `<div class=tablewrap>` with CSS scroll-shadow affordance (works
+with JS off); never clip, never stack — stacking needs per-cell data-labels
+that fail invisibly when forgotten and destroys column comparison. The
+guard counts every emitted table as wrapped and refuses display:block
+reflow (the third answer). The wrapper attribute is deliberately unquoted
+HTML5 (`class=tablewrap`): a first attempt inserted `class="tablewrap"`
+into double-quoted Python literals and broke the module — quote-agnostic
+markup is the repair that cannot recur.
+
+Buttons: 44px minimum on everything touchable (.submit/.ackbtn/.snoozesel/
+.live/inputs — the ack button was ~24px tall and acknowledges a security
+alert); inline links grow hit area via padding-negative-margin; ONE primary
+per view — .submit is the sheet's only gold fill, and the unused
+a.live.primary (a second identical gold weight) is deleted, with a guard
+counting gold fills == 1; :active pressed and [disabled] states added,
+:focus-visible kept and asserted.
+
+Guards now 15 in tests/test_surface_styles.py, including the allowlist's
+own staleness direction (an "unstyled on purpose" entry that becomes styled
+fails loudly).
+
+**Stated plainly, what remains unverified without eyes**: actual layout at
+375px, thumb reach, and whether the scroll shadows paint correctly — the
+assertions are structural; no browser exists on this box. Five re-rendered
+sample pages sit in scratchpad/portal-samples/ for the owner.
+
+## #82 (round 3) · The owner's design pass, ported into the real portal
+
+The owner produced five mockup screens, a stylesheet and DESIGN-SYSTEM.md in
+an external tool (design/portal/). Ported as a SYSTEM into _PORTAL_STYLE and
+the real templates — not pasted: mockup-only artifacts dropped, real-page
+utilities defined from the same tokens. Every render function was adapted
+(login/forgot/reset/2fa as auth-card shells; home and status as account
+cards; limits as callout + feature lists; incident as alert-head + steps +
+fixed actionbar; history/activity/security/replace-key as panels + kv).
+Behaviour frozen throughout: same form actions, methods, fields, escaping,
+links, and states — 1083 tests green, including every portal-behaviour
+test, with only rendered-marker updates (the login page is now identified
+by id="signin-title" rather than heading copy; "CRITICAL" is asserted
+case-insensitively because the badge title-cases and CSS uppercases).
+
+**The owner's system overrides two earlier decisions, adopted and
+recorded**: tables are stacked `.kv` rows (round 2 chose scroll; the
+mockups choose stacking with reasons, and every <table> is now GONE from
+the portal — the guard refuses reintroduction in either direction), and
+the interface palette moves off the violet-dark ground to the mockups'
+slate dark (decision 3's escape clause, exercised by the owner).
+
+**Mockup states not ported, because the product does not have them**: the
+"Connect an exchange account" action (no self-serve connect — #8/#6), the
+"Re-enable monitoring" button (no member-facing enable — G-50 keeps it
+operator-side; the disabled problem-callout says to contact Minas), the
+remember-me checkbox (no such session mode), "Contact support"/"Open a
+support ticket" links (no support route), and the alert mockup's
+"Source: sign-in from an unrecognised device" row (we cannot see exchange
+sign-ins). Real states the mockups omit, kept: the recent-alerts list on
+home (with ack/snooze/that-was-me controls, restyled), the not-delivered
+(#57) and marked-as-expected timeline facts on incidents, the retention
+caveat on limits, and the "what this page cannot tell you" honesty note.
+
+**Two flags for the owner, prominently**: (1) the alert mockup's "What to
+do now" steps are decision 9's subject — I ported the owner's own copy
+(lightly adapted: the revoke-the-key step no longer implies Minas's key
+made the change) and treated the mockup as the decision; say so if it was
+not. (2) The signin mockup's anti-phishing hint names a domain,
+guardian.minas.ai — no such domain is recorded anywhere in this repo, so
+the ported copy says "open the portal address you were given directly"
+until the real customer-facing domain is decided.
+
+Also: the incident page's window.print() button is the second standing JS
+exception (kept; listed in docs/portal-design.md next to the first).

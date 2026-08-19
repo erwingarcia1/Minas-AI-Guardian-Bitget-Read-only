@@ -176,7 +176,7 @@ def test_history_page_lists_alerts_and_links_incidents(db, signed_in, portal):
 
 def test_history_page_requires_a_session(db, portal):
     status, body, _c, _ct = _request(portal, "GET", "/alerts")
-    assert "Member sign-in" in body
+    assert 'id="signin-title"' in body
 
 
 def test_history_page_never_shows_another_members_alerts(db, signed_in, portal):
@@ -250,7 +250,7 @@ def test_csv_requires_a_session(db, portal):
     _status, body, _c, content_type = _request(portal, "GET", "/alerts.csv")
     # The login page, not an empty spreadsheet: no data crosses the boundary.
     assert not content_type.startswith("text/csv")
-    assert "Member sign-in" in body
+    assert 'id="signin-title"' in body
 
 
 def test_csv_defangs_formula_cells(db, signed_in, portal):

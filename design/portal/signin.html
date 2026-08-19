@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Sign in — Minas AI Guardian</title>
+  <meta name="description" content="Sign in to Minas AI Guardian. We never email links asking for your API key.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="shell">
+  <a class="skip-link" href="#main">Skip to sign in form</a>
+
+  <header class="topbar">
+    <div class="container topbar__inner">
+      <a class="brand" href="signin.html" aria-label="Minas AI Guardian home">
+        <svg class="brand__mark" viewBox="0 0 48 24" fill="none" aria-hidden="true">
+          <path d="M8 12 C8 5 15 5 24 12 C33 19 40 19 40 12 C40 5 33 5 24 12 C15 19 8 19 8 12 Z"
+                stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand__name">Minas AI <span>Guardian</span></span>
+      </a>
+    </div>
+  </header>
+
+  <main id="main" class="shell__main">
+    <div class="container">
+      <section class="auth-card" aria-labelledby="signin-title">
+        <div class="auth-card__brand">
+          <svg class="brand__mark" viewBox="0 0 48 24" fill="none" aria-hidden="true">
+            <path d="M8 12 C8 5 15 5 24 12 C33 19 40 19 40 12 C40 5 33 5 24 12 C15 19 8 19 8 12 Z"
+                  stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <div class="brand__name">Minas AI <span>Guardian</span></div>
+        </div>
+
+        <h1 id="signin-title" class="auth-card__title">Sign in</h1>
+        <p class="muted" style="margin:.5rem 0 1.5rem">Monitor your exchange accounts. Read-only access only.</p>
+
+        <!-- Error state: wrong credentials -->
+        <div class="notice notice--danger" role="alert" aria-labelledby="err-title">
+          <svg class="notice__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+            <path d="M12 7v6M12 16.5v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+          <div>
+            <p class="notice__title" id="err-title">That email and password didn't match.</p>
+            <p class="notice__body">Please try again. Caps Lock may be on. If you've forgotten your password, reset it rather than retrying.</p>
+          </div>
+        </div>
+
+        <form class="form" action="accounts.html" method="post" novalidate style="margin-top:1.5rem">
+          <div class="field">
+            <label for="email">Email address</label>
+            <input class="input" type="email" id="email" name="email"
+                   value="customer@example.com"
+                   autocomplete="username" inputmode="email"
+                   aria-invalid="true" aria-describedby="email-hint" required>
+            <span class="hint" id="email-hint">Enter the email your account is registered to.</span>
+          </div>
+
+          <div class="field">
+            <div class="field--row">
+              <label for="password">Password</label>
+              <a href="#" class="btn btn--tertiary" style="padding-inline:var(--space-2)">Forgot password?</a>
+            </div>
+            <input class="input" type="password" id="password" name="password"
+                   autocomplete="current-password"
+                   aria-invalid="true" aria-describedby="password-hint" required>
+            <span class="hint" id="password-hint">Never enter your password after following a link from an email. Open guardian.minas.ai directly.</span>
+          </div>
+
+          <label class="checkbox">
+            <input type="checkbox" name="remember">
+            <span class="muted">Keep me signed in on this device</span>
+          </label>
+
+          <button type="submit" class="btn btn--primary btn--block">Sign in</button>
+        </form>
+
+        <div class="phish" style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border)">
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M12 3l8 3v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-3z"
+                  stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>
+            <path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <p><strong style="color:var(--text)">Minas will never email you a link asking for your API key.</strong> Always open this site and sign in to check your accounts — don't click through from email or messages.</p>
+        </div>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

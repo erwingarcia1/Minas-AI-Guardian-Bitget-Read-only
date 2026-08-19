@@ -20,21 +20,25 @@ here is the gating system around the code, not the code.
 
 ### Added
 
-- **The portal owns its design** (#82, foundation). The member portal and
-  the ops dashboard shared one stylesheet — defined in the dashboard,
-  imported by the portal, with the Minas brand decorating the internal ops
-  surface. The two have opposite trust models, and looking identical is an
-  anti-phishing liability: an ops screenshot could pass for a customer
-  page. The portal now carries its own design foundation — documented
-  tokens (type scale, spacing, colour roles), one table style, one status
-  pill, one banner — applied to every existing portal page,
-  interface-oriented where the shared sheet was presentation-oriented (no
-  animation, no glow, flat surfaces; the print block for incident evidence
-  is kept). The Minas identity lives in `sentinel/brand.py`, carried by the
-  portal; the dashboard's own unbranding pass waits on its access model
-  (#87). Guards refuse the surfaces sharing a stylesheet again and fail
-  when portal markup emits a class its own sheet never styles. The full
-  design contract: docs/portal-design.md.
+- **The portal wears the owner's design** (#82). The member portal was
+  restyled end to end from the owner's external design pass (the reference
+  mockups and system notes now live in `design/portal/`): dark flat
+  surfaces with no gradients and no motion, 16px body type, a 44rem
+  reading column, the stroked infinity mark, a scrollable gold-underline
+  nav, and one gold primary action per screen with a 48px touch floor.
+  Tables are gone entirely — every fact list is stacked key/value rows
+  that become two-column on wider screens, chosen over horizontal scroll
+  because it reads best on a phone at 3am and prints cleanly. The status
+  page is now the one-sentence answer ("You're being watched." / "Your
+  accounts are NOT being watched.") over per-account cards whose problem
+  callouts say explicitly whether the customer can fix it; printed, it
+  becomes a monochrome serif report with a masthead. The alert page gains
+  the owner's "What to do now" steps and a fixed acknowledge bar on
+  phones. Behaviour is unchanged: same forms, same routes, same escaping,
+  same data. Guards enforce the system (no shared stylesheet with the ops
+  dashboard, every emitted class styled, gold reserved for the primary,
+  touch floors, mobile-first, no tables, no motion); the full contract is
+  docs/portal-design.md.
 
 - **The slow gates now run in scheduled CI, with failure titles that tell a
   regression from a broken gate** (#86). The weekly mutation job gained the

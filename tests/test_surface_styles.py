@@ -56,7 +56,7 @@ def test_the_brand_lives_in_brand_py_and_the_portal_draws_from_it():
     """One home for the identity, so it cannot drift into two spellings of
     gold - and so the dashboard's own design pass can drop it by deleting an
     import rather than hunting hex codes."""
-    assert brand.MARK_SVG.startswith('<div class="mark">')
+    assert brand.MARK_SVG.startswith('<svg class="brand__mark"')
     assert "from sentinel.brand import MARK_SVG" in PORTAL_SRC
     assert brand.GOLD in portal._PORTAL_STYLE
 
@@ -66,9 +66,10 @@ def test_the_surfaces_keep_their_distinguishing_marks():
     the other. The portal signature (the brand tag, the gold hairline) must
     not appear in the dashboard's sheet, and the dashboard's KPI grid - its
     most recognisable structure - must not appear in the portal's."""
-    assert "portal-tag" not in dashboard._STYLE
+    assert ".subnav" not in dashboard._STYLE
     assert ".kpis" not in portal._PORTAL_STYLE
-    assert ".portal-tag" in portal._PORTAL_STYLE
+    assert ".auth-card" in portal._PORTAL_STYLE
+    assert 'aria-current="page"' in portal._PORTAL_STYLE  # the gold underline
 
 
 def _portal_emitted_classes() -> set[str]:
@@ -84,11 +85,9 @@ def _portal_emitted_classes() -> set[str]:
 
 
 # Deliberately unstyled, with the reason on record - not silently tolerated.
-UNSTYLED_ON_PURPOSE = {
-    # `.ts` is a data hook for the local-time enhancement (data-utc), not a
-    # visual role; styling it would invite treating it as decoration.
-    "ts",
-}
+# (Empty today: `.ts` moved off this list when the table rules gave it
+# white-space:nowrap.)
+UNSTYLED_ON_PURPOSE: set[str] = set()
 
 
 def test_every_class_the_portal_emits_is_styled_by_its_own_sheet():
@@ -103,12 +102,123 @@ def test_every_class_the_portal_emits_is_styled_by_its_own_sheet():
     assert not missing, f"portal emits classes its stylesheet never styles: {sorted(missing)}"
 
 
+def test_the_unstyled_allowlist_carries_no_stale_entries():
+    """The other containment direction: an allowlist entry for a class that
+    IS styled (or is no longer emitted) is a recorded reason outliving its
+    fact."""
+    emitted = _portal_emitted_classes()
+    for token in UNSTYLED_ON_PURPOSE:
+        assert token in emitted, f"allowlisted {token!r} is not even emitted any more"
+        assert not re.search(rf"\.{re.escape(token)}\b", portal._PORTAL_STYLE), (
+            f"allowlisted {token!r} is styled now - delete its entry")
+
+
 def test_the_dynamic_class_families_are_styled_too():
-    """The families built with f-strings, asserted by value: severity pills,
-    status pills, and check-icon tones."""
-    for cls in ("sev-CRITICAL", "sev-HIGH", "sev-MEDIUM", "sev-LOW",
-                "s-active", "s-disabled", "s-tamper"):
+    """The families built with f-strings or helpers, asserted by value:
+    badge tones (status and severity both resolve to these), state tones,
+    notice tones, tick kinds."""
+    for cls in ("badge--ok", "badge--warn", "badge--danger", "badge--neutral", "badge--lg",
+                "state--ok", "state--warn", "state--danger",
+                "notice--danger", "notice--info", "notice--ok",
+                "tick--yes", "tick--no",
+                "btn--primary", "btn--secondary", "btn--tertiary", "btn--sm", "btn--block"):
         assert re.search(rf"\.{re.escape(cls)}(?![\w-])", portal._PORTAL_STYLE), (
             f"dynamic class {cls} has no style")
-    for tone in ("ok", "warn", "crit"):
-        assert f".ic.{tone}" in portal._PORTAL_STYLE, f"icon tone {tone} has no style"
+    for status in ("active", "disabled", "tamper_suspected"):
+        assert status in portal._STATUS_BADGE
+    for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        assert sev in portal._SEV_BADGE
+
+
+# --- mobile and touch (#82: the owner's design pass is the reference) --------
+#
+# Phone is the PRIMARY case: alert emails link customers here and they open
+# them standing up, frightened, on a 375px screen. These are structural
+# assertions - no browser exists where this suite runs, so what they cannot
+# verify (actual layout at 375px, thumb reach, contrast as rendered) stays a
+# human check against design/portal/'s mockups.
+
+
+def _rule_bodies(selector_fragment: str) -> list[str]:
+    """Bodies of every rule whose selector list mentions the fragment."""
+    bodies = []
+    for match in re.finditer(r"([^{}]+)\{([^{}]*)\}", portal._PORTAL_STYLE):
+        if selector_fragment in match.group(1):
+            bodies.append(match.group(2))
+    return bodies
+
+
+def test_every_interactive_control_declares_its_touch_minimum():
+    """The system's floor is 48px (above the 44 requirement); tertiary and
+    link-shaped controls hold 44. One of these acknowledges a security
+    alert, pressed on a phone."""
+    for selector, minimum in ((".btn ", "min-height:48px"), (".input ", "min-height:48px"),
+                              (".subnav a ", "min-height:48px"), (".linkbtn ", "min-height:44px"),
+                              (".btn--tertiary ", "min-height:44px")):
+        bodies = _rule_bodies(selector.strip())
+        assert bodies, f"{selector.strip()} has no rule"
+        assert any(minimum in b for b in bodies), f"{selector.strip()} lost {minimum}"
+
+
+def test_acknowledge_never_uses_the_small_button():
+    """DESIGN-SYSTEM.md: btn--sm (40px) is for non-critical card-level
+    actions, never alert acknowledgement. The ack forms must use full-size
+    buttons."""
+    for m in re.finditer(r"action=[\"']/acknowledge[\"'][^>]*>(.*?)</form>", PORTAL_SRC, re.S):
+        assert "btn--sm" not in m.group(1), "an acknowledge control shrank below the touch floor"
+
+
+def test_the_sheet_is_mobile_first():
+    """Base rules ARE the narrow design; wider viewports enhance through
+    min-width queries (40rem and 48rem). A max-width query means narrow
+    became the afterthought again."""
+    assert "@media (min-width:" in portal._PORTAL_STYLE
+    assert "@media (max-width" not in portal._PORTAL_STYLE
+
+
+def test_no_fixed_width_exceeds_a_phone():
+    """max-width caps and min-width floors shrink; a fixed `width:` wider
+    than 375px cannot."""
+    for m in re.finditer(r"(?<![-\w])width:\s*(\d+)px", portal._PORTAL_STYLE):
+        assert int(m.group(1)) <= 375, f"fixed width {m.group(0)} exceeds a phone"
+
+
+def test_the_one_answer_to_tables_is_stacked_kv_and_tables_are_gone():
+    """The owner's decision (design/portal/DESIGN-SYSTEM.md): the data is
+    key/value facts, rendered as stacked `.kv` rows that become two-column
+    at 40rem - and horizontal-scroll tables must NOT be mixed back in. The
+    portal emits no <table> at all; a screen issue reintroducing one is the
+    third answer this guard refuses."""
+    assert "<table" not in PORTAL_SRC
+    assert "tablewrap" not in PORTAL_SRC
+    kv = _rule_bodies(".kv__row")
+    assert kv, ".kv rows lost their style"
+    assert ".kv" in portal._PORTAL_STYLE
+    assert "grid-template-columns:12rem 1fr" in portal._PORTAL_STYLE, (
+        "the 40rem two-column enhancement is gone")
+
+
+def test_gold_fill_stays_reserved_for_the_primary_action():
+    """One primary per screen, visually unmistakable: gold fill marks it.
+    The stylesheet may paint gold onto the primary button, the skip link
+    (also a primary-of-its-moment), and text selection - nothing else."""
+    allowed = {".btn--primary", ".skip-link", "::selection"}
+    for m in re.finditer(r"([^{}]+)\{([^{}]*)\}", portal._PORTAL_STYLE):
+        if "background:var(--gold)" in m.group(2) or "background: var(--gold)" in m.group(2):
+            selector = m.group(1).strip().split(",")[0].strip()
+            assert selector in allowed, f"gold fill leaked to {selector!r}"
+
+
+def test_focus_pressed_and_disabled_states_exist():
+    """Hover is a mouse concept. Keyboard focus, the pressed state, and a
+    visible disabled treatment are what a phone and a screen reader use."""
+    assert ":focus-visible" in portal._PORTAL_STYLE
+    assert ":active" in portal._PORTAL_STYLE
+    assert ":disabled" in portal._PORTAL_STYLE
+    assert 'aria-disabled="true"' in portal._PORTAL_STYLE
+
+
+def test_reduced_motion_is_honoured_and_no_motion_exists():
+    assert "prefers-reduced-motion" in portal._PORTAL_STYLE
+    assert "animation:" not in portal._PORTAL_STYLE.replace("animation: none", "").replace("animation:none", "")
+    assert "@keyframes" not in portal._PORTAL_STYLE

@@ -208,7 +208,7 @@ def test_the_page_names_the_accounts_that_are_dark(db, rules):
     page = _render_status(db, "alice@example.com", rules)
 
     assert "alice-dark" in page
-    assert "not watched" in page
+    assert "not watched" in page.lower()
 
 
 def test_the_page_offers_the_key_replacement_only_where_it_is_the_answer(db, rules):

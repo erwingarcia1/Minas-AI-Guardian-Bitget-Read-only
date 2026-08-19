@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Critical alert: new withdrawal address — Minas AI Guardian</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="has-actionbar">
+  <a class="skip-link" href="#main">Skip to alert details</a>
+
+  <header class="topbar">
+    <div class="container topbar__inner">
+      <a class="brand" href="accounts.html" aria-label="Minas AI Guardian home">
+        <svg class="brand__mark" viewBox="0 0 48 24" fill="none" aria-hidden="true">
+          <path d="M8 12 C8 5 15 5 24 12 C33 19 40 19 40 12 C40 5 33 5 24 12 C15 19 8 19 8 12 Z"
+                stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand__name">Minas AI <span>Guardian</span></span>
+      </a>
+      <div class="topbar__meta">
+        <a href="accounts.html">Back to accounts</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="main" class="main">
+    <div class="container stack-lg">
+
+      <section class="alert-head" aria-labelledby="alert-title">
+        <span class="badge badge--danger badge--lg"><span class="dot" aria-hidden="true"></span>Critical</span>
+        <h1 id="alert-title">A new withdrawal address was added to Trading</h1>
+        <div class="alert-meta">
+          <p><strong style="color:var(--text)">Detected:</strong> Today, 03:07 WAT (12 minutes ago)</p>
+          <p><strong style="color:var(--text)">Account:</strong> Binance — Trading</p>
+          <p><strong style="color:var(--text)">Alert ID:</strong> EVT-20260819-0307-1184</p>
+        </div>
+      </section>
+
+      <section class="panel" aria-labelledby="what-title">
+        <h2 id="what-title">What was detected</h2>
+        <p>At 03:07 WAT a withdrawal address was added to this account that Minas had not seen before. Adding a new address often precedes a withdrawal. If you did not make this change yourself, treat this as active and act now.</p>
+        <dl class="kv" style="margin-top:1rem">
+          <div class="kv__row">
+            <dt>Change type</dt>
+            <dd>Withdrawal address added</dd>
+          </div>
+          <div class="kv__row">
+            <dt>Address label</dt>
+            <dd>“New wallet 2”</dd>
+          </div>
+          <div class="kv__row">
+            <dt>Asset / network</dt>
+            <dd>BTC · Bitcoin</dd>
+          </div>
+          <div class="kv__row">
+            <dt>Source</dt>
+            <dd class="muted">Sign-in from an unrecognised device at 03:04 WAT (Lagos)</dd>
+          </div>
+        </dl>
+      </section>
+
+      <section aria-labelledby="steps-title">
+        <h2 id="steps-title">What to do now</h2>
+        <p class="muted" style="margin-top:.5rem">Do these in order. Don't stop to investigate fully before securing the account.</p>
+        <ol class="steps">
+          <li>
+            <div><strong>Open the exchange yourself.</strong>
+              <span>Type the exchange's URL into your browser or use their official app. Do not click any link in an email or message about this alert.</span></div>
+          </li>
+          <li>
+            <div><strong>Disable or delete the API key Minas reports on.</strong>
+              <span>In your exchange's API settings, revoke the key connected to this account. This cuts the key that the change was made through.</span></div>
+          </li>
+          <li>
+            <div><strong>Secure your login.</strong>
+              <span>Change your password and confirm two-factor authentication is on. If 2FA was changed, contact the exchange to lock the account immediately.</span></div>
+          </li>
+          <li>
+            <div><strong>Check withdrawals and the new address.</strong>
+              <span>Review recent withdrawals and pending withdrawals. Remove any address you don't recognise and cancel anything pending if the exchange allows it.</span></div>
+          </li>
+          <li>
+            <div><strong>Contact the exchange directly.</strong>
+              <span>Ask them to freeze or restrict withdrawals while you secure the account. They are the only ones who can stop an outflow in progress.</span></div>
+          </li>
+          <li>
+            <div><strong>Acknowledge this alert below.</strong>
+              <span>Acknowledging tells us you've seen it and stops repeat notifications. It does not stop anything on the exchange — that's step five.</span></div>
+          </li>
+        </ol>
+      </section>
+
+      <div class="notice notice--info">
+        <svg class="notice__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+          <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+          <path d="M12 11v5M12 8v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        <div>
+          <p class="notice__title">Minas cannot do this for you.</p>
+          <p class="notice__body">Guardian is read-only. It can't revoke keys, cancel withdrawals, or freeze accounts. Only you and the exchange can.</p>
+        </div>
+      </div>
+
+      <!-- Sticky primary action (fixed bottom on mobile, inline on desktop) -->
+      <div class="actionbar">
+        <div class="container actionbar__inner">
+          <p class="actionbar__note"><strong>Acknowledge doesn't stop the attack.</strong> It only marks this alert as seen.</p>
+          <form action="accounts.html" method="post">
+            <button type="submit" class="btn btn--primary btn--block">Acknowledge alert</button>
+          </form>
+        </div>
+      </div>
+
+    </div>
+  </main>
+</body>
+</html>

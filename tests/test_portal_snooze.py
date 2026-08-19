@@ -127,7 +127,7 @@ def test_an_unauthenticated_post_snoozes_nothing(portal, db, alice):
     _, body = _request(portal, "POST", "/snooze", body={"alert_id": str(alert_id), "hours": "4"})
 
     assert active_snooze(db, account_id, "key-1") is None
-    assert "Member sign-in" in body
+    assert 'id="signin-title"' in body
 
 
 def test_a_cross_origin_post_snoozes_nothing(portal, db, alice):

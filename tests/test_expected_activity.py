@@ -221,7 +221,7 @@ def test_marking_requires_a_session(db, signed_in, portal):
     aid, _token = signed_in
     alert_id = _alert(db, aid)
     _status, body = _request(portal, "POST", "/expected", body={"alert_id": str(alert_id)})
-    assert "Member sign-in" in body
+    assert 'id="signin-title"' in body
     assert marks_for_alert(db, alert_id) == []
 
 

@@ -354,7 +354,7 @@ def test_activity_never_shows_another_members_accounts(db, signed_in, portal):
 
 def test_activity_requires_a_session(db, portal):
     _status, body = _request(portal, "GET", "/activity")
-    assert "Member sign-in" in body
+    assert 'id="signin-title"' in body
 
 
 # --- the page shows changes, not detections -----------------------------------

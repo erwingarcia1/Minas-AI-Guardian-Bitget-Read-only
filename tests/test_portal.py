@@ -191,7 +191,7 @@ def test_throttle_window_expires():
 def test_unauthenticated_pages_show_login(portal, db):
     for path in ("/", "/account?id=1"):
         status, body, _ = _request(portal, "GET", path)
-        assert status == 200 and "Member sign-in" in body
+        assert status == 200 and 'id="signin-title"' in body
 
 
 def test_login_success_sets_cookie_and_shows_own_accounts(portal, db):
@@ -200,7 +200,7 @@ def test_login_success_sets_cookie_and_shows_own_accounts(portal, db):
     status, _, token = _login(portal, "alice@example.com", "pw-alice")
     assert status == 303 and token
     status, body, _ = _request(portal, "GET", "/", cookie=token)
-    assert status == 200 and "alice-1" in body and "Your accounts" in body
+    assert status == 200 and "alice-1" in body and "My accounts" in body
 
 
 def test_login_failure_is_generic(portal, db):
@@ -239,7 +239,7 @@ def test_tampered_cookie_lands_on_login(portal, db):
     _, _, token = _login(portal, "alice@example.com", "pw-alice")
     bad = token[:-4] + ("aaaa" if token[-4:] != "aaaa" else "bbbb")
     status, body, _ = _request(portal, "GET", "/", cookie=bad)
-    assert "Member sign-in" in body and "alice-1" not in body
+    assert 'id="signin-title"' in body and "alice-1" not in body
 
 
 def test_logout_clears_cookie(portal, db):

@@ -389,209 +389,431 @@ def verify_session_token(secret: bytes, token: str, now: float | None = None,
 
 # --- pages -------------------------------------------------------------------
 
-# The portal design foundation (#82). Tokens first, primitives second, and
-# every screen inherits: a page that needs a new colour or size adds a token
-# WITH A ROLE NAME here, never a hex in situ. The system is documented in
-# docs/portal-design.md; the decisions it implements (no framework, brand
-# the portal not the dashboard, interface over presentation) are recorded on
-# #82. Deliberately interface-oriented where the shared ancestor stylesheet
-# was presentation-oriented: no animation, no glow, no gradient panels — a
-# customer opens this page frightened at 3am, and it is printed as evidence.
-# The one decorative element is the gold hairline at the top of the page:
-# the portal's signature, cheap to recognise and absent from the ops
-# dashboard on purpose.
+# The portal design system (#82), ported from the owner's external design
+# pass: design/portal/ is the reference (DESIGN-SYSTEM.md + styles.css +
+# five mockup screens). Ported as a SYSTEM - tokens, primitives, states -
+# not pasted wholesale: mockup-only classes (state variations, remember-me)
+# are dropped, and utilities the real pages need are defined here from the
+# same tokens. The contract lives in docs/portal-design.md; the decisions
+# (no framework, brand the portal not the dashboard, stacked key/value
+# blocks instead of tables on phones, one gold primary per screen, >=48px
+# touch targets) are recorded on #82.
 _PORTAL_STYLE = """
   :root {
-    /* -- colour roles ---------------------------------------------------- */
-    --bg:#0e0a17; --surface:#161022; --surface-2:#1c1530;
-    --line:#2a2140; --line-soft:#221a36;
-    --ink:#efeaf7; --ink-muted:#a79bc2; --ink-faint:#6f6390;
-    --gold:#f0b429;            /* brand: identity moments only            */
-    --accent:#8b5cf6;          /* brand: interactive accents              */
-    --ok:#34d399; --warn:#ffa63d; --crit:#ff5d6c;
-    --med:#ffd23d; --low:#8a7fa5;
-    /* -- type scale ------------------------------------------------------ */
-    --t-display:22px; --t-title:15px; --t-body:14px;
-    --t-small:12.5px; --t-micro:11px;
-    /* -- spacing scale (4px base) ---------------------------------------- */
-    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:22px; --s6:32px; --s7:48px;
-    --radius:12px; --radius-pill:999px;
+    --bg:#0d0f13; --surface:#151921; --surface-2:#1c212b;
+    --border:#2a3140; --border-strong:#3a4256;
+    --text:#f4f6fa; --text-muted:#aab2c1; --text-subtle:#768093;
+    --text-on-gold:#16110a;
+    --gold:#f0b429; --gold-press:#d99a14; --gold-line:#b8841a;
+    --violet:#8b5cf6; --violet-press:#6d28d9; --violet-text:#c4b2ff; --violet-line:#7c68b8;
+    --danger:#f87171; --danger-bg:rgba(248,113,113,0.10); --danger-line:rgba(248,113,113,0.45);
+    --warn:#fbbf24; --warn-bg:rgba(251,191,36,0.10); --warn-line:rgba(251,191,36,0.45);
+    --ok:#34d399; --ok-bg:rgba(52,211,153,0.10); --ok-line:rgba(52,211,153,0.45);
+    --font-sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif,"Apple Color Emoji","Segoe UI Emoji";
+    --font-serif:Georgia,"Times New Roman",Times,serif;
+    --font-mono:"SF Mono","JetBrains Mono",ui-monospace,Menlo,monospace;
+    --text-xs:.75rem; --text-sm:.875rem; --text-base:1rem; --text-lg:1.125rem;
+    --text-xl:1.375rem; --text-2xl:1.75rem; --text-display:clamp(1.75rem,7vw,2.25rem);
+    --lh-tight:1.2; --lh-snug:1.35; --lh-body:1.55; --tracking-wide:.08em;
+    --space-1:.25rem; --space-2:.5rem; --space-3:.75rem; --space-4:1rem;
+    --space-5:1.5rem; --space-6:2rem; --space-7:3rem; --space-8:4rem;
+    --radius:6px; --radius-sm:4px;
+    --container:44rem; --bar-h:8.5rem;
   }
-  * { box-sizing:border-box; }
-  body {
-    margin:0; background:var(--bg); color:var(--ink);
-    font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    font-size:var(--t-body); line-height:1.55;
-    -webkit-font-smoothing:antialiased; min-height:100vh;
-    border-top:2px solid var(--gold);   /* the portal signature */
+  *, *::before, *::after { box-sizing:border-box; }
+  html { -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--text);
+         font-family:var(--font-sans); font-size:var(--text-base);
+         line-height:var(--lh-body); -webkit-font-smoothing:antialiased;
+         text-rendering:optimizeLegibility; }
+  body.has-actionbar { padding-bottom:var(--bar-h); }
+  h1,h2,h3,h4 { margin:0; line-height:var(--lh-tight); font-weight:700; }
+  h1 { font-size:var(--text-2xl); letter-spacing:-.01em; }
+  h2 { font-size:var(--text-xl); line-height:var(--lh-snug); }
+  h3 { font-size:var(--text-lg); line-height:var(--lh-snug); }
+  p { margin:0; } p + p { margin-top:var(--space-3); }
+  ul,ol { margin:0; padding:0; list-style:none; }
+  a { color:var(--violet-text); text-decoration:underline; text-underline-offset:3px; }
+  a:hover { text-decoration-thickness:2px; }
+  strong { font-weight:700; } small { font-size:var(--text-sm); }
+  :focus-visible { outline:3px solid var(--violet); outline-offset:2px; border-radius:var(--radius-sm); }
+  .btn--primary:focus-visible { outline-color:var(--violet); }
+  ::selection { background:var(--gold); color:var(--text-on-gold); }
+
+  .container { width:100%; max-width:var(--container); margin-inline:auto; padding-inline:var(--space-4); }
+  .main { padding:var(--space-5) 0 var(--space-7); }
+  .stack > * + * { margin-top:var(--space-4); }
+  .stack-lg > * + * { margin-top:var(--space-6); }
+  .muted { color:var(--text-muted); } .subtle { color:var(--text-subtle); }
+  .eyebrow { font-size:var(--text-xs); font-weight:700; letter-spacing:var(--tracking-wide);
+             text-transform:uppercase; color:var(--text-subtle); }
+  .lead { font-size:var(--text-lg); color:var(--text-muted); line-height:var(--lh-snug); }
+  .page-head { margin-bottom:var(--space-5); }
+  .page-head h1 { margin-bottom:var(--space-2); }
+
+  .topbar { background:var(--surface); border-bottom:1px solid var(--border); }
+  .topbar__inner { display:flex; align-items:center; justify-content:space-between;
+                   gap:var(--space-4); min-height:56px; padding-block:var(--space-3); }
+  .brand { display:inline-flex; align-items:center; gap:var(--space-3); color:var(--text);
+           text-decoration:none; font-weight:700; font-size:var(--text-base); letter-spacing:-.005em; }
+  .brand:hover { text-decoration:none; }
+  .brand__mark { width:28px; height:28px; flex:none; color:var(--gold); }
+  .brand__name span { color:var(--text-muted); font-weight:600; }
+  .topbar__meta { font-size:var(--text-sm); color:var(--text-muted); text-align:right; }
+  .topbar__meta a { white-space:nowrap; }
+  .linkbtn { font:inherit; background:none; border:none; padding:0; cursor:pointer;
+             color:var(--violet-text); text-decoration:underline; text-underline-offset:3px;
+             min-height:44px; }
+  .subnav { border-top:1px solid var(--border); background:var(--surface); }
+  .subnav__inner { display:flex; gap:var(--space-5); overflow-x:auto;
+                   scrollbar-width:thin; -webkit-overflow-scrolling:touch; }
+  .subnav a { display:inline-flex; align-items:center; min-height:48px; color:var(--text-muted);
+              text-decoration:none; font-size:var(--text-sm); font-weight:600;
+              border-bottom:2px solid transparent; white-space:nowrap; padding-inline:2px; }
+  .subnav a:hover { color:var(--text); }
+  .subnav a[aria-current="page"] { color:var(--text); border-bottom-color:var(--gold); }
+
+  .footer { border-top:1px solid var(--border); padding:var(--space-5) 0; margin-top:var(--space-7);
+            color:var(--text-subtle); font-size:var(--text-sm); }
+  .footer__row { display:flex; flex-wrap:wrap; gap:var(--space-4) var(--space-5); }
+  .footer__row a { color:var(--text-muted); }
+  .footer__tag { font-weight:600; color:var(--text-muted); }
+
+  .btn { display:inline-flex; align-items:center; justify-content:center; gap:var(--space-2);
+         min-height:48px; padding:var(--space-3) var(--space-5); font:inherit; font-weight:700;
+         font-size:var(--text-base); line-height:1; border:1px solid transparent;
+         border-radius:var(--radius); text-decoration:none; cursor:pointer;
+         transition:none; white-space:nowrap; }
+  .btn:disabled, .btn[aria-disabled="true"] { background:var(--surface-2); color:var(--text-subtle);
+         border-color:var(--border); cursor:not-allowed; pointer-events:none; }
+  .btn--primary { background:var(--gold); color:var(--text-on-gold); border-color:var(--gold-line); }
+  .btn--primary:hover { background:var(--gold-press); }
+  .btn--primary:active { background:var(--gold-press); }
+  .btn--secondary { background:transparent; color:var(--violet-text); border-color:var(--violet-line); }
+  .btn--secondary:hover { background:rgba(139,92,246,0.12); border-color:var(--violet); }
+  .btn--tertiary { background:transparent; color:var(--text-muted); min-height:44px; padding-inline:var(--space-3); }
+  .btn--tertiary:hover { color:var(--text); }
+  .btn--block { width:100%; }
+  .btn--sm { min-height:40px; padding-block:var(--space-2); font-size:var(--text-sm); }
+  a.btn { text-align:center; }
+
+  .skip-link { position:absolute; left:var(--space-3); top:-3rem; z-index:100; background:var(--gold);
+               color:var(--text-on-gold); padding:var(--space-3) var(--space-4);
+               border-radius:var(--radius); font-weight:700; text-decoration:none; }
+  .skip-link:focus { top:var(--space-3); }
+
+  .panel { background:var(--surface); border:1px solid var(--border);
+           border-radius:var(--radius); padding:var(--space-5); }
+  .panel + .panel { margin-top:var(--space-4); }
+  .panel h2 { margin-bottom:var(--space-3); }
+  .panel h3 { margin-bottom:var(--space-2); }
+
+  .badge { display:inline-flex; align-items:center; gap:var(--space-2); font-size:var(--text-xs);
+           font-weight:700; letter-spacing:var(--tracking-wide); text-transform:uppercase;
+           padding:var(--space-1) var(--space-3); border-radius:999px;
+           border:1px solid var(--border-strong); background:var(--surface-2);
+           color:var(--text-muted); line-height:1.6; white-space:nowrap; }
+  .badge .dot { width:8px; height:8px; border-radius:50%; background:currentColor; }
+  .badge--ok { color:var(--ok); border-color:var(--ok-line); background:var(--ok-bg); }
+  .badge--warn { color:var(--warn); border-color:var(--warn-line); background:var(--warn-bg); }
+  .badge--danger { color:var(--danger); border-color:var(--danger-line); background:var(--danger-bg); }
+  .badge--neutral { color:var(--text-muted); }
+  .badge--lg { font-size:var(--text-sm); padding:var(--space-2) var(--space-4);
+               letter-spacing:.04em; text-transform:none; }
+
+  /* Key/value rows: THE answer to tables on a phone (stacked; two-column
+     from 40rem). Every fact list uses this; there are no data tables. */
+  .kv { margin:0; }
+  .kv__row { display:grid; gap:2px; padding-block:var(--space-3); border-top:1px solid var(--border); }
+  .kv__row:first-child { border-top:0; padding-top:var(--space-3); }
+  .kv__row:last-child { padding-bottom:0; }
+  .kv dt { font-size:var(--text-xs); font-weight:700; letter-spacing:var(--tracking-wide);
+           text-transform:uppercase; color:var(--text-subtle); }
+  .kv dd { margin:0; font-size:var(--text-base); color:var(--text); }
+  .kv dd.muted { color:var(--text-muted); }
+  @media (min-width:40rem) {
+    .kv__row { grid-template-columns:12rem 1fr; align-items:baseline; gap:var(--space-4); }
   }
-  .wrap { max-width:1080px; margin:0 auto; padding:var(--s6) var(--s6) var(--s7); }
-  a { color:var(--accent); }
-  :focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
 
-  /* -- header / brand ---------------------------------------------------- */
-  header { display:flex; align-items:center; justify-content:space-between;
-           gap:var(--s4); margin-bottom:var(--s6); }
-  .brand { display:flex; align-items:center; gap:var(--s3); }
-  .mark { width:38px; height:38px; border-radius:10px; background:var(--surface);
-          border:1px solid var(--line); display:grid; place-items:center; }
-  .mark svg { width:24px; height:24px; }
-  .brand h1 { font-size:17px; font-weight:650; margin:0; letter-spacing:.2px; }
-  .brand h1 .minas { color:var(--gold); font-weight:780; letter-spacing:3px; }
-  .brand .sub { margin-top:2px; }
-  .portal-tag { font-size:var(--t-micro); letter-spacing:1.5px;
-                text-transform:uppercase; color:var(--gold); }
-  .nav { display:flex; align-items:center; gap:var(--s2); }
-  .live { display:inline-flex; align-items:center; gap:var(--s2);
-          font-size:var(--t-small); color:var(--ink-muted);
-          background:var(--surface); border:1px solid var(--line);
-          padding:7px var(--s4); border-radius:var(--radius-pill);
-          text-decoration:none; }
-  a.live:hover { border-color:var(--accent); color:var(--ink); }
-  a.live.primary { color:var(--bg); background:var(--gold);
-                   border-color:transparent; font-weight:650; }
-  a.live.primary:hover { filter:brightness(1.06); }
-  footer { margin-top:var(--s7); font-size:var(--t-small); color:var(--ink-faint); }
+  .acct { background:var(--surface); border:1px solid var(--border);
+          border-radius:var(--radius); padding:var(--space-5); }
+  .acct + .acct { margin-top:var(--space-3); }
+  .acct__head { display:flex; flex-wrap:wrap; align-items:flex-start; justify-content:space-between;
+                gap:var(--space-3) var(--space-4); margin-bottom:var(--space-3); }
+  .acct__label { font-size:var(--text-lg); font-weight:700; }
+  .acct__exchange { color:var(--text-muted); font-size:var(--text-sm); margin-top:2px; }
 
-  /* -- the banner (one style; tones ok / warn / err) ---------------------- */
-  .banner { display:flex; align-items:baseline; gap:var(--s2);
-            padding:var(--s3) var(--s4); margin-bottom:var(--s4);
-            border-radius:var(--radius); border:1px solid var(--line);
-            background:var(--surface); font-size:var(--t-body); }
-  .banner.ok   { border-color:rgba(52,211,153,.4);  color:var(--ok); }
-  .banner.warn { border-color:rgba(255,166,61,.4);  color:var(--warn); }
-  .banner.err  { border-color:rgba(255,93,108,.45); color:var(--crit); }
+  .problem { margin-top:var(--space-4); padding:var(--space-4); border:1px solid var(--danger-line);
+             background:var(--danger-bg); border-radius:var(--radius-sm); }
+  .problem--warn { border-color:var(--warn-line); background:var(--warn-bg); }
+  .problem__title { font-weight:700; color:var(--text); margin-bottom:2px; }
+  .problem--warn .problem__title { color:var(--warn); }
+  .problem__body { color:var(--text-muted); font-size:var(--text-sm); }
+  .problem__fix { margin-top:var(--space-3); display:flex; flex-wrap:wrap;
+                  align-items:center; gap:var(--space-3); }
+  .fix-tag { font-size:var(--text-xs); font-weight:700; letter-spacing:var(--tracking-wide);
+             text-transform:uppercase; color:var(--ok); }
+  .fix-tag--muted { color:var(--text-muted); }
 
-  /* -- cards and sections ------------------------------------------------- */
-  section { margin-top:var(--s5); }
-  .card { background:var(--surface); border:1px solid var(--line);
-          border-radius:var(--radius); overflow:hidden; }
-  .card-head { display:flex; align-items:baseline; justify-content:space-between;
-               padding:var(--s4) var(--s5); border-bottom:1px solid var(--line-soft); }
-  .card-head h2 { font-size:var(--t-title); font-weight:640; margin:0; letter-spacing:.2px; }
-  .card-head .count { font-size:var(--t-small); color:var(--ink-faint);
-                      font-variant-numeric:tabular-nums; }
-  .cols { display:grid; grid-template-columns:1fr 1fr; gap:var(--s4); }
-  @media (max-width:760px) { .cols { grid-template-columns:1fr; } }
+  .state { border:1px solid var(--border); border-radius:var(--radius);
+           padding:var(--space-5); margin-bottom:var(--space-5); }
+  .state__eyebrow { display:inline-flex; align-items:center; gap:var(--space-2);
+                    font-size:var(--text-xs); font-weight:700; letter-spacing:var(--tracking-wide);
+                    text-transform:uppercase; margin-bottom:var(--space-3); }
+  .state__answer { font-size:var(--text-display); font-weight:800; line-height:var(--lh-tight);
+                   letter-spacing:-.015em; margin-bottom:var(--space-3); }
+  .state__detail { color:var(--text-muted); font-size:var(--text-lg);
+                   line-height:var(--lh-snug); max-width:38ch; }
+  .state--ok { border-color:var(--ok-line); background:var(--ok-bg); }
+  .state--ok .state__eyebrow { color:var(--ok); }
+  .state--warn { border-color:var(--warn-line); background:var(--warn-bg); }
+  .state--warn .state__eyebrow { color:var(--warn); }
+  .state--danger { border-color:var(--danger-line); background:var(--danger-bg); }
+  .state--danger .state__eyebrow { color:var(--danger); }
+  .state--ok .state__answer, .state--warn .state__answer, .state--danger .state__answer { color:var(--text); }
+  .state__eyebrow svg { width:16px; height:16px; }
 
-  /* -- the table (one style) ---------------------------------------------- */
-  table { width:100%; border-collapse:collapse; }
-  thead th { font-size:var(--t-micro); text-transform:uppercase; letter-spacing:.7px;
-             color:var(--ink-faint); text-align:left; font-weight:600;
-             padding:var(--s3) var(--s5); }
-  tbody td { padding:var(--s4) var(--s5); font-size:var(--t-body);
-             border-top:1px solid var(--line-soft); }
-  tbody tr:hover { background:var(--surface-2); }
-  td.empty, .empty { color:var(--ink-faint); }
+  .alert-head { margin-bottom:var(--space-5); }
+  .alert-head .badge { margin-bottom:var(--space-3); }
+  .alert-head h1 { font-size:var(--text-2xl); margin-bottom:var(--space-2); }
+  .alert-meta { display:grid; gap:var(--space-2); color:var(--text-muted); font-size:var(--text-sm); }
+  .steps { counter-reset:step; margin-top:var(--space-3); }
+  .steps li { position:relative; padding:var(--space-3) 0 var(--space-3) calc(var(--space-6) + var(--space-3));
+              border-top:1px solid var(--border); color:var(--text); }
+  .steps li:first-child { border-top:0; }
+  .steps li::before { counter-increment:step; content:counter(step); position:absolute;
+                      left:0; top:var(--space-3); width:var(--space-6); height:var(--space-6);
+                      display:inline-flex; align-items:center; justify-content:center;
+                      background:var(--surface-2); border:1px solid var(--border-strong);
+                      border-radius:50%; font-size:var(--text-sm); font-weight:700; color:var(--gold); }
+  .steps li strong { display:block; color:var(--text); }
+  .steps li span { color:var(--text-muted); font-size:var(--text-sm); }
 
-  /* -- the status pill (one style; role modifiers) ------------------------ */
-  .pill { display:inline-flex; align-items:center; gap:6px;
-          font-size:var(--t-micro); font-weight:600; letter-spacing:.3px;
-          padding:4px 11px; border-radius:var(--radius-pill); }
-  .pill::before { content:""; width:6px; height:6px; border-radius:50%;
-                  background:currentColor; }
-  .s-active   { color:var(--ok);        background:rgba(52,211,153,.12); }
-  .s-disabled { color:var(--ink-faint); background:rgba(111,99,144,.16); }
-  .s-tamper   { color:var(--crit);      background:rgba(255,93,108,.12); }
-  .sev-CRITICAL { color:var(--crit); background:rgba(255,93,108,.13); }
-  .sev-HIGH     { color:var(--warn); background:rgba(255,166,61,.13); }
-  .sev-MEDIUM   { color:var(--med);  background:rgba(255,210,61,.13); }
-  .sev-LOW      { color:var(--low);  background:rgba(138,127,165,.15); }
+  .primary-row { margin-top:var(--space-5); display:flex; flex-direction:column; gap:var(--space-3); }
+  .actionbar { position:fixed; left:0; right:0; bottom:0; background:var(--surface);
+               border-top:1px solid var(--border-strong); z-index:20;
+               padding:var(--space-3) var(--space-4) calc(var(--space-3) + env(safe-area-inset-bottom, 0px)); }
+  .actionbar__note { font-size:var(--text-sm); color:var(--text-muted); margin:0 0 var(--space-2); }
+  .actionbar__note strong { color:var(--text); }
 
-  /* -- check rows (posture and status statements) -------------------------- */
-  .checks { padding:var(--s2) 0; }
-  .check { display:flex; gap:var(--s3); padding:var(--s3) var(--s5);
-           align-items:baseline; }
-  .check + .check { border-top:1px solid var(--line-soft); }
-  .ic { flex:none; width:20px; height:20px; border-radius:50%; display:grid;
-        place-items:center; font-size:var(--t-micro); font-weight:700; }
-  .ic.ok   { color:var(--ok);   background:rgba(52,211,153,.12); }
-  .ic.warn { color:var(--warn); background:rgba(255,166,61,.14); }
-  .ic.crit { color:var(--crit); background:rgba(255,93,108,.13); }
-  .check .txt { color:var(--ink-muted); }
-  .check .txt b { color:var(--ink); font-weight:620; }
+  .form { display:grid; gap:var(--space-5); }
+  .field { display:grid; gap:var(--space-2); }
+  .field label { font-size:var(--text-sm); font-weight:600; color:var(--text); }
+  .field .hint, .hint { font-size:var(--text-sm); color:var(--text-muted); }
+  .input { width:100%; min-height:48px; padding:var(--space-3) var(--space-4); font:inherit;
+           font-size:var(--text-base); color:var(--text); background:var(--bg);
+           border:1px solid var(--border-strong); border-radius:var(--radius); appearance:none; }
+  .input::placeholder { color:var(--text-subtle); }
+  .input:focus-visible { outline:3px solid var(--violet); outline-offset:1px; border-color:var(--violet); }
+  .input[aria-invalid="true"] { border-color:var(--danger); box-shadow:inset 0 0 0 1px var(--danger); }
+  .field--row { display:flex; align-items:center; justify-content:space-between; gap:var(--space-3); }
+  .field--row label { margin:0; }
 
-  /* -- text roles ---------------------------------------------------------- */
-  .mono, .rule { font-family:"SF Mono","JetBrains Mono",ui-monospace,Menlo,monospace;
-                 font-size:var(--t-small); font-variant-numeric:tabular-nums; }
-  .mono { color:var(--ink-muted); }
-  .lbl { font-weight:550; }
-  .meta { font-size:var(--t-small); color:var(--ink-faint); }
-  .desc { color:var(--ink-muted); }
-  .det { padding:var(--s3) var(--s5); }
-  .hint { font-size:var(--t-small); color:var(--ink-faint); }
-  .acctlink { color:var(--accent); text-decoration:none; }
-  .acctlink:hover { text-decoration:underline; }
-  .ack-yes { color:var(--ok); } .ack-no { color:var(--ink-faint); }
-  .snoozed { font-size:var(--t-small); color:var(--ink-muted); }
+  .notice { display:grid; grid-template-columns:auto 1fr; gap:var(--space-3);
+            padding:var(--space-4); border-radius:var(--radius);
+            border:1px solid var(--border); background:var(--surface-2); }
+  .notice--danger { border-color:var(--danger-line); background:var(--danger-bg); }
+  .notice--info { border-color:var(--violet-line); background:rgba(139,92,246,0.10); }
+  .notice--ok { border-color:var(--ok-line); background:var(--ok-bg); }
+  .notice__icon { width:20px; height:20px; flex:none; }
+  .notice--danger .notice__icon { color:var(--danger); }
+  .notice--info .notice__icon { color:var(--violet-text); }
+  .notice--ok .notice__icon { color:var(--ok); }
+  .notice__title { font-weight:700; margin:0; }
+  .notice__body { margin-top:2px; color:var(--text-muted); font-size:var(--text-sm); }
 
-  /* -- definition lists ----------------------------------------------------- */
-  .dl { margin:0; padding:var(--s2) var(--s5) var(--s4); }
-  .dl dt { font-size:var(--t-micro); text-transform:uppercase; letter-spacing:.7px;
-           color:var(--ink-faint); margin-top:var(--s3); }
-  .dl dd { margin:var(--s1) 0 0; }
+  .phish { display:flex; gap:var(--space-3); font-size:var(--text-sm);
+           color:var(--text-muted); line-height:var(--lh-snug); }
+  .phish svg { width:18px; height:18px; flex:none; color:var(--gold); margin-top:1px; }
 
-  /* -- forms ---------------------------------------------------------------- */
-  .loginbox { max-width:420px; margin:56px auto 0; }
-  .loginbox .card, .addf .card { padding-bottom:var(--s2); }
-  .addf, .fld { font-size:var(--t-body); }
-  .fld { padding:var(--s2) var(--s5) 0; }
-  .fld label { display:block; font-size:var(--t-micro); text-transform:uppercase;
-               letter-spacing:.7px; color:var(--ink-faint); margin-bottom:var(--s1); }
-  .fld input, .fld select {
-    width:100%; font:inherit; color:var(--ink); background:var(--surface-2);
-    border:1px solid var(--line); border-radius:8px; padding:9px var(--s3); }
-  .fld input:focus, .fld select:focus { outline:none; border-color:var(--accent); }
-  .actions { padding:var(--s4) var(--s5) var(--s4); }
-  .submit { font:inherit; font-weight:650; color:var(--bg); background:var(--gold);
-            border:none; border-radius:8px; padding:10px var(--s5); cursor:pointer; }
-  .submit:hover { filter:brightness(1.06); }
-  .ackbtn { font:inherit; font-size:var(--t-small); cursor:pointer;
-            padding:3px 10px; border:1px solid var(--line); border-radius:6px;
-            background:transparent; color:var(--ink); }
-  .ackbtn:hover { border-color:var(--ok); color:var(--ok); }
-  .snoozesel { font:inherit; font-size:var(--t-small); margin-right:6px;
-               padding:3px 6px; border:1px solid var(--line); border-radius:6px;
-               background:var(--surface-2); color:var(--ink); }
+  .callout-danger { border:1px solid var(--danger-line); background:var(--danger-bg);
+                    border-radius:var(--radius); padding:var(--space-5); margin-bottom:var(--space-5); }
+  .callout-danger h2 { font-size:var(--text-xl); color:var(--text); margin-bottom:var(--space-2); }
+  .callout-danger p { color:var(--text-muted); font-size:var(--text-lg); line-height:var(--lh-snug); }
+  .feature-list { display:grid; gap:var(--space-3); }
+  .feature-list li { display:grid; grid-template-columns:auto 1fr; gap:var(--space-3); align-items:start; }
+  .feature-list .tick { width:20px; height:20px; flex:none; margin-top:2px; }
+  .feature-list .tick--yes { color:var(--ok); }
+  .feature-list .tick--no { color:var(--danger); }
+  .feature-list strong { display:block; color:var(--text); }
+  .feature-list span { color:var(--text-muted); font-size:var(--text-sm); }
 
-  /* -- print: an incident page is handed to an exchange, an insurer or the
-        police, so it has to survive being printed. Export stays the
-        browser's own print-to-PDF (decision 5): a PDF library is a new
-        dependency in a security product, server-side rendering drifts from
-        what the customer actually saw, and the browser's footer carries the
-        URL and a timestamp - better provenance than a document we composed
-        ourselves. ------------------------------------------------------------ */
+  .shell { min-height:100dvh; display:flex; flex-direction:column; }
+  .shell__main { flex:1; display:flex; align-items:center; padding:var(--space-6) 0; }
+  .auth-card { width:100%; max-width:26rem; margin-inline:auto; background:var(--surface);
+               border:1px solid var(--border); border-radius:var(--radius);
+               padding:var(--space-6) var(--space-5); }
+  .auth-card__brand { display:flex; flex-direction:column; align-items:center; gap:var(--space-3);
+                      text-align:center; margin-bottom:var(--space-6); }
+  .auth-card__brand .brand__mark { width:36px; height:36px; }
+  .auth-card__brand .brand__name { font-size:var(--text-lg); font-weight:700; }
+  .auth-card__brand .brand__name span { display:block; font-size:var(--text-sm); color:var(--text-muted); }
+
+  /* Utilities the real pages need, from the same tokens */
+  .mono { font-family:var(--font-mono); font-size:var(--text-sm);
+          font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  .meta { font-size:var(--text-sm); color:var(--text-subtle); }
+  .empty { color:var(--text-subtle); }
+  .count { font-size:var(--text-sm); color:var(--text-subtle); font-variant-numeric:tabular-nums; }
+  .acctlink { font-weight:600; }
+  .ack-yes { color:var(--ok); font-size:var(--text-sm); }
+  .ack-no { color:var(--text-subtle); }
+  .ctl-row { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-2);
+             margin-top:var(--space-2); }
+  .input--inline { width:auto; min-width:0; }
+  .alert-item { padding-block:var(--space-4); border-top:1px solid var(--border); }
+  .alert-item:first-of-type { border-top:0; }
+  .alert-item__head { display:flex; flex-wrap:wrap; align-items:center;
+                      gap:var(--space-2) var(--space-3); margin-bottom:var(--space-1); }
+
+  @media (min-width:40rem) {
+    .primary-row { flex-direction:row; align-items:center; }
+    .primary-row .btn { width:auto; }
+  }
+  @media (min-width:48rem) {
+    body.has-actionbar { padding-bottom:0; }
+    .container { padding-inline:var(--space-5); }
+    .actionbar { position:static; background:none; border-top:0; padding:var(--space-6) 0 0; }
+    .actionbar__inner { display:flex; align-items:center; justify-content:space-between; gap:var(--space-5); }
+    .actionbar__note { margin:0; max-width:26rem; text-align:right; }
+    .actionbar .btn--block { width:auto; min-width:14rem; }
+  }
+
+  /* Print: the status page is a document handed to an exchange, an insurer
+     or the police. Serif, monochrome, masthead; interactive chrome gone. */
   @media print {
-    :root { --bg:#fff; --surface:#fff; --surface-2:#fff; --ink:#111;
-            --ink-muted:#444; --ink-faint:#666; --line:#bbb; --line-soft:#ddd; }
-    body { background:#fff !important; color:#111; border-top:none; }
-    .wrap { max-width:none; padding:0; }
-    .noprint, .nav form, .ackbtn, .snoozesel { display:none !important; }
-    .card { border:1px solid #bbb; break-inside:avoid; }
-    a { color:#111; text-decoration:none; }
+    .topbar, .subnav, .footer, .actionbar, .no-print, .noprint, .skip-link,
+    .primary-row { display:none !important; }
+    body { background:#fff !important; color:#000 !important;
+           font-size:11pt; line-height:1.45; font-family:var(--font-serif); }
+    body.has-actionbar { padding-bottom:0 !important; }
+    .container { max-width:100% !important; padding:0 !important; margin:0 !important; }
+    .main { padding:0 !important; }
+    h1,h2,h3 { color:#000 !important; }
+    a { color:#000 !important; text-decoration:none; }
+    .panel, .acct, .state { background:#fff !important; border-color:#000 !important;
+      border-width:1px !important; break-inside:avoid; page-break-inside:avoid;
+      padding:10pt 12pt !important; }
+    .print-masthead { display:block !important; }
+    .badge { background:#fff !important; color:#000 !important; border:1px solid #000 !important; }
+    .badge .dot { display:none; }
+    .state { border:2px solid #000 !important; background:#fff !important; }
+    .state--ok, .state--warn, .state--danger { background:#fff !important; }
+    .state__answer { font-size:20pt !important; color:#000 !important; }
+    .state__eyebrow { color:#000 !important; }
+    .problem, .problem--warn { background:#fff !important; border:1px solid #000 !important; }
+    .kv__row { border-top-color:#999 !important; }
+    .kv dt, .kv dd { color:#000 !important; }
+    @page { margin:18mm 16mm; }
+  }
+  .print-masthead { display:none; }
+  .print-masthead__title { font-family:var(--font-serif); font-size:16pt; font-weight:700; margin:0 0 4pt; }
+  .print-masthead__sub { font-size:10pt; color:#333; margin:0 0 2pt; }
+  @media (prefers-reduced-motion: reduce) {
+    * { animation:none !important; transition:none !important; }
   }
 """
 
 
+# Badge helpers: status and severity as icon-dot + word, never colour alone
+# (design/portal/DESIGN-SYSTEM.md). Labels are customer words, not our
+# column values.
+_STATUS_BADGE = {
+    "active": ("badge--ok", "Active"),
+    "disabled": ("badge--neutral", "Disabled"),
+    "tamper_suspected": ("badge--danger", "Suspected tampering"),
+}
+
+# Severity tones: CRITICAL is the red that means act now; HIGH warns; the
+# rest stay neutral so the loud tones keep their meaning.
+_SEV_BADGE = {
+    "CRITICAL": "badge--danger",
+    "HIGH": "badge--warn",
+    "MEDIUM": "badge--neutral",
+    "LOW": "badge--neutral",
+}
+
+
 def _status_pill(status: str) -> str:
-    """The portal's own pill - the dashboard has its own. One primitive, role
-    modifiers; a new status gets a role class in _PORTAL_STYLE, not an
-    inline colour."""
-    cls = {"active": "s-active", "disabled": "s-disabled", "tamper_suspected": "s-tamper"}.get(status, "s-disabled")
-    return f'<span class="pill {cls}">{html.escape(status.replace("_", " "))}</span>'
+    cls, label = _STATUS_BADGE.get(status, ("badge--neutral", status.replace("_", " ")))
+    return (f'<span class="badge {cls}"><span class="dot" aria-hidden="true"></span>'
+            f"{html.escape(label)}</span>")
 
 
-def _page(body_html: str, nav_html: str = "") -> str:
+def _sev_badge(severity: str, large: bool = False) -> str:
+    cls = _SEV_BADGE.get(severity, "badge--neutral")
+    size = " badge--lg" if large else ""
+    return (f'<span class="badge {cls}{size}"><span class="dot" aria-hidden="true"></span>'
+            f"{html.escape(severity.title())}</span>")
+
+
+# The subnav, in one place (the old _member_nav's reasoning survives): a
+# page reachable from some screens and not others is how the reader who most
+# needs "what are the limits" arrives on the one page that doesn't link it.
+_NAV_ITEMS = (
+    ("/", "My accounts"),
+    ("/status", "Am I being watched?"),
+    ("/alerts", "Alerts"),
+    ("/activity", "Activity"),
+    ("/limits", "Limits"),
+    ("/security", "Security"),
+)
+
+
+def _page(body_html: str, email: str | None = None, active: str = "",
+          *, title: str = "Minas AI Guardian", shell: bool = False,
+          actionbar: bool = False, back: str | None = None) -> str:
+    """The frame, per design/portal/: topbar (brand + signed-in meta),
+    scrollable subnav with the current page underlined in gold, footer.
+    `shell` centres an auth card vertically (sign-in family, no nav);
+    `actionbar` reserves bottom space for a fixed action bar; `back`
+    replaces the subnav with a single return link (alert detail)."""
+    brand = (
+        '<a class="brand" href="/" aria-label="Minas AI Guardian home">' + MARK_SVG
+        + '<span class="brand__name">Minas AI <span>Guardian</span></span></a>'
+    )
+    meta = ""
+    if back:
+        meta = f'<div class="topbar__meta"><a href="{back}">Back to accounts</a></div>'
+    elif email:
+        meta = (
+            '<div class="topbar__meta"><span class="subtle">Signed in as</span> '
+            + html.escape(email)
+            + '<br><form method="post" action="/logout" style="margin:0;display:inline">'
+              '<button class="linkbtn" type="submit">Sign out</button></form></div>'
+        )
+    subnav = ""
+    if email and not back:
+        current = " aria-current='page'"
+        links = "".join(
+            f"<a href='{href}'{current if href == active else ''}>{label}</a>"
+            for href, label in _NAV_ITEMS
+        )
+        subnav = (f'<nav class="subnav" aria-label="Primary">'
+                  f'<div class="container subnav__inner">{links}</div></nav>')
+    topbar = (f'<header class="topbar"><div class="container topbar__inner">'
+              f"{brand}{meta}</div>{subnav}</header>")
+    footer = (
+        '<footer class="footer"><div class="container footer__row">'
+        '<span class="footer__tag">Minas AI Guardian</span>'
+        '<a href="/limits">What this product can and cannot do</a>'
+        '<span class="subtle">Read-only monitoring. We cannot move your funds.</span>'
+        "</div></footer>"
+    )
+    if shell:
+        main = f'<main id="main" class="shell__main"><div class="container">{body_html}</div></main>'
+        footer = ""
+    else:
+        main = f'<main id="main" class="main"><div class="container stack-lg">{body_html}</div></main>'
+    body_cls = "shell" if shell else ("has-actionbar" if actionbar else "")
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
-        '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        "<title>Minas AI Guardian — Member Portal</title><style>" + _PORTAL_STYLE
-        + '</style></head><body><div class="wrap"><header><div class="brand">' + MARK_SVG
-        + '<div><h1><span class="minas">MINAS</span> AI Guardian</h1>'
-        '<div class="sub"><span class="portal-tag">Member portal</span></div></div></div>'
-        '<div class="nav">' + nav_html + "</div></header>"
-        + body_html
-        + "<footer>Minas AI Guardian · member portal · your accounts only</footer></div>"
+        '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
+        '<meta name="color-scheme" content="dark">'
+        f"<title>{html.escape(title)}</title><style>" + _PORTAL_STYLE + "</style></head>"
+        f'<body class="{body_cls}">'
+        '<a class="skip-link" href="#main">Skip to content</a>'
+        + topbar + main + footer
         + _LOCAL_TIME_SCRIPT + "</body></html>"
     )
 
@@ -677,16 +899,16 @@ def _snooze_control(row, snoozed_until: str | None, rules=None) -> str:
     means, and offering both invites silencing an alert nobody has looked at
     twice."""
     if snoozed_until:
-        return f"<div class='snoozed'>Snoozed until {_ts(snoozed_until)}</div>"
+        return f"<p class='meta'>Snoozed until {_ts(snoozed_until)}</p>"
     choices = snooze_choices(row["severity"], rules)
     if not choices:
         return ""  # a zero cap: this severity cannot be snoozed
     options = "".join(f"<option value='{h}'>{h}h</option>" for h in choices)
     return (
-        "<form method='post' action='/snooze' style='margin:6px 0 0'>"
+        "<form method='post' action='/snooze' class='ctl-row'>"
         f"<input type='hidden' name='alert_id' value=\"{int(row['id'])}\">"
-        f"<select class='snoozesel' name='hours'>{options}</select>"
-        "<button class='ackbtn' type='submit'>Snooze</button></form>"
+        f"<select class='input input--inline' name='hours' aria-label='Snooze for'>{options}</select>"
+        "<button class='btn btn--sm btn--tertiary' type='submit'>Snooze</button></form>"
     )
 
 
@@ -701,13 +923,13 @@ def _expected_control(row, marked: bool) -> str:
     Shown once. A second click tells us nothing new, and the row saying
     "you marked this" is the answer to the question the button asks."""
     if marked:
-        return "<div class='snoozed'>You marked this as your own activity</div>"
+        return "<p class='meta'>You marked this as your own activity</p>"
     return (
-        "<form method='post' action='/expected' style='margin:6px 0 0'>"
+        "<form method='post' action='/expected' class='ctl-row'>"
         f"<input type='hidden' name='alert_id' value=\"{int(row['id'])}\">"
-        "<input class='snoozesel' type='text' name='note' maxlength='500' "
-        "placeholder='Optional note'>"
-        "<button class='ackbtn' type='submit'>That was me</button></form>"
+        "<input class='input input--inline' type='text' name='note' maxlength='500' "
+        "placeholder='Optional note' aria-label='Optional note'>"
+        "<button class='btn btn--sm btn--tertiary' type='submit'>That was me</button></form>"
     )
 
 
@@ -724,55 +946,79 @@ def _ack_cell(row, snoozed_until: str | None = None, rules=None,
         who = html.escape(row["acknowledged_by"] or "—")
         elapsed = _time_to_acknowledge(row["sent_at"], row["acknowledged_at"])
         suffix = f" · {elapsed}" if elapsed else ""
-        return (f"<td class='ack-yes'>✓ {who}{suffix}"
-                f"{_expected_control(row, marked)}</td>")
+        return (f"<div class='ack-yes'>✓ Acknowledged by {who}{suffix}</div>"
+                f"{_expected_control(row, marked)}")
     return (
-        "<td class='ack-no'><form method='post' action='/acknowledge' style='margin:0'>"
+        "<div class='ctl-row'><form method='post' action='/acknowledge' style='margin:0'>"
         f"<input type='hidden' name='alert_id' value=\"{int(row['id'])}\">"
-        "<button class='ackbtn' type='submit'>Acknowledge</button></form>"
+        "<button class='btn btn--secondary' type='submit'>Acknowledge</button></form></div>"
         f"{_snooze_control(row, snoozed_until, rules)}"
-        f"{_expected_control(row, marked)}</td>"
+        f"{_expected_control(row, marked)}"
+    )
+
+
+_ICON_DANGER = (
+    '<svg class="notice__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+    '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>'
+    '<path d="M12 7v6M12 16.5v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+)
+_ICON_INFO = (
+    '<svg class="notice__icon" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+    '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>'
+    '<path d="M12 11v5M12 8v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>'
+)
+_ICON_SHIELD = (
+    '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+    '<path d="M12 3l8 3v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-3z" '
+    'stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/>'
+    '<path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" '
+    'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+)
+
+
+def _auth_brand() -> str:
+    return (
+        '<div class="auth-card__brand">' + MARK_SVG
+        + '<div class="brand__name">Minas AI <span>Guardian</span></div></div>'
     )
 
 
 def _render_login(error: str | None = None) -> str:
-    banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
+    invalid = ' aria-invalid="true"' if error else ""
+    notice = ""
+    if error:
+        notice = (
+            '<div class="notice notice--danger" role="alert">' + _ICON_DANGER
+            + f'<div><p class="notice__title">{html.escape(error)}</p>'
+            '<p class="notice__body">Please try again. Caps Lock may be on. If you have '
+            'forgotten your password, reset it rather than retrying.</p></div></div>'
+        )
     body = (
-        '<div class="loginbox">' + banner
-        + '<div class="card"><div class="card-head"><h2>Member sign-in</h2></div>'
-        '<form class="addf" method="post" action="/login">'
-        '<div class="fld"><label>Email</label>'
-        '<input type="email" name="email" required autocomplete="username"></div>'
-        '<div class="fld" style="margin-top:14px"><label>Password</label>'
-        '<input type="password" name="password" required autocomplete="current-password"></div>'
-        '<div class="actions"><button class="submit" type="submit">Sign in</button>'
-        '<span class="hint">Your access is provided by the Minas team. '
-        '<a class="acctlink" href="/forgot">Forgotten your password?</a></span></div>'
-        "</form></div></div>"
+        '<section class="auth-card" aria-labelledby="signin-title">' + _auth_brand()
+        + '<h1 id="signin-title">Sign in</h1>'
+        '<p class="muted" style="margin:.5rem 0 1.5rem">Monitor your exchange accounts. '
+        "Read-only access only.</p>" + notice
+        + '<form class="form" method="post" action="/login" style="margin-top:1.5rem">'
+        '<div class="field"><label for="email">Email address</label>'
+        f'<input class="input" type="email" id="email" name="email" required '
+        f'autocomplete="username" inputmode="email"{invalid}></div>'
+        '<div class="field"><div class="field--row"><label for="password">Password</label>'
+        '<a href="/forgot" class="btn btn--tertiary" style="padding-inline:var(--space-2)">'
+        "Forgot password?</a></div>"
+        f'<input class="input" type="password" id="password" name="password" required '
+        f'autocomplete="current-password"{invalid}>'
+        '<span class="hint">Never enter your password after following a link from an '
+        "email. Open the portal address you were given directly.</span></div>"
+        '<button type="submit" class="btn btn--primary btn--block">Sign in</button>'
+        "</form>"
+        '<div class="phish" style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border)">'
+        + _ICON_SHIELD
+        + '<p><strong style="color:var(--text)">Minas will never email you a link asking '
+        "for your API key.</strong> Always open this site and sign in to check your "
+        "accounts — don't click through from email or messages.</p></div>"
+        "</section>"
     )
-    return _page(body)
-
-
-def _member_nav(email: str, *, home_link: bool = False) -> str:
-    """The signed-in member's navigation, in one place.
-
-    It was duplicated across three pages, which is how a new page ends up
-    reachable from some of them and not others - the reader who most needs
-    "what are the limits of this thing" is the one who arrived on a page that
-    does not link to it.
-    """
-    return (
-        f'<span class="live">{html.escape(email)}</span>'
-        + ('<a class="live" href="/">Overview</a>' if home_link else "")
-        + '<a class="live" href="/status">System status</a>'
-          '<a class="live" href="/alerts">Alert history</a>'
-          '<a class="live" href="/activity">Account activity</a>'
-          '<a class="live" href="/limits">What we can and cannot do</a>'
-          '<a class="live" href="/security">Security</a>'
-          '<form method="post" action="/logout" style="margin:0">'
-          '<button class="live" type="submit" style="cursor:pointer;font-family:inherit">'
-          "Sign out</button></form>"
-    )
+    return _page(body, title="Sign in — Minas AI Guardian", shell=True)
 
 
 def _render_home(db: Database, email: str, rules=None) -> str:
@@ -792,39 +1038,45 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     snoozed = active_snoozes_for_accounts(db, ids)
     marked = marked_alert_ids(db, ids)
 
-    account_rows = "".join(
-        f"<tr><td><a class='acctlink' href='/account?id={r['id']}'>{html.escape(r['label'])} ›</a></td>"
-        f"<td class='mono'>{html.escape(r['exchange'] or 'bitget')}</td>"
-        f"<td class='mono'>{_account_type_label(r['topology'])}</td>"
-        f"<td>{_status_pill(r['status'])}</td>"
-        f"<td class='mono'>{_ts(r['last_success_at'])}</td></tr>"
+    account_cards = "".join(
+        '<article class="acct"><div class="acct__head"><div>'
+        f"<p class=\"acct__label\"><a class='acctlink' href='/account?id={r['id']}'>"
+        f"{html.escape(r['label'])} ›</a></p>"
+        f"<p class=\"acct__exchange\">{html.escape((r['exchange'] or 'bitget').title())}"
+        f" · {_account_type_label(r['topology'])}</p>"
+        f"</div>{_status_pill(r['status'])}</div>"
+        '<dl class="kv"><div class="kv__row"><dt>Last successful check</dt>'
+        f"<dd>{_ts(r['last_success_at'], 'Never')}</dd></div>"
+        '<div class="kv__row"><dt>Key permissions</dt><dd>Read-only</dd></div></dl>'
+        "</article>"
         for r in accounts
-    ) or "<tr><td colspan=5 class='empty'>No accounts yet — contact the Minas team</td></tr>"
+    ) or '<p class="empty">No accounts yet — contact the Minas team.</p>'
 
-    alert_rows = "".join(
-        f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
-        f"<td class='lbl'>{html.escape(r['label'])}</td>"
-        f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
-        f"<td class='rule'><a class='acctlink' href='/incident?id={int(r['id'])}'>"
-        f"{html.escape(r['rule'])} ›</a></td>"
-        f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules, int(r['id']) in marked)}</tr>"
+    alert_items = "".join(
+        '<div class="alert-item"><div class="alert-item__head">'
+        f"{_sev_badge(r['severity'])}"
+        f"<a class='acctlink' href='/incident?id={int(r['id'])}'>{html.escape(r['rule'])} ›</a>"
+        f"<span class='meta'>{html.escape(r['label'])} · {_ts(r['sent_at'])}</span></div>"
+        f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules, int(r['id']) in marked)}"
+        "</div>"
         for r in alerts
-    ) or "<tr><td colspan=5 class='empty'>No alerts — all quiet</td></tr>"
+    ) or '<p class="empty">No alerts — all quiet.</p>'
 
     body = (
-        '<section><div class="card"><div class="card-head"><h2>Your accounts</h2>'
-        f'<span class="count">{len(accounts)} monitored</span></div>'
-        "<table><thead><tr><th>Account</th><th>Exchange</th><th>Account type</th>"
-        "<th>Status</th><th>Last check</th></tr></thead>"
-        f"<tbody>{account_rows}</tbody></table></div></section>"
-        '<section><div class="card"><div class="card-head"><h2>Your recent alerts</h2>'
-        '<span class="count">latest 30 · <a class="acctlink" href="/alerts">full history ›</a></span></div>'
-        "<table><thead><tr><th>Time</th><th>Account</th><th>Severity</th><th>Rule</th>"
-        "<th>Acknowledged</th></tr></thead>"
-        f"<tbody>{alert_rows}</tbody></table></div></section>"
+        '<section aria-labelledby="accounts-title"><div class="page-head">'
+        '<h1 id="accounts-title">My accounts</h1>'
+        f'<p class="muted">{len(accounts)} exchange account'
+        f'{"s" if len(accounts) != 1 else ""} connected. Read-only keys only.</p></div>'
+        '<div class="primary-row no-print">'
+        '<a href="/status" class="btn btn--primary">Am I being watched?</a></div>'
+        '<div style="height:var(--space-5)"></div>'
+        f'<div>{account_cards}</div></section>'
+        '<section class="panel" aria-labelledby="alerts-title">'
+        '<h2 id="alerts-title">Your recent alerts</h2>'
+        '<p class="count">latest 30 · <a href="/alerts">full history ›</a></p>'
+        f"{alert_items}</section>"
     )
-    nav = _member_nav(email)
-    return _page(body, nav)
+    return _page(body, email, "/")
 
 
 def _render_member_account(db: Database, email: str, account_id: int, rules=None) -> str | None:
@@ -860,68 +1112,77 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
             fresh = (now - datetime.fromisoformat(last_ok)).total_seconds() < 300
         except ValueError:
             fresh = False
-    live_check = (
-        '<div class="check"><span class="ic ok">✓</span><span class="txt"><b>Monitoring live</b> — '
-        "polled continuously for fund movement &amp; config drift</span>"
-        f'<span class="meta">last check {_ts(last_ok)}</span></div>'
-        if fresh and acct["status"] == "active" else
-        '<div class="check"><span class="ic warn">!</span><span class="txt"><b>This account is NOT being watched</b> — '
-        "movements on it are not currently being detected. Minas has been alerted and is "
-        "restoring access; if we asked you for a new API key, that is what this is."
-        "</span></div>"
-    )
+    def _tick(kind: str) -> str:
+        path = ('M8 12.5l2.5 2.5L16 9' if kind == 'yes' else 'M9 9l6 6M15 9l-6 6')
+        return (f'<svg class="tick tick--{kind}" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+                '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>'
+                f'<path d="{path}" stroke="currentColor" stroke-width="2" '
+                'stroke-linecap="round" stroke-linejoin="round"/></svg>')
+
+    if fresh and acct["status"] == "active":
+        live_check = (
+            "<li>" + _tick("yes") + "<div><strong>Monitoring live.</strong>"
+            f"<span>Polled continuously for fund movement and config drift — last check {_ts(last_ok)}.</span></div></li>"
+        )
+    else:
+        live_check = (
+            "<li>" + _tick("no") + "<div><strong>This account is NOT being watched.</strong>"
+            "<span>Movements on it are not currently being detected. Minas has been alerted and is "
+            "restoring access; if we asked you for a new API key, that is what this is.</span></div></li>"
+        )
     posture = (
-        '<div class="card"><div class="card-head"><h2>Security posture</h2></div><div class="checks">'
-        '<div class="check"><span class="ic ok">✓</span><span class="txt"><b>Read-only access</b> — '
-        "Minas holds a read-only key; it cannot trade, withdraw, or move your funds</span></div>"
+        '<section class="panel" aria-labelledby="posture-title"><h2 id="posture-title">Security posture</h2>'
+        '<ul class="feature-list">'
+        "<li>" + _tick("yes") + "<div><strong>Read-only access.</strong>"
+        "<span>Minas holds a read-only key; it cannot trade, withdraw, or move your funds.</span></div></li>"
         + live_check +
-        '<div class="check"><span class="ic ok">✓</span><span class="txt"><b>Credentials encrypted</b> — '
-        "your API key is encrypted at rest and never displayed</span></div>"
+        "<li>" + _tick("yes") + "<div><strong>Credentials encrypted.</strong>"
+        "<span>Your API key is encrypted at rest and never displayed.</span></div></li>"
         # Offered on every account rather than only on unwatched ones. The
         # customer who needs it most has just revoked every key in a panic, and
         # asking them to first prove the account looks broken - on a page whose
         # freshness check may not have caught up yet - is a hurdle at the worst
         # possible moment (#69).
-        '<div class="check"><span class="ic ok">✓</span><span class="txt"><b>Revoked our key?</b> — '
-        f'<a class="acctlink" href="/key?id={int(account_id)}">Replace the monitoring key ›</a> '
-        "and monitoring restarts within a minute</span></div>"
-        "</div></div>"
+        "<li>" + _tick("yes") + "<div><strong>Revoked our key?</strong>"
+        f'<span><a class="acctlink" href="/key?id={int(account_id)}">Replace the monitoring key ›</a> '
+        "and monitoring restarts within a minute.</span></div></li>"
+        "</ul></section>"
     )
 
-    event_rows = "".join(
-        f"<tr><td class='mono'>{_ts(r['created_at'])}</td>"
-        f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
-        f"<td class='rule'>{html.escape(r['event_type'])}</td></tr>"
+    event_items = "".join(
+        '<div class="alert-item"><div class="alert-item__head">'
+        f"{_sev_badge(r['severity'])}"
+        f"<span>{html.escape(r['event_type'])}</span>"
+        f"<span class='meta'>{_ts(r['created_at'])}</span></div></div>"
         for r in events
-    ) or "<tr><td colspan=3 class='empty'>No events — all quiet</td></tr>"
-    alert_rows = "".join(
-        f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
-        f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
-        f"<td class='rule'><a class='acctlink' href='/incident?id={int(r['id'])}'>"
-        f"{html.escape(r['rule'])} ›</a></td>"
-        f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules, int(r['id']) in marked)}</tr>"
+    ) or '<p class="empty">No events — all quiet.</p>'
+    alert_items = "".join(
+        '<div class="alert-item"><div class="alert-item__head">'
+        f"{_sev_badge(r['severity'])}"
+        f"<a class='acctlink' href='/incident?id={int(r['id'])}'>{html.escape(r['rule'])} ›</a>"
+        f"<span class='meta'>{_ts(r['sent_at'])}</span></div>"
+        f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules, int(r['id']) in marked)}"
+        "</div>"
         for r in alerts
-    ) or "<tr><td colspan=4 class='empty'>No alerts — all quiet</td></tr>"
+    ) or '<p class="empty">No alerts — all quiet.</p>'
 
     body = (
-        '<section><div class="cols">'
-        '<div class="card"><div class="card-head"><h2>Account</h2></div><dl class="dl">'
-        f"<dt>Label</dt><dd>{html.escape(acct['label'])}</dd>"
-        f"<dt>Exchange</dt><dd>{html.escape(acct['exchange'] or 'bitget')}</dd>"
-        f"<dt>Account type</dt><dd>{_account_type_label(acct['topology'])}</dd>"
-        f"<dt>Status</dt><dd>{_status_pill(acct['status'])}</dd>"
-        f"<dt>Monitored since</dt><dd>{_ts(acct['onboarded_at'])}</dd>"
-        f"<dt>Last check</dt><dd>{_ts(last_ok)}</dd>"
-        "</dl></div>"
+        '<article class="acct"><div class="acct__head"><div>'
+        f'<p class="acct__label">{html.escape(acct["label"])}</p>'
+        f'<p class="acct__exchange">{html.escape((acct["exchange"] or "bitget").title())}'
+        f" · {_account_type_label(acct['topology'])}</p>"
+        f"</div>{_status_pill(acct['status'])}</div>"
+        '<dl class="kv">'
+        f'<div class="kv__row"><dt>Monitored since</dt><dd>{_ts(acct["onboarded_at"])}</dd></div>'
+        f'<div class="kv__row"><dt>Last successful check</dt><dd>{_ts(last_ok, "Never")}</dd></div>'
+        "</dl></article>"
         + posture +
-        "</div></section>"
-        '<section><div class="card"><div class="card-head"><h2>Events</h2><span class="count">latest 20</span></div>'
-        f"<table><thead><tr><th>Time</th><th>Sev</th><th>Event</th></tr></thead><tbody>{event_rows}</tbody></table></div></section>"
-        '<section><div class="card"><div class="card-head"><h2>Alerts</h2><span class="count">latest 20</span></div>'
-        f"<table><thead><tr><th>Time</th><th>Sev</th><th>Rule</th><th>Reviewed</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
+        '<section class="panel" aria-labelledby="events-title"><h2 id="events-title">Events</h2>'
+        f'<p class="count">latest 20</p>{event_items}</section>'
+        '<section class="panel" aria-labelledby="acct-alerts-title"><h2 id="acct-alerts-title">Alerts</h2>'
+        f'<p class="count">latest 20</p>{alert_items}</section>'
     )
-    nav = '<a class="live" href="/">← Your accounts</a>'
-    return _page(body, nav)
+    return _page(body, email, "/")
 
 
 # --- account activity (G-32, #36) --------------------------------------------
@@ -1111,15 +1372,32 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
     }
 
 
+# The three states of the one question this page answers, in the mockup's
+# structure (design/portal/status.html): an eyebrow with an icon, a
+# one-sentence answer in display type, one clarifying line.
+_EYE_OK = ('<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+           '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>'
+           '<path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" '
+           'stroke-linecap="round" stroke-linejoin="round"/></svg>')
+_EYE_WARN = ('<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+             '<path d="M12 3l9 16H3L12 3z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>'
+             '<path d="M12 10v5M12 17.5v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>')
+_EYE_DANGER = ('<svg viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+               '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>'
+               '<path d="M12 7v6M12 16.5v.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>')
+
 _OVERALL_COPY = {
-    "watching": ("ok", "✓", "Monitoring is running normally",
-                 "Every one of your accounts was checked within the last few minutes."),
-    "degraded": ("warn", "!", "Some accounts are not being watched",
+    "watching": ("state--ok", _EYE_OK, "Monitoring normal",
+                 "You're being watched.",
+                 "Every connected account was checked within the last few minutes."),
+    "degraded": ("state--warn", _EYE_WARN, "Partially watched",
+                 "Some of your accounts are not being watched.",
                  "Monitoring is running, but not every account is being checked. "
-                 "The ones affected are listed below."),
-    "not_watching": ("warn", "!", "Your accounts are NOT being watched",
+                 "The ones affected are marked below."),
+    "not_watching": ("state--danger", _EYE_DANGER, "Not being watched",
+                     "Your accounts are NOT being watched.",
                      "Movements on them are not currently being detected. "
-                     "Minas has been alerted; what to do is listed below."),
+                     "Minas has been alerted; what each account needs is marked below."),
 }
 
 
@@ -1140,53 +1418,71 @@ def _render_status(db: Database, email: str, rules=None) -> str:
     page is evidence and not an alarm.
     """
     status = member_status(db, email, rules)
-    tone, icon, headline, sub = _OVERALL_COPY[status["overall"]]
+    state_cls, eye_icon, eyebrow, answer, detail = _OVERALL_COPY[status["overall"]]
+    generated = datetime.now(timezone.utc).strftime("%d %B %Y, %H:%M UTC")
 
-    rows = "".join(
-        "<tr><td class='lbl'>" + html.escape(a["label"]) + "</td>"
-        + ("<td><span class='pill sev-LOW'>watched</span></td>" if a["watched"]
-           else "<td><span class='pill sev-HIGH'>not watched</span></td>")
-        + f"<td class='mono'>{_ts(a['last_success_at'])}</td>"
-        + "<td>" + (html.escape(a["reason"]) if a["reason"] else "—") + "</td></tr>"
+    masthead = (
+        '<div class="print-masthead">'
+        '<p class="print-masthead__title">Minas AI Guardian — Monitoring status report</p>'
+        f'<p class="print-masthead__sub">Account: {html.escape(email)}</p>'
+        f'<p class="print-masthead__sub">Generated: {generated}</p>'
+        '<p class="print-masthead__sub">This report reflects the monitoring status at the '
+        "time shown. It does not prove funds are safe and does not record transactions.</p></div>"
+    )
+
+    def _watch_badge(a) -> str:
+        if a["watched"]:
+            return ('<span class="badge badge--ok"><span class="dot" aria-hidden="true"></span>'
+                    "Watched</span>")
+        return ('<span class="badge badge--danger"><span class="dot" aria-hidden="true"></span>'
+                "Not watched</span>")
+
+    def _problem(a) -> str:
+        if not a["reason"]:
+            return ""
+        fixable = "key is being rejected" in a["reason"]
+        if fixable:
+            fix = ('<p class="problem__fix"><span class="fix-tag">You can fix this</span>'
+                   f'<a href="/key?id={int(a["account_id"])}" class="btn btn--secondary btn--sm">'
+                   "Replace API key</a></p>")
+        else:
+            fix = ('<p class="problem__fix"><span class="fix-tag fix-tag--muted">'
+                   "We're on it — contact the Minas team if it persists</span></p>")
+        return ('<div class="problem"><p class="problem__title">'
+                + html.escape(a["reason"]) + "</p>" + fix + "</div>")
+
+    cards = "".join(
+        '<article class="acct"><div class="acct__head"><div>'
+        f'<p class="acct__label">{html.escape(a["label"])}</p></div>{_watch_badge(a)}</div>'
+        '<dl class="kv"><div class="kv__row"><dt>Last successful check</dt>'
+        f"<dd{'' if a['watched'] else ' class=muted'}>{_ts(a['last_success_at'], 'Never')}</dd>"
+        "</div></dl>"
+        f"{_problem(a)}</article>"
         for a in status["accounts"]
-    ) or "<tr><td colspan=4 class='empty'>No accounts yet — contact the Minas team</td></tr>"
-
-    problems_html = ""
-    if status["problems"]:
-        items = "".join(
-            f'<div class="check"><span class="ic warn">!</span><span class="txt">'
-            f'<b>{html.escape(p["label"])}</b> — {html.escape(p["reason"] or "not being watched")}'
-            + (f' <a class="acctlink" href="/key?id={p["account_id"]}">Replace the monitoring key ›</a>'
-               if p["reason"] and "key is being rejected" in p["reason"] else "")
-            + "</span></div>"
-            for p in status["problems"]
-        )
-        problems_html = (
-            '<section><div class="card"><div class="card-head"><h2>What is wrong right now</h2>'
-            f'<span class="count">{len(status["problems"])} to look at</span></div>'
-            f'<div class="checks">{items}</div></div></section>'
-        )
+    ) or '<p class="empty">No accounts yet — contact the Minas team.</p>'
 
     body = (
-        '<section><div class="card"><div class="card-head"><h2>System status</h2></div>'
-        f'<div class="checks"><div class="check"><span class="ic {tone}">{icon}</span>'
-        f'<span class="txt"><b>{headline}</b> — {sub}</span></div></div></div></section>'
-        + problems_html +
-        '<section><div class="card"><div class="card-head"><h2>Your accounts</h2>'
-        f'<span class="count">checked every {status["stale_after_seconds"] // 60 or 1} min or better</span></div>'
-        "<table><thead><tr><th>Account</th><th>Watched</th><th>Last successful check</th>"
-        "<th>Note</th></tr></thead>"
-        f"<tbody>{rows}</tbody></table></div></section>"
-        '<section><div class="card"><div class="card-head"><h2>What this page cannot tell you</h2></div>'
-        '<div class="checks"><div class="check"><span class="ic ok">i</span><span class="txt">'
-        "This page is served by the Guardian itself, so if it loaded, the Guardian is running. "
-        "It cannot tell you the opposite: if the Guardian were completely down this page would "
-        "not load at all, and that looks the same as any other connection problem. Treat it as "
-        "evidence that monitoring is working, not as the alarm that would tell you it stopped."
-        "</span></div></div></div></section>"
+        masthead
+        + f'<div class="state {state_cls}" role="status">'
+        f'<span class="state__eyebrow">{eye_icon}{eyebrow}</span>'
+        f'<p class="state__answer">{answer}</p>'
+        f'<p class="state__detail">{detail}</p></div>'
+        '<div class="primary-row no-print">'
+        '<a href="/status" class="btn btn--primary">Check again now</a>'
+        '<a href="/" class="btn btn--tertiary">Manage accounts</a></div>'
+        '<div style="height:var(--space-5)"></div>'
+        + cards +
+        '<div class="notice notice--info no-print" style="margin-top:var(--space-6)">' + _ICON_INFO
+        + '<div><p class="notice__title">What this page cannot tell you.</p>'
+        '<p class="notice__body">This page is served by the Guardian itself, so if it loaded, '
+        "the Guardian is running. It cannot tell you the opposite: if the Guardian were "
+        "completely down this page would not load at all, and that looks the same as any other "
+        "connection problem. Treat it as evidence that monitoring is working, not as the alarm "
+        "that would tell you it stopped.</p></div></div>"
     )
-    nav = _member_nav(email, home_link=True)
-    return _page(body, nav)
+    return _page(body, email, "/status", title="Am I being watched? — Minas AI Guardian")
+
+
 
 
 def retention_summary(rules=None) -> list[tuple[str, str]]:
@@ -1255,89 +1551,86 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
         else int(default_for("polling", "slow_loop_seconds") or 600)
     )
 
-    def _check(icon_class, icon, title, text):
-        return (f'<div class="check"><span class="ic {icon_class}">{icon}</span>'
-                f"<span class=\"txt\"><b>{title}</b> — {text}</span></div>")
+    def _feat(kind, title, text):
+        path = ("M8 12.5l2.5 2.5L16 9" if kind == "yes" else "M9 9l6 6M15 9l-6 6")
+        return (f'<li><svg class="tick tick--{kind}" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+                '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>'
+                f'<path d="{path}" stroke="currentColor" stroke-width="2" '
+                'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+                f"<div><strong>{title}</strong><span>{text}</span></div></li>")
 
     does = "".join([
-        _check("ok", "✓", "It watches for money leaving",
-               "withdrawals, transfers, and balance drops that no trade explains."),
-        _check("ok", "✓", "It watches your account's security settings",
-               "API permissions and IP allowlists changing are how a takeover starts."),
-        _check("ok", "✓", "It tells you, on the channels you have configured",
-               "and tells a second contact, and escalates if nobody acknowledges."),
-        _check("ok", "✓", "It keeps the record",
-               "every alert and every check is stored, so you can reconstruct what "
-               "happened and when afterwards."),
+        _feat("yes", "It watches for money leaving.",
+              "Withdrawals, transfers, and balance drops that no trade explains."),
+        _feat("yes", "It watches your account's security settings.",
+              "API permissions and IP allowlists changing are how a takeover starts."),
+        _feat("yes", "It tells you, on the channels you have configured.",
+              "And tells a second contact, and escalates if nobody acknowledges."),
+        _feat("yes", "It keeps the record.",
+              "Every alert and every check is stored, so you can reconstruct what "
+              "happened and when afterwards."),
     ])
 
     cannot = "".join([
-        _check("warn", "!", "It cannot stop an attack",
-               "This is the important one. The Guardian has no power to freeze, "
-               "cancel, block or reverse anything on your exchange account. If "
-               "somebody is taking your funds, it tells you they are taking your "
-               "funds. Acting on that is yours to do, and the speed you do it at "
-               "is what decides the outcome."),
-        _check("warn", "!", "It cannot see what the exchange does not report",
-               "Every check reads the exchange's own API. If the exchange is slow "
-               "to show a withdrawal, omits a reference, or is unreachable, the "
-               "Guardian is that much later or that much blinder. It says so "
-               "rather than guessing — see "
-               "<a class=\"acctlink\" href=\"/status\">System status</a>."),
-        _check("warn", "!", "It cannot recover money that has gone",
-               "There is no reversal. The Guardian shortens the time between a "
-               "theft starting and you knowing about it. That is the whole "
-               "product."),
+        _feat("no", "It cannot see what the exchange does not report.",
+              "Every check reads the exchange's own API. If the exchange is slow "
+              "to show a withdrawal, omits a reference, or is unreachable, the "
+              "Guardian is that much later or that much blinder. It says so "
+              'rather than guessing — see <a class="acctlink" href="/status">Am I being watched?</a>.'),
+        _feat("no", "It cannot recover money that has gone.",
+              "There is no reversal. The Guardian shortens the time between a "
+              "theft starting and you knowing about it. That is the whole product."),
     ])
 
-    why = (
-        _check("ok", "✓", "The key we hold is read-only, on purpose",
-               "It cannot trade, withdraw, or move anything. That means a "
-               "compromise of Minas itself still cannot cost you money — we are "
-               "not a way in to your funds. "
-               "<b>The cost of that guarantee is this page:</b> a key that cannot "
-               "move your money also cannot be used to rescue it. We chose the "
-               "side that cannot hurt you.")
-    )
-
-    timing = (
-        _check("ok", "i", "How quickly you hear",
-               f"Your balances and recent movements are checked about every "
-               f"<b>{fast} seconds</b>; permissions and allowlists about every "
-               f"<b>{slow // 60} minutes</b>. An alert is sent as soon as a check "
-               "finds something, so in normal conditions you hear within a minute "
-               "or so of the exchange showing it. That is measured from when the "
-               "<i>exchange</i> reports it, not from when it happened — we cannot "
-               "be faster than the source we read.")
+    keeps = "".join(
+        f'<div class="kv__row"><dt>{html.escape(what)}</dt>'
+        f"<dd class=\"muted\">{html.escape(how_long)}</dd></div>"
+        for what, how_long in retention_summary(rules)
     )
 
     body = (
-        '<section><div class="card"><div class="card-head"><h2>What the Guardian does</h2></div>'
-        f'<div class="checks">{does}</div></div></section>'
-        '<section><div class="card"><div class="card-head"><h2>What it cannot do</h2>'
-        '<span class="count">read this one</span></div>'
-        f'<div class="checks">{cannot}</div></div></section>'
-        '<section><div class="card"><div class="card-head"><h2>Why it is built this way</h2></div>'
-        f'<div class="checks">{why}</div></div></section>'
-        '<section><div class="card"><div class="card-head"><h2>Timing, honestly</h2></div>'
-        f'<div class="checks">{timing}</div></div></section>'
-        '<section><div class="card"><div class="card-head"><h2>What we keep, and for how long</h2>'
-        '<span class="count">read from the running configuration</span></div>'
-        '<div class="checks">'
-        + "".join(
-            f'<div class="check"><span class="ic ok">i</span><span class="txt">'
-            f"<b>{html.escape(what)}</b> — {html.escape(how_long)}</span></div>"
-            for what, how_long in retention_summary(rules)
-        )
-        + '<div class="check"><span class="ic warn">!</span><span class="txt">'
-        "<b>These periods are our current practice, not yet reviewed policy.</b> "
-        "They are enforced automatically on the schedule shown, but a legal review "
-        "of retention obligations is still pending - if it changes these numbers, "
-        "this page changes with them, because it reads the same configuration the "
-        "deletion job runs on.</span></div>"
-        '</div></div></section>'
+        '<div class="page-head"><span class="eyebrow">Read this first</span>'
+        "<h1>What the Guardian can and cannot do</h1>"
+        '<p class="lead">A monitoring product, not a brake. Knowing the difference changes '
+        "how fast you act when an alert arrives.</p></div>"
+        '<div class="callout-danger" role="note">'
+        "<h2>Minas AI Guardian cannot stop an attack.</h2>"
+        "<p>It cannot freeze your account, cancel a transaction, or move funds. When you get "
+        "an alert, you and the exchange are the ones who can act — and seconds decide the "
+        "outcome.</p></div>"
+        '<section class="panel" aria-labelledby="does-title"><h2 id="does-title">What the Guardian does</h2>'
+        f'<ul class="feature-list">{does}</ul></section>'
+        '<section class="panel" aria-labelledby="cannot-title"><h2 id="cannot-title">What it cannot do</h2>'
+        f'<ul class="feature-list">{cannot}</ul></section>'
+        '<section class="panel" aria-labelledby="why-title"><h2 id="why-title">Why it is built this way</h2>'
+        '<div class="stack">'
+        "<p><strong>The key we hold is read-only, on purpose.</strong> It cannot trade, "
+        "withdraw, or move anything. That means a compromise of Minas itself still cannot "
+        "cost you money — we are not a way in to your funds. <strong>The cost of that "
+        "guarantee is this page:</strong> a key that cannot move your money also cannot be "
+        "used to rescue it. We chose the side that cannot hurt you.</p></div></section>"
+        '<section class="panel" aria-labelledby="timing-title"><h2 id="timing-title">Honest timing</h2>'
+        '<div class="stack">'
+        f"<p>Your balances and recent movements are checked about every <strong>{fast} "
+        f"seconds</strong>; permissions and allowlists about every <strong>{slow // 60} "
+        "minutes</strong>. An alert is sent as soon as a check finds something, so in normal "
+        "conditions you hear within a minute or so of the exchange showing it. That is "
+        "measured from when the <em>exchange</em> reports it, not from when it happened — we "
+        "cannot be faster than the source we read.</p></div></section>"
+        '<section class="panel" aria-labelledby="keeps-title"><h2 id="keeps-title">What we keep, and for how long</h2>'
+        '<p class="count">read from the running configuration</p>'
+        f'<dl class="kv">{keeps}</dl>'
+        '<div class="notice notice--info" style="margin-top:var(--space-4)">' + _ICON_INFO
+        + '<div><p class="notice__title">These periods are our current practice, not yet '
+        "reviewed policy.</p>"
+        '<p class="notice__body">They are enforced automatically on the schedule shown, but '
+        "a legal review of retention obligations is still pending — if it changes these "
+        "numbers, this page changes with them, because it reads the same configuration the "
+        "deletion job runs on.</p></div></div></section>"
     )
-    return _page(body, _member_nav(email, home_link=True))
+    return _page(body, email, "/limits", title="Limits — Minas AI Guardian")
+
+
 
 
 def _render_activity(db: Database, email: str) -> str:
@@ -1352,36 +1645,36 @@ def _render_activity(db: Database, email: str) -> str:
     accounts = member_accounts(db, email)
     rows = account_activity(db, [r["id"] for r in accounts])
 
-    def _actor_cell(actor) -> str:
+    def _actor(actor) -> str:
         if actor:
-            return f"<td>{html.escape(actor)}</td>"
+            return html.escape(actor)
         # An unattributed row is a finding, not a blank. The same reasoning as
         # the `actor` column on config_changes: a change nobody can be named
         # for is exactly what somebody reading this page is looking for.
-        return "<td class='ack-no'>not attributed</td>"
+        return '<span class="ack-no">not attributed</span>'
 
-    body_rows = "".join(
-        f"<tr><td class='mono'>{_ts(r['created_at'])}</td>"
-        f"<td class='lbl'>{html.escape(r['label'])}</td>"
-        f"<td>{html.escape(ADMIN_EVENT_LABELS.get(r['event_type'], r['event_type']))}</td>"
-        f"<td class='rule'>{_activity_detail(r['event_type'], _payload(r['payload_json']))}</td>"
-        f"{_actor_cell(r['actor'])}</tr>"
+    items = "".join(
+        '<div class="alert-item"><div class="alert-item__head">'
+        f"<strong>{html.escape(ADMIN_EVENT_LABELS.get(r['event_type'], r['event_type']))}</strong>"
+        f"<span class='meta'>{html.escape(r['label'])} · {_ts(r['created_at'])}</span></div>"
+        '<dl class="kv">'
+        f'<div class="kv__row"><dt>Detail</dt><dd class="muted">'
+        f"{_activity_detail(r['event_type'], _payload(r['payload_json']))}</dd></div>"
+        f'<div class="kv__row"><dt>Who</dt><dd>{_actor(r["actor"])}</dd></div>'
+        "</dl></div>"
         for r in rows
-    ) or ("<tr><td colspan=5 class='empty'>Nothing recorded — no changes to your "
-          "accounts or your login have been made since monitoring began</td></tr>")
+    ) or ('<p class="empty">Nothing recorded — no changes to your accounts or your '
+          "login have been made since monitoring began.</p>")
 
     body = (
-        '<section><div class="card"><div class="card-head"><h2>Who has touched your accounts</h2>'
-        f'<span class="count">{len(rows)} change(s)</span></div>'
-        '<div class="det"><span class="desc">Every change to how your accounts are watched or '
-        "reached, including the ones Minas makes. Detections are not listed here — they are on "
-        '<a class="acctlink" href="/alerts">your alert history</a>. This record is append-only: '
-        "entries are never edited or removed, by us or by anybody else.</span></div>"
-        "<table><thead><tr><th>Time</th><th>Account</th><th>Change</th><th>Detail</th>"
-        "<th>Who</th></tr></thead>"
-        f"<tbody>{body_rows}</tbody></table></div></section>"
+        '<div class="page-head"><h1>Who has touched your accounts</h1>'
+        f'<p class="muted">{len(rows)} change(s). Every change to how your accounts are '
+        "watched or reached, including the ones Minas makes. Detections are not listed here "
+        '— they are on <a href="/alerts">your alert history</a>. This record is append-only: '
+        "entries are never edited or removed, by us or by anybody else.</p></div>"
+        f'<section class="panel">{items}</section>'
     )
-    return _page(body, '<a class="live" href="/">← Your accounts</a>')
+    return _page(body, email, "/activity", title="Activity — Minas AI Guardian")
 
 
 def _payload(payload_json: str | None) -> dict:
@@ -1513,32 +1806,34 @@ def _render_alert_history(db: Database, email: str, qs) -> str:
     )
     query = _history_query_string(f)
     filter_form = (
-        '<form method="get" action="/alerts" class="addf" '
-        'style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end">'
-        f'<div class="fld"><label>Account</label><select name="account">{account_options}</select></div>'
-        f'<div class="fld"><label>Severity</label><select name="severity">{severity_options}</select></div>'
-        f'<div class="fld"><label>From</label><input type="date" name="from" value="{html.escape(f["from"])}"></div>'
-        f'<div class="fld"><label>To</label><input type="date" name="to" value="{html.escape(f["to"])}"></div>'
-        '<button class="submit" type="submit">Filter</button>'
-        f'<a class="acctlink" href="/alerts.csv{"?" + query if query else ""}">Download CSV ↓</a>'
+        '<form method="get" action="/alerts" class="ctl-row" style="align-items:flex-end">'
+        '<div class="field"><label for="f-account">Account</label>'
+        f'<select class="input input--inline" id="f-account" name="account">{account_options}</select></div>'
+        '<div class="field"><label for="f-severity">Severity</label>'
+        f'<select class="input input--inline" id="f-severity" name="severity">{severity_options}</select></div>'
+        '<div class="field"><label for="f-from">From</label>'
+        f'<input class="input input--inline" type="date" id="f-from" name="from" value="{html.escape(f["from"])}"></div>'
+        '<div class="field"><label for="f-to">To</label>'
+        f'<input class="input input--inline" type="date" id="f-to" name="to" value="{html.escape(f["to"])}"></div>'
+        '<button class="btn btn--secondary" type="submit">Filter</button>'
+        f'<a href="/alerts.csv{"?" + query if query else ""}">Download CSV ↓</a>'
         "</form>"
     )
 
     def _ack_text(r) -> str:
         if r["acknowledged_at"]:
             who = html.escape(r["acknowledged_by"] or "—")
-            return f"<td class='ack-yes'>✓ {who} · {_ts(r['acknowledged_at'])}</td>"
-        return "<td class='ack-no'>not acknowledged</td>"
+            return f"<span class='ack-yes'>✓ {who} · {_ts(r['acknowledged_at'])}</span>"
+        return "<span class='ack-no'>not acknowledged</span>"
 
     alert_rows = "".join(
-        f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
-        f"<td class='lbl'>{html.escape(r['label'])}</td>"
-        f"<td><span class='pill sev-{r['severity']}'>{r['severity']}</span></td>"
-        f"<td class='rule'><a class='acctlink' href='/incident?id={int(r['id'])}'>"
-        f"{html.escape(r['rule'])} ›</a></td>"
-        f"{_ack_text(r)}</tr>"
+        '<div class="alert-item"><div class="alert-item__head">'
+        f"{_sev_badge(r['severity'])}"
+        f"<a class='acctlink' href='/incident?id={int(r['id'])}'>{html.escape(r['rule'])} ›</a>"
+        f"<span class='meta'>{html.escape(r['label'])} · {_ts(r['sent_at'])}</span>"
+        f"{_ack_text(r)}</div></div>"
         for r in rows
-    ) or "<tr><td colspan=5 class='empty'>No alerts match</td></tr>"
+    ) or '<p class="empty">No alerts match.</p>' 
 
     def _page_link(p: int, label: str) -> str:
         amp = "&" if query else ""
@@ -1551,18 +1846,16 @@ def _render_alert_history(db: Database, email: str, qs) -> str:
             parts.append(_page_link(page - 1, "‹ Newer"))
         if page * _HISTORY_PAGE_SIZE < total:
             parts.append(_page_link(page + 1, "Older ›"))
-        pager = ("<div class='det'><span class='desc'>"
-                 + " · ".join(parts) + "</span></div>")
+        pager = "<p class='meta' style='margin-top:var(--space-3)'>" + " · ".join(parts) + "</p>"
 
     body = (
-        '<section><div class="card"><div class="card-head"><h2>Alert history</h2>'
-        f'<span class="count">{total} alert(s)</span></div>'
-        + filter_form +
-        "<table><thead><tr><th>Time</th><th>Account</th><th>Severity</th><th>Rule</th>"
-        "<th>Acknowledged</th></tr></thead>"
-        f"<tbody>{alert_rows}</tbody></table>{pager}</div></section>"
+        '<div class="page-head"><h1>Alert history</h1>'
+        f'<p class="muted">{total} alert(s). Acknowledgement is shown here as fact; the '
+        "buttons live on each alert's own page.</p></div>"
+        f'<section class="panel">{filter_form}</section>'
+        f'<section class="panel">{alert_rows}{pager}</section>'
     )
-    return _page(body, '<a class="live" href="/">← Your accounts</a>')
+    return _page(body, email, "/alerts", title="Alert history — Minas AI Guardian")
 
 
 def _csv_defang(value) -> str:
@@ -1710,64 +2003,112 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
             _ts(mark["created_at"]),
         ))
 
-    steps = "".join(
-        f'<div class="check"><span class="ic {cls}">{"✓" if cls == "ok" else "!"}</span>'
-        f'<span class="txt">{text}</span><span class="meta">{when}</span></div>'
+    timeline_html = "".join(
+        '<div class="alert-item"><div class="alert-item__head">'
+        + ('<span class="badge badge--ok"><span class="dot" aria-hidden="true"></span>Done</span>'
+           if cls == "ok" else
+           '<span class="badge badge--warn"><span class="dot" aria-hidden="true"></span>Attention</span>')
+        + f"<span class='meta'>{when}</span></div>"
+        f"<p class='muted'>{text}</p></div>"
         for cls, text, when in timeline
     )
 
-    def _balance_rows(rows, when_label):
+    def _balance_kv(rows, when_label):
         if not rows:
-            return f"<tr><td colspan=3 class='empty'>No snapshot {when_label} this alert</td></tr>"
-        return "".join(
-            f"<tr><td class='lbl'>{html.escape(r['coin'])}</td>"
-            f"<td class='mono'>{html.escape(str(r['quantity']))}</td>"
-            f"<td class='mono'>{_ts(r['snapshot_at'])}</td></tr>"
+            return f'<p class="empty">No snapshot {when_label} this alert.</p>'
+        return '<dl class="kv">' + "".join(
+            f'<div class="kv__row"><dt>{html.escape(r["coin"])}</dt>'
+            f"<dd><span class='mono'>{html.escape(str(r['quantity']))}</span> "
+            f"<span class='meta'>{_ts(r['snapshot_at'])}</span></dd></div>"
             for r in rows
+        ) + "</dl>"
+
+    evidence_kv = '<dl class="kv">' + ("".join(
+        f'<div class="kv__row"><dt>{html.escape(str(k))}</dt>'
+        f"<dd class=\"mono\">{html.escape(str(v))}</dd></div>"
+        for k, v in sorted(evidence.items())
+    ) or '<div class="kv__row"><dt>Evidence</dt><dd class="muted">No structured evidence recorded</dd></div>') + "</dl>"
+
+    # "What to do now": the owner's copy, from design/portal/alert.html —
+    # decision 9's wording, answered by the owner's own design pass.
+    todo = (
+        '<section aria-labelledby="steps-title"><h2 id="steps-title">What to do now</h2>'
+        '<p class="muted" style="margin-top:.5rem">Do these in order. Don\'t stop to '
+        "investigate fully before securing the account.</p>"
+        '<ol class="steps">'
+        "<li><div><strong>Open the exchange yourself.</strong>"
+        "<span>Type the exchange's URL into your browser or use their official app. Do not "
+        "click any link in an email or message about this alert.</span></div></li>"
+        "<li><div><strong>Disable or delete the API keys you don't recognise.</strong>"
+        "<span>In your exchange's API settings, revoke anything unfamiliar. Minas's own key "
+        "is read-only and cannot move funds — but revoke it too if in doubt; you can issue "
+        "a fresh one later.</span></div></li>"
+        "<li><div><strong>Secure your login.</strong>"
+        "<span>Change your password and confirm two-factor authentication is on. If 2FA was "
+        "changed, contact the exchange to lock the account immediately.</span></div></li>"
+        "<li><div><strong>Check withdrawals and addresses.</strong>"
+        "<span>Review recent and pending withdrawals. Remove any address you don't recognise "
+        "and cancel anything pending if the exchange allows it.</span></div></li>"
+        "<li><div><strong>Contact the exchange directly.</strong>"
+        "<span>Ask them to freeze or restrict withdrawals while you secure the account. They "
+        "are the only ones who can stop an outflow in progress.</span></div></li>"
+        "<li><div><strong>Acknowledge this alert below.</strong>"
+        "<span>Acknowledging tells us you've seen it and stops repeat notifications. It does "
+        "not stop anything on the exchange — that's step five.</span></div></li>"
+        "</ol></section>"
+    )
+
+    unack = not alert["acknowledged_at"]
+    if unack:
+        actionbar = (
+            '<div class="actionbar no-print"><div class="container actionbar__inner">'
+            '<p class="actionbar__note"><strong>Acknowledge doesn\'t stop the attack.</strong> '
+            "It only marks this alert as seen.</p>"
+            '<form method="post" action="/acknowledge">'
+            f'<input type="hidden" name="alert_id" value="{int(alert["id"])}">'
+            '<button type="submit" class="btn btn--primary btn--block">Acknowledge alert</button>'
+            "</form></div></div>"
+        )
+    else:
+        actionbar = (
+            '<div class="actionbar no-print"><div class="container actionbar__inner">'
+            f'<p class="actionbar__note">Acknowledged by '
+            f"{html.escape(alert['acknowledged_by'] or 'unknown')} at {_ts(alert['acknowledged_at'])}.</p>"
+            "</div></div>"
         )
 
-    evidence_rows = "".join(
-        f"<tr><td class='lbl'>{html.escape(str(k))}</td>"
-        f"<td class='mono'>{html.escape(str(v))}</td></tr>"
-        for k, v in sorted(evidence.items())
-    ) or "<tr><td colspan=2 class='empty'>No structured evidence recorded</td></tr>"
-
     body = (
-        '<section><div class="card"><div class="card-head">'
-        f'<h2>Incident #{int(alert["id"])} — {html.escape(alert["rule"])}</h2>'
-        f'<span class="count"><span class="pill sev-{alert["severity"]}">{alert["severity"]}</span>'
-        "</span></div>"
-        '<dl class="dl">'
-        f"<dt>Account</dt><dd>{html.escape(alert['label'])}</dd>"
-        f"<dt>Exchange</dt><dd>{html.escape(alert['exchange'] or 'bitget')}</dd>"
-        f"<dt>Detected at</dt><dd>{_ts(alert['sent_at'])}</dd>"
-        f"<dt>Confidence</dt><dd>{html.escape(alert['confidence'] or '')}</dd>"
-        f"<dt>What we saw</dt><dd>{html.escape(alert['message'])}</dd>"
-        "</dl></div></section>"
-
-        '<section><div class="card"><div class="card-head"><h2>Timeline</h2>'
-        '<span class="count">detection → notification → acknowledgement</span></div>'
-        f'<div class="checks">{steps}</div></div></section>'
-
-        '<section><div class="cols">'
-        '<div class="card"><div class="card-head"><h2>Balances before</h2></div>'
-        "<table><thead><tr><th>Coin</th><th>Quantity</th><th>Snapshot</th></tr></thead>"
-        f"<tbody>{_balance_rows(before, 'before')}</tbody></table></div>"
-        '<div class="card"><div class="card-head"><h2>Balances after</h2></div>'
-        "<table><thead><tr><th>Coin</th><th>Quantity</th><th>Snapshot</th></tr></thead>"
-        f"<tbody>{_balance_rows(after, 'after')}</tbody></table></div>"
+        '<section class="alert-head">'
+        f"{_sev_badge(alert['severity'], large=True)}"
+        f"<h1>{html.escape(alert['message'])}</h1>"
+        '<div class="alert-meta">'
+        f'<p><strong style="color:var(--text)">Detected:</strong> {_ts(alert["sent_at"])}</p>'
+        f'<p><strong style="color:var(--text)">Account:</strong> '
+        f"{html.escape((alert['exchange'] or 'bitget').title())} — {html.escape(alert['label'])}</p>"
+        f'<p><strong style="color:var(--text)">Incident:</strong> #{int(alert["id"])} · '
+        f"{html.escape(alert['rule'])} · confidence {html.escape(alert['confidence'] or '—')}</p>"
         "</div></section>"
-
-        '<section><div class="card"><div class="card-head"><h2>Evidence</h2>'
-        '<span class="count">as recorded at detection</span></div>'
-        f"<table><tbody>{evidence_rows}</tbody></table></div></section>"
+        '<section class="panel" aria-labelledby="what-title"><h2 id="what-title">What was detected</h2>'
+        f"{evidence_kv}</section>"
+        '<section class="panel" aria-labelledby="tl-title"><h2 id="tl-title">Timeline</h2>'
+        '<p class="count">detection → notification → acknowledgement</p>'
+        f"{timeline_html}</section>"
+        '<section class="panel" aria-labelledby="bal-title"><h2 id="bal-title">Balances before</h2>'
+        f"{_balance_kv(before, 'before')}</section>"
+        '<section class="panel" aria-labelledby="bal2-title"><h2 id="bal2-title">Balances after</h2>'
+        f"{_balance_kv(after, 'after')}</section>"
+        + todo +
+        '<div class="notice notice--info">' + _ICON_INFO
+        + '<div><p class="notice__title">Minas cannot do this for you.</p>'
+        '<p class="notice__body">Guardian is read-only. It can\'t revoke keys, cancel '
+        "withdrawals, or freeze accounts. Only you and the exchange can.</p></div></div>"
+        '<p class="no-print"><button class="linkbtn" type="button" onclick="window.print()">'
+        "Print / Save as PDF</button></p>"
+        + actionbar
     )
-    nav = (
-        f'<a class="live" href="/account?id={int(alert["account_id"])}">‹ Back to account</a>'
-        '<button class="live noprint" type="button" onclick="window.print()" '
-        'style="cursor:pointer;font-family:inherit">Print / Save as PDF</button>'
-    )
-    return _page(body, nav)
+    return _page(body, email, actionbar=unack,
+                 back=f"/account?id={int(alert['account_id'])}",
+                 title=f"Incident #{int(alert['id'])} — Minas AI Guardian")
 
 
 _RESET_ACK = (
@@ -1894,57 +2235,71 @@ def _render_forgot(notice: str | None = None) -> str:
     different status code all answer the question an attacker asked - and the
     answer identifies somebody holding crypto worth monitoring (#33)."""
     if notice:
-        inner = f'<div class="det"><span class="desc">{html.escape(notice)}</span></div>'
+        inner = ('<div class="notice notice--ok" role="status">' + _ICON_INFO
+                 + f'<div><p class="notice__title">{html.escape(notice)}</p></div></div>')
     else:
         inner = (
-            '<form class="addf" method="post" action="/forgot">'
-            '<div class="fld"><label>Email</label>'
-            '<input type="email" name="email" required autocomplete="email"></div>'
-            '<div class="actions"><button class="submit" type="submit">Send reset link</button>'
+            '<form class="form" method="post" action="/forgot">'
+            '<div class="field"><label for="fp-email">Email</label>'
+            '<input class="input" type="email" id="fp-email" name="email" required autocomplete="email">'
             '<span class="hint">A single-use link that expires within an hour.</span></div>'
+            '<button class="btn btn--primary btn--block" type="submit">Send reset link</button>'
             "</form>"
         )
     return _page(
-        '<div class="loginbox"><div class="card">'
-        '<div class="card-head"><h2>Reset your password</h2></div>' + inner +
-        '<div class="det"><span class="desc">'
-        '<a class="acctlink" href="/">‹ Back to sign in</a></span></div>'
-        "</div></div>"
+        '<section class="auth-card">' + _auth_brand()
+        + "<h1>Reset your password</h1>"
+        '<div style="height:var(--space-4)"></div>' + inner
+        + '<p class="hint" style="margin-top:var(--space-4)"><a href="/">‹ Back to sign in</a></p>'
+        "</section>",
+        title="Reset your password — Minas AI Guardian", shell=True,
     )
 
 
 def _render_reset_form(token: str, error: str | None = None) -> str:
-    banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
+    notice = ""
+    if error:
+        notice = ('<div class="notice notice--danger" role="alert">' + _ICON_DANGER
+                  + f'<div><p class="notice__title">{html.escape(error)}</p></div></div>'
+                  '<div style="height:var(--space-4)"></div>')
     return _page(
-        '<div class="loginbox">' + banner +
-        '<div class="card"><div class="card-head"><h2>Choose a new password</h2></div>'
-        '<form class="addf" method="post" action="/reset">'
+        '<section class="auth-card">' + _auth_brand()
+        + "<h1>Choose a new password</h1>"
+        '<div style="height:var(--space-4)"></div>' + notice +
+        '<form class="form" method="post" action="/reset">'
         f'<input type="hidden" name="token" value="{html.escape(token)}">'
-        '<div class="fld"><label>New password</label>'
-        '<input type="password" name="password" required autocomplete="new-password" '
-        f'minlength="{MIN_PASSWORD_LENGTH}"></div>'
-        '<div class="actions"><button class="submit" type="submit">Set password</button>'
+        '<div class="field"><label for="np">New password</label>'
+        '<input class="input" type="password" id="np" name="password" required '
+        f'autocomplete="new-password" minlength="{MIN_PASSWORD_LENGTH}">'
         f'<span class="hint">At least {MIN_PASSWORD_LENGTH} characters. '
         "Setting a new password signs out every other device.</span></div>"
-        "</form></div></div>"
+        '<button class="btn btn--primary btn--block" type="submit">Set password</button>'
+        "</form></section>",
+        title="Choose a new password — Minas AI Guardian", shell=True,
     )
 
 
 def _render_code_prompt(pending: str, error: str | None = None) -> str:
     """Step two. The password has been accepted; the session has not been
     issued."""
-    banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
+    notice = ""
+    if error:
+        notice = ('<div class="notice notice--danger" role="alert">' + _ICON_DANGER
+                  + f'<div><p class="notice__title">{html.escape(error)}</p></div></div>'
+                  '<div style="height:var(--space-4)"></div>')
     return _page(
-        '<div class="loginbox">' + banner +
-        '<div class="card"><div class="card-head"><h2>Two-factor code</h2></div>'
-        '<form class="addf" method="post" action="/login-code">'
+        '<section class="auth-card">' + _auth_brand()
+        + "<h1>Two-factor code</h1>"
+        '<div style="height:var(--space-4)"></div>' + notice +
+        '<form class="form" method="post" action="/login-code">'
         f'<input type="hidden" name="pending" value="{html.escape(pending)}">'
-        '<div class="fld"><label>Code from your authenticator app</label>'
-        '<input type="text" name="code" required autocomplete="one-time-code" '
-        'inputmode="numeric" autofocus></div>'
-        '<div class="actions"><button class="submit" type="submit">Sign in</button>'
+        '<div class="field"><label for="otp">Code from your authenticator app</label>'
+        '<input class="input" type="text" id="otp" name="code" required '
+        'autocomplete="one-time-code" inputmode="numeric" autofocus>'
         '<span class="hint">Or enter one of your recovery codes.</span></div>'
-        "</form></div></div>"
+        '<button class="btn btn--primary btn--block" type="submit">Sign in</button>'
+        "</form></section>",
+        title="Two-factor code — Minas AI Guardian", shell=True,
     )
 
 
@@ -1975,9 +2330,11 @@ def _render_replace_key(db: Database, email: str, account_id: int, *,
     exchange = (acct["exchange"] or "bitget")
     banner = ""
     if error:
-        banner = f'<div class="banner err">✕ {html.escape(error)}</div>'
+        banner = ('<div class="notice notice--danger" role="alert">' + _ICON_DANGER
+                  + f'<div><p class="notice__title">{html.escape(error)}</p></div></div>')
     elif notice:
-        banner = f'<div class="banner ok">✓ {html.escape(notice)}</div>'
+        banner = ('<div class="notice notice--ok" role="status">' + _ICON_INFO
+                  + f'<div><p class="notice__title">{html.escape(notice)}</p></div></div>')
 
     # Only Bitget and OKX take a passphrase. Showing the field to everyone and
     # explaining it is better than hiding it: a Bybit customer who sees no
@@ -1987,39 +2344,44 @@ def _render_replace_key(db: Database, email: str, account_id: int, *,
         "Required for Bitget and OKX keys; leave empty for Bybit and Binance."
     )
 
+    def _tick_li(kind, title, text):
+        path = ("M8 12.5l2.5 2.5L16 9" if kind == "yes" else "M9 9l6 6M15 9l-6 6")
+        return (f'<li><svg class="tick tick--{kind}" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+                '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>'
+                f'<path d="{path}" stroke="currentColor" stroke-width="2" '
+                'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+                f"<div><strong>{title}</strong><span>{text}</span></div></li>")
+
     body = (
-        '<section>' + banner +
-        '<div class="card"><div class="card-head"><h2>Replace the monitoring key</h2>'
-        f'<span class="count">{html.escape(acct["label"])}</span></div>'
-        '<div class="checks">'
-        '<div class="check"><span class="ic ok">✓</span><span class="txt">'
-        "<b>Read-only keys only.</b> A key that can trade or withdraw is refused, not "
-        "accepted with a warning. Create the new key with view or read permission only."
-        "</span></div>"
-        '<div class="check"><span class="ic ok">✓</span><span class="txt">'
-        "<b>It must be for this same exchange account.</b> We check the account the key "
-        "belongs to before we store it, so a key from a different account is refused."
-        "</span></div>"
-        '<div class="check"><span class="ic warn">!</span><span class="txt">'
-        "<b>Minas will never email you a link to this page.</b> You reached it by signing in, "
-        "and that is the only way to reach it. If a message ever asks you to paste an API key, "
-        "it is not from us."
-        "</span></div>"
-        "</div>"
-        '<form class="addf" method="post" action="/key" autocomplete="off">'
+        '<div class="page-head"><h1>Replace the monitoring key</h1>'
+        f'<p class="muted">{html.escape(acct["label"])}</p></div>'
+        + banner +
+        '<section class="panel"><ul class="feature-list">'
+        + _tick_li("yes", "Read-only keys only.",
+                   "A key that can trade or withdraw is refused, not accepted with a "
+                   "warning. Create the new key with view or read permission only.")
+        + _tick_li("yes", "It must be for this same exchange account.",
+                   "We check the account the key belongs to before we store it, so a key "
+                   "from a different account is refused.")
+        + _tick_li("no", "Minas will never email you a link to this page.",
+                   "You reached it by signing in, and that is the only way to reach it. If "
+                   "a message ever asks you to paste an API key, it is not from us.")
+        + "</ul></section>"
+        '<section class="panel"><form class="form" method="post" action="/key" autocomplete="off">'
         f'<input type="hidden" name="account_id" value="{int(account_id)}">'
-        f'<div class="fld"><label>New API key ({html.escape(exchange)})</label>'
-        '<input type="text" name="api_key" required autocomplete="off" spellcheck="false"></div>'
-        '<div class="fld"><label>API secret</label>'
-        '<input type="password" name="secret" required autocomplete="off"></div>'
-        '<div class="fld"><label>API passphrase</label>'
-        '<input type="password" name="passphrase" autocomplete="off"></div>'
-        f'<div class="actions"><button class="submit" type="submit">Check and replace</button>'
+        f'<div class="field"><label for="k-key">New API key ({html.escape(exchange)})</label>'
+        '<input class="input" type="text" id="k-key" name="api_key" required '
+        'autocomplete="off" spellcheck="false"></div>'
+        '<div class="field"><label for="k-secret">API secret</label>'
+        '<input class="input" type="password" id="k-secret" name="secret" required autocomplete="off"></div>'
+        '<div class="field"><label for="k-pass">API passphrase</label>'
+        '<input class="input" type="password" id="k-pass" name="passphrase" autocomplete="off">'
         f'<span class="hint">{passphrase_hint}</span></div>'
-        "</form></div></section>"
+        '<button class="btn btn--primary" type="submit">Check and replace</button>'
+        "</form></section>"
     )
-    nav = f'<a class="live" href="/account?id={int(account_id)}">← Back to this account</a>'
-    return _page(body, nav)
+    return _page(body, email, "/",
+                 title="Replace the monitoring key — Minas AI Guardian")
 
 
 def _render_security(db: Database, email: str, *, secret: str | None = None,
@@ -2036,61 +2398,63 @@ def _render_security(db: Database, email: str, *, secret: str | None = None,
 
     banner = ""
     if error:
-        banner = f'<div class="banner err">✕ {html.escape(error)}</div>'
+        banner = ('<div class="notice notice--danger" role="alert">' + _ICON_DANGER
+                  + f'<div><p class="notice__title">{html.escape(error)}</p></div></div>')
     elif notice:
-        banner = f'<div class="banner ok">✓ {html.escape(notice)}</div>'
+        banner = ('<div class="notice notice--ok" role="status">' + _ICON_INFO
+                  + f'<div><p class="notice__title">{html.escape(notice)}</p></div></div>')
 
     if codes:
         body = (
-            '<div class="card"><div class="card-head"><h2>Save your recovery codes</h2></div>'
-            '<div class="det"><span class="desc">Each code works <b>once</b> and lets you sign '
+            '<section class="panel"><h2>Save your recovery codes</h2>'
+            '<p class="muted">Each code works <strong>once</strong> and lets you sign '
             "in if you lose your phone. They are stored hashed, so this is the only time they "
-            "can be shown — write them down or put them in a password manager now.</span></div>"
-            '<div class="det"><span class="desc mono">'
+            "can be shown — write them down or put them in a password manager now.</p>"
+            '<p class="mono" style="margin-top:var(--space-4)">'
             + "<br>".join(html.escape(c) for c in codes)
-            + "</span></div></div>"
+            + "</p></section>"
         )
     elif secret:
         uri = _twofactor_uri(secret, email)
         body = (
-            '<div class="card"><div class="card-head"><h2>Set up two-factor</h2></div>'
-            '<div class="det"><span class="desc">Add this to your authenticator app, then enter '
+            '<section class="panel"><h2>Set up two-factor</h2>'
+            '<p class="muted">Add this to your authenticator app, then enter '
             "a code to switch it on. Two-factor is not active until you do — if the code never "
-            "works, nothing has changed and you can still sign in.</span></div>"
-            f'<div class="det"><span class="desc mono">{html.escape(secret)}</span></div>'
-            f'<div class="det"><span class="desc mono">{html.escape(uri)}</span></div>'
-            '<form class="addf" method="post" action="/security/2fa/confirm">'
-            '<div class="fld"><label>Code from your app</label>'
-            '<input type="text" name="code" required inputmode="numeric" autofocus></div>'
-            '<div class="actions"><button class="submit" type="submit">Turn on two-factor</button>'
-            "</div></form></div>"
+            "works, nothing has changed and you can still sign in.</p>"
+            f'<p class="mono" id="totp-secret" style="margin-top:var(--space-3)">{html.escape(secret)}</p>'
+            f'<p class="mono">{html.escape(uri)}</p>'
+            '<form class="form" method="post" action="/security/2fa/confirm" style="margin-top:var(--space-4)">'
+            '<div class="field"><label for="c2fa">Code from your app</label>'
+            '<input class="input" type="text" id="c2fa" name="code" required inputmode="numeric" autofocus></div>'
+            '<button class="btn btn--primary" type="submit">Turn on two-factor</button>'
+            "</form></section>"
         )
     elif is_enabled(db, _MEMBER, email):
         left = remaining_recovery_codes(db, _MEMBER, email)
         body = (
-            '<div class="card"><div class="card-head"><h2>Two-factor is on</h2>'
-            f'<span class="count">{left} recovery code(s) left</span></div>'
-            '<div class="det"><span class="desc">Turning it off needs a current code from your '
+            '<section class="panel"><h2>Two-factor is on</h2>'
+            f'<p class="count">{left} recovery code(s) left</p>'
+            '<p class="muted">Turning it off needs a current code from your '
             "app or a recovery code. We will email you when it happens — if you get that email "
-            "and it was not you, somebody else is in your account.</span></div>"
-            '<form class="addf" method="post" action="/security/2fa/disable">'
-            '<div class="fld"><label>Current code</label>'
-            '<input type="text" name="code" required inputmode="numeric"></div>'
-            '<div class="actions"><button class="submit" type="submit">Turn off two-factor</button>'
-            "</div></form></div>"
+            "and it was not you, somebody else is in your account.</p>"
+            '<form class="form" method="post" action="/security/2fa/disable" style="margin-top:var(--space-4)">'
+            '<div class="field"><label for="d2fa">Current code</label>'
+            '<input class="input" type="text" id="d2fa" name="code" required inputmode="numeric"></div>'
+            '<button class="btn btn--secondary" type="submit">Turn off two-factor</button>'
+            "</form></section>"
         )
     else:
         body = (
-            '<div class="card"><div class="card-head"><h2>Two-factor is off</h2></div>'
-            '<div class="det"><span class="desc">Your Minas login is what protects the alerts '
+            '<section class="panel"><h2>Two-factor is off</h2>'
+            '<p class="muted">Your Minas login is what protects the alerts '
             "about your exchange accounts. Adding a second factor means a stolen password is "
-            "not enough on its own.</span></div>"
-            '<form class="addf" method="post" action="/security/2fa/start">'
-            '<div class="actions"><button class="submit" type="submit">Set up two-factor</button>'
-            "</div></form></div>"
+            "not enough on its own.</p>"
+            '<form class="form" method="post" action="/security/2fa/start" style="margin-top:var(--space-4)">'
+            '<button class="btn btn--primary" type="submit">Set up two-factor</button>'
+            "</form></section>"
         )
-    return _page(f'<section>{banner}{body}</section>',
-                 '<a class="live" href="/">‹ Back</a>')
+    return _page(banner + body, email, "/security",
+                 title="Security — Minas AI Guardian")
 
 
 def _twofactor_uri(secret: str, email: str) -> str:
@@ -2101,8 +2465,9 @@ def _twofactor_uri(secret: str, email: str) -> str:
 
 def _render_not_found() -> str:
     return _page(
-        '<section><div class="card"><div class="empty">Not found</div></div></section>',
-        '<a class="live" href="/">← Your accounts</a>',
+        '<section class="panel"><p class="empty">Not found.</p>'
+        '<p style="margin-top:var(--space-3)"><a href="/">‹ Back to your accounts</a></p></section>',
+        title="Not found — Minas AI Guardian",
     )
 
 

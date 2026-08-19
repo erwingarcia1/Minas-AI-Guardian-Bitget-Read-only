@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>What the Guardian can and cannot do — Minas AI Guardian</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+
+  <header class="topbar">
+    <div class="container topbar__inner">
+      <a class="brand" href="accounts.html" aria-label="Minas AI Guardian home">
+        <svg class="brand__mark" viewBox="0 0 48 24" fill="none" aria-hidden="true">
+          <path d="M8 12 C8 5 15 5 24 12 C33 19 40 19 40 12 C40 5 33 5 24 12 C15 19 8 19 8 12 Z"
+                stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="brand__name">Minas AI <span>Guardian</span></span>
+      </a>
+      <div class="topbar__meta">
+        <span class="subtle">Signed in as</span> customer@example.com<br>
+        <a href="signin.html">Sign out</a>
+      </div>
+    </div>
+    <nav class="subnav" aria-label="Primary">
+      <div class="container subnav__inner">
+        <a href="accounts.html">My accounts</a>
+        <a href="status.html">Am I being watched?</a>
+        <a href="limits.html" aria-current="page">Limits</a>
+      </div>
+    </nav>
+  </header>
+
+  <main id="main" class="main">
+    <div class="container stack-lg">
+
+      <div class="page-head">
+        <span class="eyebrow">Read this first</span>
+        <h1>What the Guardian can and cannot do</h1>
+        <p class="lead">A monitoring product, not a brake. Knowing the difference changes how fast you act when an alert arrives.</p>
+      </div>
+
+      <!-- THE UNMISSABLE SENTENCE -->
+      <div class="callout-danger" role="note">
+        <h2>Minas AI Guardian cannot stop an attack.</h2>
+        <p>It cannot freeze your account, cancel a transaction, or move funds. When you get an alert, you and the exchange are the ones who can act — and seconds decide the outcome.</p>
+      </div>
+
+      <!-- 1. What it does -->
+      <section class="panel" aria-labelledby="does-title">
+        <h2 id="does-title">What the Guardian does</h2>
+        <ul class="feature-list">
+          <li>
+            <svg class="tick tick--yes" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+              <path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div><strong>Watches your exchange accounts around the clock.</strong>
+              <span>It connects using the read-only API key you provide and checks for changes as often as the exchange allows.</span></div>
+          </li>
+          <li>
+            <svg class="tick tick--yes" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+              <path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div><strong>Alerts you fast when something changes.</strong>
+              <span>Funds moving, new withdrawal addresses, changed API permissions, or altered security settings trigger an alert to your device.</span></div>
+          </li>
+          <li>
+            <svg class="tick tick--yes" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+              <path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div><strong>Tells you what, when, and where.</strong>
+              <span>Each alert names the account, the change detected, and the time — the facts you need to act.</span></div>
+          </li>
+          <li>
+            <svg class="tick tick--yes" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+              <path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <div><strong>Shows you whether it's still watching.</strong>
+              <span>The status page tells you immediately if any account has stopped reporting and why.</span></div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- 2. What it cannot do -->
+      <section class="panel" aria-labelledby="cannot-title">
+        <h2 id="cannot-title">What it cannot do</h2>
+        <ul class="feature-list">
+          <li>
+            <svg class="tick tick--no" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+              <path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div><strong>Stop an attack in progress.</strong>
+              <span>It cannot disable keys, freeze funds, reverse a withdrawal, or log in on your behalf.</span></div>
+          </li>
+          <li>
+            <svg class="tick tick--no" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+              <path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div><strong>Recover funds once an exchange has processed them.</strong>
+              <span>After a withdrawal is broadcast, only the exchange and the recipient chain can act.</span></div>
+          </li>
+          <li>
+            <svg class="tick tick--no" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+              <path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div><strong>Protect credentials you give to someone else.</strong>
+              <span>If you share a password, session, or key with a person or service, monitoring can't tell a legitimate login from an attacker.</span></div>
+          </li>
+          <li>
+            <svg class="tick tick--no" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>
+              <path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+            <div><strong>Guarantee an alert reaches you instantly.</strong>
+              <span>Delivery depends on your device, network, and notification channel. See honest timing below.</span></div>
+          </li>
+        </ul>
+      </section>
+
+      <!-- 3. Why built this way -->
+      <section class="panel" aria-labelledby="why-title">
+        <h2 id="why-title">Why it's built this way</h2>
+        <div class="stack">
+          <p><strong>Read-only access is the whole point.</strong> Minas connects with keys that can read your account but cannot trade, withdraw, or change settings. Even if Minas itself were compromised, it could not move your funds. The trade-off is that it also cannot intervene.</p>
+          <p><strong>Speed of notification is the lever.</strong> We optimized for telling you fast, because only you and the exchange can stop an outflow. A product that could act on your account would hold the very permission an attacker wants.</p>
+          <p><strong>Less surface in the moment you rely on it.</strong> The customer portal is static HTML and CSS — no JavaScript, no frameworks, no third-party scripts. Every dependency is attack surface, and the portal is most likely to be opened during an incident.</p>
+        </div>
+      </section>
+
+      <!-- 4. Honest timing -->
+      <section class="panel" aria-labelledby="timing-title">
+        <h2 id="timing-title">Honest timing</h2>
+        <div class="timing">
+          <div class="timing__item">
+            <p class="timing__num">~60s</p>
+            <p class="timing__label">Between checks</p>
+            <p class="timing__body">Accounts are polled as often as the exchange permits, typically every minute. Some exchanges allow less; some more.</p>
+          </div>
+          <div class="timing__item">
+            <p class="timing__num">Seconds to minutes</p>
+            <p class="timing__label">Alert to your device</p>
+            <p class="timing__body">Push is fastest; email and SMS can take minutes and can be delayed or filtered. Don't assume the timestamp is when you'll see it.</p>
+          </div>
+          <div class="timing__item">
+            <p class="timing__num">Under a minute</p>
+            <p class="timing__label">An attacker's window</p>
+            <p class="timing__body">A determined attacker can move funds in seconds. Treat every alert as "this may already be happening" and act first, verify second.</p>
+          </div>
+        </div>
+      </section>
+
+      <div class="primary-row">
+        <a href="accounts.html" class="btn btn--primary">Back to my accounts</a>
+        <a href="status.html" class="btn btn--tertiary">Check monitoring status</a>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer__row">
+      <span class="footer__tag">Minas AI Guardian</span>
+      <a href="status.html">Am I being watched?</a>
+      <span class="subtle">Read-only monitoring. We cannot move your funds.</span>
+    </div>
+  </footer>
+</body>
+</html>

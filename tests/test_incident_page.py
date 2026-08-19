@@ -142,7 +142,7 @@ def test_an_unauthenticated_reader_gets_the_login_page(portal, db, alice):
 
     status, body = _request(portal, f"/incident?id={incident}")
 
-    assert "Member sign-in" in body
+    assert 'id="signin-title"' in body
     assert "bc1qattacker" not in body
 
 
@@ -169,7 +169,7 @@ def test_the_page_says_what_was_detected_and_on_which_account(portal, db, alice)
     assert status == 200
     assert "unexplained_quantity_decrease" in body
     assert "alice-1" in body
-    assert "CRITICAL" in body
+    assert "CRITICAL" in body.upper()  # the badge renders "Critical"; CSS uppercases it
     assert "bc1qattacker" in body  # the evidence, which is the point of the page
 
 

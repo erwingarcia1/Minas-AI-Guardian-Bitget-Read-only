@@ -730,8 +730,8 @@
  {
   "name": "#36 an unattributed change renders as a blank cell instead of saying so",
   "file": "sentinel/portal.py",
-  "old": "        return \"<td class='ack-no'>not attributed</td>\"",
-  "new": "        return \"<td></td>\"",
+  "old": "        return '<span class=\"ack-no\">not attributed</span>'",
+  "new": "        return '<span class=\"ack-no\"></span>'",
   "tests": [
    "tests/test_portal_activity.py"
   ],
@@ -1201,8 +1201,8 @@
  {
   "name": "#48 a prevention claim reaches the customer",
   "file": "sentinel/portal.py",
-  "old": "\"It watches for money leaving\",",
-  "new": "\"The Guardian protects your funds around the clock\",",
+  "old": "        _feat(\"yes\", \"It watches for money leaving.\",",
+  "new": "        _feat(\"yes\", \"The Guardian protects your funds around the clock.\",",
   "tests": [
    "tests/test_no_prevention_claims.py"
   ]
