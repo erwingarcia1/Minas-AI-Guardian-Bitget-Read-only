@@ -195,9 +195,32 @@ scripts/health-check.sh          # every gate (~20 min, mutation dominates)
 scripts/health-check.sh --fast   # skips the two multi-minute gates (~4 min)
 ```
 
-One command, seven gates, one summary table: ruff, the suite, the coverage
-floor, `pip-audit`, the design-guard probes, the mutation floor, and the
-issue-status audit. Non-zero if any of them fail.
+One command, eight gates, one summary table: ruff, the suite, the coverage
+floor, `pip-audit`, the issue-status audit, the design-guard probes, the
+mutation floor, and a freshness check on the scheduled CI gates. Non-zero if
+any of them fail.
+
+**Where the slow gates canonically run (#86): scheduled CI, not the inner
+loop.** The probes (~13 min) and the mutation floor (~20 min cold on a CI
+runner, ~50 locally) are too slow for feedback anyone acts on per commit.
+The division of labour:
+
+- **pre-push hook + push CI** — ruff plus the full suite, on every commit.
+- **scheduled CI** (the `scheduled-gates` job, weekly + `workflow_dispatch`)
+  — probes and mutation floor, provably cold (a fresh runner has no caches,
+  and the job asserts it). On failure it files an issue whose **title**
+  distinguishes a real regression from a gate that produced no result;
+  `scripts/scheduled-gates-report.sh` holds that classification and is
+  execution-tested in `tests/test_scheduled_gates.py`.
+- **this script** — everything, locally, when a change touches probe-covered
+  code or detection behaviour; `--fast` otherwise.
+- **release.sh** — still demands the full set before a tag exists.
+
+The eighth gate closes the quiet failure of that arrangement: a cron that
+silently stops firing reads as permanently green, so
+`scripts/scheduled-gates-freshness.sh` asserts a scheduled (or dispatched)
+run completed within 8 days — "did it run", not "did it pass"; a red run
+already files its own issues.
 
 ```
 GATE                         RESULT     TIME  NOTES

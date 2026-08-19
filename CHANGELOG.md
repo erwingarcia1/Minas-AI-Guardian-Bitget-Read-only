@@ -13,6 +13,30 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched — everything
+here is the gating system around the code, not the code.
+
+### Added
+
+- **The slow gates now run in scheduled CI, with failure titles that tell a
+  regression from a broken gate** (#86). The weekly mutation job gained the
+  design-guard probes; both run provably cold (the job asserts a fresh
+  runner has no caches, so an 8-second cached pass indistinguishable from a
+  real 2951-second run cannot happen there). On failure it files issues
+  through `scripts/scheduled-gates-report.sh`, whose classification is
+  execution-tested: "Mutation score dropped below the floor" only when
+  mutants ran and scored low; "Mutation gate produced no result" /
+  "Design-guard probes produced no result" when the question went
+  unanswered — the old step filed the floor title on any non-zero exit,
+  sending someone hunting a lost test while the gate itself was broken. The
+  local health check gained an eighth gate asserting the schedule's own
+  pulse (a completed scheduled run within 8 days), because a cron that
+  silently stops firing reads as permanently green. `health-check.sh` keeps
+  every gate for local and release use; `release.sh` still demands the full
+  set before a tag exists.
+
 ## [1.5.2] — 2026-08-18
 
 ### Changed detection behaviour

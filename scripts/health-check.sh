@@ -133,10 +133,18 @@ gate "pip-audit" pip-audit "$PIP_AUDIT" .
 
 if ! command -v gh >/dev/null 2>&1; then
   skip "issue-status audit" "gh not installed"
+  skip "scheduled gates ran (8d)" "gh not installed"
 elif ! gh auth status >/dev/null 2>&1; then
   skip "issue-status audit" "gh not authenticated"
+  skip "scheduled gates ran (8d)" "gh not authenticated"
 else
   gate "issue-status audit" issue-status scripts/audit-issue-status.sh
+
+  # The weekly CI job runs the slow gates between releases (#86). A cron that
+  # silently stops firing reads as permanently green, so its recency is a
+  # gate here: "did it RUN", not "did it pass" - a red scheduled run already
+  # files its own truthfully-titled issues.
+  gate "scheduled gates ran (8d)" scheduled-gates scripts/scheduled-gates-freshness.sh
 fi
 
 if [ "$FAST" = true ]; then

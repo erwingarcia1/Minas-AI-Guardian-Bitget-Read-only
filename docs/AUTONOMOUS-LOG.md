@@ -3929,3 +3929,41 @@ release. Both #67 checks were owed and run; #84 and the doc commits went
 on the fast path. The probes earned their keep once (the report-after-
 filter mutant surviving my own fix), which is the argument for #86 putting
 them on a schedule rather than in the inner loop.
+
+# Session — 2026-08-19 · #86: the slow gates move to scheduled CI
+
+Done alone and completely before any other issue, per the owner: it changes
+the gating system that protects everything else.
+
+**What exists now.** The weekly `mutation` job in ci.yml is
+`scheduled-gates`: probes + mutation floor, weekly and on demand, 75-minute
+timeout (measured basis: mutation alone was 20 min cold on this runner, run
+32003357961 — the one scheduled run that has ever fired). Both gates run
+`continue-on-error` so each reaches its own verdict, and a first step
+asserts the runner carries no `mutants/` cache and no probe lock — the
+cold-run proof, making a pass evidence rather than an assumption.
+
+**The classifier is a script, not workflow YAML — deliberately.**
+`scripts/scheduled-gates-report.sh` reads the gates' logs and files issues
+whose titles distinguish "a test lost its grip" from "the gate could not
+answer": FAIL-survived/killed probe lines are the regression; DID NOT LAND,
+timeouts, a missing population summary, or a population smaller than
+design-guards.json are no-result; "dropped below the floor" keeps its
+established title; anything else — including a "successful" step whose log
+cannot show a `Killed K/T` line — is "Mutation gate produced no result".
+Being a script makes it execution-testable: 15 tests drive it with
+synthetic logs (DRY_RUN prints would-file titles), including the exact
+original defect — "no mutants ran" filed as a dropped score — pinned as a
+test that fails if the mislabeling returns. Negative proof run: swapping
+the no-result title back to the floor title fails 2 tests.
+
+**The schedule watches its own pulse.** health-check.sh gained an eighth
+gate: `scheduled-gates-freshness.sh` asserts a completed scheduled or
+dispatched run within 8 days — "did it run", not "did it pass" (a red run
+files its own issues). Skipped-never-pass without gh, per the house rule.
+Since release.sh runs the full health check, a silently-dead cron now
+blocks the next release instead of reading as green forever.
+
+**Execution evidence** (the part a workflow test cannot give): a
+workflow_dispatch run of the extended job, watched by run id, recorded on
+the issue with both gates' timings.

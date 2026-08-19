@@ -93,16 +93,34 @@ jobs:
           echo "$out" | grep -q "source *unknown" \
             || { echo "::error::a build given no commit claimed a provenance"; exit 1; }
 
-  # Decision-point mutation score, as a floor that can only go up.
+  # The slow gates, on a schedule (#86): the decision-point mutation floor
+  # AND the design-guard probes. Weekly and on-demand, NOT per push - they
+  # are canonically scheduled jobs, too slow for feedback anyone acts on -
+  # and release.sh still demands both locally before a tag exists. Between
+  # releases, CI is the source of truth: reproducible, does not stop when a
+  # laptop sleeps, and a fresh checkout makes every run PROVABLY cold (the
+  # first step below asserts no caches, so the 8-second cached pass that is
+  # indistinguishable from a 2951-second real one - except in a log nobody
+  # rereads - cannot happen here).
   #
-  # Deliberately NOT part of the `test` job: mutant generation is ~8 minutes and
-  # the run itself several more, which would put ten minutes on every push for a
-  # signal that changes slowly. Weekly and on-demand keeps the ratchet without
-  # making the feedback loop useless.
-  mutation:
+  # Failure reporting distinguishes, in the ISSUE TITLE, a real regression
+  # from a gate that produced no result. The previous version filed "score
+  # dropped below the floor" on any non-zero exit - sending someone hunting
+  # a lost test when the gate itself was broken. The classification and the
+  # filing live in scripts/scheduled-gates-report.sh, where they are
+  # execution-tested against synthetic logs (tests/test_scheduled_gates.py);
+  # this file only wires the steps.
+  #
+  # (Was the `mutation` job; renamed when the probes joined it.)
+  scheduled-gates:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # Measured, not guessed: mutation alone took 20 minutes cold on this
+    # runner (run 32003357961); the probes are ~13 minutes locally. 75 gives
+    # a slow runner room without letting a wedged run burn hours - and a
+    # timeout kill is reported as "produced no result", never as a
+    # regression: the report step runs on `always()`.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v4
 
@@ -116,45 +134,50 @@ jobs:
           pip install -e ".[dev]"
           pip install mutmut
 
+      # The cold-run proof. A per-mutant cache can hand back a full score in
+      # seconds, and a cached pass is indistinguishable from a real one
+      # except in the log - the shape that hid a broken gate for weeks. A
+      # fresh runner cannot have a cache; asserting that makes it evidence
+      # instead of an assumption.
+      - name: A fresh runner has no gate caches
+        run: |
+          test ! -d mutants || { echo "::error::mutants/ exists before the run - a cached score would be indistinguishable from a real one"; exit 1; }
+          test ! -f .mutation-probe.lock || { echo "::error::a probe lock file exists on a fresh runner"; exit 1; }
+
+      # continue-on-error on both gates: each must produce its own verdict.
+      # Aborting the job at the first failure would report the second gate as
+      # nothing at all, and "nothing" reads as fine from the Actions list.
+      - name: Design-guard probes
+        id: probes
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          time python scripts/mutation-probe.py scripts/probes/design-guards.json 2>&1 | tee probes.log
+
       # Fails if the score drops below scripts/mutation-floor.txt, and raises
-      # the floor when it improves - so a decision this suite pins today cannot
-      # quietly stop being pinned tomorrow.
+      # the floor when it improves - so a decision this suite pins today
+      # cannot quietly stop being pinned tomorrow. (A floor raised here is
+      # discarded with the runner; the ratchet commits move through local
+      # runs and releases.)
       - name: Decision-point mutation score
         id: mutation
-        run: scripts/mutation-check.sh --check
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          time scripts/mutation-check.sh --check 2>&1 | tee mutation.log
 
-      # A weekly job whose failure sits unread in the Actions tab is the
-      # ten-hours-of-red problem with a longer fuse. Filing an issue is the one
-      # notification path that needs no secrets and reaches a human through
-      # normal repo notifications - and it leaves a record that outlives the
-      # 90-day log retention.
-      #
-      # Deliberately NOT routed through the operator alerting channel (#53):
-      # that lives inside the running service and needs the database and the
-      # channel credentials, neither of which a CI runner has or should have.
-      - name: Open an issue when the floor breaks
-        if: failure()
+      # Filing an issue is the one notification path that needs no secrets
+      # and reaches a human through normal repo notifications - and it leaves
+      # a record that outlives the 90-day log retention. Deliberately NOT
+      # routed through the operator alerting channel (#53): that lives inside
+      # the running service and needs the database and channel credentials,
+      # neither of which a CI runner has or should have.
+      - name: Classify the results and file truthfully-titled issues
+        if: always()
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          existing=$(gh issue list --state open --label "mutation-floor" \
-            --json number --jq '.[0].number // empty')
-          body=$(printf '%s\n' \
-            "The weekly decision-point mutation run scored below the floor in" \
-            "\`scripts/mutation-floor.txt\`." \
-            "" \
-            "That means a decision this suite used to pin, it no longer does -" \
-            "some change removed a test's grip on a comparison, a boolean, or a" \
-            "continue/break without any test going red." \
-            "" \
-            "Run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}" \
-            "Commit: ${{ github.sha }}" \
-            "" \
-            "Reproduce locally with \`scripts/mutation-check.sh\` - the survivor" \
-            "list is printed in full.")
-          if [ -n "$existing" ]; then
-            gh issue comment "$existing" --body "$body"
-          else
-            gh issue create --title "Mutation score dropped below the floor" \
-              --label "mutation-floor,epic-10-reliability,priority: p2" --body "$body"
-          fi
+          PROBES_OUTCOME: ${{ steps.probes.outcome }}
+          MUTATION_OUTCOME: ${{ steps.mutation.outcome }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          COMMIT: ${{ github.sha }}
+        run: bash scripts/scheduled-gates-report.sh
