@@ -4169,3 +4169,17 @@ what remains is normalise-on-write, plus a new line for the
 empty-string-as-absent `''` in blank secondary columns (the falsy-sentinel
 pattern; NULL should become the canonical absent value when #91 builds the
 write boundary).
+
+# v1.6.0 — cut and pushed 2026-08-20
+
+**Tag `v1.6.0` at `62510c8`, CI green, undeployed.** MINOR: decision 1
+changes who is told and when, and the portal restyle is customer-visible.
+The release carries: the secondary-contact escalation ladder (decision 1,
+#27 — the CDB entry states the effect in act-on-it terms); the portal
+wearing the owner's design system with design/portal/ as the reference; the
+Member portal lockup; the slow gates in scheduled CI (#86); and the
+unreviewed what-to-do-now steps pulled from the alert page pending decision
+9 on #29. Deploy: `sudo /opt/minas-guardian/scripts/deploy.sh v1.6.0`.
+The customer-visible escalation change means the FIRST post-deploy check
+is human: confirm secondary contacts stop receiving LOW/MEDIUM (the
+paula-style verification — watch what stops, not only what starts).
