@@ -2471,9 +2471,28 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
     throttle = LoginThrottle()
 
     def _same_origin(handler) -> bool:
+        """Is this POST from our own pages? (CSRF gate on every state change.)
+
+        Sec-Fetch-Site is the PRIMARY signal: the browser sets it and a page
+        cannot forge it (a forbidden header). `same-origin` is our own form;
+        `none` is user-initiated (address bar / bookmark); anything else is
+        another site posting at us. The Origin comparison is only the
+        fallback for clients that do not send Sec-Fetch-Site.
+
+        `Origin: null` alone is NEVER accepted: sandboxed iframes and some
+        cross-site navigations serialise null too, and under a no-referrer
+        policy even our OWN form posts did - which is how this check rejected
+        every real browser sign-in while curl (no referrer policy) and the
+        test client (no Origin at all) sailed through. Two correct hardening
+        measures colliding; the referrer policy is now `same-origin` so
+        Origin stays populated, and this check no longer depends on it alone.
+        """
+        fetch_site = (handler.headers.get("Sec-Fetch-Site") or "").lower()
+        if fetch_site:
+            return fetch_site in ("same-origin", "none")
         origin = handler.headers.get("Origin")
         if not origin:
-            return True
+            return True  # non-browser clients send neither header
         return urlparse(origin).netloc == (handler.headers.get("Host") or "")
 
     class Handler(BaseHTTPRequestHandler):
@@ -2493,7 +2512,14 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", "no-store")
             self.send_header("X-Content-Type-Options", "nosniff")
-            self.send_header("Referrer-Policy", "no-referrer")
+            # same-origin, not no-referrer: no-referrer makes the browser
+            # serialise Origin as null on our OWN form posts, which the CSRF
+            # gate must refuse (null is also what sandboxed iframes send) -
+            # so every browser sign-in was rejected. same-origin keeps URLs
+            # (reset tokens included) out of every cross-site Referer, which
+            # is the protection that mattered, while our own posts stay
+            # attributable to us.
+            self.send_header("Referrer-Policy", "same-origin")
             for k, v in extra_headers or []:
                 self.send_header(k, v)
             self.end_headers()

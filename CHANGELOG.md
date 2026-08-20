@@ -13,6 +13,29 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched — this fixes
+who can *sign in*, not who is told.
+
+### Fixed
+
+- **Browser sign-in works** (#92). The portal's own hardening broke it:
+  `Referrer-Policy: no-referrer` makes a browser serialise the Origin of
+  our own form posts as `null`, and the CSRF gate rejected null — so every
+  browser POST (sign-in, password reset, key replacement) returned 403
+  "cross-origin POST rejected", at every address, always. curl and the
+  test client never saw it because neither applies a referrer policy. The
+  gate now reads `Sec-Fetch-Site` first (browser-set and unforgeable;
+  cross-site refused even with a plausible Origin), keeps the Origin
+  comparison as fallback, never accepts bare `Origin: null`, and both
+  surfaces send `Referrer-Policy: same-origin` — which still keeps
+  reset-token URLs out of cross-site Referers. Found while proving the
+  refusals: the ops dashboard's `/login` POST was outside its CSRF gates
+  entirely; every dashboard POST now passes one chokepoint. **Not a proxy
+  problem** — an earlier attribution to Tailscale Serve is corrected on
+  the issue.
+
 ## [1.6.0] — 2026-08-20
 
 ### Changed detection behaviour

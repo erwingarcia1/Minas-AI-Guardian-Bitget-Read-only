@@ -4183,3 +4183,24 @@ unreviewed what-to-do-now steps pulled from the alert page pending decision
 The customer-visible escalation change means the FIRST post-deploy check
 is human: confirm secondary contacts stop receiving LOW/MEDIUM (the
 paula-style verification — watch what stops, not only what starts).
+
+# Session — 2026-08-20 · #92: the portal rejected every browser sign-in, ever
+
+Root-caused by the owner from a Chrome capture; NOT a proxy problem (the
+Tailscale Serve theory is corrected on the issue). no-referrer made our own
+form posts carry Origin: null; the CSRF gate refused null; curl and the
+test client apply no referrer policy, which is why 1,100 green tests never
+saw a defect that blocked every real browser POST since the portal shipped.
+The two-correct-hardenings-colliding shape, and the deepest lesson of the
+week's collection: every gate we test is tested from a client that does not
+behave like the thing the gate exists to referee.
+
+Fix recorded on #92 (all three of the owner's options where they
+reinforce): Sec-Fetch-Site primary and outranking Origin, Origin fallback,
+bare null never accepted, Referrer-Policy: same-origin on BOTH surfaces —
+the dashboard's was absent, which is the only reason its POSTs worked, and
+is now explicit so the surfaces cannot drift. Found while proving the
+refusals: the dashboard's /login POST was outside its gates entirely
+(login-CSRF accepted); every dashboard POST now passes one chokepoint,
+the portal's pattern. 11 tests drive both real servers with the observed
+header shapes — the exact Chrome capture passes; the hostile shapes 403.

@@ -935,9 +935,28 @@ def serve_dashboard(
     _login_throttle = LoginThrottle()
 
     def _same_origin(handler) -> bool:
+        """Is this POST from our own pages? (CSRF gate on every state change.)
+
+        Sec-Fetch-Site is the PRIMARY signal: the browser sets it and a page
+        cannot forge it (a forbidden header). `same-origin` is our own form;
+        `none` is user-initiated (address bar / bookmark); anything else is
+        another site posting at us. The Origin comparison is only the
+        fallback for clients that do not send Sec-Fetch-Site.
+
+        `Origin: null` alone is NEVER accepted: sandboxed iframes and some
+        cross-site navigations serialise null too, and under a no-referrer
+        policy even our OWN form posts did - which is how this check rejected
+        every real browser sign-in while curl (no referrer policy) and the
+        test client (no Origin at all) sailed through. Two correct hardening
+        measures colliding; the referrer policy is now `same-origin` so
+        Origin stays populated, and this check no longer depends on it alone.
+        """
+        fetch_site = (handler.headers.get("Sec-Fetch-Site") or "").lower()
+        if fetch_site:
+            return fetch_site in ("same-origin", "none")
         origin = handler.headers.get("Origin")
         if not origin:
-            return True  # non-browser or same-origin form post without Origin
+            return True  # non-browser clients send neither header
         return urlparse(origin).netloc == (handler.headers.get("Host") or "")
 
     class Handler(BaseHTTPRequestHandler):
@@ -954,6 +973,13 @@ def serve_dashboard(
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            # same-origin, matching the portal - and deliberately NOT
+            # no-referrer, which serialises Origin as null on our own form
+            # posts and broke the portal's CSRF gate for every browser. The
+            # dashboard never set a policy, which is the only reason its
+            # POSTs kept working; now the choice is explicit instead of an
+            # accident of omission.
+            self.send_header("Referrer-Policy", "same-origin")
             self.end_headers()
             self.wfile.write(body)
 
@@ -1039,6 +1065,13 @@ def serve_dashboard(
                 self._send(_render(db, rules).encode())
 
         def do_POST(self):
+            # One chokepoint for every POST, /login included (the portal's
+            # pattern): a cross-site login POST is login-CSRF, and gating
+            # only the action routes left it open here - found by #92's
+            # refusal tests. The per-handler checks below remain as depth.
+            if not _same_origin(self):
+                self._send(b"cross-origin POST rejected", 403)
+                return
             post_path = urlparse(self.path).path.rstrip("/")
             if post_path == "/login":
                 self._login()
