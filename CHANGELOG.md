@@ -15,13 +15,13 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Changed detection behaviour
 
-- **Secondary contacts stop receiving most alerts** (decision 1, #27 — an
-  emergency contact, not a copy-to). Until now a secondary contact received
-  every alert, immediately, same as the primary. After upgrading: LOW and
-  MEDIUM alerts never reach a secondary at all; a HIGH alert reaches them
-  only if nobody has acknowledged it within 60 minutes; a CRITICAL only
-  after 15 unacknowledged minutes (both windows in `rules.yaml`, hot-
-  reloadable). What a secondary now receives says *why* they are receiving
+- **Every secondary contact currently receiving every alert stops
+  receiving LOW and MEDIUM entirely, and receives HIGH and CRITICAL only
+  when the primary has not acknowledged within the configured window**
+  (decision 1, #27 — an emergency contact, not a copy-to). The windows:
+  HIGH after 60 unacknowledged minutes, CRITICAL after 15 — both in
+  `rules.yaml` (`alerting.escalation_unacknowledged_minutes` /
+  `…_high`), hot-reloadable. What a secondary now receives says *why* they are receiving
   it — "the primary contact for <account> has not responded to a critical
   alert in 15 minutes" — and never carries amounts, addresses, or one-tap
   links. New: when a CRITICAL alert is acknowledged, the secondary gets one
@@ -33,6 +33,23 @@ or Twilio credentials, terminate the retired us-east-1 instance._
   the intent.**
 
 ### Added
+
+- **The "Member portal" lockup is back, everywhere the surface identifies
+  itself**: a gold micro-caps qualifier under the wordmark in the top bar
+  and on the sign-in card, "— Member portal" in every browser-tab title,
+  and on the printed status report's masthead — a document handed to an
+  exchange or an insurer says on its face which surface produced it. The
+  lockup is a guarded distinguishing mark: the ops dashboard may talk
+  about the member portal in its copy, but can never wear it.
+
+### Fixed
+
+- **The alert page no longer shows unreviewed advice.** The design
+  mockups' "What to do now" steps shipped briefly during the restyle and
+  were pulled the same day: that wording is decision 9, one error was
+  already found in it, and unread advice on the page a frightened
+  customer acts from is not a gap to paper over. The full draft awaits
+  the owner's review on #29; the page returns to its pre-restyle state.
 
 - **The portal wears the owner's design** (#82). The member portal was
   restyled end to end from the owner's external design pass (the reference
