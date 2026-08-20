@@ -15,8 +15,22 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Changed detection behaviour
 
-**None.** Which alerts fire, when, and to whom is untouched — everything
-here is the gating system around the code, not the code.
+- **Secondary contacts stop receiving most alerts** (decision 1, #27 — an
+  emergency contact, not a copy-to). Until now a secondary contact received
+  every alert, immediately, same as the primary. After upgrading: LOW and
+  MEDIUM alerts never reach a secondary at all; a HIGH alert reaches them
+  only if nobody has acknowledged it within 60 minutes; a CRITICAL only
+  after 15 unacknowledged minutes (both windows in `rules.yaml`, hot-
+  reloadable). What a secondary now receives says *why* they are receiving
+  it — "the primary contact for <account> has not responded to a critical
+  alert in 15 minutes" — and never carries amounts, addresses, or one-tap
+  links. New: when a CRITICAL alert is acknowledged, the secondary gets one
+  closing line ("a critical alert on <account> was acknowledged at
+  <time>"), so acknowledging cannot silently silence the emergency contact
+  — at most two messages per incident, usually one, often none. The
+  primary contact's alerts are unchanged. **Every secondary contact
+  currently receiving everything will stop receiving most of it; that is
+  the intent.**
 
 ### Added
 

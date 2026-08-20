@@ -175,6 +175,8 @@ pytest_add_cli_args_test_selection=
     tests/test_clicksend_sms.py
     tests/test_contact_router.py
     tests/test_operator_alerting.py
+    tests/test_escalation_reach.py
+    tests/test_secondary_contact_escalation.py
 runner=python -m pytest -x -q -p no:cacheprovider
 EOF
 trap 'rm -f setup.cfg' EXIT

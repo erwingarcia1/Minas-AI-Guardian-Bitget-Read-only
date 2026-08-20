@@ -84,6 +84,10 @@ alerting:
     MEDIUM: "24"
     LOW: "24"
   escalation_unacknowledged_minutes: "15"
+  # Decision 1 (#27): a HIGH alert reaches the secondary (emergency)
+  # contact only after this long with no acknowledgement. CRITICAL uses
+  # escalation_unacknowledged_minutes. LOW and MEDIUM never reach them.
+  escalation_unacknowledged_minutes_high: "60"
   # How often "your account is not being watched" repeats while it stays
   # unresolved (G-6). Daily: at HIGH's 30-minute cooldown a broken key would
   # page twice an hour until fixed, and with no repeat an unwatched account

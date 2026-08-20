@@ -209,8 +209,11 @@ class AccountPoller:
         def val(k):
             return row[k] if k in keys else None
 
-        emails = [val("alert_email"), val("alert_email_secondary")]
-        phones = [val("alert_phone"), val("alert_phone_secondary")]
+        # PRIMARY only (decision 1, #27): a secondary contact is an emergency
+        # contact, not a copy-to. LOW and MEDIUM never reach them at all;
+        # HIGH and CRITICAL reach them only through the escalator's windows.
+        emails = [val("alert_email")]
+        phones = [val("alert_phone")]
         return [e for e in emails if e], [p for p in phones if p]
 
     def _emit(self, account_id: int, label: str, detection) -> None:

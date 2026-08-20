@@ -19,7 +19,7 @@ whoever builds one should build it to cover both.
 
 | # | Decision | Blocks | Recommendation |
 |---|---|---|---|
-| 1 | Escalation timings | #27 (G-23), part of #26/#30 | 15 / 30 / 60 min, secondary at 15 |
+| 1 | Escalation timings | ~~#27~~ | **ANSWERED 2026-08-19** — see section 1 |
 | 2 | Fire drill cadence + what customers see | #37 (G-33) | Weekly, drill account, customers see result only |
 | 3 | Incident page "what to do next" wording | #29 (G-25) · depends on #69 | Three fixed actions, exchange-specific link |
 | 4 | Alert channel defaults + quiet hours | #24 (G-20) | Quiet hours non-critical only, 22:00–07:00 local |
@@ -30,7 +30,26 @@ whoever builds one should build it to cover both.
 
 ---
 
-## 1. Escalation timings — blocks #27 (G-23)
+## 1. Escalation timings — **ANSWERED 2026-08-19** (was: blocks #27)
+
+**The answer, from the owner** (triggered by a real complaint — a secondary
+contact receiving every alert for accounts she is an emergency contact on):
+
+A secondary contact is an **emergency contact, not a copy-to**, and the rule
+is about the contact, not the channel. Two gates: **severity** (LOW and
+MEDIUM never reach a secondary at all) and **time-and-acknowledgement** (the
+primary is told immediately as today; the secondary only if still
+unacknowledged after CRITICAL 15 min / HIGH 60 min, both from config —
+`alerting.escalation_unacknowledged_minutes` and
+`escalation_unacknowledged_minutes_high`). Acknowledging a CRITICAL sends
+the secondary exactly one closing note — acknowledgement must not silently
+silence the emergency contact, or a compromised primary session could. Cap:
+two messages per incident to a secondary. The escalation message states why
+they are receiving it, and carries no balances, amounts, addresses or
+one-tap links. Built 2026-08-19; the original open question below is kept
+for the record.
+
+### The original question (now answered)
 
 **The question.** An unacknowledged CRITICAL alert should escalate. After how
 long, to whom, in what order, and how many times before it stops?

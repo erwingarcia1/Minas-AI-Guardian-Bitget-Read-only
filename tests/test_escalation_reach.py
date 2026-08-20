@@ -86,7 +86,11 @@ def _stale_critical(db, account_id, minutes_ago=30):
 def test_escalation_reaches_the_secondary_contact(db):
     """The criterion, and the reason it matters: the primary contact is the
     person who has already not answered. G-21 exists so there is somebody else,
-    and escalation is precisely the moment to use them."""
+    and escalation is precisely the moment to use them.
+
+    Since decision 1 (#27) the two are SEPARATE sends: the primary gets the
+    escalation re-fire; the secondary gets their own message that says why
+    they are hearing at all, and carries none of the original alert text."""
     account_id = _account(db, alert_email="primary@example.com",
                           alert_email_secondary="second@example.com",
                           alert_phone_secondary="+15550002")
@@ -95,10 +99,11 @@ def test_escalation_reaches_the_secondary_contact(db):
 
     Escalator([Recording()], unacknowledged_minutes=15, contact_router=router).check(db)
 
-    assert len(router.calls) == 1
-    assert "second@example.com" in router.calls[0]["emails"]
-    assert "+15550002" in router.calls[0]["phones"]
-    assert "primary@example.com" in router.calls[0]["emails"]  # both, not instead
+    assert len(router.calls) == 2
+    primary_call = next(c for c in router.calls if "primary@example.com" in c["emails"])
+    secondary_call = next(c for c in router.calls if "second@example.com" in c["emails"])
+    assert "+15550002" in secondary_call["phones"]
+    assert "second@example.com" not in primary_call["emails"]  # separate, not merged
 
 
 def test_an_account_with_no_contacts_does_not_break_escalation(db):

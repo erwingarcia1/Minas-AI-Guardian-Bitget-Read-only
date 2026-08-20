@@ -866,7 +866,14 @@ def acknowledge_alert_as_member(
             f"WHERE id = ? AND acknowledged_at IS NULL AND account_id IN ({marks})",
             [datetime.now(timezone.utc).isoformat(), normalized, alert_id, *account_ids],
         )
-        return cur.rowcount == 1
+        acknowledged = cur.rowcount == 1
+    if acknowledged:
+        # Decision 1 (#27): same closing note as the operator path - hooking
+        # only one acknowledgement writer would leave the other silently mute.
+        from sentinel.alerts.escalation import send_critical_ack_closing_note
+
+        send_critical_ack_closing_note(db, alert_id)
+    return acknowledged
 
 
 def _time_to_acknowledge(sent_at: str | None, acknowledged_at: str | None) -> str:

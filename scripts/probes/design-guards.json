@@ -236,8 +236,8 @@
  {
   "name": "#58: escalation with zero channels is treated as nothing to do",
   "file": "sentinel/alerts/escalation.py",
-  "old": "            delivered = 0\n            for channel in self._channels:",
-  "new": "            delivered = 0 if self._channels else 1\n            for channel in self._channels:",
+  "old": "        delivered = 0\n        for channel in self._channels:",
+  "new": "        delivered = 0 if self._channels else 1\n        for channel in self._channels:",
   "tests": [
    "tests/test_operator_page_sweep.py"
   ]
@@ -335,7 +335,7 @@
  {
   "name": "#27: escalation never reaches the customer's own contacts",
   "file": "sentinel/alerts/escalation.py",
-  "old": "            self._reach_the_customers_own_contacts(row, alert)\n",
+  "old": "        self._reach_the_customers_own_contacts(row, alert)\n",
   "new": "",
   "tests": [
    "tests/test_escalation_reach.py"
@@ -344,10 +344,11 @@
  {
   "name": "#27: only the primary contact is escalated to, not the secondary",
   "file": "sentinel/alerts/escalation.py",
-  "old": "        emails = [row[\"alert_email\"], row[\"alert_email_secondary\"]]\n        phones = [row[\"alert_phone\"], row[\"alert_phone_secondary\"]]",
-  "new": "        emails = [row[\"alert_email\"]]\n        phones = [row[\"alert_phone\"]]",
+  "old": "        self._reach_the_secondary_contact(row, window=self._window)\n",
+  "new": "",
   "tests": [
-   "tests/test_escalation_reach.py"
+   "tests/test_escalation_reach.py",
+   "tests/test_secondary_contact_escalation.py"
   ]
  },
  {
@@ -362,7 +363,7 @@
  {
   "name": "#27: nobody is told that an escalation happened",
   "file": "sentinel/alerts/escalation.py",
-  "old": "            self._page_escalated(row)\n",
+  "old": "        self._page_escalated(row)\n",
   "new": "",
   "tests": [
    "tests/test_escalation_reach.py"
@@ -371,8 +372,8 @@
  {
   "name": "#27: the escalator is constructed without a contact router",
   "file": "sentinel/cli.py",
-  "old": "                          contact_router=contact_router)",
-  "new": "                          )",
+  "old": "                          contact_router=contact_router,",
+  "new": "",
   "tests": [
    "tests/test_escalation_reach.py"
   ]
@@ -1214,6 +1215,24 @@
   "new": "        if handled is not None:\n            cur.execute(\"UPDATE alerts SET acknowledged_at = ? WHERE id = ?\", (now, alert_id))\n            cur.execute(\n                \"UPDATE alert_triage SET handled_at = ?, handled_by = ?, updated_at = ? \"",
   "tests": [
    "tests/test_alert_triage.py"
+  ]
+ },
+ {
+  "name": "#27: acknowledging from the portal stops telling the emergency contact",
+  "file": "sentinel/portal.py",
+  "old": "        send_critical_ack_closing_note(db, alert_id)\n",
+  "new": "",
+  "tests": [
+   "tests/test_secondary_contact_escalation.py"
+  ]
+ },
+ {
+  "name": "#27: acknowledging as an operator stops telling the emergency contact",
+  "file": "sentinel/operators.py",
+  "old": "        send_critical_ack_closing_note(db, alert_id)\n",
+  "new": "",
+  "tests": [
+   "tests/test_secondary_contact_escalation.py"
   ]
  }
 ]

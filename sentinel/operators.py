@@ -221,4 +221,12 @@ def acknowledge_alert(db: Database, alert_id: int, actor: str | None) -> bool:
             "WHERE id = ? AND acknowledged_at IS NULL",
             (_now(), actor, alert_id),
         )
-        return cur.rowcount == 1
+        acknowledged = cur.rowcount == 1
+    if acknowledged:
+        # Decision 1 (#27): the emergency contact hears that a CRITICAL was
+        # closed - acknowledgement must not silently silence them. Fires only
+        # on the first ack (the IS NULL guard above), so exactly once.
+        from sentinel.alerts.escalation import send_critical_ack_closing_note
+
+        send_critical_ack_closing_note(db, alert_id)
+    return acknowledged

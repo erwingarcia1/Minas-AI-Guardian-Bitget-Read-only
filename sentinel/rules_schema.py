@@ -142,6 +142,10 @@ SPEC: dict = {
         # 0 means that severity cannot be snoozed at all.
         "snooze_cap_hours": {sev: NON_NEGATIVE for sev in SEVERITIES},
         "escalation_unacknowledged_minutes": POSITIVE,
+        # Decision 1 (#27): a secondary contact is an EMERGENCY contact. HIGH
+        # alerts reach them only after this window of no acknowledgement;
+        # CRITICAL uses escalation_unacknowledged_minutes above.
+        "escalation_unacknowledged_minutes_high": POSITIVE,
         "unreachable_repeat_minutes": POSITIVE,
         "sms_cooldown_minutes": NON_NEGATIVE,
         "sms_critical_overrides_optout": _boolean(),
@@ -248,6 +252,7 @@ DEFAULTS: dict = {
         "cooldown_minutes": {"CRITICAL": 15, "HIGH": 30, "MEDIUM": 720, "LOW": 1440},
         "snooze_cap_hours": {"CRITICAL": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 24},
         "escalation_unacknowledged_minutes": 15,
+        "escalation_unacknowledged_minutes_high": 60,
         "unreachable_repeat_minutes": 1440,
         "sms_cooldown_minutes": 30,
         "sms_critical_overrides_optout": True,

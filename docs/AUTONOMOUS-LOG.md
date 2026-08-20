@@ -4093,3 +4093,59 @@ became **#88**: the anti-phishing story has no stable portal address to
 point at — recorded as a dependency (domain → TLS → SENTINEL_PORTAL_URL,
 which today leaves reset emails with relative links and SMS without a
 portal link) so nobody later "fixes" the copy by inventing a domain.
+
+# Session — 2026-08-19 · Decision 1 built: the emergency contact stops being a copy-to
+
+Recorded in DECISIONS-NEEDED §1 (ANSWERED) and on #27; built in one commit.
+The shape: immediate per-account routing is primary-only at the source (the
+poller's `_account_contact` — gate 1 holds because nothing ever offers the
+escalation machinery a LOW/MEDIUM); the escalator gained a per-severity
+window (`escalation_unacknowledged_minutes_high`, 60, full config chain)
+whose HIGH action is exactly one send to the secondary and nothing else —
+no global re-fire, no primary re-send, no operator page, which is the
+decision's literal scope, flagged as a reading on #27. CRITICAL escalation
+split its combined contacts send: primary keeps the re-fire; the secondary
+gets their own message that says why they are hearing at all and carries
+none of the original alert text (detection messages embed amounts and
+addresses; the emergency contact's message must not).
+
+The closing note (`send_critical_ack_closing_note`) hooks BOTH
+acknowledgement writers — operators.acknowledge_alert and
+portal.acknowledge_alert_as_member — because hooking one leaves the other
+silently mute; exactly-once rides the writers' `acknowledged_at IS NULL`
+guards; a note failure can never fail the ack; and an account with no
+secondary produces nothing at all, including no sms_deliveries bookkeeping
+— a deliberate silence must not read as a delivery failure (#57's
+distinction, applied in reverse, with a test named for it).
+
+The three surface questions were answered from code on #27: the escalator
+never repeats (escalated_at), so the two-message cap is structural; customer
+escalation meets operator paging only at CRITICAL escalation
+(critical_alert_escalated / escalation_delivered_to_nobody, unchanged); #57
+is untouched by the routing change. 17 new tests; the one existing
+escalation test that pinned the merged primary+secondary send was updated
+to pin the split instead.
+
+Filed, not built: #89 — the one-time "you are an emergency contact" note
+when a secondary is added, to be built after #27 in its own commit.
+
+**The mutation gate earned its keep twice on this change.** First: the
+initial full check passed its mutation gate at 117/119 — over a STALE
+mutant population that predated the new escalation branches; the clean
+re-run's fewer-ran-than-selected guard (127 selected, 119 ran) refused
+exactly the hollow pass that guard was built for. Second: regeneration
+revealed the gate's test SELECTION had never included the escalation test
+files, so the new functions read as uncovered — added
+test_escalation_reach.py and test_secondary_contact_escalation.py to the
+selection (legitimately, unlike #70's mistaken additions: both directly
+test in-scope sentinel/alerts code). The true score came out 123/127 = 96%,
+exactly on the floor, with two unexplained survivors in the NEW closing-note
+code — both the same gap: mutants that blank the acknowledgement TIME while
+the note still says "acknowledged". The time is the content; a killing test
+now pins the stored acknowledged_at appearing minute-precise, both kills
+proven via mutation-probe single-mutant runs (the final gate's 11s pass is
+the cached 96%; the next cold run scores 125/127). Seven design probes were
+re-anchored to the rewritten escalator — including one whose old mutation
+IS now the legitimate code (primary-only was the defect's shape, now the
+design) — and two NEW probes guard the closing-note hooks in both
+acknowledgement writers.
