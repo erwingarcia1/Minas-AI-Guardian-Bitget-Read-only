@@ -4149,3 +4149,23 @@ re-anchored to the rewritten escalator — including one whose old mutation
 IS now the legitimate code (primary-only was the defect's shape, now the
 design) — and two NEW probes guard the closing-note hooks in both
 acknowledgement writers.
+
+## Production record, owner-directed (2026-08-20): the unattributed contact removal
+
+**On 2026-08-19 the owner cleared azdatoo@gmail.com from
+`alert_email_secondary` on erwin-garcia, -2, -3, -4 and ezriel-garcia by
+direct database update, because no supported path existed. Unattributed by
+necessity.** The columns are add-only — written at onboarding, touchable by
+nothing afterwards; `sentinel set-contact` handles only the primary pair.
+Filed as **#91** (p2): extend set-contact with the secondary flags and
+--clear-secondary, attributed and event-recorded like every destination
+change — and the generalisation the owner named: this is the third
+read-path-with-no-write-path in a week (#80's `disabled`, #84's
+`tamper_suspected`, now this), so #84's guard idea extends to COLUMNS the
+product writes once and never again. Also per owner review: **#90
+downgraded to p4/partial** — the case-sensitivity fear was already found
+non-broken by its own investigation (`member_accounts` lowers both sides);
+what remains is normalise-on-write, plus a new line for the
+empty-string-as-absent `''` in blank secondary columns (the falsy-sentinel
+pattern; NULL should become the canonical absent value when #91 builds the
+write boundary).
