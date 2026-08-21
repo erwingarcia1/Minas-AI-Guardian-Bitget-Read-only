@@ -13,6 +13,8 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+## [1.6.2] — 2026-08-21
+
 ### Changed detection behaviour
 
 **None.** Which alerts fire, when, and to whom is untouched — this changes
@@ -1805,7 +1807,8 @@ Initial MVP (Phases 0–3, Bitget only).
 - Branded status dashboard + Prometheus metrics; Docker Compose; docs (threat
   model, customer runbook, deployment, data retention).
 
-[Unreleased]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.6.1...HEAD
+[Unreleased]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.6.2...HEAD
+[1.6.2]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.6.1...v1.6.2
 [1.6.1]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.6.0...v1.6.1
 [1.6.0]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.5.2...v1.6.0
 [1.5.2]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.5.1...v1.5.2
