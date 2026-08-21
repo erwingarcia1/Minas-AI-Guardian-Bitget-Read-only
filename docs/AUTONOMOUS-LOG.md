@@ -4204,3 +4204,20 @@ refusals: the dashboard's /login POST was outside its gates entirely
 (login-CSRF accepted); every dashboard POST now passes one chokepoint,
 the portal's pattern. 11 tests drive both real servers with the observed
 header shapes — the exact Chrome capture passes; the hostile shapes 403.
+
+# v1.6.1 — cut and pushed 2026-08-21
+
+**Tag `v1.6.1` at `094a7f8`, CI green, undeployed.** PATCH, fixes only, CDB
+None with its reason. The notes say both halves plainly: the customer-facing
+portal sign-in was broken from the start in every browser (#92 — no-referrer
+made our own forms send Origin: null; the CSRF gate refused null) and now
+works; the dashboard's /login POST sat outside its own CSRF gate and now
+every dashboard POST passes one chokepoint. And the why-nothing-caught-it
+is in the release note where it will be re-read: every gate was tested only
+from clients that send no Origin at all — curl applies no referrer policy,
+the test client no fetch metadata — clients that do not behave like the
+browsers the gate referees. The release's first attempt was refused by the
+issue-status gate for #92's closed-but-broken label (the recurring
+Fixes-trailer drift; applied and re-cut). Deploy:
+`sudo /opt/minas-guardian/scripts/deploy.sh v1.6.1` — and the post-deploy
+verification is finally human-shaped: sign in from a real browser.
