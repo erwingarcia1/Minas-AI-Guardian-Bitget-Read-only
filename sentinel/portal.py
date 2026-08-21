@@ -44,6 +44,10 @@ logger = logging.getLogger("sentinel.portal")
 # can return another customer's data.
 
 SESSION_COOKIE = "minas_portal"
+# Two clocks on every session (#31): an idle window that activity slides
+# forward, and an absolute cap no amount of activity extends. Stateless -
+# both deadlines ride inside the signed token.
+SESSION_IDLE_SECONDS = 2 * 3600
 SESSION_TTL_SECONDS = 12 * 3600
 _SECRET_KEY_ROW = "session_signing_secret"
 
@@ -348,18 +352,36 @@ def _session_secret(db: Database) -> bytes:
 
 
 def make_session_token(secret: bytes, email: str, now: float | None = None,
-                       epoch: int | None = None) -> str:
+                       epoch: int | None = None,
+                       absolute_deadline: float | None = None) -> str:
     """`epoch` is the member's `session_epoch`, baked into the signed payload.
 
     Sessions are stateless - there is no server-side record to delete - so
     this is the only thing that can make an already-issued cookie stop
     working. Bumping the stored epoch on a password change retires every
-    cookie ever issued to that member (#33)."""
+    cookie ever issued to that member (#33).
+
+    Two deadlines (#31): `idle` slides forward on activity (the refresh in
+    `_session_email` re-issues the cookie), `hard` is set once at sign-in
+    and COPIED, never extended, through every refresh - a session left open
+    on a stolen laptop dies of idleness in hours, and no amount of activity
+    keeps any session alive past the absolute cap."""
+    now_v = now if now is not None else time.time()
     email_b64 = base64.urlsafe_b64encode(normalize_email(email).encode()).decode().rstrip("=")
-    expires = int((now if now is not None else time.time()) + SESSION_TTL_SECONDS)
-    payload = f"{email_b64}.{expires}.{int(epoch or 1)}"
+    idle = int(now_v + SESSION_IDLE_SECONDS)
+    hard = int(absolute_deadline if absolute_deadline is not None
+               else now_v + SESSION_TTL_SECONDS)
+    payload = f"{email_b64}.{idle}.{hard}.{int(epoch or 1)}"
     sig = hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
     return f"{payload}.{sig}"
+
+
+def session_hard_deadline(token: str) -> float | None:
+    """The token's absolute deadline, for refreshes that must not extend it."""
+    try:
+        return float(token.split(".")[2])
+    except (ValueError, IndexError):
+        return None
 
 
 def verify_session_token(secret: bytes, token: str, now: float | None = None,
@@ -368,14 +390,18 @@ def verify_session_token(secret: bytes, token: str, now: float | None = None,
 
     A token whose epoch does not match the member's current one was issued
     before a password change and is refused - that is what "resetting signs
-    out all other sessions" means when there is no session store."""
+    out all other sessions" means when there is no session store. Expiry is
+    the EARLIER of the idle and absolute deadlines. Pre-#31 four-field
+    tokens fail the five-way split and are refused - everyone signs in
+    once after the upgrade."""
     try:
-        email_b64, expires_s, epoch_s, sig = token.split(".")
-        payload = f"{email_b64}.{expires_s}.{epoch_s}"
+        email_b64, idle_s, hard_s, epoch_s, sig = token.split(".")
+        payload = f"{email_b64}.{idle_s}.{hard_s}.{epoch_s}"
         expected = hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(sig, expected):
             return None
-        if int(expires_s) < (now if now is not None else time.time()):
+        now_v = now if now is not None else time.time()
+        if int(idle_s) < now_v or int(hard_s) < now_v:
             return None
         if epoch is not None and int(epoch_s) != int(epoch):
             return None
@@ -2470,6 +2496,16 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
     secret = _session_secret(db)
     throttle = LoginThrottle()
 
+    def _throttle_pair(ip: str, identity: str) -> str:
+        """Identity-scoped throttling is keyed to (ip, identity), never the
+        bare identity (#31): a stranger who knows a victim's email must not
+        be able to lock the victim out of the one page they need most
+        mid-incident. The per-IP key still caps any single source across
+        every identity; the deliberate residue is that a DISTRIBUTED
+        guesser is throttled per-IP only - the alternative hands every
+        stranger a lockout button."""
+        return f"{ip}|{identity}"
+
     def _same_origin(handler) -> bool:
         """Is this POST from our own pages? (CSRF gate on every state change.)
 
@@ -2520,6 +2556,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             # is the protection that mattered, while our own posts stay
             # attributable to us.
             self.send_header("Referrer-Policy", "same-origin")
+            refresh = getattr(self, "_refresh_cookie", None)
+            if refresh is not None:
+                self.send_header("Set-Cookie", refresh)
+                self._refresh_cookie = None
             for k, v in extra_headers or []:
                 self.send_header(k, v)
             self.end_headers()
@@ -2556,7 +2596,21 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     row = cur.fetchone()
                 if row is None:
                     return None  # the member was removed; the cookie is stale
-                return verify_session_token(secret, value, epoch=row["session_epoch"])
+                current = verify_session_token(secret, value, epoch=row["session_epoch"])
+                if current is not None:
+                    # Activity slides the idle window (#31): re-issue with a
+                    # fresh idle deadline and the ORIGINAL absolute one -
+                    # copied, never extended. _send attaches it.
+                    hard = session_hard_deadline(value)
+                    if hard is not None and hard > time.time():
+                        refreshed = make_session_token(
+                            secret, current, epoch=row["session_epoch"],
+                            absolute_deadline=hard)
+                        max_age = max(1, int(min(hard - time.time(), SESSION_IDLE_SECONDS)))
+                        self._refresh_cookie = (
+                            f"{SESSION_COOKIE}={refreshed}; Max-Age={max_age}; "
+                            f"Path=/; HttpOnly; Secure; SameSite=Lax")
+                return current
             return None
 
         def _client_ip(self) -> str:
@@ -2730,7 +2784,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 self._send(_render_login(error="That sign-in expired. Please start again.").encode())
                 return
 
-            if throttle.blocked(email) or throttle.blocked(ip):
+            if throttle.blocked(_throttle_pair(ip, email)) or throttle.blocked(ip):
                 logger.warning("two-factor throttled for %s from %s", email, ip)
                 self._send(_render_login(error="Too many attempts — try again later.").encode(), 429)
                 return
@@ -2739,13 +2793,13 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 # Counted on the same limiter as passwords. Six digits is a
                 # million guesses, and an endpoint that accepts them as fast as
                 # they arrive is not a second factor.
-                throttle.record_failure(email)
+                throttle.record_failure(_throttle_pair(ip, email))
                 throttle.record_failure(ip)
                 logger.warning("two-factor code rejected for %s from %s", email, ip)
                 self._send(_render_code_prompt(pending, error="That code was not accepted.").encode())
                 return
 
-            throttle.reset(email)
+            throttle.reset(_throttle_pair(ip, email))
             with db.cursor() as cur:
                 cur.execute("SELECT session_epoch FROM portal_members WHERE email = ?", (email,))
                 row = cur.fetchone()
@@ -2777,7 +2831,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             deadline = time.monotonic() + _RESET_RESPONSE_FLOOR_SECONDS
             address = normalize_email((form.get("email", [""])[0] or ""))
             ip = self._client_ip()
-            if throttle.blocked(address) or throttle.blocked(ip):
+            if throttle.blocked(_throttle_pair(ip, address)) or throttle.blocked(ip):
                 logger.warning("reset request throttled for %s from %s", address or "<empty>", ip)
                 # Same acknowledgement even when throttled: "you are being
                 # rate limited" is itself a signal that this address is worth
@@ -2785,7 +2839,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 self._pad_to(deadline)
                 self._send(_render_forgot(notice=_RESET_ACK).encode())
                 return
-            throttle.record_failure(address)
+            throttle.record_failure(_throttle_pair(ip, address))
             throttle.record_failure(ip)
 
             token = create_reset_token(db, address)
@@ -2819,7 +2873,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             set_member_password(db, address, password, invalidate_sessions=True,
                                 notify=lambda addr: _send_password_changed_email(db, addr))
             logger.info("password reset completed for %s from %s", address, self._client_ip())
-            throttle.reset(address)
+            throttle.reset(_throttle_pair(self._client_ip(), address))
             # No session issued. Setting a password proves control of the
             # mailbox, not knowledge of the password, and signing them straight
             # in would make the link itself a login - which is the thing the
@@ -3053,12 +3107,12 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             email = normalize_email((form.get("email", [""])[0] or ""))
             password = form.get("password", [""])[0] or ""
             ip = self._client_ip()
-            if throttle.blocked(email) or throttle.blocked(ip):
+            if throttle.blocked(_throttle_pair(ip, email)) or throttle.blocked(ip):
                 logger.warning("portal login throttled for %s from %s", email or "<empty>", ip)
                 self._send(_render_login(error="Too many attempts — try again later.").encode(), 429)
                 return
             if email and password and check_member_login(db, email, password):
-                throttle.reset(email)
+                throttle.reset(_throttle_pair(ip, email))
                 if member_login_requires_code(db, email):
                     # No cookie. A correct password buys a pending token and
                     # nothing else - if a session were issued here the second
@@ -3077,7 +3131,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     f"{SESSION_COOKIE}={token}; Max-Age={SESSION_TTL_SECONDS}; Path=/; HttpOnly; Secure; SameSite=Lax",
                 )])
                 return
-            throttle.record_failure(email)
+            throttle.record_failure(_throttle_pair(ip, email))
             throttle.record_failure(ip)
             logger.warning("portal login failed for %s from %s", email or "<empty>", ip)
             # Identical message whether the email exists or not.

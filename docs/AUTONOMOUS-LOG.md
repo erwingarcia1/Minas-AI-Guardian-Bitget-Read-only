@@ -4257,3 +4257,32 @@ time after the next scheduled-gates run (Monday cron or a dispatch)
 covers a tree that then releases without gate-relevant changes.
 Deploy: `sudo /opt/minas-guardian/scripts/deploy.sh v1.6.2` — tooling
 only; no urgency beyond keeping GitHub and production in step.
+
+# Session — 2026-08-21 · #31: the lockout button and the immortal session
+
+Priority per the owner: the portal is public and — since #92 — sign-in
+actually works, which makes its remaining auth gaps real instead of
+theoretical.
+
+**Lockout**: the throttle keyed failures on the bare email; five wrong
+passwords from anyone, anywhere, locked the real customer out for the
+window. Identity throttling is now (ip, identity)-paired at every site —
+login, two-factor, forgot/reset — with the per-IP cap unchanged, and the
+deliberate residue recorded in the code: a distributed guesser is
+throttled per-IP only, because bare-identity blocking IS the lockout
+button. Proven at three levels: throttle semantics (the attacker's pair
+blocks, the victim's does not), server key composition (a recording spy
+asserts the bare email never reaches the throttle — the reopening of this
+exact hole would fail by name), and the 429 refusal end-to-end.
+
+**Sessions**: tokens now carry two deadlines — idle (2h, slides on
+activity via silent cookie re-issue in _session_email/_send) and absolute
+(12h, set at sign-in, COPIED through every refresh, extended by nothing).
+Old four-field tokens fail the five-way split and are refused cleanly:
+everyone signs in once after the upgrade, said plainly in the CHANGELOG.
+One test bug worth remembering: asserting refreshed != original raced
+integer-second timestamps; the true property is that the idle deadline
+never regresses.
+
+8 new tests; 1,135 green; the fix touched the same _send/_session plumbing
+as #92 and every CSRF test stayed green.

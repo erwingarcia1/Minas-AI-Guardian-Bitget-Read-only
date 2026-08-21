@@ -13,6 +13,29 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched — this changes
+who can be locked out of the portal and how long a session lives.
+
+### Fixed
+
+- **Someone else guessing your email can no longer lock you out** (#31).
+  The sign-in throttle counted failures against the bare email address, so
+  any stranger who knew it could post wrong passwords and lock the real
+  customer out of the portal — the page they most need mid-incident, and a
+  denial-of-service an attacker would pair with the theft it hides.
+  Identity throttling is now keyed to the (source address, identity) pair
+  across sign-in, two-factor, and password-reset; a single source is still
+  capped across every email it tries. The recorded residue: a distributed
+  guesser is throttled per source only, because the alternative hands
+  every stranger a lockout button.
+- **Portal sessions now expire after two hours of inactivity** (#31).
+  Activity slides the window (the cookie is silently re-issued as you use
+  the portal); nothing extends a session past the absolute 12-hour cap set
+  at sign-in. **One-time effect on upgrade: every existing portal session
+  is signed out** — the token format changed — and everyone signs in once.
+
 ## [1.6.2] — 2026-08-21
 
 ### Changed detection behaviour

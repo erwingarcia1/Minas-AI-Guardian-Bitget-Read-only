@@ -662,7 +662,7 @@
  {
   "name": "#32 ATTACK brute-force the code: 2FA attempts are not throttled",
   "file": "sentinel/portal.py",
-  "old": "                throttle.record_failure(email)\n                throttle.record_failure(ip)\n                logger.warning(\"two-factor code rejected for %s from %s\", email, ip)",
+  "old": "                throttle.record_failure(_throttle_pair(ip, email))\n                throttle.record_failure(ip)\n                logger.warning(\"two-factor code rejected for %s from %s\", email, ip)",
   "new": "                logger.warning(\"two-factor code rejected for %s from %s\", email, ip)",
   "tests": [
    "tests/test_portal_two_factor_login.py",
