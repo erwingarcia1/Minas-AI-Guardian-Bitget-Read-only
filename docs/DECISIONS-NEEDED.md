@@ -26,7 +26,9 @@ whoever builds one should build it to cover both.
 | 5 | PDF export for incidents | #29 (G-25) | Defer — print stylesheet now |
 | 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), #46 (G-42) | Start legal review now; 24 months interim |
 | 7 | External uptime monitoring: latency, vendor, what customers hear | #63 | Dead-man's switch, 15 min, third-party vendor |
-| 12 | Restart-on-unhealthy: sidecar, systemd timer, or page-only | #81 | systemd timer with a restart cap; never the sidecar |
+| 12 | Restart-on-unhealthy: sidecar, systemd timer, or page-only | ~~#81~~ | **ANSWERED 2026-08-21** — systemd timer accepted; see section 12 |
+| 13 | Browser push notifications | ~~#23~~ | **ANSWERED 2026-08-21** — won't-do; no-JS posture stands; see section 13 |
+| 14 | Exchange key-creation instructions: screenshots or text | ~~#8~~ | **ANSWERED 2026-08-21** — text-only, dated and interface-named; see section 14 |
 
 ---
 
@@ -630,7 +632,7 @@ cards is a business event somebody should see.
 
 ---
 
-## 12. What acts on an unhealthy container (#81)
+## 12. What acts on an unhealthy container (#81) — **ANSWERED 2026-08-21**
 
 **The question.** The compose healthcheck correctly reported unhealthy for
 six weeks (#79, FailingStreak 148) and nothing consumed the verdict —
@@ -650,6 +652,44 @@ covers it — a restart loop nobody knows about is #79's six weeks with
 extra steps.
 
 **What it blocks:** #81.
+
+---
+
+**The answer (owner, 2026-08-21): ACCEPTED.** Build the systemd timer that
+restarts the container when its healthcheck has been failing, with a restart
+cap. Not the docker.sock sidecar — mounting that socket into a container
+hands it root on the host. Two requirements that make it useful rather than
+decorative, specified on #81: every restart is **recorded and visible** (a
+service quietly restarting hourly is a hidden fault — #79's container
+reported unhealthy 148 consecutive times and nothing acted), and reaching
+the cap must be **LOUD** — a cap that silently stops trying returns to the
+original silence with more steps; the who-hears answer is #63's paging half
+(decision 7), linked from the issue. Buildable; not built before v1.6.1.
+
+---
+
+## 13. Browser push notifications (#23) — **ANSWERED 2026-08-21: won't-do**
+
+**Closed, and the reasoning recorded so nobody relitigates it**: browser
+push only reaches someone whose browser is already open, which is not the
+case this product exists for — and it buys that by adding a JavaScript
+surface to a product whose central claim is that it cannot touch anyone's
+money. The no-JS posture stands (decision on #82, restated here).
+
+**The condition that would reopen it**: a deliberate decision to change the
+no-JS posture for some other reason — never this one.
+
+---
+
+## 14. Exchange key-creation instructions (#8) — **ANSWERED 2026-08-21: text-only**
+
+No screenshots. Written steps that stay accurate beat pictures that quietly
+stop matching what the customer is looking at, and maintaining screenshots
+across four exchanges is permanent work. **One requirement**: date each
+instruction set and name the exchange interface it was written against —
+text goes stale the same way screenshots do, just less visibly, which is
+worse. How drift gets noticed, and the revisit trigger (onboarding support
+load), are on the issue. Buildable; not built before v1.6.1.
 
 ---
 
