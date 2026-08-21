@@ -133,6 +133,11 @@ scripts/release.sh 1.2.0     # refuses on an empty [Unreleased], a dirty tree,
                              # a duplicate tag, or any health-check failure
 ```
 
+The slow gates (probes, mutation floor) are skipped locally only when
+scheduled CI provably ran them on this exact tree and passed — see
+"Where the slow gates canonically run" above; anything unprovable runs
+them locally, and a red scheduled run on this code refuses the release.
+
 It moves `[Unreleased]` under a dated heading, bumps `pyproject.toml`, adds the
 compare link, commits, and creates the annotated tag `v1.2.0`. Push with
 `git push && git push --tags`.
@@ -214,7 +219,15 @@ The division of labour:
   execution-tested in `tests/test_scheduled_gates.py`.
 - **this script** — everything, locally, when a change touches probe-covered
   code or detection behaviour; `--fast` otherwise.
-- **release.sh** — still demands the full set before a tag exists.
+- **release.sh** — demands the slow gates be green for the exact tree
+  being tagged, but no longer insists on running them itself (#93): when
+  the most recent scheduled CI run sits on an ancestor of HEAD with no
+  gate-relevant path changed since and is green, the release runs the fast
+  gates only. Every unprovable case — gh missing or unauthenticated,
+  GitHub down, no covering run, gate-relevant changes since — falls back
+  to the full local run; a covering run that is RED refuses the release
+  outright. The predicate (`scripts/scheduled-gates-cover.sh`) may only
+  make a release cheaper, never weaker.
 
 The eighth gate closes the quiet failure of that arrangement: a cron that
 silently stops firing reads as permanently green, so

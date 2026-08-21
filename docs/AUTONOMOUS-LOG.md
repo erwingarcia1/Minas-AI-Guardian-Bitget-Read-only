@@ -4221,3 +4221,26 @@ issue-status gate for #92's closed-but-broken label (the recurring
 Fixes-trailer drift; applied and re-cut). Deploy:
 `sudo /opt/minas-guardian/scripts/deploy.sh v1.6.1` — and the post-deploy
 verification is finally human-shaped: sign in from a real browser.
+
+# Session — 2026-08-21 · #93: releases trust proven CI coverage, never assumed
+
+v1.6.1 is DEPLOYED and human-verified — the owner signed into the member
+portal from a real browser, the first time the portal has functioned for a
+human being.
+
+#93 built alone (it changes the gating system, same caution as #86).
+`scripts/scheduled-gates-cover.sh` answers one question with three
+outcomes: covered-and-green (exit 0 → fast gates only), covered-and-RED
+(exit 3 → the release REFUSES — the gates failed on this code; a laptop
+re-roll is the weakening this change must not allow), everything else
+(fall back to the full local run). "Covers" is two conditions, not one:
+ancestor of HEAD AND no gate-relevant path changed since — ancestor alone
+only proves the gates ran on an ancestor. The most recent covering run
+decides, so an older green cannot outvote a newer red. gh missing or
+unauthenticated is handled explicitly as "prove it locally" — the eighth
+health-check gate SKIPS without gh, which is right for a local freshness
+convenience and would have been wrong here: an unauthenticated laptop must
+not produce a release with no slow gates run anywhere. Eleven predicate
+tests (fallbacks and refusal proven, the gh-missing proof made unskippable
+via a bare-PATH harness) + four release.sh dispatch tests, including
+fail-closed against the predicate script's own absence.

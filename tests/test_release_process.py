@@ -303,3 +303,81 @@ def test_deploy_gate_exports_nothing_when_it_refuses(repo: Path):
 
     assert result.returncode == 1
     assert "export GIT_SHA" not in result.stdout
+
+
+# --- #93: the slow gates skip ONLY on proven scheduled-CI coverage ------------
+#
+# release.sh consults scripts/scheduled-gates-cover.sh: exit 0 means fast
+# gates only, exit 3 means the scheduled gates FAILED on this code and the
+# release refuses outright, anything else - including the script being
+# absent or crashing - means the full local health-check, exactly as before.
+# The dispatch itself is what these prove; the predicate's own logic is
+# proven in tests/test_scheduled_gates_cover.py.
+
+def _recording_health_check(repo: Path) -> Path:
+    """A health-check stub that records how it was invoked. The record lives
+    OUTSIDE the repo: release.sh refuses a tree the health check dirtied."""
+    args_file = repo.parent / "hc-args.txt"
+    hc = repo / "scripts" / "health-check.sh"
+    hc.write_text(f"#!/usr/bin/env bash\necho \"$@\" > {args_file}\nexit 0\n")
+    hc.chmod(0o755)
+    return args_file
+
+
+def _cover_stub(repo: Path, exit_code: int) -> None:
+    cover = repo / "scripts" / "scheduled-gates-cover.sh"
+    cover.write_text(f"#!/usr/bin/env bash\nexit {exit_code}\n")
+    cover.chmod(0o755)
+
+
+def test_proven_coverage_runs_only_the_fast_gates(repo):
+    args_file = _recording_health_check(repo)
+    _cover_stub(repo, 0)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "stubs")
+
+    result = _run(repo, "release.sh", "1.1.0")
+
+    assert result.returncode == 0, result.stderr
+    assert args_file.read_text().strip() == "--fast"
+
+
+def test_unproven_coverage_runs_the_full_gates(repo):
+    args_file = _recording_health_check(repo)
+    _cover_stub(repo, 1)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "stubs")
+
+    result = _run(repo, "release.sh", "1.1.0")
+
+    assert result.returncode == 0, result.stderr
+    assert args_file.read_text().strip() == ""  # no --fast: everything, locally
+
+
+def test_a_missing_cover_script_runs_the_full_gates(repo):
+    """Fail closed even against this feature's own absence: an old checkout
+    or a broken copy must degrade to the pre-#93 behaviour."""
+    args_file = _recording_health_check(repo)
+    (repo / "scripts" / "scheduled-gates-cover.sh").unlink(missing_ok=True)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "stubs")
+
+    result = _run(repo, "release.sh", "1.1.0")
+
+    assert result.returncode == 0, result.stderr
+    assert args_file.read_text().strip() == ""
+
+
+def test_red_scheduled_gates_refuse_the_release_before_any_health_check(repo):
+    args_file = _recording_health_check(repo)
+    _cover_stub(repo, 3)
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-qm", "stubs")
+
+    result = _run(repo, "release.sh", "1.1.0")
+
+    assert result.returncode != 0
+    assert "FAILED on code this release contains" in result.stderr
+    assert not args_file.exists(), "the health check ran despite a known-red tree"
+    # And nothing was written: a refusal leaves the tree as it found it.
+    assert "1.1.0" not in (repo / "pyproject.toml").read_text()

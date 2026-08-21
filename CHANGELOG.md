@@ -13,6 +13,29 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched — this changes
+how a release is verified, not what the product does.
+
+### Added
+
+- **Releases stop re-running the slow gates the scheduled CI already ran**
+  (#93). `release.sh` now consults `scripts/scheduled-gates-cover.sh`:
+  when the most recent scheduled CI run sits on an ancestor of the release
+  commit, no gate-relevant path (the package, tests, probe definitions,
+  gate scripts, dependency spec) changed since, and that run was green,
+  the release runs the fast gates only — saving up to ~50 minutes, cold
+  exactly when a release is worth cutting. The predicate fails CLOSED:
+  gh missing or unauthenticated, GitHub unreachable, no covering run, or
+  any gate-relevant change since all fall back to the full local
+  health-check, exactly as before — and a covering run that is RED
+  refuses the release outright rather than re-rolling the dice on a
+  laptop. Eleven predicate tests prove the fallbacks and the refusal;
+  four dispatch tests prove release.sh honours the contract, including
+  degrading to the old behaviour when the predicate script itself is
+  missing.
+
 ## [1.6.1] — 2026-08-21
 
 ### Changed detection behaviour

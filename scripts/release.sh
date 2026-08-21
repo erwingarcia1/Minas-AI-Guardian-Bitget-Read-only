@@ -18,7 +18,9 @@
 #   2. working tree is clean
 #   3. tag vX.Y.Z does not already exist
 #   4. `[Unreleased]` has actual content
-#   5. full health-check passes            <- the expensive one, last
+#   5. the gates pass - fast gates locally when scheduled CI already ran
+#      the slow ones on this exact tree and was green (#93); the full
+#      local health-check in every case that cannot be proven
 #   6. CHANGELOG surgery + pyproject bump
 #   7. commit, annotated tag
 #
@@ -114,13 +116,35 @@ echo "release: $TAG - [Unreleased] has $UNRELEASED_LINES lines of notes"
 
 # --- 5. health-check ---------------------------------------------------------
 #
-# Every gate, not --fast. A release is exactly the moment the slow gates are
-# worth their twenty minutes; skipping them here is skipping them entirely,
-# because nothing downstream re-runs them.
+# The slow gates (design-guard probes, mutation floor) run canonically in
+# scheduled CI (#86). If the most recent scheduled run covers this exact
+# tree - its commit an ancestor of HEAD, no gate-relevant path changed
+# since - and is green, this release runs only the fast gates locally
+# (#93; up to ~50 minutes saved, and the cache is cold exactly when a
+# release is worth cutting). FAIL CLOSED everywhere else: cannot prove
+# coverage means run everything locally exactly as before - gh missing,
+# unauthenticated, or GitHub down is "prove it locally", never "assume it
+# passed" - and covered-but-RED means the gates already failed on this
+# code, so the release refuses rather than re-rolling the dice on a
+# laptop. This predicate may only make a release cheaper, never weaker.
 
-echo "release: running the full health-check (this takes ~20 minutes)"
-scripts/health-check.sh || die "health-check failed - not releasing.
+set +e
+scripts/scheduled-gates-cover.sh
+COVERAGE=$?
+set -e
+if [ "$COVERAGE" -eq 3 ]; then
+  die "the scheduled slow gates FAILED on code this release contains - not releasing.
+Fix what the scheduled run found (it filed an issue with the specifics), push,
+and run this again once the scheduled gates are green."
+elif [ "$COVERAGE" -eq 0 ]; then
+  echo "release: scheduled CI already ran the slow gates on this code - fast gates only (~4 min)"
+  scripts/health-check.sh --fast || die "health-check failed - not releasing.
 Logs are in .health-check-logs/. Fix, commit, and run this again."
+else
+  echo "release: running the full health-check (this takes ~20 minutes)"
+  scripts/health-check.sh || die "health-check failed - not releasing.
+Logs are in .health-check-logs/. Fix, commit, and run this again."
+fi
 
 # Health-check can ratchet scripts/mutation-floor.txt, which is tracked. If it
 # did, that is a real change and it belongs in its own commit, not swept into
