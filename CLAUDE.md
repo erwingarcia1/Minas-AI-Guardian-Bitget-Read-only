@@ -8,13 +8,12 @@ deliberately not duplicated here.
 
 - **Never deploy.** Deploys are manual and the owner's.
 - **Never cut a release on your own initiative.** The owner decides when a
-  release is cut and when it ships. Work issues, commit, push, confirm CI —
-  then stop and say what is unreleased. Running `scripts/release.sh` is
-  gated on the owner, the same way deploying is. The `[Unreleased]`
-  CHANGELOG entry is still written as part of each issue — notes must never
-  be reconstructed later from commit messages. (Supersedes any earlier run
-  brief that said to cut a release when a coherent batch is done;
-  standing as of 2026-08-21.)
+  release is cut and when it ships. Keep writing `[Unreleased]` notes in
+  CHANGELOG.md as you close each issue — that is required — but do not run
+  `scripts/release.sh`, do not create or push tags, and do not deploy
+  unless the owner asks for a release by name. (Standing as of 2026-08-21;
+  supersedes any earlier run-brief language about cutting when a batch is
+  done.)
 - **Never touch `.env` or credentials** beyond what an issue explicitly
   requires.
 - **Never run a second session against this working tree.** Confirm you are
