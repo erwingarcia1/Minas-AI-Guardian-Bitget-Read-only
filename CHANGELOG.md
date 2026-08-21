@@ -24,8 +24,13 @@ who can *sign in*, not who is told.
   `Referrer-Policy: no-referrer` makes a browser serialise the Origin of
   our own form posts as `null`, and the CSRF gate rejected null — so every
   browser POST (sign-in, password reset, key replacement) returned 403
-  "cross-origin POST rejected", at every address, always. curl and the
-  test client never saw it because neither applies a referrer policy. The
+  "cross-origin POST rejected", at every address, always — **the
+  customer-facing sign-in was broken from the start**. Neither the suite
+  nor the design-guard probes caught it, and the reason is worth keeping:
+  both drive the server with clients that send no Origin header at all
+  (curl does not apply referrer policy; the test client sends no fetch
+  metadata), so every gate was only ever tested from clients that do not
+  behave like the browsers the gate exists to referee. The
   gate now reads `Sec-Fetch-Site` first (browser-set and unforgeable;
   cross-site refused even with a plausible Origin), keeps the Origin
   comparison as fallback, never accepts bare `Origin: null`, and both
