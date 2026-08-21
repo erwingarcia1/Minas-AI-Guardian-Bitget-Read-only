@@ -4244,3 +4244,16 @@ not produce a release with no slow gates run anywhere. Eleven predicate
 tests (fallbacks and refusal proven, the gh-missing proof made unskippable
 via a bare-PATH harness) + four release.sh dispatch tests, including
 fail-closed against the predicate script's own absence.
+
+# v1.6.2 — cut and pushed 2026-08-21
+
+**Tag `v1.6.2` at `28d8e4e`, CI green, PATCH-shaped tooling release**
+carrying #93. The cut itself was the predicate's first live run and it
+behaved exactly as designed: "no completed scheduled run covers this tree
+— the slow gates must run locally" (this week's sentinel/ changes postdate
+the last scheduled run), so the full health check ran — fail-closed
+proving itself on its first outing. The cheap path fires for the first
+time after the next scheduled-gates run (Monday cron or a dispatch)
+covers a tree that then releases without gate-relevant changes.
+Deploy: `sudo /opt/minas-guardian/scripts/deploy.sh v1.6.2` — tooling
+only; no urgency beyond keeping GitHub and production in step.
