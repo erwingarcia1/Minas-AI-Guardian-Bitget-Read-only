@@ -4286,3 +4286,27 @@ never regresses.
 
 8 new tests; 1,135 green; the fix touched the same _send/_session plumbing
 as #92 and every CSRF test stayed green.
+
+# 2026-08-22 · #95 measured and closed; the #93 record corrected
+
+**The measurements** (owner-ordered before any build; all runs green):
+full local health check **14m27s** (warm mutation cache 16s; probes 648s
+dominate — cold context from this week's logs: 26m to 1h55m); fast gates
+**3m21s**; dispatch-CI-and-wait **47m21s** from dispatch to usable answer
+(queue ~6s, the scheduled-gates job itself 47m12s, run 32533458776).
+**Dispatch-and-wait is ~3.3× slower than the measured local fallback** —
+no sharding, no bigger machine, and CI is cold every time while the local
+cache is warm most of the time because per-issue full checks pre-warm it.
+#95 closed as a pessimization with the numbers in the comment; re-measure
+before reopening if CI economics change.
+
+**The correction, owner-prompted and confirmed from code**: the
+covered-red refusal in #93 is NOT frequency-independent, as this log and
+the #95 body had claimed. Exit 3 requires the same two-condition coverage
+as the fast path — a red scheduled run with any gate-relevant commit
+after it is skipped and the release falls back to local gates, never
+consulting the red run. The refusal fires exactly as rarely as the fast
+path; the moved-past semantics stay sound (the later commit may be the
+fix, and local gates run in full), but the "laptop can no longer out-vote
+a red run" claim was true only for unchanged trees. Corrected on #93 and
+#95; this entry is the log's own correction.
