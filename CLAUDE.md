@@ -9,11 +9,13 @@ deliberately not duplicated here.
 - **Never deploy.** Deploys are manual and the owner's.
 - **Never cut a release on your own initiative.** The owner decides when a
   release is cut and when it ships. Keep writing `[Unreleased]` notes in
-  CHANGELOG.md as you close each issue — that is required — but do not run
-  `scripts/release.sh`, do not create or push tags, and do not deploy
-  unless the owner asks for a release by name. (Standing as of 2026-08-21;
-  supersedes any earlier run-brief language about cutting when a batch is
-  done.)
+  CHANGELOG.md as you close each issue — that is required. When the owner
+  instructs a release by name, run the WHOLE cut: `scripts/release.sh`,
+  create and push the annotated tag, confirm CI — tagging is part of the
+  cut, not a separate permission. The only two acts reserved to the owner
+  are the instruction to cut and the deployment itself. (Standing as of
+  2026-08-21; supersedes any earlier run-brief language about cutting when
+  a batch is done.)
 - **Never touch `.env` or credentials** beyond what an issue explicitly
   requires.
 - **Never run a second session against this working tree.** Confirm you are
