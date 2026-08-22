@@ -4498,3 +4498,23 @@ mutation-check.sh, regenerated: 139/142 = 97% over the FULL population,
 floor 96 unchanged. (The re-run completed inside an orphaned background
 task across a session restart; its output file carries the pass —
 verified, not assumed.) Next: #21.
+
+# 2026-08-23 · #21 built: the proof-of-life digest — and the batch boundary
+
+build_member_digest states the criterion's three things plainly, reusing
+member_status so the digest and /status cannot disagree; "checks
+performed" is a real counter (poll_state.checks_total, incremented at the
+fast-loop success site) delta'd against a per-member mark in portal_meta;
+issues are counts in severity words, no rule names or evidence (tested
+with a poisoned message). It SENDS when quiet — that is the product's
+point — to primary contacts only (decision 1 keeps secondaries to
+escalations), per the member's daily/weekly(Mondays)/off choice on the
+Security page (evented per diff), once per day at most. Corrupt stored
+choice reads daily, never silently off; re-runs are no-ops — both
+probe-pinned (142 probes). cmd_digest sends ops digest then member
+digests on the same cron. 14 tests. Full HC green ×9.
+
+This closes the portal-screens batch (#34 #10-status #22 #20-verified
+#9 #45 #18 #21). Per the run brief's release rule: STOPPING here to
+report [Unreleased] and wait for the owner's release decision. #81/#8
+and the rest of the order remain unstarted, deliberately.

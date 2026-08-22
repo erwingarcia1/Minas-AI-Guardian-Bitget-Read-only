@@ -440,20 +440,25 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_digest(args: argparse.Namespace) -> int:
-    from sentinel.alerts.digest import send_digest
+    from sentinel.alerts.digest import send_digest, send_member_digests
 
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
-    # Not bound: constructing it validates config/rules.yaml and refuses to
-    # run the digest on a config the poller would also be rejecting (G-12).
-    RulesConfig(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+    # Constructing it validates config/rules.yaml and refuses to run the
+    # digest on a config the poller would also be rejecting (G-12).
+    rules = RulesConfig(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
     named = _build_named_channels()
-    # Digest goes to telegram + email when configured.
+    # The ops digest goes to telegram + email when configured.
     targets = [c for name, c in named.items() if name in ("telegram", "email")]
     if not targets:
         print("no digest channels configured (need Telegram or SMTP env vars)", file=sys.stderr)
         return 1
     sent = send_digest(db, targets, hours=args.hours)
-    print("digest sent" if sent else "nothing to report - no digest sent")
+    print("ops digest sent" if sent else "nothing to report - no ops digest sent")
+    # The member proof-of-life digests (#21) ride the same daily cron: each
+    # contact's own choice (daily/weekly/off) decides, and the per-day mark
+    # makes a re-run a no-op, so running this twice cannot double-send.
+    members = send_member_digests(db, rules)
+    print(f"member digests sent: {members}")
     return 0
 
 

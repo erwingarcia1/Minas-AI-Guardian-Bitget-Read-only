@@ -352,6 +352,13 @@ class AccountPoller:
             last_success_at=_now_iso(),
             last_fast_loop_at=_now_iso(),
         )
+        # The digest's "checks performed" is this counter's delta (#21) - a
+        # measured fact, never an estimate derived from the polling cadence.
+        with self._db.cursor() as cur:
+            cur.execute(
+                "UPDATE poll_state SET checks_total = checks_total + 1 WHERE account_id = ?",
+                (account_id,),
+            )
         if self._metrics is not None:
             self._metrics.poll_ok()
 

@@ -1294,5 +1294,25 @@
       "tests/test_telegram_self_serve.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#21 a corrupted digest preference silently turns the proof of life off",
+    "file": "sentinel/alerts/digest.py",
+    "old": "    return value if value in DIGEST_FREQUENCIES else \"daily\"",
+    "new": "    return value if value in DIGEST_FREQUENCIES else \"off\"",
+    "tests": [
+      "tests/test_customer_digest.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#21 a cron re-run double-sends every member's digest",
+    "file": "sentinel/alerts/digest.py",
+    "old": "        if (mark.get(\"date\") or \"\")[:10] == today:",
+    "new": "        if False:",
+    "tests": [
+      "tests/test_customer_digest.py"
+    ],
+    "expect": "killed"
   }
 ]

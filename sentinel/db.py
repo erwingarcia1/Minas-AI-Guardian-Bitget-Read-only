@@ -156,6 +156,13 @@ class Database:
             # it repeated - withheld from the channels, never from the record.
             "ALTER TABLE alerts ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE alerts ADD COLUMN last_repeat_at TEXT",
+            # #21: "checks performed" in the digest is a measured number, not
+            # an estimate from the polling cadence - incremented on every
+            # successful fast-loop check.
+            "ALTER TABLE poll_state ADD COLUMN checks_total INTEGER NOT NULL DEFAULT 0",
+            # #21: the member's proof-of-life digest choice. Text rather than
+            # a foreign table for three values; writers validate.
+            "ALTER TABLE portal_members ADD COLUMN digest_frequency TEXT NOT NULL DEFAULT 'daily'",
         )
         for ddl in migrations:
             # Re-adding an existing column raises, and that IS the ordinary

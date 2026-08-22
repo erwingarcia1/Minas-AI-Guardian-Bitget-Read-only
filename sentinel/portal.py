@@ -2587,11 +2587,46 @@ def _render_security(db: Database, email: str, *, secret: str | None = None,
             "</form></section>"
         )
     # The 2FA interstitials (fresh secret, one-time recovery codes) stay
-    # focused; the Telegram section joins the page in its settled states.
+    # focused; the other settings join the page in its settled states.
     if not codes and not secret:
         body += _telegram_section(db, email)
+        body += _digest_section(db, email)
     return _page(banner + body, email, "/security",
                  title="Security — Minas AI Guardian")
+
+
+def _digest_section(db: Database, email: str) -> str:
+    """The proof-of-life digest choice (#21): daily, weekly, or off. Only a
+    member with a portal login can change it - the same bar as every other
+    preference here."""
+    from sentinel.alerts.digest import digest_frequency, member_exists_for_digest
+
+    current = digest_frequency(db, email)
+    if not member_exists_for_digest(db, email):
+        return (
+            '<section class="panel" aria-labelledby="digest-title"><h2 id="digest-title">Proof-of-life digest</h2>'
+            '<p class="muted">A periodic summary — accounts watched, checks '
+            "performed, issues found — so silence is provably the good kind. Arrives daily; "
+            "ask the Minas team to change it until your portal login is set up.</p></section>"
+        )
+    options = "".join(
+        f'<label style="display:block;margin-top:var(--space-2)">'
+        f'<input type="radio" name="frequency" value="{value}"'
+        f'{" checked" if value == current else ""}> {label}</label>'
+        for value, label in (("daily", "Daily — one summary every day"),
+                             ("weekly", "Weekly — Mondays"),
+                             ("off", "Off — alerts only, no summaries"))
+    )
+    return (
+        '<section class="panel" aria-labelledby="digest-title"><h2 id="digest-title">Proof-of-life digest</h2>'
+        '<p class="muted">A periodic summary — accounts watched, checks '
+        "performed, issues found — so silence is provably the good kind. It sends even when "
+        "all is quiet; that is the point.</p>"
+        '<form class="form" method="post" action="/digest/frequency" style="margin-top:var(--space-3)">'
+        f"{options}"
+        '<button class="btn btn--secondary" type="submit" style="margin-top:var(--space-4)">Save</button>'
+        "</form></section>"
+    )
 
 
 def _telegram_section(db: Database, email: str) -> str:
@@ -2920,6 +2955,27 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             remaining = deadline - time.monotonic()
             if remaining > 0:
                 time.sleep(remaining)
+
+        def _digest_frequency(self, form):
+            """The member's own digest choice (#21). Session-scoped; an
+            unrecognized value changes nothing rather than guessing."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            from sentinel.alerts.digest import DIGEST_FREQUENCIES, set_digest_frequency
+
+            value = (form.get("frequency", [""])[0] or "").strip()
+            if value not in DIGEST_FREQUENCIES:
+                self._send(_render_security(db, email, error="Choose daily, weekly, or off.").encode())
+                return
+            if set_digest_frequency(db, email, value):
+                from sentinel.events import record_member_security_event
+
+                record_member_security_event(db, email, "digest_frequency_changed",
+                                             {"to": value})
+            self._send(_render_security(
+                db, email, notice=f"Digest set to {value}.").encode())
 
         def _telegram_link(self, path):
             """Start or end a Telegram connection (#18). Session-scoped like
@@ -3315,6 +3371,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
 
             if path in ("/telegram/link", "/telegram/unlink"):
                 self._telegram_link(path)
+                return
+
+            if path == "/digest/frequency":
+                self._digest_frequency(form)
                 return
 
             if path == "/login-code":

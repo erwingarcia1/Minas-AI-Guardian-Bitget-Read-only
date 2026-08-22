@@ -61,6 +61,7 @@ ADMIN_EVENT_TYPES = (
     "member_two_factor_disabled",
     "member_telegram_connected",
     "member_telegram_disconnected",
+    "digest_frequency_changed",
     "monitoring_key_replaced",
 )
 
@@ -78,6 +79,7 @@ ADMIN_EVENT_LABELS = {
     "member_two_factor_disabled": "Two-factor turned off",
     "member_telegram_connected": "Telegram alerts connected",
     "member_telegram_disconnected": "Telegram alerts disconnected",
+    "digest_frequency_changed": "Digest schedule changed",
     "monitoring_key_replaced": "Monitoring key replaced",
 }
 

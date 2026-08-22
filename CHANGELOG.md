@@ -60,6 +60,23 @@ fired before still fires, minus the accidental double.
   takes — and "not re-checked since connection yet" said plainly when
   that is the truth. The "any change raises an alert" sentence is pinned
   to the existence of the permission-drift detector by test.
+- **A proof-of-life digest, on the member's own schedule** (#21). For a
+  product whose success looks like silence, the digest is how a customer
+  tells good silence from a dead poller — so unlike the ops digest, it
+  sends precisely when all is quiet: "Issues found: none — all quiet.
+  That silence is real: the checks above ran and found nothing to tell
+  you." Three plain statements: accounts watched (the same judgement as
+  the portal's status page, so the two cannot disagree, with paused and
+  troubled accounts named as such), checks performed (a measured counter
+  incremented on every successful check — the delta since the last
+  digest, never an estimate from the polling cadence), and issues found
+  (counts in severity words; never rule names, evidence, or balances).
+  Each primary contact chooses daily, weekly (Mondays), or off on the
+  portal's Security page — a corrupted stored choice reads as daily
+  rather than silently off, a cron re-run on the same day is a no-op
+  (both probe-pinned), the change is recorded on /activity, and secondary
+  contacts get nothing, per decision 1: they hear escalations, never
+  routine traffic.
 - **Members connect Telegram themselves, guided, with a test message
   first** (#18). The portal's Security page grew a Telegram section: one
   button issues a one-time code (15-minute expiry, single-use, superseded
