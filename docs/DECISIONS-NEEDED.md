@@ -693,6 +693,35 @@ load), are on the issue. Buildable; not built before v1.6.1.
 
 ---
 
+## 15. May a portal member remove (pause) their own account? (#10)
+
+#10's last criterion reads "I can remove an account, and the system stops
+watching it immediately." The supported removal exists and is immediate —
+`sentinel disable-account` (#80), offboarding-is-disable-never-delete, the
+account leaves the scheduler's queue at once — but it is an **operator**
+action, done on request. The open question is whether the portal should
+offer it to the member directly.
+
+The case against is the product's own threat model: "stop watching this
+account, right now, from a portal session" is exactly the button an
+attacker with a stolen session presses before moving funds — the same
+shape as redirecting the alerts, which this product treats as an attack
+tell. A self-serve pause would need at least: re-authentication at the
+moment of use, the tripwire email to every contact the way a destination
+change sends one, a prominent standing banner while paused (built with
+#34 — paused already counts as "not watched" there), and arguably a delay
+window a real owner can cancel within.
+
+The case for is the criterion as written: a customer's account is theirs,
+and "email Minas and wait" is not "I can remove an account".
+
+**What is needed**: whether to build member self-serve pause at all; if
+yes, which of the safeguards above are required for v1. Until then #10
+stays open on this criterion alone — its status-per-account criterion
+shipped with #34's home screen.
+
+---
+
 ## Not a decision, but needs saying: #16's remaining criterion
 
 G-12's third criterion — "threshold changes are recorded, showing **who**

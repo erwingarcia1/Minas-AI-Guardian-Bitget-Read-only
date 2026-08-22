@@ -1079,9 +1079,27 @@ def _render_login(error: str | None = None) -> str:
     return _page(body, title="Sign in — Minas AI Guardian", shell=True)
 
 
+def _watch_state(watch: dict | None) -> tuple[str, str]:
+    """The tri-state a customer reads on an account card (#34, #10):
+    Watching (checked recently, nothing failing), Paused (deliberately
+    disabled - stillness by choice, not a fault), Trouble (everything else:
+    stale, rejected key, tamper-flagged). Derived from member_status's
+    judgement, never recomputed here - the card and the /status page must
+    not be able to disagree."""
+    if watch is None:
+        return ("badge--danger", "Trouble")
+    if watch["watched"]:
+        return ("badge--ok", "Watching")
+    if watch["status"] == "disabled":
+        return ("badge--neutral", "Paused")
+    return ("badge--danger", "Trouble")
+
+
 def _render_home(db: Database, email: str, rules=None) -> str:
     accounts = member_accounts(db, email)
     ids = [r["id"] for r in accounts]
+    watch = member_status(db, email, rules)
+    watch_by_id = {a["account_id"]: a for a in watch["accounts"]}
     alerts = []
     if ids:
         marks = ",".join("?" for _ in ids)
@@ -1096,19 +1114,57 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     snoozed = active_snoozes_for_accounts(db, ids)
     marked = marked_alert_ids(db, ids)
 
+    def _card(r) -> str:
+        w = watch_by_id.get(int(r["id"]))
+        cls, word = _watch_state(w)
+        badge = (f'<span class="badge {cls}"><span class="dot" aria-hidden="true"></span>'
+                 f"{word}</span>")
+        # Trouble says what is wrong in the card itself; the customer must
+        # not need to guess which of the two pages carries the reason.
+        reason = ""
+        if w and not w["watched"] and w["reason"] and word == "Trouble":
+            reason = ('<div class="kv__row"><dt>What\'s wrong</dt>'
+                      f"<dd>{html.escape(w['reason'])}</dd></div>")
+        return (
+            '<article class="acct"><div class="acct__head"><div>'
+            f"<p class=\"acct__label\"><a class='acctlink' href='/account?id={r['id']}'>"
+            f"{html.escape(r['label'])} ›</a></p>"
+            f"<p class=\"acct__exchange\">{html.escape((r['exchange'] or 'bitget').title())}"
+            f" · {_account_type_label(r['topology'])}</p>"
+            f"</div>{badge}</div>"
+            '<dl class="kv"><div class="kv__row"><dt>Last successful check</dt>'
+            f"<dd>{_ts(r['last_success_at'], 'Never')}</dd></div>"
+            f"{reason}"
+            '<div class="kv__row"><dt>Key permissions</dt><dd>Read-only</dd></div></dl>'
+            "</article>"
+        )
+
     account_cards = "".join(
-        '<article class="acct"><div class="acct__head"><div>'
-        f"<p class=\"acct__label\"><a class='acctlink' href='/account?id={r['id']}'>"
-        f"{html.escape(r['label'])} ›</a></p>"
-        f"<p class=\"acct__exchange\">{html.escape((r['exchange'] or 'bitget').title())}"
-        f" · {_account_type_label(r['topology'])}</p>"
-        f"</div>{_status_pill(r['status'])}</div>"
-        '<dl class="kv"><div class="kv__row"><dt>Last successful check</dt>'
-        f"<dd>{_ts(r['last_success_at'], 'Never')}</dd></div>"
-        '<div class="kv__row"><dt>Key permissions</dt><dd>Read-only</dd></div></dl>'
-        "</article>"
-        for r in accounts
+        _card(r) for r in accounts
     ) or '<p class="empty">No accounts yet — contact the Minas team.</p>'
+
+    # The prominent banner (#34): if ANY account is not being watched, the
+    # home screen says so before anything else - a customer who stops at the
+    # first screen must still learn it. Paused-by-choice accounts still
+    # count: paused IS not watched, and the banner is where that stays
+    # visible.
+    banner = ""
+    if accounts and watch["overall"] != "watching":
+        dark = [a for a in watch["accounts"] if not a["watched"]]
+        if watch["overall"] == "not_watching":
+            cls, icon = "state--danger", _EYE_DANGER
+            answer = "Your accounts are NOT being watched."
+        else:
+            cls, icon = "state--warn", _EYE_WARN
+            answer = (f"{len(dark)} of your {len(accounts)} accounts "
+                      f"{'is' if len(dark) == 1 else 'are'} not being watched.")
+        banner = (
+            f'<div class="state {cls}" role="alert" style="margin-bottom:var(--space-5)">'
+            f'<span class="state__eyebrow">{icon}Attention</span>'
+            f'<p class="state__answer">{answer}</p>'
+            '<p class="state__detail"><a class="acctlink" href="/status">'
+            "See what each account needs ›</a></p></div>"
+        )
 
     alert_items = "".join(
         '<div class="alert-item"><div class="alert-item__head">'
@@ -1121,7 +1177,8 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     ) or '<p class="empty">No alerts — all quiet.</p>'
 
     body = (
-        '<section aria-labelledby="accounts-title"><div class="page-head">'
+        banner
+        + '<section aria-labelledby="accounts-title"><div class="page-head">'
         '<h1 id="accounts-title">My accounts</h1>'
         f'<p class="muted">{len(accounts)} exchange account'
         f'{"s" if len(accounts) != 1 else ""} connected. Read-only keys only.</p></div>'
@@ -1412,6 +1469,10 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
             "last_success_at": last_ok,
             "watched": bool(fresh and not auth_failing),
             "reason": reason,
+            # The raw column, so a consumer can tell a deliberate pause
+            # (disabled) from trouble - the home screen's tri-state (#34/#10)
+            # needs the distinction and must not re-derive it.
+            "status": str(r["status"]),
         })
 
     if rows and watched == len(rows):

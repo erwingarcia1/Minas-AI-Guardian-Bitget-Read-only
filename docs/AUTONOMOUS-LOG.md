@@ -4403,3 +4403,22 @@ reopen. Read-side lower() compares kept as belt-and-braces. Suite 1180
 green; full HC green with mutation gate COLD (5367s — contact.py is in
 the mutant population, so the cache regenerated; a real 127-mutant pass,
 floor 96 unchanged). Next: portal screens (#34+#10).
+
+# 2026-08-22 · #34 built (+#10's status half): the home screen answers "am I covered"
+
+Account cards on the portal home now carry the tri-state — Watching /
+Paused / Trouble — derived from member_status's judgement via
+`_watch_state` (never recomputed: the card and /status cannot disagree;
+member_status rows now carry the raw `status` column so a deliberate pause
+is distinguishable from a fault). Trouble states the reason in the card.
+The #34 banner: any account not watched — paused included, that choice
+stays visible — puts a role="alert" state block above everything with the
+count and a link to /status; degraded wording counts ("1 of your 2..."),
+none-watched gets the danger variant. Nine render+data tests. #10's
+removal criterion NOT built: member self-serve pause is the attacker's
+pre-theft button by this product's own threat model — recorded as
+DECISIONS-NEEDED **decision 15** (safeguards sketched: re-auth, tripwire
+mail, standing banner, cancel window); the supported immediate removal
+remains operator disable-account (#80). #10 stays open on that criterion
+alone. Full HC green ×9; mutation cold AGAIN (3899s — every sentinel/
+change invalidates mutants/; #97's cost, measured twice today). Next: #22.

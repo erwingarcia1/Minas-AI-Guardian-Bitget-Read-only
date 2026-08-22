@@ -21,6 +21,17 @@ used to be write-once — but no detector, threshold, or routing rule moved.
 
 ### Added
 
+- **The portal home answers "am I covered" per account, at a glance**
+  (#34, part of #10). Every account card now carries one of three words a
+  customer can act on — **Watching** (checked recently, nothing failing),
+  **Paused** (deliberately disabled — shown as a choice, not an error), or
+  **Trouble** (stale, rejected key, or tamper-flagged), with what's wrong
+  stated in the card itself. The state is `member_status`'s own judgement,
+  never recomputed, so the home screen and the "Am I being watched?" page
+  cannot disagree. And when ANY account is not being watched — paused ones
+  included — a prominent banner says so above everything else, with the
+  count and a link to what each account needs; a customer who stops at the
+  first screen still learns it.
 - **Contact addresses are stored one way, not however they were typed**
   (#90). Production carried one person's address as `azdatoo@gmail.com` on
   four accounts and `AZDATOO@GMAIL.COM` on a fifth; every read behaved
