@@ -21,6 +21,44 @@ Newest entry first.
 
 ---
 
+## 2026-08-22 · v1.7.0 (current), and the four deploys this file missed
+
+Discovered 2026-08-22 during an autonomous-run verification pass: the file's
+newest entry was v1.5.1 while production ran v1.7.0. **Five deploys went
+unrecorded** — the exact drift this file exists to prevent, caught this time
+by measuring instead of trusting. Evidence, measured over read-only SSH:
+
+The running container (`sentinel version --machine`, 2026-08-22):
+
+```
+version=1.7.0
+commit=408ebde4a
+tag=v1.7.0
+source=build-arg
+```
+
+Disk agrees: `git describe --tags` → `v1.7.0`, HEAD `408ebde`.
+
+The deploy history, from the production checkout's reflog (deploy.sh checks
+the tag out itself, so each line is a deploy run):
+
+| When (UTC, reflog) | Deployed | From |
+|---|---|---|
+| 2026-08-22 00:15:59 | **v1.7.0** | v1.6.2 |
+| 2026-08-21 04:51:45 | v1.6.2 | v1.6.1 |
+| 2026-08-21 03:27:13 | v1.6.1 | v1.6.0 |
+| 2026-08-20 12:35:17 | v1.6.0 | v1.5.2 |
+| 2026-08-19 01:22:09 | v1.5.2 | v1.5.1 |
+
+Honest limits of this reconstruction: a reflog checkout proves deploy.sh
+ran, not that its post-switchover version assertion passed — that
+container-level evidence exists only for the version running now (v1.7.0,
+above). v1.6.1's deploy is independently corroborated: the owner verified
+it live (the first human portal sign-in, 2026-08-21). All deploys were the
+owner's, per the standing rule.
+
+---
+
 ## 2026-08-18 · v1.5.1 (from 1.4.2)
 
 Deployed **2026-08-18 ~15:5x UTC** by the owner via
