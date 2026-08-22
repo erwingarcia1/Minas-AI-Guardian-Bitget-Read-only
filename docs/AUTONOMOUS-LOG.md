@@ -4346,3 +4346,21 @@ RELEASE-NOTES.md now states the "on upgrade" marker as an authoring rule.
 
 Nothing fixed, nothing touched — alerts left exactly as found (#369's open
 ack included). Proceeding down the owner's order: #91 next.
+
+# 2026-08-22 · #91 built: the emergency contact has a supported write path
+
+`sentinel set-contact` grew `--alert-email-secondary` / `--alert-phone-
+secondary` / `--clear-secondary`, and the whole command now carries the
+`--as` gate (#80's pattern verbatim: mandatory the moment operators exist).
+Every actual diff lands in the event log as `secondary_contact_updated`
+("Emergency contact changed" on /activity) with old and new values;
+re-running the same values records nothing. A secondary-only change cannot
+disturb the primary destination — pinned by test — and the old footgun
+where a bare `set-contact --label x` CLEARED the primary is gone (no flags,
+no change; documented in the docstring). Two new design-guard probes mirror
+the #36 pair (event-recording and no-op safety for the secondary), proven
+land+kill alongside the preserved #36 anchors (4/4 single-probe run). Full
+health check green, all nine gates, probes 136/136. Deliberately NOT here:
+email normalization (that boundary sweep is #90, next-but-one) and the
+"you were removed" notice to the departing contact (noted on the issue;
+#89 covers the ADD side). Next: #89.

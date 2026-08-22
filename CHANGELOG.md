@@ -15,10 +15,26 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Changed detection behaviour
 
-**None.** Which alerts fire, when, and to whom is untouched — this changes
-how releases are published on GitHub, not what the product does.
+**None.** Which alerts fire, when, and to whom is untouched. Release
+publishing changed, and an operator can now change alert destinations that
+used to be write-once — but no detector, threshold, or routing rule moved.
 
 ### Added
+
+- **An emergency contact can now be changed or removed** (#91). The
+  secondary contact was written once at onboarding and never again, so
+  when a real person asked to be removed there was no supported path — the
+  request was honoured by direct SQL against production, unattributed by
+  necessity. `sentinel set-contact` now takes
+  `--alert-email-secondary` / `--alert-phone-secondary` /
+  `--clear-secondary`, attributed via `--as` the moment operator accounts
+  exist (the whole command now carries that gate), recorded on the
+  account's activity page as "Emergency contact changed" with the old and
+  new values — removal is exactly the change a customer reads /activity to
+  find — and no-op-safe: re-running the same values manufactures no
+  forensic rows. A secondary-only change cannot disturb where the alerts
+  themselves go, and the old footgun where `set-contact` with no flags
+  cleared the primary destination is gone: no flags, no change.
 
 - **Every version tag now has a GitHub Release, and the next gap is caught
   by a machine** (#94). Thirteen tags (v1.1.0 through v1.6.2) had no

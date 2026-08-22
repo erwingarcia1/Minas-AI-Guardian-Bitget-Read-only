@@ -1,1238 +1,1258 @@
 [
- {
-  "name": "snooze: the per-severity cap is not applied at all",
-  "file": "sentinel/snooze.py",
-  "old": "    hours = min(float(hours), cap_hours(severity, rules))",
-  "new": "    hours = float(hours)",
-  "tests": [
-   "tests/test_snooze.py"
-  ]
- },
- {
-  "name": "snooze: a configured cap of 0 is read as 'not set' (falsy sentinel)",
-  "file": "sentinel/snooze.py",
-  "old": "        if configured is not None:",
-  "new": "        if configured:",
-  "tests": [
-   "tests/test_snooze.py"
-  ]
- },
- {
-  "name": "snooze: an unknown severity gets the longest cap instead of the shortest",
-  "file": "sentinel/snooze.py",
-  "old": "        return float(UNKNOWN_SEVERITY_CAP_HOURS)",
-  "new": "        return float(MAX_SNOOZE_HOURS)",
-  "tests": [
-   "tests/test_snooze.py"
-  ]
- },
- {
-  "name": "snooze: a zero cap offers a 0h button instead of no button",
-  "file": "sentinel/snooze.py",
-  "old": "    if cap <= 0:\n        # This severity cannot be snoozed.",
-  "new": "    if False:\n        # This severity cannot be snoozed.",
-  "tests": [
-   "tests/test_snooze.py"
-  ]
- },
- {
-  "name": "snooze: the portal offers durations beyond the severity's cap",
-  "file": "sentinel/snooze.py",
-  "old": "    offered = tuple(h for h in _OFFERED_HOURS if h <= cap)",
-  "new": "    offered = tuple(_OFFERED_HOURS)",
-  "tests": [
-   "tests/test_snooze.py"
-  ]
- },
- {
-  "name": "snooze: zero and negative durations accepted as a snooze",
-  "file": "sentinel/snooze.py",
-  "old": "    if hours <= 0:",
-  "new": "    if False:",
-  "tests": [
-   "tests/test_snooze.py"
-  ]
- },
- {
-  "name": "snooze: expiry ignored when looking up an active snooze",
-  "file": "sentinel/snooze.py",
-  "old": "            (account_id, dedup_key, datetime.now(timezone.utc).isoformat()),",
-  "new": "            (account_id, dedup_key, \"1970-01-01\"),",
-  "tests": [
-   "tests/test_snooze.py"
-  ]
- },
- {
-  "name": "snooze: a snoozed detection is dropped instead of recorded",
-  "file": "sentinel/alerts/dispatch.py",
-  "old": "    alert = AlertMessage(\n        account_label=account_label,",
-  "new": "    if snoozed_until:\n        return None\n\n    alert = AlertMessage(\n        account_label=account_label,",
-  "tests": [
-   "tests/test_snooze.py"
-  ]
- },
- {
-  "name": "snooze: escalation fires straight through a live snooze",
-  "file": "sentinel/alerts/escalation.py",
-  "old": "\"AND s.dedup_key = a.dedup_key AND s.expires_at > ?)\",",
-  "new": "\"AND s.dedup_key = a.dedup_key AND s.expires_at > ? AND 0)\",",
-  "tests": [
-   "tests/test_snooze.py"
-  ]
- },
- {
-  "name": "portal: snooze without checking the account scope",
-  "file": "sentinel/portal.py",
-  "old": "            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            snooze_alert(",
-  "new": "            alert = _member_alert(db, alert_id, list(range(1, 999)))\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            snooze_alert(",
-  "tests": [
-   "tests/test_portal_snooze.py"
-  ]
- },
- {
-  "name": "portal: acknowledgement scope removed from the UPDATE itself",
-  "file": "sentinel/portal.py",
-  "old": "f\"WHERE id = ? AND acknowledged_at IS NULL AND account_id IN ({marks})\",\n            [datetime.now(timezone.utc).isoformat(), normalized, alert_id, *account_ids],",
-  "new": "\"WHERE id = ? AND acknowledged_at IS NULL\",\n            [datetime.now(timezone.utc).isoformat(), normalized, alert_id],",
-  "tests": [
-   "tests/test_portal_acknowledge.py"
-  ]
- },
- {
-  "name": "portal: a later acknowledgement overwrites the first",
-  "file": "sentinel/portal.py",
-  "old": "WHERE id = ? AND acknowledged_at IS NULL AND account_id IN",
-  "new": "WHERE id = ? AND account_id IN",
-  "tests": [
-   "tests/test_portal_acknowledge.py"
-  ]
- },
- {
-  "name": "portal: no session required to acknowledge",
-  "file": "sentinel/portal.py",
-  "old": "            email = self._session_email()\n            if email is None:\n                self._send(_render_login().encode())\n                return\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
-  "new": "            email = self._session_email() or \"anonymous@example.com\"\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
-  "tests": [
-   "tests/test_portal_acknowledge.py"
-  ]
- },
- {
-  "name": "portal: the acknowledging member is not HTML-escaped",
-  "file": "sentinel/portal.py",
-  "old": "who = html.escape(row[\"acknowledged_by\"] or \"\u2014\")",
-  "new": "who = row[\"acknowledged_by\"] or \"\u2014\"",
-  "tests": [
-   "tests/test_portal_acknowledge.py"
-  ]
- },
- {
-  "name": "config: the first load is reported as a change",
-  "file": "sentinel/config.py",
-  "old": "                settings_diff(self._data, converted) if self._loaded else []",
-  "new": "                settings_diff(self._data, converted)",
-  "tests": [
-   "tests/test_config_change_log.py"
-  ]
- },
- {
-  "name": "config: an absent setting becomes the string 'None' rather than an absence",
-  "file": "sentinel/config.py",
-  "old": "        old_s = None if key not in before else str(old)\n        new_s = None if key not in after else str(new)",
-  "new": "        old_s = str(old)\n        new_s = str(new)",
-  "tests": [
-   "tests/test_config_change_log.py"
-  ]
- },
- {
-  "name": "config: a failed audit write aborts the reload",
-  "file": "sentinel/config.py",
-  "old": "                try:\n                    self._on_change(changes)\n                except Exception:  # noqa: BLE001 - never let the audit stop the reload\n                    logger.exception(\"failed to record config changes: %s\", changes)",
-  "new": "                self._on_change(changes)",
-  "tests": [
-   "tests/test_config_change_log.py"
-  ]
- },
- {
-  "name": "cli: the running service constructs RulesConfig with no recorder",
-  "file": "sentinel/cli.py",
-  "old": "        on_change=lambda changes: record_config_changes(db, changes),\n",
-  "new": "",
-  "tests": [
-   "tests/test_config_change_log.py"
-  ]
- },
- {
-  "name": "cli: set-threshold writes the file without validating",
-  "file": "sentinel/cli.py",
-  "old": "    problems = validate(_to_decimal_leaves(after))",
-  "new": "    problems = []",
-  "tests": [
-   "tests/test_config_change_log.py"
-  ]
- },
- {
-  "name": "cli: attribution not required once operators exist",
-  "file": "sentinel/cli.py",
-  "old": "    if operator_count(db) > 0:\n        if not actor:\n            names = \", \".join(o[\"username\"] for o in list_operators(db) if o[\"status\"] == \"active\")\n            print(\n                f\"--as <operator> is required: a threshold change is recorded against a \"",
-  "new": "    if False:\n        if not actor:\n            names = \", \".join(o[\"username\"] for o in list_operators(db) if o[\"status\"] == \"active\")\n            print(\n                f\"--as <operator> is required: a threshold change is recorded against a \"",
-  "tests": [
-   "tests/test_config_change_log.py"
-  ]
- },
- {
-  "name": "portal: rules never reach the snooze path (config silently inert)",
-  "file": "sentinel/portal.py",
-  "old": "                         severity=alert[\"severity\"], rules=rules)",
-  "new": "                         severity=alert[\"severity\"])",
-  "tests": [
-   "tests/test_snooze.py"
-  ]
- },
- {
-  "name": "#67: the unidentifiable check runs after record_seen_withdrawal has already swallowed it",
-  "file": "sentinel/poller.py",
-  "old": "        self._report_unidentifiable(account_id, label, account_row, withdrawals)\n\n        new_withdrawals = [w for w in withdrawals if record_seen_withdrawal(self._db, account_id, w)]",
-  "new": "        new_withdrawals = [w for w in withdrawals if record_seen_withdrawal(self._db, account_id, w)]\n        self._report_unidentifiable(account_id, label, account_row, new_withdrawals)",
-  "tests": [
-   "tests/test_unidentifiable_withdrawal.py"
-  ]
- },
- {
-  "name": "#67: a falsy id counts as a reference, so the page never fires for the worst records",
-  "file": "sentinel/identity.py",
-  "old": "    has_reference = bool(record.get(\"id\") or record.get(\"txid\"))\n    return not has_reference and not record.get(\"timestamp\")",
-  "new": "    has_reference = \"id\" in record or \"txid\" in record\n    return not has_reference and \"timestamp\" not in record",
-  "tests": [
-   "tests/test_unidentifiable_withdrawal.py"
-  ]
- },
- {
-  "name": "#67: the operator page is dropped, leaving only the log line",
-  "file": "sentinel/poller.py",
-  "old": "        self._operator_alerter.page(\n            rule=\"withdrawal_cannot_be_identified\",",
-  "new": "        return\n        self._operator_alerter.page(\n            rule=\"withdrawal_cannot_be_identified\",",
-  "tests": [
-   "tests/test_unidentifiable_withdrawal.py"
-  ]
- },
- {
-  "name": "#67: the metric counts once per poll instead of once per record",
-  "file": "sentinel/poller.py",
-  "old": "            for _ in unidentifiable:\n                self._metrics.unidentifiable_withdrawal(exchange)",
-  "new": "            self._metrics.unidentifiable_withdrawal(exchange)",
-  "tests": [
-   "tests/test_unidentifiable_withdrawal.py"
-  ]
- },
- {
-  "name": "#58: escalation pages even when a channel delivered (page fatigue)",
-  "file": "sentinel/alerts/escalation.py",
-  "old": "        if delivered > 0 or self._operator_alerter is None:",
-  "new": "        if self._operator_alerter is None:",
-  "tests": [
-   "tests/test_operator_page_sweep.py"
-  ]
- },
- {
-  "name": "#58: escalation with zero channels is treated as nothing to do",
-  "file": "sentinel/alerts/escalation.py",
-  "old": "        delivered = 0\n        for channel in self._channels:",
-  "new": "        delivered = 0 if self._channels else 1\n        for channel in self._channels:",
-  "tests": [
-   "tests/test_operator_page_sweep.py"
-  ]
- },
- {
-  "name": "#58: routing problems collected but never read by cmd_run",
-  "file": "sentinel/cli.py",
-  "old": "    channels = build_channels(rules, problems=routing_problems)",
-  "new": "    channels = build_channels(rules)",
-  "tests": [
-   "tests/test_operator_page_sweep.py"
-  ]
- },
- {
-  "name": "#58: a missing contact provider pages on every alert, not once",
-  "file": "sentinel/alerts/contact.py",
-  "old": "        if key in self._warned:\n            return\n        self._warned.add(key)",
-  "new": "        self._warned.add(key)",
-  "tests": [
-   "tests/test_operator_page_sweep.py"
-  ]
- },
- {
-  "name": "#58: any OperationalError treated as an already-applied migration",
-  "file": "sentinel/db.py",
-  "old": "    return \"duplicate column name\" in str(exc).lower()",
-  "new": "    return True",
-  "tests": [
-   "tests/test_operator_page_sweep.py"
-  ]
- },
- {
-  "name": "#58 group C: a failed history seed is swallowed again",
-  "file": "sentinel/baseline.py",
-  "old": "        gaps.append({\"what\": \"closed_orders\", \"error\": str(exc),",
-  "new": "        _ = ({\"what\": \"closed_orders\", \"error\": str(exc),",
-  "tests": [
-   "tests/test_operator_page_sweep.py"
-  ]
- },
- {
-  "name": "#58 group C: the dashboard onboards without forwarding an alerter",
-  "file": "sentinel/dashboard.py",
-  "old": "                    operator_alerter=operator_alerter,\n",
-  "new": "",
-  "tests": [
-   "tests/test_operator_page_sweep.py"
-  ]
- },
- {
-  "name": "#58 group C: the partial baseline leaves no permanent record",
-  "file": "sentinel/onboarding.py",
-  "old": "            db, account_id, \"baseline_seed_incomplete\", \"HIGH\", gap, actor=actor,",
-  "new": "            db, account_id, \"customer_added\", \"LOW\", gap, actor=actor,",
-  "tests": [
-   "tests/test_operator_page_sweep.py"
-  ]
- },
- {
-  "name": "#29: the incident page ignores the member's account scope",
-  "file": "sentinel/portal.py",
-  "old": "            f\"WHERE a.id = ? AND a.account_id IN ({marks})\",\n            [alert_id, *account_ids],",
-  "new": "            \"WHERE a.id = ?\",\n            [alert_id],",
-  "tests": [
-   "tests/test_incident_page.py"
-  ]
- },
- {
-  "name": "#29: an undelivered alert is rendered as notified",
-  "file": "sentinel/portal.py",
-  "old": "    if delivered > 0:\n        notified = (",
-  "new": "    if delivered >= 0:\n        notified = (",
-  "tests": [
-   "tests/test_incident_page.py"
-  ]
- },
- {
-  "name": "#29: the 'before' snapshot is picked from after the alert (today's balance)",
-  "file": "sentinel/portal.py",
-  "old": "\"                   WHERE account_id = ? AND snapshot_at <= ?) ORDER BY coin\",",
-  "new": "\"                   WHERE account_id = ? AND snapshot_at >= ?) ORDER BY coin\",",
-  "tests": [
-   "tests/test_incident_page.py"
-  ]
- },
- {
-  "name": "#29: an unacknowledged incident omits the stage instead of stating it",
-  "file": "sentinel/portal.py",
-  "old": "        acknowledged = \"<b>Not acknowledged</b> \u2014 nobody has confirmed seeing this alert.\"",
-  "new": "        acknowledged = \"&nbsp;\"",
-  "tests": [
-   "tests/test_incident_page.py"
-  ]
- },
- {
-  "name": "#27: escalation never reaches the customer's own contacts",
-  "file": "sentinel/alerts/escalation.py",
-  "old": "        self._reach_the_customers_own_contacts(row, alert)\n",
-  "new": "",
-  "tests": [
-   "tests/test_escalation_reach.py"
-  ]
- },
- {
-  "name": "#27: only the primary contact is escalated to, not the secondary",
-  "file": "sentinel/alerts/escalation.py",
-  "old": "        self._reach_the_secondary_contact(row, window=self._window)\n",
-  "new": "",
-  "tests": [
-   "tests/test_escalation_reach.py",
-   "tests/test_secondary_contact_escalation.py"
-  ]
- },
- {
-  "name": "#27: a raising contact router takes the global escalation down with it",
-  "file": "sentinel/alerts/escalation.py",
-  "old": "        except Exception as exc:  # noqa: BLE001 - one path must not cost the other\n            logger.error(\"escalation to the account's own contacts failed: %s\", exc)",
-  "new": "        except Exception:\n            raise",
-  "tests": [
-   "tests/test_escalation_reach.py"
-  ]
- },
- {
-  "name": "#27: nobody is told that an escalation happened",
-  "file": "sentinel/alerts/escalation.py",
-  "old": "        self._page_escalated(row)\n",
-  "new": "",
-  "tests": [
-   "tests/test_escalation_reach.py"
-  ]
- },
- {
-  "name": "#27: the escalator is constructed without a contact router",
-  "file": "sentinel/cli.py",
-  "old": "                          contact_router=contact_router,",
-  "new": "",
-  "tests": [
-   "tests/test_escalation_reach.py"
-  ]
- },
- {
-  "name": "#61: the blast radius is never shown",
-  "file": "sentinel/dashboard.py",
-  "old": "    scope = \"\"\n    if others:\n        label +=",
-  "new": "    scope = \"\"\n    if False:\n        label +=",
-  "tests": [
-   "tests/test_portal_access_scope.py"
-  ]
- },
- {
-  "name": "#61: account labels reach the page unescaped",
-  "file": "sentinel/dashboard.py",
-  "old": "+ \", \".join(f\"<b>{html.escape(str(lbl))}</b>\" for lbl in reachable)",
-  "new": "+ \", \".join(f\"<b>{lbl}</b>\" for lbl in reachable)",
-  "tests": [
-   "tests/test_portal_access_scope.py"
-  ]
- },
- {
-  "name": "#61: a caution is shown even when only this account is affected",
-  "file": "sentinel/dashboard.py",
-  "old": "    others = [r for r in rows if r[\"id\"] != account_id]",
-  "new": "    others = rows",
-  "tests": [
-   "tests/test_portal_access_scope.py"
-  ]
- },
- {
-  "name": "#33 ATTACK enumerate customers: unknown addresses return early",
-  "file": "sentinel/portal.py",
-  "old": "            self._pad_to(deadline)\n            self._send(_render_forgot(notice=_RESET_ACK).encode())",
-  "new": "            self._send(_render_forgot(notice=_RESET_ACK).encode())",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#33 ATTACK steal a token from the database: plaintext is stored",
-  "file": "sentinel/portal.py",
-  "old": "            (email, _token_hash(token), now.isoformat(), expires_at),",
-  "new": "            (email, token, now.isoformat(), expires_at),",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#33 ATTACK reuse a link: the token is not marked used",
-  "file": "sentinel/portal.py",
-  "old": "        cur.execute(\"UPDATE password_resets SET used_at = ? WHERE id = ?\", (now, row[\"id\"]))",
-  "new": "        pass",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#33 ATTACK use an expired link: expiry is not checked",
-  "file": "sentinel/portal.py",
-  "old": "\"SELECT id, email FROM password_resets WHERE token_hash = ? AND used_at IS NULL \"\n            \"AND expires_at > ?\",",
-  "new": "\"SELECT id, email FROM password_resets WHERE token_hash = ? AND used_at IS NULL \"\n            \"AND expires_at > '1970' AND ? IS NOT NULL\",",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#33 ATTACK mint a long-lived link: the TTL cap is removed",
-  "file": "sentinel/portal.py",
-  "old": "    ttl = min(int(ttl_seconds or 0), RESET_TOKEN_MAX_TTL_SECONDS)",
-  "new": "    ttl = int(ttl_seconds or 0)",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#33 ATTACK keep a pre-compromise session: the epoch is not bumped",
-  "file": "sentinel/portal.py",
-  "old": "    bump = \"session_epoch = session_epoch + 1, \" if invalidate_sessions else \"\"",
-  "new": "    bump = \"\"",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#33 ATTACK keep a pre-compromise session: the epoch is not checked",
-  "file": "sentinel/portal.py",
-  "old": "        if epoch is not None and int(epoch_s) != int(epoch):\n            return None",
-  "new": "        pass",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#33 ATTACK reuse an old link found in a mailbox: earlier tokens stay live",
-  "file": "sentinel/portal.py",
-  "old": "            \"UPDATE password_resets SET used_at = ? WHERE email = ? AND used_at IS NULL\",\n            (now.isoformat(), email),",
-  "new": "            \"SELECT 1 WHERE ? IS NOT NULL AND ? IS NOT NULL\",\n            (now.isoformat(), email),",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#33 ATTACK weak password from a stolen link: the minimum is dropped",
-  "file": "sentinel/portal.py",
-  "old": "            if len(password) < MIN_PASSWORD_LENGTH:",
-  "new": "            if False:",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#33 the owner is never told their password changed",
-  "file": "sentinel/portal.py",
-  "old": "    if notify is not None:\n        try:\n            notify(email)",
-  "new": "    if False:\n        try:\n            notify(email)",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#33 a failing notification blocks the reset",
-  "file": "sentinel/portal.py",
-  "old": "        except Exception as exc:  # noqa: BLE001 - the change is the point\n            logger.error(\"password-change notification to %s failed: %s\", email, exc)",
-  "new": "        except Exception:\n            raise",
-  "tests": [
-   "tests/test_password_reset.py"
-  ]
- },
- {
-  "name": "#32 ATTACK replay a seen code: the used step is not recorded",
-  "file": "sentinel/twofactor.py",
-  "old": "            cur.execute(\"UPDATE totp_enrolments SET last_used_step = ? WHERE id = ?\",\n                        (step, row[\"id\"]))",
-  "new": "            pass",
-  "tests": [
-   "tests/test_twofactor.py"
-  ]
- },
- {
-  "name": "#32 ATTACK replay the previous step: only the exact step is blocked",
-  "file": "sentinel/totp.py",
-  "old": "        if last_used_step is not None and step <= last_used_step:",
-  "new": "        if last_used_step is not None and step == last_used_step:",
-  "tests": [
-   "tests/test_totp.py"
-  ]
- },
- {
-  "name": "#32 ATTACK guess within a wide window: the skew is widened",
-  "file": "sentinel/totp.py",
-  "old": "SKEW_STEPS = 1",
-  "new": "SKEW_STEPS = 5",
-  "tests": [
-   "tests/test_totp.py"
-  ]
- },
- {
-  "name": "#32 ATTACK read the secret from the database: it is stored in clear",
-  "file": "sentinel/twofactor.py",
-  "old": "            (kind, subject, cipher.encrypt(secret), _now()),",
-  "new": "            (kind, subject, secret, _now()),",
-  "tests": [
-   "tests/test_twofactor.py"
-  ]
- },
- {
-  "name": "#32 ATTACK turn 2FA off with a stolen session: no code required",
-  "file": "sentinel/twofactor.py",
-  "old": "    if not check_second_factor(db, cipher, kind, subject, code):\n        return False",
-  "new": "    if False:\n        return False",
-  "tests": [
-   "tests/test_twofactor.py"
-  ]
- },
- {
-  "name": "#32 ATTACK re-enrol over live 2FA to an attacker's phone",
-  "file": "sentinel/twofactor.py",
-  "old": "        if row is not None and row[\"confirmed\"]:\n            raise ValueError(\"two-factor is already enabled; disable it first\")",
-  "new": "        pass",
-  "tests": [
-   "tests/test_twofactor.py"
-  ]
- },
- {
-  "name": "#32 ATTACK reuse a recovery code: it is not consumed",
-  "file": "sentinel/twofactor.py",
-  "old": "        cur.execute(\"UPDATE totp_recovery_codes SET used_at = ? WHERE id = ?\", (_now(), row[\"id\"]))",
-  "new": "        pass",
-  "tests": [
-   "tests/test_twofactor.py"
-  ]
- },
- {
-  "name": "#32 recovery codes are cleared on confirm (defence in depth, unreachable today - disable() already clears them)",
-  "file": "sentinel/twofactor.py",
-  "old": "            \"DELETE FROM totp_recovery_codes WHERE subject_kind = ? AND subject = ?\",\n            (kind, subject),\n        )\n        cur.executemany(",
-  "new": "            \"SELECT 1 WHERE ? IS NOT NULL AND ? IS NOT NULL\",\n            (kind, subject),\n        )\n        cur.executemany(",
-  "tests": [
-   "tests/test_twofactor.py"
-  ],
-  "expect": "survived"
- },
- {
-  "name": "#32 ATTACK sign in with an unconfirmed enrolment",
-  "file": "sentinel/twofactor.py",
-  "old": "    if row is None or not row[\"confirmed\"]:\n        return False",
-  "new": "    if row is None:\n        return False",
-  "tests": [
-   "tests/test_twofactor.py"
-  ]
- },
- {
-  "name": "#32 an operator is allowed to disable two-factor",
-  "file": "sentinel/twofactor.py",
-  "old": "    if kind == OPERATOR:",
-  "new": "    if False:",
-  "tests": [
-   "tests/test_twofactor.py"
-  ]
- },
- {
-  "name": "#32 an unenrolled operator can complete a sign-in",
-  "file": "sentinel/operators.py",
-  "old": "    an optional one.\"\"\"\n    return True",
-  "new": "    an optional one.\"\"\"\n    from sentinel.twofactor import OPERATOR, is_enabled\n\n    return is_enabled(db, OPERATOR, username)",
-  "tests": [
-   "tests/test_twofactor.py"
-  ]
- },
- {
-  "name": "#32 a malformed secret is treated as valid",
-  "file": "sentinel/totp.py",
-  "old": "    return raw or None",
-  "new": "    return raw or b'x'",
-  "tests": [
-   "tests/test_totp.py"
-  ]
- },
- {
-  "name": "#32 the code comparison is not constant-time",
-  "file": "sentinel/totp.py",
-  "old": "        if hmac.compare_digest(_code_for_step(key, step), candidate):",
-  "new": "        if _code_for_step(key, step) == candidate:",
-  "tests": [
-   "tests/test_totp.py"
-  ]
- },
- {
-  "name": "#32 ATTACK skip the second factor: a session is issued on the password alone",
-  "file": "sentinel/portal.py",
-  "old": "                if member_login_requires_code(db, email):",
-  "new": "                if False:",
-  "tests": [
-   "tests/test_portal_two_factor_login.py"
-  ]
- },
- {
-  "name": "#32 the pending context string is defence in depth - the payload shapes already differ, so a swapped token fails the signature anyway",
-  "file": "sentinel/portal.py",
-  "old": "        if context != \"pending\":\n            return None",
-  "new": "        pass",
-  "tests": [
-   "tests/test_portal_two_factor_login.py"
-  ],
-  "expect": "survived"
- },
- {
-  "name": "#32 ATTACK forge a pending token: the signature is not checked",
-  "file": "sentinel/portal.py",
-  "old": "        if not hmac.compare_digest(sig, hmac.new(secret, payload.encode(),\n                                                 hashlib.sha256).hexdigest()):\n            return None",
-  "new": "        pass",
-  "tests": [
-   "tests/test_portal_two_factor_login.py"
-  ]
- },
- {
-  "name": "#32 ATTACK reuse a stale pending token: expiry is not checked",
-  "file": "sentinel/portal.py",
-  "old": "        if int(expires_s) < _pending_now():\n            return None",
-  "new": "        pass",
-  "tests": [
-   "tests/test_portal_two_factor_login.py"
-  ]
- },
- {
-  "name": "#32 ATTACK brute-force the code: 2FA attempts are not throttled",
-  "file": "sentinel/portal.py",
-  "old": "                throttle.record_failure(_throttle_pair(ip, email))\n                throttle.record_failure(ip)\n                logger.warning(\"two-factor code rejected for %s from %s\", email, ip)",
-  "new": "                logger.warning(\"two-factor code rejected for %s from %s\", email, ip)",
-  "tests": [
-   "tests/test_portal_two_factor_login.py",
-   "tests/test_portal.py"
-  ]
- },
- {
-  "name": "#32 ATTACK act on another member: the security routes trust a form field",
-  "file": "sentinel/portal.py",
-  "old": "            email = self._session_email()\n            if email is None:\n                self._send(_render_login().encode())\n                return\n            if cipher is None:",
-  "new": "            email = self._session_email() or (form.get(\"email\", [\"\"])[0] or \"\")\n            if not email:\n                self._send(_render_login().encode())\n                return\n            if cipher is None:",
-  "tests": [
-   "tests/test_portal_two_factor_login.py"
-  ]
- },
- {
-  "name": "#35 ATTACK escape the member scope: the history query drops the IN list",
-  "file": "sentinel/portal.py",
-  "old": "where = [f\"al.account_id IN ({marks})\"]",
-  "new": "where = [\"1=1\"]",
-  "tests": [
-   "tests/test_portal_alert_history.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#35 an unparseable account filter degrades to 'no filter' and shows everything",
-  "file": "sentinel/portal.py",
-  "old": "            account = -1",
-  "new": "            account = None",
-  "tests": [
-   "tests/test_portal_alert_history.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#35 ATTACK CSV defang removed: formula cells reach the spreadsheet live",
-  "file": "sentinel/portal.py",
-  "old": "if text[:1] in (\"=\", \"+\", \"-\", \"@\", \"\\t\"):",
-  "new": "if False:",
-  "tests": [
-   "tests/test_portal_alert_history.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#35 the export paginates: only the first page leaves the building",
-  "file": "sentinel/portal.py",
-  "old": "    rows, _total = alert_history_rows(\n        db, ids, account=f[\"account\"], severity=f[\"severity\"],\n        date_from=f[\"from\"], date_to=f[\"to\"],\n    )",
-  "new": "    rows, _total = alert_history_rows(\n        db, ids, account=f[\"account\"], severity=f[\"severity\"],\n        date_from=f[\"from\"], date_to=f[\"to\"],\n        limit=_HISTORY_PAGE_SIZE,\n    )",
-  "tests": [
-   "tests/test_portal_alert_history.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#36 ATTACK read another customer's settings history: the activity query drops the account scope",
-  "file": "sentinel/portal.py",
-  "old": "            f\"WHERE e.account_id IN ({account_marks}) AND e.event_type IN ({type_marks}) \"",
-  "new": "            f\"WHERE 1=1 AND e.event_type IN ({type_marks}) \"",
-  "tests": [
-   "tests/test_portal_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#36 an unattributed change renders as a blank cell instead of saying so",
-  "file": "sentinel/portal.py",
-  "old": "        return '<span class=\"ack-no\">not attributed</span>'",
-  "new": "        return '<span class=\"ack-no\"></span>'",
-  "tests": [
-   "tests/test_portal_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#36 a settings change leaves no audit row: cmd_set_contact records nothing",
-  "file": "sentinel/cli.py",
-  "old": "                changes.append((\"alert_contact_updated\",",
-  "new": "                _ignored = ((\"alert_contact_updated\",",
-  "tests": [
-   "tests/test_portal_activity.py",
-   "tests/test_set_contact.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#36 re-running set-contact with unchanged values manufactures a change in the forensic log",
-  "file": "sentinel/cli.py",
-  "old": "            if (email, phone) != (before[\"alert_email\"], before[\"alert_phone\"]):",
-  "new": "            if True:",
-  "tests": [
-   "tests/test_set_contact.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#36 ATTACK redirect the alerts quietly: the old address is not told",
-  "file": "sentinel/events.py",
-  "old": "    if not old_email or old_email == new_email:\n        return",
-  "new": "    return",
-  "tests": [
-   "tests/test_portal_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#36 the destination-change notice goes to the NEW address instead of the one being removed",
-  "file": "sentinel/events.py",
-  "old": "            _PlainNotice(message), account_label, [old_email], [],",
-  "new": "            _PlainNotice(message), account_label, [new_email], [],",
-  "tests": [
-   "tests/test_portal_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#36 a login change is recorded against one account instead of every account it opens",
-  "file": "sentinel/events.py",
-  "old": "    for account in member_accounts(db, email):",
-  "new": "    for account in member_accounts(db, email)[:1]:",
-  "tests": [
-   "tests/test_portal_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#36 setting a password leaves no trace: the choke-point record is removed",
-  "file": "sentinel/portal.py",
-  "old": "        record_member_security_event(db, email, \"member_password_changed\")",
-  "new": "        pass",
-  "tests": [
-   "tests/test_portal_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#36 turning two-factor off leaves no trace: the choke-point record is removed",
-  "file": "sentinel/twofactor.py",
-  "old": "    _record_change(db, kind, subject, \"member_two_factor_disabled\")",
-  "new": "    pass",
-  "tests": [
-   "tests/test_portal_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#36 the audit write is not guarded: a failed record breaks the password change it records",
-  "file": "sentinel/portal.py",
-  "old": "    except Exception as exc:  # noqa: BLE001 - the password change is the point\n        logger.error(\"could not record the password change for %s: %s\", email, exc)",
-  "new": "    except ZeroDivisionError as exc:\n        logger.error(\"could not record the password change for %s: %s\", email, exc)",
-  "tests": [
-   "tests/test_portal_activity.py",
-   "tests/test_password_reset.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#28 ATTACK mark another customer's alert: the portal trusts the posted id",
-  "file": "sentinel/portal.py",
-  "old": "            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            note = (form.get(\"note\") or [\"\"])[0]",
-  "new": "            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                with db.cursor() as cur:\n                    cur.execute(\"SELECT id, account_id, rule, dedup_key, severity FROM alerts WHERE id = ?\", (alert_id,))\n                    alert = cur.fetchone()\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            note = (form.get(\"note\") or [\"\"])[0]",
-  "tests": [
-   "tests/test_expected_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#28 marking silences the alert too: one reassuring click turns a detector off",
-  "file": "sentinel/expected.py",
-  "old": "    logger.info(\"alert %d marked as expected activity by %s (rule %s)\",\n                alert_id, normalized, rule)\n    return True",
-  "new": "    from sentinel.snooze import snooze_alert\n    snooze_alert(db, account_id, dedup_key, rule, 24, requested_by=normalized)\n    logger.info(\"alert %d marked as expected activity by %s (rule %s)\",\n                alert_id, normalized, rule)\n    return True",
-  "tests": [
-   "tests/test_expected_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#28 a repeat marking is counted again, inflating the pattern an operator judges a rule by",
-  "file": "sentinel/expected.py",
-  "old": "            \"INSERT OR IGNORE INTO expected_activity \"",
-  "new": "            \"INSERT OR REPLACE INTO expected_activity \"",
-  "tests": [
-   "tests/test_expected_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#28 an anonymous marking is accepted, so the pattern names nobody",
-  "file": "sentinel/expected.py",
-  "old": "        raise ValueError(\"a marking must name who made it\")",
-  "new": "        normalized = \"unknown\"",
-  "tests": [
-   "tests/test_expected_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#28 the operator pattern view loses its denominator: 3 of 4 and 3 of 900 render identically",
-  "file": "sentinel/dashboard.py",
-  "old": "        share = f\"{r['marks']} of {total}\" if total else f\"{r['marks']}\"",
-  "new": "        share = f\"{r['marks']}\"",
-  "tests": [
-   "tests/test_expected_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#28 the note is unbounded: a POST body becomes whatever the sender typed",
-  "file": "sentinel/expected.py",
-  "old": "    clean_note = (note or \"\").strip()[:MAX_NOTE_LENGTH] or None",
-  "new": "    clean_note = (note or \"\").strip() or None",
-  "tests": [
-   "tests/test_expected_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#28 the metric counts every click, not every judgement",
-  "file": "sentinel/portal.py",
-  "old": "            if first and metrics is not None:",
-  "new": "            if metrics is not None:",
-  "tests": [
-   "tests/test_expected_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "#28 a customer's mark is dropped from the incident document handed to an exchange",
-  "file": "sentinel/portal.py",
-  "old": "    for mark in marks_for_alert(db, alert[\"id\"]):",
-  "new": "    for mark in []:",
-  "tests": [
-   "tests/test_expected_activity.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "notices: the is_notice signal is dropped, so a reset email renders down the detection path and loses its link",
-  "file": "sentinel/portal.py",
-  "old": "    is_notice = True\n",
-  "new": "",
-  "tests": [
-   "tests/test_account_notices.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "notices: the destination-change notice bypasses the adapter and is formatted as a detection",
-  "file": "sentinel/events.py",
-  "old": "            _PlainNotice(message), account_label, [old_email], [],",
-  "new": "            message, account_label, [old_email], [],",
-  "tests": [
-   "tests/test_account_notices.py"
-  ],
-  "expect": "killed"
- },
- {
-  "name": "notices: ContactRouter stops reading the flag, so the reset link never reaches the wire",
-  "file": "sentinel/alerts/contact.py",
-  "old": "            notice=getattr(detection, \"is_notice\", False),",
-  "new": "            notice=False,",
-  "tests": [
-   "tests/test_customer_email_template.py"
-  ]
- },
- {
-  "name": "customer email: the operator template goes to customers, taking evidence with it",
-  "file": "sentinel/alerts/email.py",
-  "old": "        msg.set_content(alert.render_customer() if customer else alert.render())",
-  "new": "        msg.set_content(alert.render())",
-  "tests": [
-   "tests/test_customer_email_template.py"
-  ]
- },
- {
-  "name": "runbook: a step loses its own condition, so a summariser turns advice into an instruction",
-  "file": "sentinel/alerts/base.py",
-  "old": "        \"1. If you did not authorise this, freeze the account in the Bitget app.\",",
-  "new": "        \"1. Freeze the account in the Bitget app.\",",
-  "tests": [
-   "tests/test_customer_email_template.py"
-  ]
- },
- {
-  "name": "runbook: the monitoring consequence goes back into the numbered list as an action",
-  "file": "sentinel/alerts/base.py",
-  "old": "    return (\"Note: if you revoked every key, this account is no longer \"",
-  "new": "    return (\"6. If you revoked every key, this account is no longer \"",
-  "tests": [
-   "tests/test_customer_email_template.py"
-  ]
- },
- {
-  "name": "#12/G-47: the fill window filter reads a missing timestamp as 0 again",
-  "file": "sentinel/poller.py",
-  "old": "            if last_run_ms is not None and dated_ms is not None and dated_ms < last_run_ms:\n                continue  # dated, and older than this window",
-  "new": "            if last_run_ms is not None and (dated_ms or 0) < last_run_ms:\n                continue  # dated, and older than this window",
-  "tests": [
-   "tests/test_undated_fills.py"
-  ]
- },
- {
-  "name": "#12/G-47: the seen-fill identity gate no longer gates anything",
-  "file": "sentinel/poller.py",
-  "old": "            if record_seen_fill(self._db, account_id, fill):\n                recent_fills.append(fill)",
-  "new": "            record_seen_fill(self._db, account_id, fill)\n            recent_fills.append(fill)",
-  "tests": [
-   "tests/test_undated_fills.py"
-  ]
- },
- {
-  "name": "audit: a skipped conditional job counts as a red CI again",
-  "file": "scripts/audit_issue_status.py",
-  "old": "    if any(c in RED_CONCLUSIONS for c in conclusions):\n        return \"failure\"\n    if any(c == \"success\" for c in conclusions):\n        return \"success\"\n    return None",
-  "new": "    return \"success\" if all(c == \"success\" for c in conclusions) else \"failure\"",
-  "tests": [
-   "tests/test_issue_status_audit.py"
-  ]
- },
- {
-  "name": "audit: a commit where every check was skipped is reported as success",
-  "file": "scripts/audit_issue_status.py",
-  "old": "    if any(c == \"success\" for c in conclusions):\n        return \"success\"\n    return None",
-  "new": "    return \"success\"",
-  "tests": [
-   "tests/test_issue_status_audit.py"
-  ]
- },
- {
-  "name": "audit: only a plain failure counts as red, so a cancelled run reads clean",
-  "file": "scripts/audit_issue_status.py",
-  "old": "RED_CONCLUSIONS = frozenset({\n    \"failure\", \"cancelled\", \"timed_out\", \"action_required\", \"startup_failure\",\n})",
-  "new": "RED_CONCLUSIONS = frozenset({\"failure\"})",
-  "tests": [
-   "tests/test_issue_status_audit.py"
-  ]
- },
- {
-  "name": "#72 the verification clock stops being the seam, so a code is judged against a different instant than it was built for",
-  "file": "sentinel/twofactor.py",
-  "old": "    secret = cipher.decrypt(row[\"encrypted_secret\"])\n    step = verify_code(secret, code, at=_clock(),\n                       last_used_step=row[\"last_used_step\"])\n    if step is not None:",
-  "new": "    secret = cipher.decrypt(row[\"encrypted_secret\"])\n    step = verify_code(secret, code, at=datetime.now(timezone.utc).timestamp(),\n                       last_used_step=row[\"last_used_step\"])\n    if step is not None:",
-  "tests": [
-   "tests/test_twofactor.py"
-  ]
- },
- {
-  "name": "#68 the test marker stops being one of the two signals, so only pytest's own variable is left",
-  "file": "sentinel/net.py",
-  "old": "    if os.environ.get(\"SENTINEL_ENV\") == \"test\":\n        return \"SENTINEL_ENV=test\"",
-  "new": "    if os.environ.get(\"SENTINEL_ENV\") == \"production\":\n        return \"SENTINEL_ENV=test\"",
-  "tests": [
-   "tests/test_no_live_traffic.py"
-  ]
- },
- {
-  "name": "#68 pytest's own marker stops counting, so a subprocess or another repo's suite may dial out",
-  "file": "sentinel/net.py",
-  "old": "    if \"PYTEST_CURRENT_TEST\" in os.environ:\n        return \"running under pytest\"\n    return None",
-  "new": "    return None",
-  "tests": [
-   "tests/test_no_live_traffic.py"
-  ]
- },
- {
-  "name": "#68 HTTP stops being refused under test",
-  "file": "sentinel/net.py",
-  "old": "    refuse_if_under_test(\"an HTTP request\", _host_of(url))\n    return requests.post(url, **kwargs)",
-  "new": "    return requests.post(url, **kwargs)",
-  "tests": [
-   "tests/test_no_live_traffic.py"
-  ]
- },
- {
-  "name": "#68 SMTP stops being refused under test",
-  "file": "sentinel/net.py",
-  "old": "    refuse_if_under_test(\"an SMTP connection\", f\"{host}:{port}\")\n    return smtplib.SMTP(host, port, timeout=timeout)",
-  "new": "    return smtplib.SMTP(host, port, timeout=timeout)",
-  "tests": [
-   "tests/test_no_live_traffic.py"
-  ]
- },
- {
-  "name": "#68 the refusal names the whole URL, putting a Telegram bot token in the logs (G-41)",
-  "file": "sentinel/net.py",
-  "old": "    return urlsplit(url).netloc or \"an unparseable url\"",
-  "new": "    return url",
-  "tests": [
-   "tests/test_no_live_traffic.py"
-  ]
- },
- {
-  "name": "#68 an exchange request stops being refused under test",
-  "file": "sentinel/exchange.py",
-  "old": "        if isinstance(self._exchange, ccxt.Exchange):\n            net.refuse_if_under_test(\"an exchange request\", self.exchange_id or \"an exchange\")",
-  "new": "        pass",
-  "tests": [
-   "tests/test_no_live_traffic.py"
-  ]
- },
- {
-  "name": "#68 load_dotenv returns to main(), where two tests reach it",
-  "file": "sentinel/cli.py",
-  "old": "    parser = argparse.ArgumentParser(prog=\"sentinel\")",
-  "new": "    load_dotenv()\n    parser = argparse.ArgumentParser(prog=\"sentinel\")",
-  "tests": [
-   "tests/test_cli_entrypoint.py"
-  ]
- },
- {
-  "name": "#68 the installed command stops loading .env at all, so production starts with nothing configured",
-  "file": "sentinel/cli.py",
-  "old": "    load_dotenv()\n    main()",
-  "new": "    main()",
-  "tests": [
-   "tests/test_cli_entrypoint.py"
-  ]
- },
- {
-  "name": "#68 the console script points back at main, which no longer reads .env",
-  "file": "pyproject.toml",
-  "old": "sentinel = \"sentinel.cli:cli_entry\"",
-  "new": "sentinel = \"sentinel.cli:main\"",
-  "tests": [
-   "tests/test_cli_entrypoint.py"
-  ]
- },
- {
-  "name": "#68 the onboarding fake stops covering the whole read surface, and the suite calls Bitget for real again",
-  "file": "tests/test_onboarding.py",
-  "old": "    for name in dir(client):\n        if name.startswith(\"fetch_\"):",
-  "new": "    for name in []:\n        if name.startswith(\"fetch_\"):",
-  "tests": [
-   "tests/test_onboarding.py"
-  ]
- },
- {
-  "name": "#69 a replacement key stops being checked against the account it claims to be for",
-  "file": "sentinel/keyreplacement.py",
-  "old": "    if candidate_uid != known_uid:",
-  "new": "    if False:",
-  "tests": [
-   "tests/test_key_replacement.py"
-  ]
- },
- {
-  "name": "#69 an account with no recorded identity stops being refused, and is replaced on trust",
-  "file": "sentinel/keyreplacement.py",
-  "old": "    if not known_uid:",
-  "new": "    if False:",
-  "tests": [
-   "tests/test_key_replacement.py"
-  ]
- },
- {
-  "name": "#69 the read-only gate (G-4) stops applying to keys arriving through the portal",
-  "file": "sentinel/keyreplacement.py",
-  "old": "    ok, reason = verify_read_only(client, exchange)\n    if not ok:",
-  "new": "    ok, reason = verify_read_only(client, exchange)\n    if False:",
-  "tests": [
-   "tests/test_key_replacement.py"
-  ]
- },
- {
-  "name": "#69 an account-info payload with no id stops being refused",
-  "file": "sentinel/keyreplacement.py",
-  "old": "    if candidate_uid is None:",
-  "new": "    if False:",
-  "tests": [
-   "tests/test_key_replacement.py"
-  ]
- },
- {
-  "name": "#69 the portal stops scoping a key replacement to the member's own accounts",
-  "file": "sentinel/portal.py",
-  "old": "            if _render_replace_key(db, email, account_id) is None:\n                self._send(_render_not_found().encode(), 404)\n                return",
-  "new": "            pass",
-  "tests": [
-   "tests/test_portal_key_replacement.py"
-  ]
- },
- {
-  "name": "#69 a recorded exchange account id becomes overwritable, so the check can be walked past one poll at a time",
-  "file": "sentinel/baseline.py",
-  "old": "        if current:\n            return \"unchanged\" if current == uid else \"mismatch\"",
-  "new": "        if current == uid:\n            return \"unchanged\"",
-  "tests": [
-   "tests/test_key_replacement.py"
-  ]
- },
- {
-  "name": "#69 a blank account id counts as an identity",
-  "file": "sentinel/exchange.py",
-  "old": "        text = str(value).strip()\n        if text:\n            return text",
-  "new": "        return str(value)",
-  "tests": [
-   "tests/test_key_replacement.py"
-  ]
- },
- {
-  "name": "#69 the slow loop stops learning the account id, so no account ever becomes eligible",
-  "file": "sentinel/poller.py",
-  "old": "        outcome = learn_exchange_uid(\n            self._db, account_id, exchange_account_uid(account_row[\"exchange\"], payload))",
-  "new": "        outcome = \"unknown\"",
-  "tests": [
-   "tests/test_key_replacement.py"
-  ]
- },
- {
-  "name": "#69 a key replacement stops appearing on the page a customer reads to see who touched their account",
-  "file": "sentinel/events.py",
-  "old": "    \"monitoring_key_replaced\",\n)",
-  "new": ")",
-  "tests": [
-   "tests/test_key_replacement.py"
-  ]
- },
- {
-  "name": "#69 the runbook goes back to sending a frightened customer straight to a form that wants an API key",
-  "file": "sentinel/alerts/base.py",
-  "old": "    where = f\" Sign in at {url}\" if url else \" Sign in to Minas AI Guardian\"",
-  "new": "    where = f\" Replace it here: {url}/key\" if url else \" Sign in to Minas AI Guardian\"",
-  "tests": [
-   "tests/test_customer_email_template.py"
-  ]
- },
- {
-  "name": "#38 one healthy account makes the status page say everything is fine",
-  "file": "sentinel/portal.py",
-  "old": "    if rows and watched == len(rows):",
-  "new": "    if rows and watched:",
-  "tests": [
-   "tests/test_member_status.py"
-  ]
- },
- {
-  "name": "#48 a prevention claim reaches the customer",
-  "file": "sentinel/portal.py",
-  "old": "        _feat(\"yes\", \"It watches for money leaving.\",",
-  "new": "        _feat(\"yes\", \"The Guardian protects your funds around the clock.\",",
-  "tests": [
-   "tests/test_no_prevention_claims.py"
-  ]
- },
- {
-  "name": "#41 marking an alert handled answers for the customer, and the escalation ladder stops",
-  "file": "sentinel/alert_triage.py",
-  "old": "        if handled is not None:\n            cur.execute(\n                \"UPDATE alert_triage SET handled_at = ?, handled_by = ?, updated_at = ? \"",
-  "new": "        if handled is not None:\n            cur.execute(\"UPDATE alerts SET acknowledged_at = ? WHERE id = ?\", (now, alert_id))\n            cur.execute(\n                \"UPDATE alert_triage SET handled_at = ?, handled_by = ?, updated_at = ? \"",
-  "tests": [
-   "tests/test_alert_triage.py"
-  ]
- },
- {
-  "name": "#27: acknowledging from the portal stops telling the emergency contact",
-  "file": "sentinel/portal.py",
-  "old": "        send_critical_ack_closing_note(db, alert_id)\n",
-  "new": "",
-  "tests": [
-   "tests/test_secondary_contact_escalation.py"
-  ]
- },
- {
-  "name": "#27: acknowledging as an operator stops telling the emergency contact",
-  "file": "sentinel/operators.py",
-  "old": "        send_critical_ack_closing_note(db, alert_id)\n",
-  "new": "",
-  "tests": [
-   "tests/test_secondary_contact_escalation.py"
-  ]
- }
+  {
+    "name": "snooze: the per-severity cap is not applied at all",
+    "file": "sentinel/snooze.py",
+    "old": "    hours = min(float(hours), cap_hours(severity, rules))",
+    "new": "    hours = float(hours)",
+    "tests": [
+      "tests/test_snooze.py"
+    ]
+  },
+  {
+    "name": "snooze: a configured cap of 0 is read as 'not set' (falsy sentinel)",
+    "file": "sentinel/snooze.py",
+    "old": "        if configured is not None:",
+    "new": "        if configured:",
+    "tests": [
+      "tests/test_snooze.py"
+    ]
+  },
+  {
+    "name": "snooze: an unknown severity gets the longest cap instead of the shortest",
+    "file": "sentinel/snooze.py",
+    "old": "        return float(UNKNOWN_SEVERITY_CAP_HOURS)",
+    "new": "        return float(MAX_SNOOZE_HOURS)",
+    "tests": [
+      "tests/test_snooze.py"
+    ]
+  },
+  {
+    "name": "snooze: a zero cap offers a 0h button instead of no button",
+    "file": "sentinel/snooze.py",
+    "old": "    if cap <= 0:\n        # This severity cannot be snoozed.",
+    "new": "    if False:\n        # This severity cannot be snoozed.",
+    "tests": [
+      "tests/test_snooze.py"
+    ]
+  },
+  {
+    "name": "snooze: the portal offers durations beyond the severity's cap",
+    "file": "sentinel/snooze.py",
+    "old": "    offered = tuple(h for h in _OFFERED_HOURS if h <= cap)",
+    "new": "    offered = tuple(_OFFERED_HOURS)",
+    "tests": [
+      "tests/test_snooze.py"
+    ]
+  },
+  {
+    "name": "snooze: zero and negative durations accepted as a snooze",
+    "file": "sentinel/snooze.py",
+    "old": "    if hours <= 0:",
+    "new": "    if False:",
+    "tests": [
+      "tests/test_snooze.py"
+    ]
+  },
+  {
+    "name": "snooze: expiry ignored when looking up an active snooze",
+    "file": "sentinel/snooze.py",
+    "old": "            (account_id, dedup_key, datetime.now(timezone.utc).isoformat()),",
+    "new": "            (account_id, dedup_key, \"1970-01-01\"),",
+    "tests": [
+      "tests/test_snooze.py"
+    ]
+  },
+  {
+    "name": "snooze: a snoozed detection is dropped instead of recorded",
+    "file": "sentinel/alerts/dispatch.py",
+    "old": "    alert = AlertMessage(\n        account_label=account_label,",
+    "new": "    if snoozed_until:\n        return None\n\n    alert = AlertMessage(\n        account_label=account_label,",
+    "tests": [
+      "tests/test_snooze.py"
+    ]
+  },
+  {
+    "name": "snooze: escalation fires straight through a live snooze",
+    "file": "sentinel/alerts/escalation.py",
+    "old": "\"AND s.dedup_key = a.dedup_key AND s.expires_at > ?)\",",
+    "new": "\"AND s.dedup_key = a.dedup_key AND s.expires_at > ? AND 0)\",",
+    "tests": [
+      "tests/test_snooze.py"
+    ]
+  },
+  {
+    "name": "portal: snooze without checking the account scope",
+    "file": "sentinel/portal.py",
+    "old": "            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            snooze_alert(",
+    "new": "            alert = _member_alert(db, alert_id, list(range(1, 999)))\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            snooze_alert(",
+    "tests": [
+      "tests/test_portal_snooze.py"
+    ]
+  },
+  {
+    "name": "portal: acknowledgement scope removed from the UPDATE itself",
+    "file": "sentinel/portal.py",
+    "old": "f\"WHERE id = ? AND acknowledged_at IS NULL AND account_id IN ({marks})\",\n            [datetime.now(timezone.utc).isoformat(), normalized, alert_id, *account_ids],",
+    "new": "\"WHERE id = ? AND acknowledged_at IS NULL\",\n            [datetime.now(timezone.utc).isoformat(), normalized, alert_id],",
+    "tests": [
+      "tests/test_portal_acknowledge.py"
+    ]
+  },
+  {
+    "name": "portal: a later acknowledgement overwrites the first",
+    "file": "sentinel/portal.py",
+    "old": "WHERE id = ? AND acknowledged_at IS NULL AND account_id IN",
+    "new": "WHERE id = ? AND account_id IN",
+    "tests": [
+      "tests/test_portal_acknowledge.py"
+    ]
+  },
+  {
+    "name": "portal: no session required to acknowledge",
+    "file": "sentinel/portal.py",
+    "old": "            email = self._session_email()\n            if email is None:\n                self._send(_render_login().encode())\n                return\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
+    "new": "            email = self._session_email() or \"anonymous@example.com\"\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
+    "tests": [
+      "tests/test_portal_acknowledge.py"
+    ]
+  },
+  {
+    "name": "portal: the acknowledging member is not HTML-escaped",
+    "file": "sentinel/portal.py",
+    "old": "who = html.escape(row[\"acknowledged_by\"] or \"\u2014\")",
+    "new": "who = row[\"acknowledged_by\"] or \"\u2014\"",
+    "tests": [
+      "tests/test_portal_acknowledge.py"
+    ]
+  },
+  {
+    "name": "config: the first load is reported as a change",
+    "file": "sentinel/config.py",
+    "old": "                settings_diff(self._data, converted) if self._loaded else []",
+    "new": "                settings_diff(self._data, converted)",
+    "tests": [
+      "tests/test_config_change_log.py"
+    ]
+  },
+  {
+    "name": "config: an absent setting becomes the string 'None' rather than an absence",
+    "file": "sentinel/config.py",
+    "old": "        old_s = None if key not in before else str(old)\n        new_s = None if key not in after else str(new)",
+    "new": "        old_s = str(old)\n        new_s = str(new)",
+    "tests": [
+      "tests/test_config_change_log.py"
+    ]
+  },
+  {
+    "name": "config: a failed audit write aborts the reload",
+    "file": "sentinel/config.py",
+    "old": "                try:\n                    self._on_change(changes)\n                except Exception:  # noqa: BLE001 - never let the audit stop the reload\n                    logger.exception(\"failed to record config changes: %s\", changes)",
+    "new": "                self._on_change(changes)",
+    "tests": [
+      "tests/test_config_change_log.py"
+    ]
+  },
+  {
+    "name": "cli: the running service constructs RulesConfig with no recorder",
+    "file": "sentinel/cli.py",
+    "old": "        on_change=lambda changes: record_config_changes(db, changes),\n",
+    "new": "",
+    "tests": [
+      "tests/test_config_change_log.py"
+    ]
+  },
+  {
+    "name": "cli: set-threshold writes the file without validating",
+    "file": "sentinel/cli.py",
+    "old": "    problems = validate(_to_decimal_leaves(after))",
+    "new": "    problems = []",
+    "tests": [
+      "tests/test_config_change_log.py"
+    ]
+  },
+  {
+    "name": "cli: attribution not required once operators exist",
+    "file": "sentinel/cli.py",
+    "old": "    if operator_count(db) > 0:\n        if not actor:\n            names = \", \".join(o[\"username\"] for o in list_operators(db) if o[\"status\"] == \"active\")\n            print(\n                f\"--as <operator> is required: a threshold change is recorded against a \"",
+    "new": "    if False:\n        if not actor:\n            names = \", \".join(o[\"username\"] for o in list_operators(db) if o[\"status\"] == \"active\")\n            print(\n                f\"--as <operator> is required: a threshold change is recorded against a \"",
+    "tests": [
+      "tests/test_config_change_log.py"
+    ]
+  },
+  {
+    "name": "portal: rules never reach the snooze path (config silently inert)",
+    "file": "sentinel/portal.py",
+    "old": "                         severity=alert[\"severity\"], rules=rules)",
+    "new": "                         severity=alert[\"severity\"])",
+    "tests": [
+      "tests/test_snooze.py"
+    ]
+  },
+  {
+    "name": "#67: the unidentifiable check runs after record_seen_withdrawal has already swallowed it",
+    "file": "sentinel/poller.py",
+    "old": "        self._report_unidentifiable(account_id, label, account_row, withdrawals)\n\n        new_withdrawals = [w for w in withdrawals if record_seen_withdrawal(self._db, account_id, w)]",
+    "new": "        new_withdrawals = [w for w in withdrawals if record_seen_withdrawal(self._db, account_id, w)]\n        self._report_unidentifiable(account_id, label, account_row, new_withdrawals)",
+    "tests": [
+      "tests/test_unidentifiable_withdrawal.py"
+    ]
+  },
+  {
+    "name": "#67: a falsy id counts as a reference, so the page never fires for the worst records",
+    "file": "sentinel/identity.py",
+    "old": "    has_reference = bool(record.get(\"id\") or record.get(\"txid\"))\n    return not has_reference and not record.get(\"timestamp\")",
+    "new": "    has_reference = \"id\" in record or \"txid\" in record\n    return not has_reference and \"timestamp\" not in record",
+    "tests": [
+      "tests/test_unidentifiable_withdrawal.py"
+    ]
+  },
+  {
+    "name": "#67: the operator page is dropped, leaving only the log line",
+    "file": "sentinel/poller.py",
+    "old": "        self._operator_alerter.page(\n            rule=\"withdrawal_cannot_be_identified\",",
+    "new": "        return\n        self._operator_alerter.page(\n            rule=\"withdrawal_cannot_be_identified\",",
+    "tests": [
+      "tests/test_unidentifiable_withdrawal.py"
+    ]
+  },
+  {
+    "name": "#67: the metric counts once per poll instead of once per record",
+    "file": "sentinel/poller.py",
+    "old": "            for _ in unidentifiable:\n                self._metrics.unidentifiable_withdrawal(exchange)",
+    "new": "            self._metrics.unidentifiable_withdrawal(exchange)",
+    "tests": [
+      "tests/test_unidentifiable_withdrawal.py"
+    ]
+  },
+  {
+    "name": "#58: escalation pages even when a channel delivered (page fatigue)",
+    "file": "sentinel/alerts/escalation.py",
+    "old": "        if delivered > 0 or self._operator_alerter is None:",
+    "new": "        if self._operator_alerter is None:",
+    "tests": [
+      "tests/test_operator_page_sweep.py"
+    ]
+  },
+  {
+    "name": "#58: escalation with zero channels is treated as nothing to do",
+    "file": "sentinel/alerts/escalation.py",
+    "old": "        delivered = 0\n        for channel in self._channels:",
+    "new": "        delivered = 0 if self._channels else 1\n        for channel in self._channels:",
+    "tests": [
+      "tests/test_operator_page_sweep.py"
+    ]
+  },
+  {
+    "name": "#58: routing problems collected but never read by cmd_run",
+    "file": "sentinel/cli.py",
+    "old": "    channels = build_channels(rules, problems=routing_problems)",
+    "new": "    channels = build_channels(rules)",
+    "tests": [
+      "tests/test_operator_page_sweep.py"
+    ]
+  },
+  {
+    "name": "#58: a missing contact provider pages on every alert, not once",
+    "file": "sentinel/alerts/contact.py",
+    "old": "        if key in self._warned:\n            return\n        self._warned.add(key)",
+    "new": "        self._warned.add(key)",
+    "tests": [
+      "tests/test_operator_page_sweep.py"
+    ]
+  },
+  {
+    "name": "#58: any OperationalError treated as an already-applied migration",
+    "file": "sentinel/db.py",
+    "old": "    return \"duplicate column name\" in str(exc).lower()",
+    "new": "    return True",
+    "tests": [
+      "tests/test_operator_page_sweep.py"
+    ]
+  },
+  {
+    "name": "#58 group C: a failed history seed is swallowed again",
+    "file": "sentinel/baseline.py",
+    "old": "        gaps.append({\"what\": \"closed_orders\", \"error\": str(exc),",
+    "new": "        _ = ({\"what\": \"closed_orders\", \"error\": str(exc),",
+    "tests": [
+      "tests/test_operator_page_sweep.py"
+    ]
+  },
+  {
+    "name": "#58 group C: the dashboard onboards without forwarding an alerter",
+    "file": "sentinel/dashboard.py",
+    "old": "                    operator_alerter=operator_alerter,\n",
+    "new": "",
+    "tests": [
+      "tests/test_operator_page_sweep.py"
+    ]
+  },
+  {
+    "name": "#58 group C: the partial baseline leaves no permanent record",
+    "file": "sentinel/onboarding.py",
+    "old": "            db, account_id, \"baseline_seed_incomplete\", \"HIGH\", gap, actor=actor,",
+    "new": "            db, account_id, \"customer_added\", \"LOW\", gap, actor=actor,",
+    "tests": [
+      "tests/test_operator_page_sweep.py"
+    ]
+  },
+  {
+    "name": "#29: the incident page ignores the member's account scope",
+    "file": "sentinel/portal.py",
+    "old": "            f\"WHERE a.id = ? AND a.account_id IN ({marks})\",\n            [alert_id, *account_ids],",
+    "new": "            \"WHERE a.id = ?\",\n            [alert_id],",
+    "tests": [
+      "tests/test_incident_page.py"
+    ]
+  },
+  {
+    "name": "#29: an undelivered alert is rendered as notified",
+    "file": "sentinel/portal.py",
+    "old": "    if delivered > 0:\n        notified = (",
+    "new": "    if delivered >= 0:\n        notified = (",
+    "tests": [
+      "tests/test_incident_page.py"
+    ]
+  },
+  {
+    "name": "#29: the 'before' snapshot is picked from after the alert (today's balance)",
+    "file": "sentinel/portal.py",
+    "old": "\"                   WHERE account_id = ? AND snapshot_at <= ?) ORDER BY coin\",",
+    "new": "\"                   WHERE account_id = ? AND snapshot_at >= ?) ORDER BY coin\",",
+    "tests": [
+      "tests/test_incident_page.py"
+    ]
+  },
+  {
+    "name": "#29: an unacknowledged incident omits the stage instead of stating it",
+    "file": "sentinel/portal.py",
+    "old": "        acknowledged = \"<b>Not acknowledged</b> \u2014 nobody has confirmed seeing this alert.\"",
+    "new": "        acknowledged = \"&nbsp;\"",
+    "tests": [
+      "tests/test_incident_page.py"
+    ]
+  },
+  {
+    "name": "#27: escalation never reaches the customer's own contacts",
+    "file": "sentinel/alerts/escalation.py",
+    "old": "        self._reach_the_customers_own_contacts(row, alert)\n",
+    "new": "",
+    "tests": [
+      "tests/test_escalation_reach.py"
+    ]
+  },
+  {
+    "name": "#27: only the primary contact is escalated to, not the secondary",
+    "file": "sentinel/alerts/escalation.py",
+    "old": "        self._reach_the_secondary_contact(row, window=self._window)\n",
+    "new": "",
+    "tests": [
+      "tests/test_escalation_reach.py",
+      "tests/test_secondary_contact_escalation.py"
+    ]
+  },
+  {
+    "name": "#27: a raising contact router takes the global escalation down with it",
+    "file": "sentinel/alerts/escalation.py",
+    "old": "        except Exception as exc:  # noqa: BLE001 - one path must not cost the other\n            logger.error(\"escalation to the account's own contacts failed: %s\", exc)",
+    "new": "        except Exception:\n            raise",
+    "tests": [
+      "tests/test_escalation_reach.py"
+    ]
+  },
+  {
+    "name": "#27: nobody is told that an escalation happened",
+    "file": "sentinel/alerts/escalation.py",
+    "old": "        self._page_escalated(row)\n",
+    "new": "",
+    "tests": [
+      "tests/test_escalation_reach.py"
+    ]
+  },
+  {
+    "name": "#27: the escalator is constructed without a contact router",
+    "file": "sentinel/cli.py",
+    "old": "                          contact_router=contact_router,",
+    "new": "",
+    "tests": [
+      "tests/test_escalation_reach.py"
+    ]
+  },
+  {
+    "name": "#61: the blast radius is never shown",
+    "file": "sentinel/dashboard.py",
+    "old": "    scope = \"\"\n    if others:\n        label +=",
+    "new": "    scope = \"\"\n    if False:\n        label +=",
+    "tests": [
+      "tests/test_portal_access_scope.py"
+    ]
+  },
+  {
+    "name": "#61: account labels reach the page unescaped",
+    "file": "sentinel/dashboard.py",
+    "old": "+ \", \".join(f\"<b>{html.escape(str(lbl))}</b>\" for lbl in reachable)",
+    "new": "+ \", \".join(f\"<b>{lbl}</b>\" for lbl in reachable)",
+    "tests": [
+      "tests/test_portal_access_scope.py"
+    ]
+  },
+  {
+    "name": "#61: a caution is shown even when only this account is affected",
+    "file": "sentinel/dashboard.py",
+    "old": "    others = [r for r in rows if r[\"id\"] != account_id]",
+    "new": "    others = rows",
+    "tests": [
+      "tests/test_portal_access_scope.py"
+    ]
+  },
+  {
+    "name": "#33 ATTACK enumerate customers: unknown addresses return early",
+    "file": "sentinel/portal.py",
+    "old": "            self._pad_to(deadline)\n            self._send(_render_forgot(notice=_RESET_ACK).encode())",
+    "new": "            self._send(_render_forgot(notice=_RESET_ACK).encode())",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#33 ATTACK steal a token from the database: plaintext is stored",
+    "file": "sentinel/portal.py",
+    "old": "            (email, _token_hash(token), now.isoformat(), expires_at),",
+    "new": "            (email, token, now.isoformat(), expires_at),",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#33 ATTACK reuse a link: the token is not marked used",
+    "file": "sentinel/portal.py",
+    "old": "        cur.execute(\"UPDATE password_resets SET used_at = ? WHERE id = ?\", (now, row[\"id\"]))",
+    "new": "        pass",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#33 ATTACK use an expired link: expiry is not checked",
+    "file": "sentinel/portal.py",
+    "old": "\"SELECT id, email FROM password_resets WHERE token_hash = ? AND used_at IS NULL \"\n            \"AND expires_at > ?\",",
+    "new": "\"SELECT id, email FROM password_resets WHERE token_hash = ? AND used_at IS NULL \"\n            \"AND expires_at > '1970' AND ? IS NOT NULL\",",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#33 ATTACK mint a long-lived link: the TTL cap is removed",
+    "file": "sentinel/portal.py",
+    "old": "    ttl = min(int(ttl_seconds or 0), RESET_TOKEN_MAX_TTL_SECONDS)",
+    "new": "    ttl = int(ttl_seconds or 0)",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#33 ATTACK keep a pre-compromise session: the epoch is not bumped",
+    "file": "sentinel/portal.py",
+    "old": "    bump = \"session_epoch = session_epoch + 1, \" if invalidate_sessions else \"\"",
+    "new": "    bump = \"\"",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#33 ATTACK keep a pre-compromise session: the epoch is not checked",
+    "file": "sentinel/portal.py",
+    "old": "        if epoch is not None and int(epoch_s) != int(epoch):\n            return None",
+    "new": "        pass",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#33 ATTACK reuse an old link found in a mailbox: earlier tokens stay live",
+    "file": "sentinel/portal.py",
+    "old": "            \"UPDATE password_resets SET used_at = ? WHERE email = ? AND used_at IS NULL\",\n            (now.isoformat(), email),",
+    "new": "            \"SELECT 1 WHERE ? IS NOT NULL AND ? IS NOT NULL\",\n            (now.isoformat(), email),",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#33 ATTACK weak password from a stolen link: the minimum is dropped",
+    "file": "sentinel/portal.py",
+    "old": "            if len(password) < MIN_PASSWORD_LENGTH:",
+    "new": "            if False:",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#33 the owner is never told their password changed",
+    "file": "sentinel/portal.py",
+    "old": "    if notify is not None:\n        try:\n            notify(email)",
+    "new": "    if False:\n        try:\n            notify(email)",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#33 a failing notification blocks the reset",
+    "file": "sentinel/portal.py",
+    "old": "        except Exception as exc:  # noqa: BLE001 - the change is the point\n            logger.error(\"password-change notification to %s failed: %s\", email, exc)",
+    "new": "        except Exception:\n            raise",
+    "tests": [
+      "tests/test_password_reset.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK replay a seen code: the used step is not recorded",
+    "file": "sentinel/twofactor.py",
+    "old": "            cur.execute(\"UPDATE totp_enrolments SET last_used_step = ? WHERE id = ?\",\n                        (step, row[\"id\"]))",
+    "new": "            pass",
+    "tests": [
+      "tests/test_twofactor.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK replay the previous step: only the exact step is blocked",
+    "file": "sentinel/totp.py",
+    "old": "        if last_used_step is not None and step <= last_used_step:",
+    "new": "        if last_used_step is not None and step == last_used_step:",
+    "tests": [
+      "tests/test_totp.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK guess within a wide window: the skew is widened",
+    "file": "sentinel/totp.py",
+    "old": "SKEW_STEPS = 1",
+    "new": "SKEW_STEPS = 5",
+    "tests": [
+      "tests/test_totp.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK read the secret from the database: it is stored in clear",
+    "file": "sentinel/twofactor.py",
+    "old": "            (kind, subject, cipher.encrypt(secret), _now()),",
+    "new": "            (kind, subject, secret, _now()),",
+    "tests": [
+      "tests/test_twofactor.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK turn 2FA off with a stolen session: no code required",
+    "file": "sentinel/twofactor.py",
+    "old": "    if not check_second_factor(db, cipher, kind, subject, code):\n        return False",
+    "new": "    if False:\n        return False",
+    "tests": [
+      "tests/test_twofactor.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK re-enrol over live 2FA to an attacker's phone",
+    "file": "sentinel/twofactor.py",
+    "old": "        if row is not None and row[\"confirmed\"]:\n            raise ValueError(\"two-factor is already enabled; disable it first\")",
+    "new": "        pass",
+    "tests": [
+      "tests/test_twofactor.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK reuse a recovery code: it is not consumed",
+    "file": "sentinel/twofactor.py",
+    "old": "        cur.execute(\"UPDATE totp_recovery_codes SET used_at = ? WHERE id = ?\", (_now(), row[\"id\"]))",
+    "new": "        pass",
+    "tests": [
+      "tests/test_twofactor.py"
+    ]
+  },
+  {
+    "name": "#32 recovery codes are cleared on confirm (defence in depth, unreachable today - disable() already clears them)",
+    "file": "sentinel/twofactor.py",
+    "old": "            \"DELETE FROM totp_recovery_codes WHERE subject_kind = ? AND subject = ?\",\n            (kind, subject),\n        )\n        cur.executemany(",
+    "new": "            \"SELECT 1 WHERE ? IS NOT NULL AND ? IS NOT NULL\",\n            (kind, subject),\n        )\n        cur.executemany(",
+    "tests": [
+      "tests/test_twofactor.py"
+    ],
+    "expect": "survived"
+  },
+  {
+    "name": "#32 ATTACK sign in with an unconfirmed enrolment",
+    "file": "sentinel/twofactor.py",
+    "old": "    if row is None or not row[\"confirmed\"]:\n        return False",
+    "new": "    if row is None:\n        return False",
+    "tests": [
+      "tests/test_twofactor.py"
+    ]
+  },
+  {
+    "name": "#32 an operator is allowed to disable two-factor",
+    "file": "sentinel/twofactor.py",
+    "old": "    if kind == OPERATOR:",
+    "new": "    if False:",
+    "tests": [
+      "tests/test_twofactor.py"
+    ]
+  },
+  {
+    "name": "#32 an unenrolled operator can complete a sign-in",
+    "file": "sentinel/operators.py",
+    "old": "    an optional one.\"\"\"\n    return True",
+    "new": "    an optional one.\"\"\"\n    from sentinel.twofactor import OPERATOR, is_enabled\n\n    return is_enabled(db, OPERATOR, username)",
+    "tests": [
+      "tests/test_twofactor.py"
+    ]
+  },
+  {
+    "name": "#32 a malformed secret is treated as valid",
+    "file": "sentinel/totp.py",
+    "old": "    return raw or None",
+    "new": "    return raw or b'x'",
+    "tests": [
+      "tests/test_totp.py"
+    ]
+  },
+  {
+    "name": "#32 the code comparison is not constant-time",
+    "file": "sentinel/totp.py",
+    "old": "        if hmac.compare_digest(_code_for_step(key, step), candidate):",
+    "new": "        if _code_for_step(key, step) == candidate:",
+    "tests": [
+      "tests/test_totp.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK skip the second factor: a session is issued on the password alone",
+    "file": "sentinel/portal.py",
+    "old": "                if member_login_requires_code(db, email):",
+    "new": "                if False:",
+    "tests": [
+      "tests/test_portal_two_factor_login.py"
+    ]
+  },
+  {
+    "name": "#32 the pending context string is defence in depth - the payload shapes already differ, so a swapped token fails the signature anyway",
+    "file": "sentinel/portal.py",
+    "old": "        if context != \"pending\":\n            return None",
+    "new": "        pass",
+    "tests": [
+      "tests/test_portal_two_factor_login.py"
+    ],
+    "expect": "survived"
+  },
+  {
+    "name": "#32 ATTACK forge a pending token: the signature is not checked",
+    "file": "sentinel/portal.py",
+    "old": "        if not hmac.compare_digest(sig, hmac.new(secret, payload.encode(),\n                                                 hashlib.sha256).hexdigest()):\n            return None",
+    "new": "        pass",
+    "tests": [
+      "tests/test_portal_two_factor_login.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK reuse a stale pending token: expiry is not checked",
+    "file": "sentinel/portal.py",
+    "old": "        if int(expires_s) < _pending_now():\n            return None",
+    "new": "        pass",
+    "tests": [
+      "tests/test_portal_two_factor_login.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK brute-force the code: 2FA attempts are not throttled",
+    "file": "sentinel/portal.py",
+    "old": "                throttle.record_failure(_throttle_pair(ip, email))\n                throttle.record_failure(ip)\n                logger.warning(\"two-factor code rejected for %s from %s\", email, ip)",
+    "new": "                logger.warning(\"two-factor code rejected for %s from %s\", email, ip)",
+    "tests": [
+      "tests/test_portal_two_factor_login.py",
+      "tests/test_portal.py"
+    ]
+  },
+  {
+    "name": "#32 ATTACK act on another member: the security routes trust a form field",
+    "file": "sentinel/portal.py",
+    "old": "            email = self._session_email()\n            if email is None:\n                self._send(_render_login().encode())\n                return\n            if cipher is None:",
+    "new": "            email = self._session_email() or (form.get(\"email\", [\"\"])[0] or \"\")\n            if not email:\n                self._send(_render_login().encode())\n                return\n            if cipher is None:",
+    "tests": [
+      "tests/test_portal_two_factor_login.py"
+    ]
+  },
+  {
+    "name": "#35 ATTACK escape the member scope: the history query drops the IN list",
+    "file": "sentinel/portal.py",
+    "old": "where = [f\"al.account_id IN ({marks})\"]",
+    "new": "where = [\"1=1\"]",
+    "tests": [
+      "tests/test_portal_alert_history.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#35 an unparseable account filter degrades to 'no filter' and shows everything",
+    "file": "sentinel/portal.py",
+    "old": "            account = -1",
+    "new": "            account = None",
+    "tests": [
+      "tests/test_portal_alert_history.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#35 ATTACK CSV defang removed: formula cells reach the spreadsheet live",
+    "file": "sentinel/portal.py",
+    "old": "if text[:1] in (\"=\", \"+\", \"-\", \"@\", \"\\t\"):",
+    "new": "if False:",
+    "tests": [
+      "tests/test_portal_alert_history.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#35 the export paginates: only the first page leaves the building",
+    "file": "sentinel/portal.py",
+    "old": "    rows, _total = alert_history_rows(\n        db, ids, account=f[\"account\"], severity=f[\"severity\"],\n        date_from=f[\"from\"], date_to=f[\"to\"],\n    )",
+    "new": "    rows, _total = alert_history_rows(\n        db, ids, account=f[\"account\"], severity=f[\"severity\"],\n        date_from=f[\"from\"], date_to=f[\"to\"],\n        limit=_HISTORY_PAGE_SIZE,\n    )",
+    "tests": [
+      "tests/test_portal_alert_history.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#36 ATTACK read another customer's settings history: the activity query drops the account scope",
+    "file": "sentinel/portal.py",
+    "old": "            f\"WHERE e.account_id IN ({account_marks}) AND e.event_type IN ({type_marks}) \"",
+    "new": "            f\"WHERE 1=1 AND e.event_type IN ({type_marks}) \"",
+    "tests": [
+      "tests/test_portal_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#36 an unattributed change renders as a blank cell instead of saying so",
+    "file": "sentinel/portal.py",
+    "old": "        return '<span class=\"ack-no\">not attributed</span>'",
+    "new": "        return '<span class=\"ack-no\"></span>'",
+    "tests": [
+      "tests/test_portal_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#36 a settings change leaves no audit row: cmd_set_contact records nothing",
+    "file": "sentinel/cli.py",
+    "old": "                changes.append((\"alert_contact_updated\",",
+    "new": "                _ignored = ((\"alert_contact_updated\",",
+    "tests": [
+      "tests/test_portal_activity.py",
+      "tests/test_set_contact.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#36 re-running set-contact with unchanged values manufactures a change in the forensic log",
+    "file": "sentinel/cli.py",
+    "old": "            if (email, phone) != (before[\"alert_email\"], before[\"alert_phone\"]):",
+    "new": "            if True:",
+    "tests": [
+      "tests/test_set_contact.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#36 ATTACK redirect the alerts quietly: the old address is not told",
+    "file": "sentinel/events.py",
+    "old": "    if not old_email or old_email == new_email:\n        return",
+    "new": "    return",
+    "tests": [
+      "tests/test_portal_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#36 the destination-change notice goes to the NEW address instead of the one being removed",
+    "file": "sentinel/events.py",
+    "old": "            _PlainNotice(message), account_label, [old_email], [],",
+    "new": "            _PlainNotice(message), account_label, [new_email], [],",
+    "tests": [
+      "tests/test_portal_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#36 a login change is recorded against one account instead of every account it opens",
+    "file": "sentinel/events.py",
+    "old": "    for account in member_accounts(db, email):",
+    "new": "    for account in member_accounts(db, email)[:1]:",
+    "tests": [
+      "tests/test_portal_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#36 setting a password leaves no trace: the choke-point record is removed",
+    "file": "sentinel/portal.py",
+    "old": "        record_member_security_event(db, email, \"member_password_changed\")",
+    "new": "        pass",
+    "tests": [
+      "tests/test_portal_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#36 turning two-factor off leaves no trace: the choke-point record is removed",
+    "file": "sentinel/twofactor.py",
+    "old": "    _record_change(db, kind, subject, \"member_two_factor_disabled\")",
+    "new": "    pass",
+    "tests": [
+      "tests/test_portal_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#36 the audit write is not guarded: a failed record breaks the password change it records",
+    "file": "sentinel/portal.py",
+    "old": "    except Exception as exc:  # noqa: BLE001 - the password change is the point\n        logger.error(\"could not record the password change for %s: %s\", email, exc)",
+    "new": "    except ZeroDivisionError as exc:\n        logger.error(\"could not record the password change for %s: %s\", email, exc)",
+    "tests": [
+      "tests/test_portal_activity.py",
+      "tests/test_password_reset.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#28 ATTACK mark another customer's alert: the portal trusts the posted id",
+    "file": "sentinel/portal.py",
+    "old": "            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            note = (form.get(\"note\") or [\"\"])[0]",
+    "new": "            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                with db.cursor() as cur:\n                    cur.execute(\"SELECT id, account_id, rule, dedup_key, severity FROM alerts WHERE id = ?\", (alert_id,))\n                    alert = cur.fetchone()\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            note = (form.get(\"note\") or [\"\"])[0]",
+    "tests": [
+      "tests/test_expected_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#28 marking silences the alert too: one reassuring click turns a detector off",
+    "file": "sentinel/expected.py",
+    "old": "    logger.info(\"alert %d marked as expected activity by %s (rule %s)\",\n                alert_id, normalized, rule)\n    return True",
+    "new": "    from sentinel.snooze import snooze_alert\n    snooze_alert(db, account_id, dedup_key, rule, 24, requested_by=normalized)\n    logger.info(\"alert %d marked as expected activity by %s (rule %s)\",\n                alert_id, normalized, rule)\n    return True",
+    "tests": [
+      "tests/test_expected_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#28 a repeat marking is counted again, inflating the pattern an operator judges a rule by",
+    "file": "sentinel/expected.py",
+    "old": "            \"INSERT OR IGNORE INTO expected_activity \"",
+    "new": "            \"INSERT OR REPLACE INTO expected_activity \"",
+    "tests": [
+      "tests/test_expected_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#28 an anonymous marking is accepted, so the pattern names nobody",
+    "file": "sentinel/expected.py",
+    "old": "        raise ValueError(\"a marking must name who made it\")",
+    "new": "        normalized = \"unknown\"",
+    "tests": [
+      "tests/test_expected_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#28 the operator pattern view loses its denominator: 3 of 4 and 3 of 900 render identically",
+    "file": "sentinel/dashboard.py",
+    "old": "        share = f\"{r['marks']} of {total}\" if total else f\"{r['marks']}\"",
+    "new": "        share = f\"{r['marks']}\"",
+    "tests": [
+      "tests/test_expected_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#28 the note is unbounded: a POST body becomes whatever the sender typed",
+    "file": "sentinel/expected.py",
+    "old": "    clean_note = (note or \"\").strip()[:MAX_NOTE_LENGTH] or None",
+    "new": "    clean_note = (note or \"\").strip() or None",
+    "tests": [
+      "tests/test_expected_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#28 the metric counts every click, not every judgement",
+    "file": "sentinel/portal.py",
+    "old": "            if first and metrics is not None:",
+    "new": "            if metrics is not None:",
+    "tests": [
+      "tests/test_expected_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#28 a customer's mark is dropped from the incident document handed to an exchange",
+    "file": "sentinel/portal.py",
+    "old": "    for mark in marks_for_alert(db, alert[\"id\"]):",
+    "new": "    for mark in []:",
+    "tests": [
+      "tests/test_expected_activity.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "notices: the is_notice signal is dropped, so a reset email renders down the detection path and loses its link",
+    "file": "sentinel/portal.py",
+    "old": "    is_notice = True\n",
+    "new": "",
+    "tests": [
+      "tests/test_account_notices.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "notices: the destination-change notice bypasses the adapter and is formatted as a detection",
+    "file": "sentinel/events.py",
+    "old": "            _PlainNotice(message), account_label, [old_email], [],",
+    "new": "            message, account_label, [old_email], [],",
+    "tests": [
+      "tests/test_account_notices.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "notices: ContactRouter stops reading the flag, so the reset link never reaches the wire",
+    "file": "sentinel/alerts/contact.py",
+    "old": "            notice=getattr(detection, \"is_notice\", False),",
+    "new": "            notice=False,",
+    "tests": [
+      "tests/test_customer_email_template.py"
+    ]
+  },
+  {
+    "name": "customer email: the operator template goes to customers, taking evidence with it",
+    "file": "sentinel/alerts/email.py",
+    "old": "        msg.set_content(alert.render_customer() if customer else alert.render())",
+    "new": "        msg.set_content(alert.render())",
+    "tests": [
+      "tests/test_customer_email_template.py"
+    ]
+  },
+  {
+    "name": "runbook: a step loses its own condition, so a summariser turns advice into an instruction",
+    "file": "sentinel/alerts/base.py",
+    "old": "        \"1. If you did not authorise this, freeze the account in the Bitget app.\",",
+    "new": "        \"1. Freeze the account in the Bitget app.\",",
+    "tests": [
+      "tests/test_customer_email_template.py"
+    ]
+  },
+  {
+    "name": "runbook: the monitoring consequence goes back into the numbered list as an action",
+    "file": "sentinel/alerts/base.py",
+    "old": "    return (\"Note: if you revoked every key, this account is no longer \"",
+    "new": "    return (\"6. If you revoked every key, this account is no longer \"",
+    "tests": [
+      "tests/test_customer_email_template.py"
+    ]
+  },
+  {
+    "name": "#12/G-47: the fill window filter reads a missing timestamp as 0 again",
+    "file": "sentinel/poller.py",
+    "old": "            if last_run_ms is not None and dated_ms is not None and dated_ms < last_run_ms:\n                continue  # dated, and older than this window",
+    "new": "            if last_run_ms is not None and (dated_ms or 0) < last_run_ms:\n                continue  # dated, and older than this window",
+    "tests": [
+      "tests/test_undated_fills.py"
+    ]
+  },
+  {
+    "name": "#12/G-47: the seen-fill identity gate no longer gates anything",
+    "file": "sentinel/poller.py",
+    "old": "            if record_seen_fill(self._db, account_id, fill):\n                recent_fills.append(fill)",
+    "new": "            record_seen_fill(self._db, account_id, fill)\n            recent_fills.append(fill)",
+    "tests": [
+      "tests/test_undated_fills.py"
+    ]
+  },
+  {
+    "name": "audit: a skipped conditional job counts as a red CI again",
+    "file": "scripts/audit_issue_status.py",
+    "old": "    if any(c in RED_CONCLUSIONS for c in conclusions):\n        return \"failure\"\n    if any(c == \"success\" for c in conclusions):\n        return \"success\"\n    return None",
+    "new": "    return \"success\" if all(c == \"success\" for c in conclusions) else \"failure\"",
+    "tests": [
+      "tests/test_issue_status_audit.py"
+    ]
+  },
+  {
+    "name": "audit: a commit where every check was skipped is reported as success",
+    "file": "scripts/audit_issue_status.py",
+    "old": "    if any(c == \"success\" for c in conclusions):\n        return \"success\"\n    return None",
+    "new": "    return \"success\"",
+    "tests": [
+      "tests/test_issue_status_audit.py"
+    ]
+  },
+  {
+    "name": "audit: only a plain failure counts as red, so a cancelled run reads clean",
+    "file": "scripts/audit_issue_status.py",
+    "old": "RED_CONCLUSIONS = frozenset({\n    \"failure\", \"cancelled\", \"timed_out\", \"action_required\", \"startup_failure\",\n})",
+    "new": "RED_CONCLUSIONS = frozenset({\"failure\"})",
+    "tests": [
+      "tests/test_issue_status_audit.py"
+    ]
+  },
+  {
+    "name": "#72 the verification clock stops being the seam, so a code is judged against a different instant than it was built for",
+    "file": "sentinel/twofactor.py",
+    "old": "    secret = cipher.decrypt(row[\"encrypted_secret\"])\n    step = verify_code(secret, code, at=_clock(),\n                       last_used_step=row[\"last_used_step\"])\n    if step is not None:",
+    "new": "    secret = cipher.decrypt(row[\"encrypted_secret\"])\n    step = verify_code(secret, code, at=datetime.now(timezone.utc).timestamp(),\n                       last_used_step=row[\"last_used_step\"])\n    if step is not None:",
+    "tests": [
+      "tests/test_twofactor.py"
+    ]
+  },
+  {
+    "name": "#68 the test marker stops being one of the two signals, so only pytest's own variable is left",
+    "file": "sentinel/net.py",
+    "old": "    if os.environ.get(\"SENTINEL_ENV\") == \"test\":\n        return \"SENTINEL_ENV=test\"",
+    "new": "    if os.environ.get(\"SENTINEL_ENV\") == \"production\":\n        return \"SENTINEL_ENV=test\"",
+    "tests": [
+      "tests/test_no_live_traffic.py"
+    ]
+  },
+  {
+    "name": "#68 pytest's own marker stops counting, so a subprocess or another repo's suite may dial out",
+    "file": "sentinel/net.py",
+    "old": "    if \"PYTEST_CURRENT_TEST\" in os.environ:\n        return \"running under pytest\"\n    return None",
+    "new": "    return None",
+    "tests": [
+      "tests/test_no_live_traffic.py"
+    ]
+  },
+  {
+    "name": "#68 HTTP stops being refused under test",
+    "file": "sentinel/net.py",
+    "old": "    refuse_if_under_test(\"an HTTP request\", _host_of(url))\n    return requests.post(url, **kwargs)",
+    "new": "    return requests.post(url, **kwargs)",
+    "tests": [
+      "tests/test_no_live_traffic.py"
+    ]
+  },
+  {
+    "name": "#68 SMTP stops being refused under test",
+    "file": "sentinel/net.py",
+    "old": "    refuse_if_under_test(\"an SMTP connection\", f\"{host}:{port}\")\n    return smtplib.SMTP(host, port, timeout=timeout)",
+    "new": "    return smtplib.SMTP(host, port, timeout=timeout)",
+    "tests": [
+      "tests/test_no_live_traffic.py"
+    ]
+  },
+  {
+    "name": "#68 the refusal names the whole URL, putting a Telegram bot token in the logs (G-41)",
+    "file": "sentinel/net.py",
+    "old": "    return urlsplit(url).netloc or \"an unparseable url\"",
+    "new": "    return url",
+    "tests": [
+      "tests/test_no_live_traffic.py"
+    ]
+  },
+  {
+    "name": "#68 an exchange request stops being refused under test",
+    "file": "sentinel/exchange.py",
+    "old": "        if isinstance(self._exchange, ccxt.Exchange):\n            net.refuse_if_under_test(\"an exchange request\", self.exchange_id or \"an exchange\")",
+    "new": "        pass",
+    "tests": [
+      "tests/test_no_live_traffic.py"
+    ]
+  },
+  {
+    "name": "#68 load_dotenv returns to main(), where two tests reach it",
+    "file": "sentinel/cli.py",
+    "old": "    parser = argparse.ArgumentParser(prog=\"sentinel\")",
+    "new": "    load_dotenv()\n    parser = argparse.ArgumentParser(prog=\"sentinel\")",
+    "tests": [
+      "tests/test_cli_entrypoint.py"
+    ]
+  },
+  {
+    "name": "#68 the installed command stops loading .env at all, so production starts with nothing configured",
+    "file": "sentinel/cli.py",
+    "old": "    load_dotenv()\n    main()",
+    "new": "    main()",
+    "tests": [
+      "tests/test_cli_entrypoint.py"
+    ]
+  },
+  {
+    "name": "#68 the console script points back at main, which no longer reads .env",
+    "file": "pyproject.toml",
+    "old": "sentinel = \"sentinel.cli:cli_entry\"",
+    "new": "sentinel = \"sentinel.cli:main\"",
+    "tests": [
+      "tests/test_cli_entrypoint.py"
+    ]
+  },
+  {
+    "name": "#68 the onboarding fake stops covering the whole read surface, and the suite calls Bitget for real again",
+    "file": "tests/test_onboarding.py",
+    "old": "    for name in dir(client):\n        if name.startswith(\"fetch_\"):",
+    "new": "    for name in []:\n        if name.startswith(\"fetch_\"):",
+    "tests": [
+      "tests/test_onboarding.py"
+    ]
+  },
+  {
+    "name": "#69 a replacement key stops being checked against the account it claims to be for",
+    "file": "sentinel/keyreplacement.py",
+    "old": "    if candidate_uid != known_uid:",
+    "new": "    if False:",
+    "tests": [
+      "tests/test_key_replacement.py"
+    ]
+  },
+  {
+    "name": "#69 an account with no recorded identity stops being refused, and is replaced on trust",
+    "file": "sentinel/keyreplacement.py",
+    "old": "    if not known_uid:",
+    "new": "    if False:",
+    "tests": [
+      "tests/test_key_replacement.py"
+    ]
+  },
+  {
+    "name": "#69 the read-only gate (G-4) stops applying to keys arriving through the portal",
+    "file": "sentinel/keyreplacement.py",
+    "old": "    ok, reason = verify_read_only(client, exchange)\n    if not ok:",
+    "new": "    ok, reason = verify_read_only(client, exchange)\n    if False:",
+    "tests": [
+      "tests/test_key_replacement.py"
+    ]
+  },
+  {
+    "name": "#69 an account-info payload with no id stops being refused",
+    "file": "sentinel/keyreplacement.py",
+    "old": "    if candidate_uid is None:",
+    "new": "    if False:",
+    "tests": [
+      "tests/test_key_replacement.py"
+    ]
+  },
+  {
+    "name": "#69 the portal stops scoping a key replacement to the member's own accounts",
+    "file": "sentinel/portal.py",
+    "old": "            if _render_replace_key(db, email, account_id) is None:\n                self._send(_render_not_found().encode(), 404)\n                return",
+    "new": "            pass",
+    "tests": [
+      "tests/test_portal_key_replacement.py"
+    ]
+  },
+  {
+    "name": "#69 a recorded exchange account id becomes overwritable, so the check can be walked past one poll at a time",
+    "file": "sentinel/baseline.py",
+    "old": "        if current:\n            return \"unchanged\" if current == uid else \"mismatch\"",
+    "new": "        if current == uid:\n            return \"unchanged\"",
+    "tests": [
+      "tests/test_key_replacement.py"
+    ]
+  },
+  {
+    "name": "#69 a blank account id counts as an identity",
+    "file": "sentinel/exchange.py",
+    "old": "        text = str(value).strip()\n        if text:\n            return text",
+    "new": "        return str(value)",
+    "tests": [
+      "tests/test_key_replacement.py"
+    ]
+  },
+  {
+    "name": "#69 the slow loop stops learning the account id, so no account ever becomes eligible",
+    "file": "sentinel/poller.py",
+    "old": "        outcome = learn_exchange_uid(\n            self._db, account_id, exchange_account_uid(account_row[\"exchange\"], payload))",
+    "new": "        outcome = \"unknown\"",
+    "tests": [
+      "tests/test_key_replacement.py"
+    ]
+  },
+  {
+    "name": "#69 a key replacement stops appearing on the page a customer reads to see who touched their account",
+    "file": "sentinel/events.py",
+    "old": "    \"monitoring_key_replaced\",\n)",
+    "new": ")",
+    "tests": [
+      "tests/test_key_replacement.py"
+    ]
+  },
+  {
+    "name": "#69 the runbook goes back to sending a frightened customer straight to a form that wants an API key",
+    "file": "sentinel/alerts/base.py",
+    "old": "    where = f\" Sign in at {url}\" if url else \" Sign in to Minas AI Guardian\"",
+    "new": "    where = f\" Replace it here: {url}/key\" if url else \" Sign in to Minas AI Guardian\"",
+    "tests": [
+      "tests/test_customer_email_template.py"
+    ]
+  },
+  {
+    "name": "#38 one healthy account makes the status page say everything is fine",
+    "file": "sentinel/portal.py",
+    "old": "    if rows and watched == len(rows):",
+    "new": "    if rows and watched:",
+    "tests": [
+      "tests/test_member_status.py"
+    ]
+  },
+  {
+    "name": "#48 a prevention claim reaches the customer",
+    "file": "sentinel/portal.py",
+    "old": "        _feat(\"yes\", \"It watches for money leaving.\",",
+    "new": "        _feat(\"yes\", \"The Guardian protects your funds around the clock.\",",
+    "tests": [
+      "tests/test_no_prevention_claims.py"
+    ]
+  },
+  {
+    "name": "#41 marking an alert handled answers for the customer, and the escalation ladder stops",
+    "file": "sentinel/alert_triage.py",
+    "old": "        if handled is not None:\n            cur.execute(\n                \"UPDATE alert_triage SET handled_at = ?, handled_by = ?, updated_at = ? \"",
+    "new": "        if handled is not None:\n            cur.execute(\"UPDATE alerts SET acknowledged_at = ? WHERE id = ?\", (now, alert_id))\n            cur.execute(\n                \"UPDATE alert_triage SET handled_at = ?, handled_by = ?, updated_at = ? \"",
+    "tests": [
+      "tests/test_alert_triage.py"
+    ]
+  },
+  {
+    "name": "#27: acknowledging from the portal stops telling the emergency contact",
+    "file": "sentinel/portal.py",
+    "old": "        send_critical_ack_closing_note(db, alert_id)\n",
+    "new": "",
+    "tests": [
+      "tests/test_secondary_contact_escalation.py"
+    ]
+  },
+  {
+    "name": "#27: acknowledging as an operator stops telling the emergency contact",
+    "file": "sentinel/operators.py",
+    "old": "        send_critical_ack_closing_note(db, alert_id)\n",
+    "new": "",
+    "tests": [
+      "tests/test_secondary_contact_escalation.py"
+    ]
+  },
+  {
+    "name": "#91 removing an emergency contact leaves no audit row: the secondary change records nothing",
+    "file": "sentinel/cli.py",
+    "old": "                changes.append((\"secondary_contact_updated\",",
+    "new": "                _ignored = ((\"secondary_contact_updated\",",
+    "tests": [
+      "tests/test_set_contact.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#91 re-running the same secondary values manufactures a change in the forensic log",
+    "file": "sentinel/cli.py",
+    "old": "            if (sec_email, sec_phone) != (before[\"alert_email_secondary\"],",
+    "new": "            if True or (sec_email, sec_phone) != (before[\"alert_email_secondary\"],",
+    "tests": [
+      "tests/test_set_contact.py"
+    ],
+    "expect": "killed"
+  }
 ]

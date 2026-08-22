@@ -53,6 +53,7 @@ def append_event(
 ADMIN_EVENT_TYPES = (
     "customer_added",
     "alert_contact_updated",
+    "secondary_contact_updated",
     "sms_alerts_changed",
     "member_portal_password_generated",
     "member_password_changed",
@@ -67,6 +68,7 @@ ADMIN_EVENT_TYPES = (
 ADMIN_EVENT_LABELS = {
     "customer_added": "Account added to monitoring",
     "alert_contact_updated": "Alert destination changed",
+    "secondary_contact_updated": "Emergency contact changed",
     "sms_alerts_changed": "SMS alert preference changed",
     "member_portal_password_generated": "Portal password issued by Minas",
     "member_password_changed": "Portal password changed",

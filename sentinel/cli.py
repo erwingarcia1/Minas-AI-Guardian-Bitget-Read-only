@@ -707,13 +707,45 @@ def cmd_operator(args: argparse.Namespace) -> int:
 
 
 def cmd_set_contact(args: argparse.Namespace) -> int:
-    """Set/clear an existing account's per-account alert destination. Pass
-    --alert-email/--alert-phone to set; pass --clear to remove both. Pass
-    --sms-alerts on|off to toggle the member's SMS notification preference
-    (CRITICAL alerts may still page per alerting.sms_critical_overrides_optout)."""
+    """Set/clear an existing account's alert destinations. Pass
+    --alert-email/--alert-phone to set the primary; --clear to remove both.
+    --alert-email-secondary/--alert-phone-secondary set the emergency
+    contact; --clear-secondary removes it (#91 - until then the secondary
+    was write-once at onboarding, and honouring a removal request meant SQL
+    against production). Pass --sms-alerts on|off to toggle the member's SMS
+    notification preference (CRITICAL alerts may still page per
+    alerting.sms_critical_overrides_optout).
+
+    Each destination moves only when its own flags are present: a
+    secondary-only change cannot disturb where the alerts themselves go, and
+    an invocation with no flags at all changes nothing (it used to clear the
+    primary - a footgun, not a feature, removed with #91)."""
     from sentinel.events import append_event, notify_alert_destination_change
+    from sentinel.operators import is_active_operator, list_operators, operator_count
 
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+
+    # The `--as` gate, in cmd_disable_account's mold (#80): attribution is
+    # mandatory the moment operator accounts exist, and not before. Where the
+    # alerts go is the setting an attacker changes first, so the row that
+    # records the change carries a name once names exist.
+    actor = getattr(args, "as_operator", None)
+    if operator_count(db) > 0:
+        if not actor:
+            names = ", ".join(o["username"] for o in list_operators(db) if o["status"] == "active")
+            print(
+                f"--as <operator> is required: this change is recorded against a name. "
+                f"Active operators: {names or '(none active)'}",
+                file=sys.stderr,
+            )
+            return 2
+        if not is_active_operator(db, actor):
+            print(f"'{actor}' is not an active operator", file=sys.stderr)
+            return 2
+    elif actor:
+        print("no operator accounts exist - create one with `sentinel operator add`", file=sys.stderr)
+        return 2
+
     # (event_type, payload) rows to write once the UPDATE has landed. Where
     # the alerts about an account go is a setting whose silent change is an
     # attack (redirect the alerts, then drain the account), so every actual
@@ -721,9 +753,20 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
     # diffs are recorded: re-running the command with the same values is not
     # a change and must not manufacture one in a forensic log.
     changes: list[tuple[str, dict]] = []
+    # getattr throughout: tests (and older callers) build the Namespace by
+    # hand without the newer optional flags.
+    sms_alerts = getattr(args, "sms_alerts", None)
+    sec_email_arg = getattr(args, "alert_email_secondary", None)
+    sec_phone_arg = getattr(args, "alert_phone_secondary", None)
+    clear_secondary = getattr(args, "clear_secondary", False)
+    primary_requested = bool(args.clear) or args.alert_email is not None \
+        or args.alert_phone is not None
+    secondary_requested = clear_secondary or sec_email_arg is not None \
+        or sec_phone_arg is not None
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, alert_email, alert_phone, sms_alerts_enabled FROM accounts WHERE label = ?",
+            "SELECT id, alert_email, alert_phone, alert_email_secondary, "
+            "alert_phone_secondary, sms_alerts_enabled FROM accounts WHERE label = ?",
             (args.label,),
         )
         before = cur.fetchone()
@@ -732,10 +775,6 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
             return 1
         account_id = before["id"]
         now = datetime.now(timezone.utc).isoformat()
-        # getattr: tests (and older callers) build the Namespace by hand
-        # without the newer optional flag.
-        sms_alerts = getattr(args, "sms_alerts", None)
-        preference_only = False
         if sms_alerts is not None:
             enabled = 1 if sms_alerts == "on" else 0
             cur.execute(
@@ -748,12 +787,9 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
                                  "to": bool(enabled)}))
         if args.clear:
             email, phone = None, None
-        elif args.alert_email is None and args.alert_phone is None and sms_alerts is not None:
-            # Preference-only update: leave the stored destinations untouched.
-            preference_only = True
         else:
             email, phone = args.alert_email, args.alert_phone
-        if not preference_only:
+        if primary_requested:
             cur.execute(
                 "UPDATE accounts SET alert_email = ?, alert_phone = ?, updated_at = ? WHERE label = ?",
                 (email, phone, now, args.label),
@@ -762,22 +798,46 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
                 changes.append(("alert_contact_updated",
                                 {"email_from": before["alert_email"], "email_to": email,
                                  "phone_from": before["alert_phone"], "phone_to": phone}))
+        if secondary_requested:
+            sec_email, sec_phone = (None, None) if clear_secondary \
+                else (sec_email_arg, sec_phone_arg)
+            cur.execute(
+                "UPDATE accounts SET alert_email_secondary = ?, alert_phone_secondary = ?, "
+                "updated_at = ? WHERE label = ?",
+                (sec_email, sec_phone, now, args.label),
+            )
+            if (sec_email, sec_phone) != (before["alert_email_secondary"],
+                                          before["alert_phone_secondary"]):
+                changes.append(("secondary_contact_updated",
+                                {"email_from": before["alert_email_secondary"],
+                                 "email_to": sec_email,
+                                 "phone_from": before["alert_phone_secondary"],
+                                 "phone_to": sec_phone}))
     for event_type, payload in changes:
-        # actor=None is the truth here: the CLI runs on the server and carries
-        # no operator identity. The unattributed row IS the record - see the
-        # actor note on `config_changes` in schema.sql for the same reasoning.
-        append_event(db, account_id, event_type, "LOW", payload, actor=None)
+        # `actor` is the --as name once the gate above captured one, and None
+        # before operator accounts exist - the unattributed row IS the record
+        # then (see the actor note on `config_changes` in schema.sql).
+        append_event(db, account_id, event_type, "LOW", payload, actor=actor)
         if event_type == "alert_contact_updated":
             # The address being removed loses sight of this account the moment
             # the change lands, so the record of it never reaches them. See
             # notify_alert_destination_change.
             notify_alert_destination_change(
                 db, args.label, payload["email_from"], payload["email_to"])
-    if preference_only:
-        print(f"sms alerts for '{args.label}': {sms_alerts}")
-        return 0
-    suffix = f" sms_alerts={sms_alerts}" if sms_alerts is not None else ""
-    print(f"contact for '{args.label}': email={email or '-'} phone={phone or '-'}{suffix}")
+    parts = []
+    if primary_requested:
+        parts.append(f"email={email or '-'} phone={phone or '-'}")
+    if secondary_requested:
+        parts.append(f"secondary_email={sec_email or '-'} secondary_phone={sec_phone or '-'}")
+    if sms_alerts is not None:
+        parts.append(f"sms_alerts={sms_alerts}")
+    if not parts:
+        parts.append(
+            f"unchanged: email={before['alert_email'] or '-'} "
+            f"phone={before['alert_phone'] or '-'} "
+            f"secondary_email={before['alert_email_secondary'] or '-'} "
+            f"secondary_phone={before['alert_phone_secondary'] or '-'}")
+    print(f"contact for '{args.label}': " + " ".join(parts))
     return 0
 
 
@@ -895,11 +955,17 @@ def main() -> None:
     triage_parser.add_argument("--label", required=True)
     triage_parser.set_defaults(func=cmd_triage)
 
-    contact_parser = sub.add_parser("set-contact", help="Set/clear an account's per-account alert destination")
+    contact_parser = sub.add_parser("set-contact", help="Set/clear an account's alert destinations (primary and emergency contact)")
     contact_parser.add_argument("--label", required=True)
     contact_parser.add_argument("--alert-email")
     contact_parser.add_argument("--alert-phone")
-    contact_parser.add_argument("--clear", action="store_true", help="remove both email and phone")
+    contact_parser.add_argument("--clear", action="store_true", help="remove the primary email and phone")
+    contact_parser.add_argument("--alert-email-secondary", help="the emergency contact's email (#91)")
+    contact_parser.add_argument("--alert-phone-secondary", help="the emergency contact's phone")
+    contact_parser.add_argument("--clear-secondary", action="store_true",
+                                help="remove the emergency contact (email and phone)")
+    contact_parser.add_argument("--as", dest="as_operator", metavar="OPERATOR",
+                                help="record this change against an operator (required once operators exist)")
     contact_parser.add_argument(
         "--sms-alerts", choices=["on", "off"], default=None,
         help="member SMS notification preference (CRITICAL may still page per rules.yaml)",
