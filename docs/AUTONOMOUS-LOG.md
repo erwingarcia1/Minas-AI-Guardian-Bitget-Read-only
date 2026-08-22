@@ -4310,3 +4310,39 @@ path; the moved-past semantics stay sound (the later commit may be the
 fix, and local gates run in full), but the "laptop can no longer out-vote
 a red run" claim was true only for unchanged trees. Corrected on #93 and
 #95; this entry is the log's own correction.
+
+# 2026-08-22 · Autonomous run: verification pass + jaypee delivery investigation
+
+**Verification**: production measured v1.7.0 / 408ebde via `sentinel version
+--machine` (matches the owner's belief); #93/#31/#94 confirmed closed. Found
+and fixed: docs/DEPLOYMENTS.md had missed FIVE deploys (newest entry v1.5.1)
+— backfilled from the production reflog (v1.5.2 08-19, v1.6.0 08-20, v1.6.1
+08-21 03:27, v1.6.2 08-21 04:51, v1.7.0 08-22 00:15:59), with the honest
+limit that only the running version carries a container assertion. #94 rider:
+RELEASE-NOTES.md now states the "on upgrade" marker as an authoring rule.
+
+**jaypee delivery investigation (report-only, owner's item 2)** — did the two
+00:06 CRITICALs reach a human? **YES.** Evidence, all read-only:
+- alerts #369 (withdrawal_initiated, 00:06:21) and #370
+  (withdrawal_to_unseen_address, 00:06:28): `delivered_to = 3` each — the
+  three configured channels (email + telegram + telegram_team; the only
+  routed-but-unconfigured channel is sms, per the 00:16:48 startup warning)
+  accepted both at send time.
+- #370 acknowledged 00:49:58; **#369 remains unacknowledged**.
+- Escalation worked as shipped in 1.6.0: both escalated to the secondary
+  contact at 00:21:28/00:22:13 (15-min CRITICAL window), operator pages
+  delivered_to=3.
+- SMS leg: `sms_deliveries` rows for both alerts = `skipped, "no phone
+  number on file"` (account-level), and globally SMS is routed-but-
+  unconfigured — the 00:16:48 `alert_channel_routed_but_not_configured`
+  page is the *startup restatement* of #75 after the v1.7.0 deploy restart
+  (00:15:59), not a delivery failure of these alerts.
+- Caveat: the 00:06 container logs are gone (deploy replaced the container
+  at 00:15:59; `docker compose logs` covers the new one only). The DB rows
+  above are the durable record and they answer the question.
+- Aside: the [Unreleased] pending-ops note still lists Gmail SMTP
+  credentials as pending, but email is configured and accepting in
+  production — that note looks stale.
+
+Nothing fixed, nothing touched — alerts left exactly as found (#369's open
+ack included). Proceeding down the owner's order: #91 next.
