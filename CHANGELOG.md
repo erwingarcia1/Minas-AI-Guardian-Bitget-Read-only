@@ -76,7 +76,12 @@ fired before still fires, minus the accidental double.
   rather than silently off, a cron re-run on the same day is a no-op
   (both probe-pinned), the change is recorded on /activity, and secondary
   contacts get nothing, per decision 1: they hear escalations, never
-  routine traffic.
+  routine traffic. A member whose every account is dark still receives
+  the digest — a customer whose monitoring is broken is exactly who must
+  keep hearing so — and a paused account is reported motive-neutrally
+  ("paused — not being checked; ask us if you didn't expect this"): the
+  product holds no record of who wanted a pause, so the digest does not
+  claim to know.
 - **Members connect Telegram themselves, guided, with a test message
   first** (#18). The portal's Security page grew a Telegram section: one
   button issues a one-time code (15-minute expiry, single-use, superseded

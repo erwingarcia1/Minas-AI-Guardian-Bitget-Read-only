@@ -113,10 +113,14 @@ def test_a_dark_account_is_named_with_its_reason(db, sent):
     assert "NOT being watched" in body
 
 
-def test_a_paused_account_reads_as_the_customers_choice(db, sent):
+def test_a_paused_account_is_reported_without_a_claimed_motive(db, sent):
+    """paula-garavillas was disabled after 5,858 failures - an operator
+    action, not her request. The digest holds no record of who wanted a
+    pause, so it must not attribute one."""
     _account(db, status="disabled")
     body, _ = build_member_digest(db, EMAIL)
-    assert "paused, at your request" in body
+    assert "paused — not being checked; ask us if you didn't expect this" in body
+    assert "at your request" not in body, "the digest may not invent a motive"
 
 
 # --- frequency: the member's choice ------------------------------------------
@@ -163,9 +167,17 @@ def test_secondary_contacts_get_no_digest(db, sent):
     assert EMAIL in recipients
 
 
-def test_a_disabled_accounts_contact_is_not_digested_for_it_alone(db, sent):
+def test_a_member_whose_every_account_is_dark_still_gets_the_digest(db, sent):
+    """The owner's call on the paula case: a customer whose monitoring is
+    broken is exactly who must keep hearing so. The digest says 0 of 1 and
+    keeps arriving; the member's own 'off' switch is the one way to stop it."""
     _account(db, status="disabled")
-    assert send_member_digests(db, now=datetime(2026, 8, 25, 8, 0, tzinfo=timezone.utc)) == 0
+    n = send_member_digests(db, now=datetime(2026, 8, 25, 8, 0, tzinfo=timezone.utc))
+    assert n == 1
+    (detection, emails), = sent
+    assert emails == (EMAIL,)
+    assert "Accounts watched: 0 of 1." in detection.message
+    assert "at your request" not in detection.message
 
 
 def test_a_corrupt_stored_preference_reads_as_daily_not_off(db, sent):

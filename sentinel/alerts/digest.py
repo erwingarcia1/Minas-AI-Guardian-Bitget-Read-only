@@ -155,7 +155,12 @@ def build_member_digest(db: Database, email: str, rules=None,
         if a["watched"]:
             lines.append(f"  - {a['label']}: watching")
         elif a["status"] == "disabled":
-            lines.append(f"  - {a['label']}: paused, at your request — not being checked")
+            # Motive-neutral on purpose: an account is disabled by an
+            # operator, sometimes because monitoring broke - not necessarily
+            # because the customer asked. We hold no record of who wanted
+            # it, so the digest must not claim to.
+            lines.append(f"  - {a['label']}: paused — not being checked; "
+                         "ask us if you didn't expect this")
         else:
             lines.append(f"  - {a['label']}: NOT being watched — {a['reason']}")
     lines.append("")
@@ -194,9 +199,14 @@ def send_member_digests(db: Database, rules=None, now: datetime | None = None) -
     now = now or datetime.now(timezone.utc)
     today = now.date().isoformat()
     with db.cursor() as cur:
+        # Disabled accounts' contacts are INCLUDED: a customer whose
+        # monitoring is dark is exactly who must keep hearing so - the
+        # digest exists to make silence readable, and going quiet at the
+        # moment monitoring stops is the opposite. The per-member 'off'
+        # switch is the one way to silence it; a contact cleared at
+        # offboarding has no email here and so no digest.
         cur.execute(
-            "SELECT DISTINCT alert_email FROM accounts "
-            "WHERE alert_email IS NOT NULL AND status != 'disabled'")
+            "SELECT DISTINCT alert_email FROM accounts WHERE alert_email IS NOT NULL")
         emails = [r["alert_email"] for r in cur.fetchall()]
 
     sent = 0
