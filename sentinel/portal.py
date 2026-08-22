@@ -1282,7 +1282,19 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
         f"re-checked as we poll ({perm_checked}), and any change raises an alert.</span></div></li>"
         + live_check +
         "<li>" + _tick("yes") + "<div><strong>Credentials encrypted.</strong>"
-        "<span>Your API key is encrypted at rest and never displayed.</span></div></li>"
+        "<span>Your API key is encrypted at rest and never displayed. "
+        f"It was last used {_ts(last_ok, 'never — no check has completed yet')}; "
+        "every account check uses it, so this moves whenever monitoring "
+        "does.</span></div></li>"
+        # The revocation that matters happens at the EXCHANGE (#45): a
+        # read-only key cannot delete itself, and Minas offering a "revoke"
+        # button here would be theatre in front of the real kill switch the
+        # customer already holds. Saying where the switch is IS the feature.
+        "<li>" + _tick("yes") + "<div><strong>You hold the kill switch.</strong>"
+        f"<span>Revoke this key in your {html.escape((acct['exchange'] or 'exchange').title())} "
+        "app at any moment — Minas cannot stop you, slow you down, or use the key for "
+        "anything but reading. Revoking ends monitoring until a new key is "
+        "connected.</span></div></li>"
         # Offered on every account rather than only on unwatched ones. The
         # customer who needs it most has just revoked every key in a panic, and
         # asking them to first prove the account looks broken - on a page whose

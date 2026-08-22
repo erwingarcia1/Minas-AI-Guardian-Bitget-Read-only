@@ -60,6 +60,16 @@ fired before still fires, minus the accidental double.
   takes — and "not re-checked since connection yet" said plainly when
   that is the truth. The "any change raises an alert" sentence is pinned
   to the existence of the permission-drift detector by test.
+- **The account page says when the monitoring key was last used, and where
+  the real kill switch is** (#45). The credentials panel now shows the
+  key's last use (it moves with every account check — "never" said
+  plainly when no check has completed), and a new posture item states the
+  truth about revocation: the customer revokes the key in their exchange
+  app, at any moment, and Minas cannot stop or slow that — a read-only
+  key cannot delete itself, so a Minas-side "revoke" button would be
+  theatre in front of the switch the customer already holds. Revoking
+  ends monitoring until a new key is connected; the replace-key path sits
+  directly below.
 - **Contact addresses are stored one way, not however they were typed**
   (#90). Production carried one person's address as `azdatoo@gmail.com` on
   four accounts and `AZDATOO@GMAIL.COM` on a fifth; every read behaved

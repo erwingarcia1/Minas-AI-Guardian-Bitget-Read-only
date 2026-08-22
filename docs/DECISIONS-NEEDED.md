@@ -720,6 +720,14 @@ yes, which of the safeguards above are required for v1. Until then #10
 stays open on this criterion alone — its status-per-account criterion
 shipped with #34's home screen.
 
+**#45's "revoke from the portal" is this same decision** (added
+2026-08-22): a true revoke happens at the exchange — a read-only key
+cannot delete itself, and the account page now says so plainly — so the
+only portal-side "revoke" possible is "Minas forgets/stops using the
+key", which is monitoring-off-from-a-portal-session in different words.
+If this decision lands as "build it", #45's revoke half rides the same
+safeguards; #45 is otherwise complete.
+
 ---
 
 ## 16. Deep incident links in alert emails vs the anti-phishing training (#20)

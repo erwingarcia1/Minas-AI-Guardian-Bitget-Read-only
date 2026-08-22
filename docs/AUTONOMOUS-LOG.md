@@ -4459,3 +4459,16 @@ criterion collides with the sign-in page's own never-click-from-email
 training; recorded as decision 16, phone-readability criteria verified
 already built. Full HC green ×9 (mutation cold, 6060s, 125/127). Next:
 #45.
+
+# 2026-08-22 · #45 built (last criterion): key last-used and the honest revoke
+
+The credentials panel now shows when the monitoring key was last used
+(every check uses it; "never" said plainly), and a new posture item tells
+the truth about revocation: the kill switch is the customer's, at the
+exchange — a read-only key cannot delete itself, so a Minas "revoke"
+button would be theatre, and a Minas-side "forget the key" is decision
+15's monitoring-off shape (recorded as an addendum there; #45 otherwise
+complete). Test pins: last-used present, never-case plain, kill-switch
+copy, and NO /revoke endpoint offered. Full HC green ×9; mutation cold
+run now 10617s (~3h) — the machine is loaded and #97's cost keeps
+climbing. Next: #18.

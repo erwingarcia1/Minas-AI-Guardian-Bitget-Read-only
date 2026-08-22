@@ -64,3 +64,38 @@ def test_a_change_raising_an_alert_is_only_claimed_because_the_detector_exists(d
         "or restore the detector")
     account_id = _account(db)
     assert "any change raises an alert" in _render_member_account(db, EMAIL, account_id)
+
+
+# --- #45: key last-used and the real kill switch ------------------------------
+
+def test_the_page_says_when_the_key_was_last_used(db):
+    account_id = _account(db)
+    page = _render_member_account(db, EMAIL, account_id)
+    assert "It was last used" in page
+
+
+def test_a_key_never_used_is_said_plainly(db):
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO accounts (label, exchange, topology, encrypted_api_key, encrypted_secret, "
+            "encrypted_passphrase, alert_email, status, onboarded_at, updated_at) "
+            "VALUES ('acct-k2', 'bitget', 'independent', 'x', 'y', 'z', ?, 'active', "
+            "'2026-01-01', '2026-01-01')", (EMAIL,))
+        account_id = cur.lastrowid
+        cur.execute("INSERT INTO poll_state (account_id) VALUES (?)", (account_id,))
+    page = _render_member_account(db, EMAIL, account_id)
+    assert "never — no check has completed yet" in page
+
+
+def test_revocation_points_at_the_exchange_not_at_a_minas_button(db):
+    """The kill switch the customer actually holds is at the exchange - a
+    read-only key cannot delete itself, and a Minas 'revoke' button would be
+    theatre in front of it (and, as a monitoring kill switch, decision 15's
+    attacker-button shape). The page says where the real switch is and what
+    revoking does."""
+    account_id = _account(db)
+    page = _render_member_account(db, EMAIL, account_id)
+    assert "You hold the kill switch." in page
+    assert "Revoke this key in your Bitget" in page
+    assert "Revoking ends monitoring until a new key is connected" in page
+    assert 'action="/revoke"' not in page, "no Minas-side revoke endpoint exists or is offered"
