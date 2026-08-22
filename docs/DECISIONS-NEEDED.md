@@ -722,6 +722,35 @@ shipped with #34's home screen.
 
 ---
 
+## 16. Deep incident links in alert emails vs the anti-phishing training (#20)
+
+#20's last criterion: "Every alert email links to the full incident in the
+portal." The machinery is ready — since #22, the alert row id exists before
+any channel sends, so `/incident?id=N` is constructible at send time — but
+the criterion collides head-on with copy the product already teaches, from
+the owner's own sign-in mockup: *"Never enter your password after
+following a link from an email. Open the portal address you were given
+directly"* and *"don't click through from email or messages."* Two
+docstrings (`monitoring_note`, `portal_action_line`) and the #26 judgement
+record the same posture: the email prints the portal address to open, and
+never makes clicking the natural path.
+
+A deep link would be view-only and still sign-in-gated — it hands nobody a
+mute button (#26's actual target) — but it trains the click-from-email
+habit that the sign-in page spends a paragraph untraining, and a phisher's
+"incident" link is exactly what it would look like.
+
+**What is needed**: either (a) keep the front door as the ceiling and
+reword #20's criterion to match ("the email says where to sign in; the
+incident is at the top of the home screen"), or (b) decide the deep view
+link is worth the training cost, in which case the build also needs
+sign-in to carry a validated `next` path (open-redirect-proof) so the
+link actually lands on the incident. Until decided, #20 stays open on
+this criterion alone — its phone-readability and first-line criteria are
+built and pinned by tests in `test_customer_email_template.py`.
+
+---
+
 ## Not a decision, but needs saying: #16's remaining criterion
 
 G-12's third criterion — "threshold changes are recorded, showing **who**
