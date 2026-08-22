@@ -264,3 +264,36 @@ def test_pending_expires_back_to_the_connect_button(db, sent):
     page = _render_security(db, EMAIL)
     assert "Telegram alerts are off" in page
     assert pending_link(db, EMAIL) is None
+
+
+# --- the worker's backoff (#18 hardening) -------------------------------------
+
+def test_repeated_failures_back_off_to_the_cap_and_reset_on_success(db):
+    from sentinel.alerts.telegram_link import TelegramLinkWorker
+
+    worker = TelegramLinkWorker(db, "tok")
+    delays = [worker._register_failure(RuntimeError("down")) for _ in range(6)]
+    assert delays == [30, 60, 120, 240, 300, 300], "30s doubling to a 5-minute cap"
+    worker._consecutive_failures = 0  # what a successful poll does
+    assert worker._register_failure(RuntimeError("down")) == 30, "success resets the ladder"
+
+
+def test_a_409_is_named_loudly_exactly_once(db, caplog):
+    import logging
+
+    from sentinel.alerts.telegram_link import TelegramLinkWorker
+
+    class _Resp:
+        status_code = 409
+
+    class _Conflict(Exception):
+        response = _Resp()
+
+    worker = TelegramLinkWorker(db, "tok")
+    with caplog.at_level(logging.ERROR, logger="sentinel.alerts.telegram_link"):
+        worker._register_failure(_Conflict())
+        worker._register_failure(_Conflict())
+    conflicts = [r for r in caplog.records if "409 Conflict" in r.getMessage()]
+    assert len(conflicts) == 1, "one clear line, not a drumbeat"
+    assert "sendMessage is unaffected" in conflicts[0].getMessage(), (
+        "the line must say alert delivery is safe, or it reads as an alerting outage")

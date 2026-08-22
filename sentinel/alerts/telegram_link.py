@@ -217,12 +217,17 @@ def _send_text(bot_token: str, chat_id, text: str) -> None:
 class TelegramLinkWorker(threading.Thread):
     """Daemon long-poll over getUpdates. One instance per process."""
 
+    BACKOFF_BASE_SECONDS = 30
+    BACKOFF_CAP_SECONDS = 300
+
     def __init__(self, db: Database, bot_token: str, poll_timeout: int = 25):
         super().__init__(daemon=True, name="telegram-link-worker")
         self._db = db
         self._token = bot_token
         self._poll_timeout = poll_timeout
         self._stop = threading.Event()
+        self._consecutive_failures = 0
+        self._conflict_named = False
 
     def stop(self) -> None:
         self._stop.set()
@@ -232,9 +237,31 @@ class TelegramLinkWorker(threading.Thread):
         while not self._stop.is_set():
             try:
                 self._poll_once()
+                self._consecutive_failures = 0
             except Exception as exc:  # noqa: BLE001 - an outage must not kill the poller
-                logger.error("telegram update poll failed: %s", exc)
-                self._stop.wait(30)
+                self._stop.wait(self._register_failure(exc))
+
+    def _register_failure(self, exc: Exception) -> float:
+        """Escalating backoff: 30s doubling to a 5-minute cap, reset by any
+        success - a persistent failure settles at ~12 requests/hour instead
+        of a drumbeat against the bot that carries alerts. A 409 gets named
+        loudly ONCE: it means a webhook or a second poller holds getUpdates,
+        which is a configuration fact someone must act on, not a transient
+        to be logged every interval forever."""
+        self._consecutive_failures += 1
+        status = getattr(getattr(exc, "response", None), "status_code", None)
+        if status == 409 and not self._conflict_named:
+            self._conflict_named = True
+            logger.error(
+                "getUpdates returned 409 Conflict: a webhook is configured on this bot, "
+                "or something else is polling it. Telegram LINKING is stalled until that "
+                "is resolved (alert delivery via sendMessage is unaffected). This is "
+                "logged once; the worker keeps retrying quietly at its backoff cap."
+            )
+        else:
+            logger.error("telegram update poll failed: %s", exc)
+        return min(self.BACKOFF_CAP_SECONDS,
+                   self.BACKOFF_BASE_SECONDS * 2 ** (self._consecutive_failures - 1))
 
     def _learn_bot_username(self) -> None:
         # POST like every Bot API method: net exposes only post(), on purpose
