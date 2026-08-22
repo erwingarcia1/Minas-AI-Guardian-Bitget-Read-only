@@ -65,8 +65,8 @@
   {
     "name": "snooze: a snoozed detection is dropped instead of recorded",
     "file": "sentinel/alerts/dispatch.py",
-    "old": "    alert = AlertMessage(\n        account_label=account_label,",
-    "new": "    if snoozed_until:\n        return None\n\n    alert = AlertMessage(\n        account_label=account_label,",
+    "old": "    with db.cursor() as cur:\n        cur.execute(\n            \"SELECT id, sent_at FROM alerts WHERE account_id = ? AND dedup_key = ? \"",
+    "new": "    if snoozed_until:\n        return None\n\n    with db.cursor() as cur:\n        cur.execute(\n            \"SELECT id, sent_at FROM alerts WHERE account_id = ? AND dedup_key = ? \"",
     "tests": [
       "tests/test_snooze.py"
     ]

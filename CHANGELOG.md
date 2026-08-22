@@ -15,9 +15,27 @@ or Twilio credentials, terminate the retired us-east-1 instance._
 
 ### Changed detection behaviour
 
-**None.** Which alerts fire, when, and to whom is untouched. Release
-publishing changed, and an operator can now change alert destinations that
-used to be write-once — but no detector, threshold, or routing rule moved.
+**One narrow change, for the better** (#22): two checks of the same
+condition racing each other could each slip a duplicate alert through the
+suppression window; that window is closed, so the duplicate page no longer
+happens. No detector, threshold, or routing rule moved — every alert that
+fired before still fires, minus the accidental double.
+
+### Fixed
+
+- **One ongoing problem is one alert — now airtight, and never silent**
+  (#22). Two checks of the same condition running at the same instant
+  could both slip through the duplicate-suppression window and both page
+  (the check and the write happened in separate locked blocks with the
+  network sends between). The check and the claim now share one locked
+  block, so simultaneous detections serialize: one row, one delivery —
+  proven by an eight-thread race test. And a repeat the cooldown
+  suppresses is withheld from the channels, never from the record: it is
+  counted on the alert it repeated, and the portal's home and history
+  show "still firing — repeated N×, last <time>", so suppression cannot
+  become concealment. The alert row is also claimed before any delivery
+  attempt, so a crash mid-send leaves "detected, reached nobody" rather
+  than nothing.
 
 ### Added
 

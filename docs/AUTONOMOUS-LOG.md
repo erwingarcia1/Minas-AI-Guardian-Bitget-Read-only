@@ -4422,3 +4422,25 @@ mail, standing banner, cancel window); the supported immediate removal
 remains operator disable-account (#80). #10 stays open on that criterion
 alone. Full HC green ×9; mutation cold AGAIN (3899s — every sentinel/
 change invalidates mutants/; #97's cost, measured twice today). Next: #22.
+
+# 2026-08-22 · #22 built: the dedup race is closed and suppression is visible
+
+dispatch() restructured: the cooldown check and the row that wins it now
+share ONE cursor block (the write lock serializes simultaneous checks —
+proven by an eight-thread barrier test: one row, one send, seven counted
+repeats), and the row is claimed delivered_to=0 BEFORE any network send,
+so a crash mid-delivery leaves "detected, reached nobody" (#57), never
+nothing. A cooldown-suppressed repeat increments repeat_count /
+last_repeat_at on the row it repeated (new columns via migration);
+portal home and /alerts history render "still firing — repeated N×, last
+…" so one ongoing problem is one alert that admits it is ongoing. One
+probe re-anchor: "snoozed detection dropped instead of recorded" survived
+because its injection point now sits AFTER the recording — the defect it
+simulates became structurally unreachable there, which is the new design
+working; re-anchored before the claim block, proven land+kill, then
+138/138 full run. Mutation gate cold again, real pass 125/127=98%.
+Process note against myself: I briefly ran a --fast health check
+concurrently with the full probe run; its gates read a tree the probe
+runner was actively patching and it failed meaninglessly — discarded, and
+the fast gates re-run green on the quiet tree. The probe lock protects
+probe-vs-probe, not gates-vs-probe; one thing at a time. Next: #20.

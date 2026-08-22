@@ -1079,6 +1079,18 @@ def _render_login(error: str | None = None) -> str:
     return _page(body, title="Sign in — Minas AI Guardian", shell=True)
 
 
+def _repeat_note(r) -> str:
+    """One ongoing problem is one alert - and the alert says so (#22). A
+    repeat suppressed by the cooldown is counted on the row it repeated, and
+    this renders that count wherever the alert is listed, so suppression
+    never becomes concealment."""
+    n = r["repeat_count"] if "repeat_count" in r.keys() else 0
+    if not n:
+        return ""
+    return (f"<span class='meta'>still firing — repeated {int(n)}× since, "
+            f"last {_ts(r['last_repeat_at'])}</span>")
+
+
 def _watch_state(watch: dict | None) -> tuple[str, str]:
     """The tri-state a customer reads on an account card (#34, #10):
     Watching (checked recently, nothing failing), Paused (deliberately
@@ -1105,7 +1117,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
         marks = ",".join("?" for _ in ids)
         with db.cursor() as cur:
             cur.execute(
-                f"SELECT al.id, al.sent_at, al.severity, al.rule, al.acknowledged_at, al.acknowledged_by, al.dedup_key, ac.label "
+                f"SELECT al.id, al.sent_at, al.severity, al.rule, al.acknowledged_at, al.acknowledged_by, al.dedup_key, al.repeat_count, al.last_repeat_at, ac.label "
                 f"FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
                 f"WHERE al.account_id IN ({marks}) ORDER BY al.sent_at DESC LIMIT 30",
                 ids,
@@ -1170,7 +1182,8 @@ def _render_home(db: Database, email: str, rules=None) -> str:
         '<div class="alert-item"><div class="alert-item__head">'
         f"{_sev_badge(r['severity'])}"
         f"<a class='acctlink' href='/incident?id={int(r['id'])}'>{html.escape(r['rule'])} ›</a>"
-        f"<span class='meta'>{html.escape(r['label'])} · {_ts(r['sent_at'])}</span></div>"
+        f"<span class='meta'>{html.escape(r['label'])} · {_ts(r['sent_at'])}</span>"
+        f"{_repeat_note(r)}</div>"
         f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules, int(r['id']) in marked)}"
         "</div>"
         for r in alerts
@@ -1850,7 +1863,8 @@ def alert_history_rows(db: Database, account_ids: list[int], *,
         total = cur.fetchone()["n"]
         sql = (
             "SELECT al.id, al.sent_at, al.severity, al.rule, al.message, al.confidence, "
-            "al.delivered_to, al.acknowledged_at, al.acknowledged_by, ac.label "
+            "al.delivered_to, al.acknowledged_at, al.acknowledged_by, "
+            "al.repeat_count, al.last_repeat_at, ac.label "
             "FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
             # id breaks ties: two alerts in the same second must not swap
             # places between the page and the export.
@@ -1950,6 +1964,7 @@ def _render_alert_history(db: Database, email: str, qs) -> str:
         f"{_sev_badge(r['severity'])}"
         f"<a class='acctlink' href='/incident?id={int(r['id'])}'>{html.escape(r['rule'])} ›</a>"
         f"<span class='meta'>{html.escape(r['label'])} · {_ts(r['sent_at'])}</span>"
+        f"{_repeat_note(r)}"
         f"{_ack_text(r)}</div></div>"
         for r in rows
     ) or '<p class="empty">No alerts match.</p>' 

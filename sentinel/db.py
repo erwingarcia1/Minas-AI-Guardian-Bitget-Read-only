@@ -152,6 +152,10 @@ class Database:
             "WHERE alert_phone IS NOT NULL",
             "UPDATE accounts SET alert_phone_secondary = NULLIF(trim(alert_phone_secondary), '') "
             "WHERE alert_phone_secondary IS NOT NULL",
+            # #22: a repeat suppressed by the cooldown is counted on the alert
+            # it repeated - withheld from the channels, never from the record.
+            "ALTER TABLE alerts ADD COLUMN repeat_count INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE alerts ADD COLUMN last_repeat_at TEXT",
         )
         for ddl in migrations:
             # Re-adding an existing column raises, and that IS the ordinary

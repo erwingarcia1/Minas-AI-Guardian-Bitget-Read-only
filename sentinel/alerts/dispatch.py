@@ -60,8 +60,9 @@ def dispatch(
     """Sends `detection` to the channels registered for its severity, unless
     an alert with the same dedup key already fired within the cooldown
     window for that severity. Returns the stored alert's row id when an
-    alert was actually sent (so downstream delivery logs can reference it),
-    or None when it was deduped away."""
+    alert row was claimed (so downstream delivery logs can reference it),
+    or None when it was suppressed as a repeat - in which case the repeat
+    is counted on the alert row it repeated, never hidden (#22)."""
     dedup_key = _dedup_key(account_id, detection)
     # A per-rule override beats the severity default. Severity answers "how
     # urgent is this"; some rules also need "and how often may it repeat",
@@ -73,25 +74,66 @@ def dispatch(
     cooldown = timedelta(minutes=minutes)
     now = datetime.now(timezone.utc)
 
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT sent_at FROM alerts WHERE account_id = ? AND dedup_key = ? "
-            "ORDER BY sent_at DESC LIMIT 1",
-            (account_id, dedup_key),
-        )
-        row = cur.fetchone()
-
-    if row is not None:
-        last_sent = datetime.fromisoformat(row["sent_at"])
-        if now - last_sent < cooldown:
-            return None
-
     # A live snooze withholds the delivery and nothing else: the detection has
     # already run, and the alerts row below is written either way. The customer
     # silenced their phone, not the monitoring - so the history a customer
     # hands to an exchange still has the event in it, marked as silenced on
-    # request rather than missing.
+    # request rather than missing. Looked up BEFORE the claim block: cursor
+    # blocks hold the database write lock and do not nest.
     snoozed_until = active_snooze(db, account_id, dedup_key)
+
+    # The dedup check and the row that wins it happen under ONE cursor block
+    # (#22). The block holds the database write lock, so two threads
+    # detecting the same condition serialize here: the first claims the row,
+    # the second sees it and is counted as a repeat. The old shape checked
+    # in one block and inserted in another with the network sends between -
+    # a window two simultaneous checks could both slip through.
+    #
+    # The row is claimed with delivered_to = 0 BEFORE any send. "We detected
+    # this" and "we managed to tell someone" are different facts (#57), and
+    # a process that dies mid-delivery now leaves "detected, reached nobody"
+    # rather than nothing at all.
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT id, sent_at FROM alerts WHERE account_id = ? AND dedup_key = ? "
+            "ORDER BY sent_at DESC LIMIT 1",
+            (account_id, dedup_key),
+        )
+        row = cur.fetchone()
+        if row is not None:
+            last_sent = datetime.fromisoformat(row["sent_at"])
+            if now - last_sent < cooldown:
+                # Suppressed from the channels, never from the record: the
+                # ongoing problem stays one alert that says how many times
+                # and how recently it has kept firing, so nothing is hidden
+                # while nothing storms the channel either (#22).
+                cur.execute(
+                    "UPDATE alerts SET repeat_count = repeat_count + 1, "
+                    "last_repeat_at = ? WHERE id = ?",
+                    (now.isoformat(), row["id"]),
+                )
+                return None
+        cur.execute(
+            """
+            INSERT INTO alerts
+                (account_id, rule, severity, dedup_key, message, evidence_json, confidence,
+                 sent_at, delivered_to, snoozed_until)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                account_id,
+                detection.rule,
+                detection.severity,
+                dedup_key,
+                detection.message,
+                json.dumps(detection.evidence, default=str),
+                detection.confidence,
+                now.isoformat(),
+                0,
+                snoozed_until,
+            ),
+        )
+        alert_id = cur.lastrowid
 
     alert = AlertMessage(
         account_label=account_label,
@@ -117,32 +159,10 @@ def dispatch(
                 type(channel).__name__, detection.rule, account_label, exc,
             )
 
-    # Recorded whether or not anyone took it. "We detected this" and "we managed
-    # to tell someone" are different facts, and sharing a row's existence made
-    # an undelivered alert indistinguishable from one that never happened - so
-    # it was absent from the customer's history, the portal, the dashboard, and
-    # anything handed to an exchange as evidence. `delivered_to` is what keeps
-    # them apart, on the same footing as operator_pages.
-    with db.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO alerts
-                (account_id, rule, severity, dedup_key, message, evidence_json, confidence,
-                 sent_at, delivered_to, snoozed_until)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                account_id,
-                detection.rule,
-                detection.severity,
-                dedup_key,
-                detection.message,
-                json.dumps(detection.evidence, default=str),
-                detection.confidence,
-                now.isoformat(),
-                delivered,
-                snoozed_until,
-            ),
-        )
-        alert_id = cur.lastrowid
+    if delivered:
+        with db.cursor() as cur:
+            cur.execute(
+                "UPDATE alerts SET delivered_to = ? WHERE id = ?",
+                (delivered, alert_id),
+            )
     return alert_id
