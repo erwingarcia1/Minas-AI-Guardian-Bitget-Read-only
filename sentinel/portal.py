@@ -2586,8 +2586,97 @@ def _render_security(db: Database, email: str, *, secret: str | None = None,
             '<button class="btn btn--primary" type="submit">Set up two-factor</button>'
             "</form></section>"
         )
+    # The 2FA interstitials (fresh secret, one-time recovery codes) stay
+    # focused; the Telegram section joins the page in its settled states.
+    if not codes and not secret:
+        body += _telegram_section(db, email)
     return _page(banner + body, email, "/security",
                  title="Security — Minas AI Guardian")
+
+
+def _telegram_section(db: Database, email: str) -> str:
+    """Self-serve Telegram connection (#18): guided, test-messaged, and
+    disconnectable from the same place. The deep link is rendered from the
+    bot username the worker learned; until it is known the steps name 'the
+    Minas bot' and the code still works."""
+    from sentinel.alerts.telegram_link import (
+        LINK_CODE_TTL_MINUTES,
+        bot_username,
+        connected_link,
+        pending_link,
+    )
+
+    link = connected_link(db, email)
+    if link is not None:
+        return (
+            '<section class="panel" aria-labelledby="tg-title"><h2 id="tg-title">Telegram alerts are on</h2>'
+            f'<p class="count">connected {_ts(link["connected_at"])}</p>'
+            '<p class="muted">Copies of your alerts go to your Telegram chat, in the '
+            "same customer wording as your email. Disconnecting stops them — we email "
+            "you when that happens, in case it wasn't you.</p>"
+            '<form class="form" method="post" action="/telegram/unlink" style="margin-top:var(--space-4)">'
+            '<button class="btn btn--secondary" type="submit">Disconnect Telegram</button>'
+            "</form></section>"
+        )
+
+    pending = pending_link(db, email)
+    if pending is not None:
+        username = bot_username(db)
+        code = html.escape(pending["link_code"])
+        if username:
+            opener = (f'<a class="acctlink" href="https://t.me/{html.escape(username)}?start={code}" '
+                      f'rel="noopener">Open @{html.escape(username)} in Telegram ›</a>')
+        else:
+            opener = "Open the Minas AI Guardian bot in Telegram"
+        return (
+            '<section class="panel" aria-labelledby="tg-title"><h2 id="tg-title">Finish connecting Telegram</h2>'
+            '<p class="muted">Three steps, and your first message is a test '
+            "message — so you see it working before you rely on it.</p>"
+            '<ol class="muted" style="margin-top:var(--space-3);padding-left:var(--space-5)">'
+            f"<li>{opener}</li>"
+            f"<li>Press <strong>Start</strong> — or send <span class='mono'>/start {code}</span></li>"
+            "<li>You'll get the test message in that chat, and this page will show you as connected.</li>"
+            "</ol>"
+            f'<p class="muted" style="margin-top:var(--space-3)">This code works once and expires in '
+            f"{LINK_CODE_TTL_MINUTES} minutes.</p>"
+            '<form class="form" method="post" action="/telegram/link" style="margin-top:var(--space-4)">'
+            '<button class="btn btn--tertiary" type="submit">Generate a new code</button>'
+            "</form></section>"
+        )
+
+    return (
+        '<section class="panel" aria-labelledby="tg-title"><h2 id="tg-title">Telegram alerts are off</h2>'
+        '<p class="muted">Get copies of your alerts in Telegram, instantly on '
+        "your phone. Email keeps arriving either way — Telegram is a second copy, "
+        "never a replacement, so a Telegram outage cannot cost you an alert.</p>"
+        '<form class="form" method="post" action="/telegram/link" style="margin-top:var(--space-4)">'
+        '<button class="btn btn--primary" type="submit">Connect Telegram</button>'
+        "</form></section>"
+    )
+
+
+def _send_telegram_disconnected_email(db: Database, address: str) -> None:
+    """The tripwire for the disconnect: silencing a channel is what an
+    attacker does before acting, so the owner hears about it on the channel
+    that still works."""
+    from sentinel.alerts.base import AlertMessage
+    from sentinel.alerts.contact import ContactRouter
+
+    message = AlertMessage(
+        account_label="your Minas AI Guardian login",
+        rule="telegram_disconnected",
+        severity="LOW",
+        confidence="n/a",
+        message=(
+            f"Telegram alerts were just disconnected for {address}. Email alerts "
+            f"continue unaffected. If this was not you, somebody else has access to "
+            f"this login - sign in and change your password immediately."
+        ),
+        evidence={},
+    )
+    ContactRouter(db=db).send(
+        _PlainNotice(message), "your Minas AI Guardian login", [address], [],
+    )
 
 
 def _twofactor_uri(secret: str, email: str) -> str:
@@ -2831,6 +2920,34 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             remaining = deadline - time.monotonic()
             if remaining > 0:
                 time.sleep(remaining)
+
+        def _telegram_link(self, path):
+            """Start or end a Telegram connection (#18). Session-scoped like
+            _twofactor: the subject is the signed-in member, never a form
+            field - anyone with a session may connect or disconnect only
+            their own chat."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            from sentinel.alerts.telegram_link import create_link_code, disconnect
+
+            if path == "/telegram/link":
+                create_link_code(db, email)
+                self._send(_render_security(db, email).encode())
+                return
+            if disconnect(db, email):
+                from sentinel.events import record_member_security_event
+
+                record_member_security_event(db, email, "member_telegram_disconnected", {})
+                try:
+                    _send_telegram_disconnected_email(db, email)
+                except Exception as exc:  # noqa: BLE001 - the disconnect stands regardless
+                    logger.error("telegram-disconnect notice to %s failed: %s", email, exc)
+                self._send(_render_security(
+                    db, email, notice="Telegram disconnected. Email alerts continue unaffected.").encode())
+            else:
+                self._send(_render_security(db, email).encode())
 
         def _twofactor(self, path, form):
             """Enrol in, confirm or remove two-factor (#32).
@@ -3194,6 +3311,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
 
             if path.startswith("/security/2fa/"):
                 self._twofactor(path, form)
+                return
+
+            if path in ("/telegram/link", "/telegram/unlink"):
+                self._telegram_link(path)
                 return
 
             if path == "/login-code":

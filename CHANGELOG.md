@@ -60,6 +60,20 @@ fired before still fires, minus the accidental double.
   takes — and "not re-checked since connection yet" said plainly when
   that is the truth. The "any change raises an alert" sentence is pinned
   to the existence of the permission-drift detector by test.
+- **Members connect Telegram themselves, guided, with a test message
+  first** (#18). The portal's Security page grew a Telegram section: one
+  button issues a one-time code (15-minute expiry, single-use, superseded
+  by any newer code), the guided steps deep-link to the Minas bot, and
+  the first message the chat ever receives is the test message — the
+  member sees delivery work before relying on it. A worker watching the
+  bot's updates completes the handshake; connections and disconnections
+  are recorded on the account activity page, and disconnecting also sends
+  the email tripwire, because silencing a channel is what an attacker
+  does before acting. Delivery is a second copy of what the contact's
+  email already gets — customer wording, never rule names or evidence
+  (probe-pinned) — and email continues regardless: a Telegram outage
+  cannot cost an alert, proven by test. Operators need to do nothing;
+  the feature lights up wherever the bot token is configured.
 - **The account page says when the monitoring key was last used, and where
   the real kill switch is** (#45). The credentials panel now shows the
   key's last use (it moves with every account check — "never" said

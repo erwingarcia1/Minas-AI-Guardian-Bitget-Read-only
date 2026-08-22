@@ -271,6 +271,24 @@ CREATE TABLE IF NOT EXISTS portal_meta (
     value TEXT NOT NULL
 );
 
+-- Self-serve Telegram connections (#18). One row per link attempt; the
+-- member's CURRENT connection is the newest 'connected' row. The code is a
+-- one-time secret with a short expiry, cleared the moment it is used; a
+-- disconnect flips status to 'revoked' rather than deleting, because who was
+-- connected when is a fact about where alert copies went.
+CREATE TABLE IF NOT EXISTS telegram_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    member_email TEXT NOT NULL,
+    chat_id TEXT,
+    link_code TEXT,
+    code_expires_at TEXT,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'connected', 'revoked')),
+    created_at TEXT NOT NULL,
+    connected_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_telegram_links_email ON telegram_links(member_email, status);
+
 -- Customer-requested silences (G-26, #30). One row per snooze, keyed on the
 -- alert'"'"'s dedup_key rather than on its rule: snoozing "withdrawal to an
 -- unrecognised address" because you recognise THIS address must not silence

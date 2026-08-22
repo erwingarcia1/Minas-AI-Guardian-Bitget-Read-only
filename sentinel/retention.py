@@ -103,6 +103,12 @@ NEVER_PRUNE = frozenset({
     "operator_meta",
     "portal_members",
     "portal_meta",
+    # Current state plus forensic history in one table (#18): the newest
+    # 'connected' row IS the live channel binding - pruning it silently
+    # disconnects someone's alerts - and revoked rows are the record of
+    # where alert copies went, kept for the same reason snoozes are.
+    # Volume is human-scale: one row per link attempt per member.
+    "telegram_links",
 })
 
 # Tables holding a row *about* one alert. Every one of them declares

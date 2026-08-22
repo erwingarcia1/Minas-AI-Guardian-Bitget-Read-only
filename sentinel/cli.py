@@ -387,6 +387,18 @@ def cmd_run(args: argparse.Namespace) -> int:
                 dedup_scope=f"{problem['channel']}:{problem['severity']}",
             )
 
+    # The self-serve Telegram handshake (#18) needs someone watching the
+    # bot's updates. Absent token = the feature is off and the portal simply
+    # never shows a working deep link; said in the log rather than silently.
+    telegram_token = _env("TELEGRAM_BOT_TOKEN")
+    if telegram_token:
+        from sentinel.alerts.telegram_link import TelegramLinkWorker
+
+        TelegramLinkWorker(db, telegram_token).start()
+        logger.info("telegram link worker started")
+    else:
+        logger.info("telegram link worker not started - TELEGRAM_BOT_TOKEN unset")
+
     serve_dashboard(db, cipher, dashboard_port, host=dashboard_host, rules=rules,
                     operator_alerter=operator_alerter)
 

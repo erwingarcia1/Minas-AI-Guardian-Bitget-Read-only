@@ -4472,3 +4472,29 @@ complete). Test pins: last-used present, never-case plain, kill-switch
 copy, and NO /revoke endpoint offered. Full HC green ×9; mutation cold
 run now 10617s (~3h) — the machine is loaded and #97's cost keeps
 climbing. Next: #18.
+
+# 2026-08-22 · #18 built: self-serve Telegram, guided, test-messaged
+
+The whole flow: portal Security page issues a one-time code (15-min TTL,
+single-use, superseded by newer), guided steps deep-link t.me/<bot>?start=
+<code> (bot username learned via getMe into portal_meta; degrades to "the
+Minas bot"), a daemon getUpdates worker (started by serve when
+TELEGRAM_BOT_TOKEN is set; offset persisted per-update in portal_meta)
+redeems /start codes — the FIRST message the chat receives is the test
+message, which IS the confirmation criterion. Delivery: ContactRouter
+grew a guarded telegram leg — chats resolved from the alert's own contact
+addresses, CUSTOMER copy only (probe-pinned), email untouched by any
+telegram failure (tested; the "fallback" criterion is met by parallel
+channels — email was always going to arrive). Disconnect = revoked row +
+member security event + email tripwire. New table telegram_links
+(NEVER_PRUNE: newest connected row is live state; revoked rows are the
+where-copies-went record). 12 tests + 2 probes (140 total, land+kill).
+
+Health-check note: the first full run failed ONLY on the mutation gate's
+fewer-ran guard — 142 selected, 127 ran — the exact escalation-era shape:
+the curated selection lacked the new test files. Added
+test_telegram_self_serve.py and test_alert_repeat_suppression.py to
+mutation-check.sh, regenerated: 139/142 = 97% over the FULL population,
+floor 96 unchanged. (The re-run completed inside an orphaned background
+task across a session restart; its output file carries the pass —
+verified, not assumed.) Next: #21.

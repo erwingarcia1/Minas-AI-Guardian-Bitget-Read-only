@@ -218,8 +218,49 @@ class ContactRouter:
                     # page-shaped. Do not re-litigate this without the metric.
                     logger.warning("per-account email to %s failed: %s", emails, exc)
 
+        # Guarded on its own like every leg: a Telegram outage must cost
+        # neither the email above nor the SMS below.
+        try:
+            self._send_telegram(alert, account_label, emails)
+        except Exception as exc:  # noqa: BLE001 - one channel must not cost the others
+            logger.warning("per-member telegram for %s failed: %s", account_label, exc)
+
         if phones:
             self._send_sms(detection, alert, account_label, phones, account_id, alert_id, auditable)
+
+    def _send_telegram(self, alert, account_label, emails) -> None:
+        """Copies to chats the contacts connected themselves (#18). Resolution
+        is by the contact addresses this alert is already going to, so being
+        connected confers nothing beyond a second copy of what your email
+        gets - and in CUSTOMER copy, never the operator format with rule
+        names and evidence."""
+        if self._db is None or not emails:
+            return
+        from sentinel.alerts.telegram_link import chat_ids_for_emails
+
+        chats = chat_ids_for_emails(self._db, emails)
+        if not chats:
+            return
+        token = os.environ.get("TELEGRAM_BOT_TOKEN")
+        if not token:
+            self._warn_once(
+                "telegram",
+                "a member has Telegram connected but TELEGRAM_BOT_TOKEN is not set - "
+                "their copies are not being delivered",
+            )
+            return
+        from sentinel import net
+
+        text = alert.render_customer()
+        for chat in chats:
+            try:
+                resp = net.post(
+                    f"https://api.telegram.org/bot{token}/sendMessage",
+                    json={"chat_id": chat, "text": text}, timeout=10.0,
+                )
+                resp.raise_for_status()
+            except Exception as exc:  # noqa: BLE001 - one dead chat must not cost the rest
+                logger.warning("telegram chat %s for %s failed: %s", chat, account_label, exc)
 
     def _send_sms(self, detection, alert, account_label, phones, account_id, alert_id, auditable) -> None:
         # Member preference: opted-out accounts get no SMS, except CRITICAL

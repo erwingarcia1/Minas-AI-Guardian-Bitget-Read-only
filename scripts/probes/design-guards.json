@@ -1274,5 +1274,25 @@
       "tests/test_secondary_contact_welcome.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#18 a customer's Telegram chat receives the operator format, evidence and rule names included",
+    "file": "sentinel/alerts/contact.py",
+    "old": "        text = alert.render_customer()",
+    "new": "        text = alert.render()",
+    "tests": [
+      "tests/test_telegram_self_serve.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#18 an expired link code still binds a chat",
+    "file": "sentinel/alerts/telegram_link.py",
+    "old": "            \"WHERE link_code = ? AND status = 'pending' AND code_expires_at > ?\",",
+    "new": "            \"WHERE link_code = ? AND status = 'pending' AND code_expires_at > ''\",",
+    "tests": [
+      "tests/test_telegram_self_serve.py"
+    ],
+    "expect": "killed"
   }
 ]
