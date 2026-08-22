@@ -24,13 +24,19 @@ how releases are published on GitHub, not what the product does.
   by a machine** (#94). Thirteen tags (v1.1.0 through v1.6.2) had no
   Release object — invisible on the repository's Releases page, and the
   discovery was the owner noticing a screenshot. All thirteen are
-  backfilled with their CHANGELOG sections as the body, verbatim (v1.5.0's
-  additionally states it was tagged and CI-green but never deployed);
-  `scripts/release.sh` now pushes the tag and publishes its Release inside
-  the cut, refusing up front — before anything is written — when gh is
-  missing or unauthenticated rather than pushing a tag it cannot publish;
-  and a new `release objects` health-check gate fails whenever any version
-  tag lacks a Release object, so this drift cannot return silently. The
+  backfilled with bodies composed to the release-notes contract
+  (docs/RELEASE-NOTES.md, captured from the owner's hand-written v1.7.0
+  body): plain-language opening, "What you need to do" only when there is
+  something to do, detection behaviour always stated — "not recorded" said
+  plainly where a version's changelog predates that rule, never guessed —
+  the change entries with their bold plain-language leads, the exact
+  deploy command, and the compare link. v1.5.0's body states it was tagged
+  and CI-green but never deployed. `scripts/release.sh` now pushes the tag
+  and publishes its Release inside the cut, composing the body the same
+  way, refusing up front — before anything is written — when gh is missing
+  or unauthenticated rather than pushing a tag it cannot publish; and a
+  new `release objects` health-check gate fails whenever any version tag
+  lacks a Release object, so this drift cannot return silently. The
   publisher (`scripts/github-release.sh`) never creates or moves tags and
   treats an existing Release as done, so a re-run cut cannot error on its
   own earlier success.

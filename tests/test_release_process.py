@@ -473,7 +473,34 @@ def test_a_cut_pushes_the_tag_and_publishes_its_release(repo):
     notes = (repo.parent / "gh-notes.txt").read_text()
     assert "A thing that happened" in notes
     assert "[Unreleased]" not in notes and "## [1.0.0]" not in notes, (
-        "the body is that version's section verbatim, not the whole changelog")
+        "the body is composed from that version's section, not the whole changelog")
+
+    # The docs/RELEASE-NOTES.md contract, held by the composer:
+    assert "## Changed detection behaviour" in notes, "always present, even when unknown"
+    assert "Not recorded" in notes, (
+        "a changelog with no detection section must say so plainly, never guess None")
+    assert "## Deploy" in notes and "deploy.sh v1.1.0" in notes
+    assert "**Full changelog:** https://example.invalid/o/r/compare/v1.0.0...v1.1.0" in notes
+    assert "## What you need to do" not in notes, (
+        "no upgrade effects in the changelog - the section is omitted, not written as 'nothing'")
+
+
+def test_upgrade_effects_are_lifted_into_what_you_need_to_do(repo):
+    """The one hand-off the composer makes mechanical: a changelog sentence
+    marked 'on upgrade' becomes the operator-facing section."""
+    text = (repo / "CHANGELOG.md").read_text()
+    (repo / "CHANGELOG.md").write_text(text.replace(
+        "- **A thing that happened.** With a body.",
+        "- **A thing that happened.** With a body. On upgrade every operator "
+        "restarts the service once."))
+    _git(repo, "commit", "-qam", "an entry with an upgrade effect")
+
+    result = _run(repo, "release.sh", "1.1.0")
+    assert result.returncode == 0, result.stderr
+
+    notes = (repo.parent / "gh-notes.txt").read_text()
+    assert "## What you need to do" in notes
+    assert "restarts the service once" in notes
 
 
 def test_an_existing_release_is_skipped_not_an_error(repo):
