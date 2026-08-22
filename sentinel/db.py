@@ -137,6 +137,21 @@ class Database:
             # NULL, because with nothing to compare against a replacement key
             # could point us at a different account entirely.
             "ALTER TABLE accounts ADD COLUMN exchange_uid TEXT",
+            # #90: contact columns store the canonical form - emails
+            # lowercased, blanks as NULL (the falsy-sentinel rule: '' stored
+            # as a value is an absence some queries can accidentally match).
+            # Writers canonicalize at the boundary now; these catch every row
+            # written before that, and - being idempotent UPDATEs that run on
+            # every open - re-catch anything a future non-canonical writer
+            # slips in before the guard tests catch the writer itself.
+            "UPDATE accounts SET alert_email = NULLIF(lower(trim(alert_email)), '') "
+            "WHERE alert_email IS NOT NULL",
+            "UPDATE accounts SET alert_email_secondary = NULLIF(lower(trim(alert_email_secondary)), '') "
+            "WHERE alert_email_secondary IS NOT NULL",
+            "UPDATE accounts SET alert_phone = NULLIF(trim(alert_phone), '') "
+            "WHERE alert_phone IS NOT NULL",
+            "UPDATE accounts SET alert_phone_secondary = NULLIF(trim(alert_phone_secondary), '') "
+            "WHERE alert_phone_secondary IS NOT NULL",
         )
         for ddl in migrations:
             # Re-adding an existing column raises, and that IS the ordinary

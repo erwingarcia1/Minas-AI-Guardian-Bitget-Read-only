@@ -4381,3 +4381,25 @@ ONLY on the issue-status audit — #91 auto-closed by its commit while still
 labelled broken; `--apply` flipped it, the audit re-ran green, and the
 other eight gates' pass stands (the label lives on GitHub, not in the
 tree the gates measured). Next: #90.
+
+# 2026-08-22 · #90 built: contact columns store the canonical form
+
+Emails normalized (lowercase, trimmed) and blanks stored as NULL at the
+write boundary — `onboard_account` and `set-contact`, the complete writer
+set per grep — via `canonical_contact_email/_phone` beside
+`normalize_email` in portal.py. The one-time migration rides db.py's
+idempotent migration list (NULLIF(lower(trim(col)),'') per contact
+column), so the azdatoo rows canonicalize at the next production deploy
+and any future non-canonical write is re-caught on the next open.
+`ContactRouter.send` drops duplicate emails case-insensitively (the
+issue's finding 2). The diff in set-contact runs on canonical values, so
+re-typing a stored address in another case is no change — no manufactured
+audit rows, no second #89 note. Guard pair: a registration test fails any
+new writer of the contact columns that skips the canonicalizer (db.py's
+migration statements are the listed exception — they ARE the
+canonicalization), execution tests round-trip mixed-case and '' through
+both writers, and the migration is proven on a legacy-shaped row across a
+reopen. Read-side lower() compares kept as belt-and-braces. Suite 1180
+green; full HC green with mutation gate COLD (5367s — contact.py is in
+the mutant population, so the cache regenerated; a real 127-mutant pass,
+floor 96 unchanged). Next: portal screens (#34+#10).

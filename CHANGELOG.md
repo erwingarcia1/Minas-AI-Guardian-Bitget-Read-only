@@ -21,6 +21,19 @@ used to be write-once — but no detector, threshold, or routing rule moved.
 
 ### Added
 
+- **Contact addresses are stored one way, not however they were typed**
+  (#90). Production carried one person's address as `azdatoo@gmail.com` on
+  four accounts and `AZDATOO@GMAIL.COM` on a fifth; every read behaved
+  only because each comparison site remembered to lowercase. Emails are
+  now normalized at the write boundary (onboarding and `set-contact` — a
+  registration test fails any future writer that skips it), a blank is
+  stored as NULL rather than `''` (the absent-as-value trap), a one-time
+  idempotent migration canonicalizes the rows already written, re-typing
+  a stored address in a different case is recognised as no change (no
+  manufactured audit rows, no duplicate welcome notes), and alert
+  delivery drops duplicate recipients case-insensitively so a person
+  listed twice in different casings is mailed once. All read-side
+  lowercased comparisons are kept as belt-and-braces.
 - **A new emergency contact is told they are one** (#89). The complaint
   behind decision 1 came from a secondary contact who did not know what
   her role meant — nobody should depend on the person who added her

@@ -159,7 +159,12 @@ class ContactRouter:
         here - the Bot API can't DM an arbitrary @handle without the recipient
         first starting the bot (see docs), so those are stored for reference
         only until a customer-opt-in flow exists."""
-        emails = list(dict.fromkeys(e for e in (emails or []) if e))
+        # Case-insensitive duplicate-drop for emails (#90): an address listed
+        # as primary and secondary in different casings is one person, and
+        # mailing them twice per alert teaches them to skim. First casing wins.
+        seen: set[str] = set()
+        emails = [e for e in (emails or [])
+                  if e and not (e.lower() in seen or seen.add(e.lower()))]
         phones = list(dict.fromkeys(p for p in (phones or []) if p))
         auditable = self._db is not None and account_id is not None
 

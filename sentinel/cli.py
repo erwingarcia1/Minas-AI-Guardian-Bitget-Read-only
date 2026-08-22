@@ -793,6 +793,12 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
             email, phone = None, None
         else:
             email, phone = args.alert_email, args.alert_phone
+        # Canonical on write (#90): emails normalized, blank-as-NULL - and
+        # BEFORE the diff below, so re-typing a stored address in different
+        # case is recognised as no change rather than manufactured as one.
+        from sentinel.portal import canonical_contact_email, canonical_contact_phone
+
+        email, phone = canonical_contact_email(email), canonical_contact_phone(phone)
         if primary_requested:
             cur.execute(
                 "UPDATE accounts SET alert_email = ?, alert_phone = ?, updated_at = ? WHERE label = ?",
@@ -804,7 +810,8 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
                                  "phone_from": before["alert_phone"], "phone_to": phone}))
         if secondary_requested:
             sec_email, sec_phone = (None, None) if clear_secondary \
-                else (sec_email_arg, sec_phone_arg)
+                else (canonical_contact_email(sec_email_arg),
+                      canonical_contact_phone(sec_phone_arg))
             cur.execute(
                 "UPDATE accounts SET alert_email_secondary = ?, alert_phone_secondary = ?, "
                 "updated_at = ? WHERE label = ?",

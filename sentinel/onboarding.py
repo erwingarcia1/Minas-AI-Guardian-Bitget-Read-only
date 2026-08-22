@@ -274,6 +274,17 @@ def onboard_account(
     if exchange not in SUPPORTED_EXCHANGES:
         raise ValueError(f"unsupported exchange '{exchange}' (supported: {', '.join(SUPPORTED_EXCHANGES)})")
 
+    # Contact columns store the canonical form, never the as-typed one (#90):
+    # emails normalized, blanks as NULL - the dashboard's add form posts ''
+    # for fields left empty, and '' stored as a value is the falsy-sentinel
+    # trap the portal's member_accounts guard exists to defuse.
+    from sentinel.portal import canonical_contact_email, canonical_contact_phone
+
+    alert_email = canonical_contact_email(alert_email)
+    alert_phone = canonical_contact_phone(alert_phone)
+    alert_email_secondary = canonical_contact_email(alert_email_secondary)
+    alert_phone_secondary = canonical_contact_phone(alert_phone_secondary)
+
     client = make_client(exchange, api_key, secret, passphrase)
     ok, reason = verify_read_only(client, exchange)
     if not ok:

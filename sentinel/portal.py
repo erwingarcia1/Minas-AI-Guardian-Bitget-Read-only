@@ -95,6 +95,25 @@ def normalize_email(email: str) -> str:
     return (email or "").strip().lower()
 
 
+def canonical_contact_email(email: str | None) -> str | None:
+    """What a contact-email COLUMN stores: normalized, and None when absent.
+
+    #90's two findings in one function. Reads behave today only because
+    every comparison site remembered `lower()` - normalizing at the write
+    boundary is what stops the next forgotten one - and '' as absent is the
+    falsy-sentinel trap (`lower('') = ''` matches every blank), so the
+    canonical absent is NULL. Every writer of alert_email /
+    alert_email_secondary goes through this; a registration test enforces
+    that."""
+    return normalize_email(email) or None
+
+
+def canonical_contact_phone(phone: str | None) -> str | None:
+    """Phones share only the absence half: stripped, and None when blank -
+    no case to fold."""
+    return (phone or "").strip() or None
+
+
 RESET_TOKEN_MAX_TTL_SECONDS = 3600
 
 # A reset flow that accepts "a" turns a stolen link into a permanently weak
