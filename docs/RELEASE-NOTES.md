@@ -26,8 +26,17 @@ sign-outs, migrations, config changes. Lead bold, imperative, concrete
 what is NOT required ("Nothing else is required — no data migration, no
 configuration change."). **Omit the section entirely when there are none; do
 not write "nothing"** — an empty section teaches readers to skip it, and the
-day it matters they will. The composer lifts sentences the CHANGELOG marks
-with "on upgrade"; write upgrade effects there and they reach the Release.
+day it matters they will.
+
+**The authoring rule that feeds this section: an upgrade effect MUST carry
+the words "on upgrade" in its CHANGELOG entry.** That exact phrase is what
+`github-release.sh` lifts into "What you need to do" at cut time — an
+upgrade effect phrased any other way ("after deploying", "existing sessions
+end", "operators should then…") is silently absent from the Release, which
+is the worst place for an operator action to go missing. The convention is
+stated here, in the contract, precisely so it is not discoverable only by
+reading the script. v1.7.0's #31 entry is the model: "One-time effect **on
+upgrade**: every existing portal session is signed out…".
 
 **`## Changed detection behaviour`** — always present, always explicit, even
 when the answer is **None**. This is a security monitor; a reader must never
