@@ -29,6 +29,27 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 RELEASE = ROOT / "scripts" / "release.sh"
 DEPLOY_GATE = ROOT / "scripts" / "deploy-gate.sh"
+GITHUB_RELEASE = ROOT / "scripts" / "github-release.sh"
+
+# What release.sh needs from gh (#94): an auth check, an exists check, a
+# create. Every invocation is appended to $GH_LOG so tests can assert what
+# was (and was not) called; `release create` keeps a copy of the notes file
+# so a test can read what would have been published.
+GH_STUB = """#!/usr/bin/env bash
+echo "$@" >> "${GH_LOG:?}"
+case "$1 $2" in
+  "auth status") [ "${GH_STUB_AUTH:-ok}" = ok ] || exit 1 ;;
+  "release view") [ "${GH_STUB_RELEASE_EXISTS:-no}" = yes ] || exit 1 ;;
+  "release create")
+    prev=""
+    for a in "$@"; do
+      [ "$prev" = "--notes-file" ] && cp "$a" "${GH_LOG%.log}-notes.txt"
+      prev="$a"
+    done
+    ;;
+  *) exit 0 ;;
+esac
+"""
 
 CHANGELOG = """\
 # Changelog
@@ -73,6 +94,7 @@ def repo(tmp_path: Path) -> Path:
     (repo / ".gitignore").write_text("__pycache__/\n.venv/\n")
     shutil.copy(RELEASE, repo / "scripts" / "release.sh")
     shutil.copy(DEPLOY_GATE, repo / "scripts" / "deploy-gate.sh")
+    shutil.copy(GITHUB_RELEASE, repo / "scripts" / "github-release.sh")
 
     # Stubs — see the module docstring for why.
     hc = repo / "scripts" / "health-check.sh"
@@ -108,11 +130,31 @@ def repo(tmp_path: Path) -> Path:
     _git(repo, "add", "-A")
     _git(repo, "commit", "-q", "-m", "initial")
     _git(repo, "tag", "-a", "v1.0.0", "-m", "v1.0.0")
+
+    # release.sh pushes inside the cut (#94), so the fixture needs somewhere
+    # to push to - a local bare repo, never the network.
+    origin = tmp_path / "origin.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(origin)], check=True)
+    _git(repo, "remote", "add", "origin", str(origin))
+    _git(repo, "push", "-q", "-u", "origin", "main")
+    _git(repo, "push", "-q", "origin", "v1.0.0")
+
+    # And a gh it can call - the stub above, first on PATH via _run.
+    stubs = tmp_path / "stubs"
+    stubs.mkdir()
+    (stubs / "gh").write_text(GH_STUB)
+    (stubs / "gh").chmod(0o755)
     return repo
 
 
-def _run(repo: Path, script: str, *args: str) -> subprocess.CompletedProcess:
+def _run(repo: Path, script: str, *args: str,
+         env_extra: dict | None = None) -> subprocess.CompletedProcess:
     env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1"}
+    stubs = repo.parent / "stubs"
+    if stubs.is_dir():
+        env["PATH"] = f"{stubs}:{env['PATH']}"
+        env["GH_LOG"] = str(repo.parent / "gh.log")
+    env.update(env_extra or {})
     return subprocess.run(
         [str(repo / "scripts" / script), *args],
         capture_output=True, text=True, cwd=repo, env=env,
@@ -366,6 +408,86 @@ def test_a_missing_cover_script_runs_the_full_gates(repo):
 
     assert result.returncode == 0, result.stderr
     assert args_file.read_text().strip() == ""
+
+
+# --- #94: the cut publishes the GitHub Release, and fails CLOSED --------------
+#
+# The drift this closes: thirteen tags (v1.1.0..v1.6.2) sat with no Release
+# object and nothing noticed until the owner did. The cut now pushes the tag
+# and publishes its Release in one motion; a gh that cannot publish refuses
+# the cut BEFORE anything is written, and an already-published Release is
+# "nothing to do", never an error.
+
+def test_release_refuses_without_gh_before_anything_is_written(repo, tmp_path):
+    """A PATH with no gh must stop the cut at the cheap-refusals stage: no
+    tag, no CHANGELOG surgery, nothing pushed."""
+    bare = tmp_path / "bare-bin"
+    bare.mkdir()
+    for tool in ("git", "bash", "dirname", "cat", "sed", "grep", "python3"):
+        real = shutil.which(tool)
+        assert real, f"{tool} missing from the host"
+        (bare / tool).symlink_to(real)
+    env = {**os.environ, "GIT_CONFIG_NOSYSTEM": "1", "PATH": str(bare)}
+
+    result = subprocess.run(
+        ["bash", str(repo / "scripts" / "release.sh"), "1.1.0"],
+        capture_output=True, text=True, cwd=repo, env=env,
+    )
+
+    assert result.returncode == 1
+    assert "gh is not installed" in result.stderr
+    assert _git(repo, "tag", "-l").stdout.strip() == "v1.0.0", "no tag on a refusal"
+    assert "## [1.1.0]" not in (repo / "CHANGELOG.md").read_text()
+
+
+def test_release_refuses_unauthenticated_gh_before_pushing_a_tag(repo):
+    result = _run(repo, "release.sh", "1.1.0", env_extra={"GH_STUB_AUTH": "no"})
+
+    assert result.returncode == 1
+    assert "not authenticated" in result.stderr
+    assert _git(repo, "tag", "-l").stdout.strip() == "v1.0.0"
+    origin_tags = subprocess.run(
+        ["git", "-C", str(repo.parent / "origin.git"), "tag", "-l"],
+        capture_output=True, text=True, check=True).stdout
+    assert "v1.1.0" not in origin_tags, "a refusal must not have pushed anything"
+
+
+def test_a_cut_pushes_the_tag_and_publishes_its_release(repo):
+    """The success path's shape: tag lands on the remote, the Release is
+    created against the pushed tag (--verify-tag, --latest), and its body is
+    the new version's CHANGELOG section - not the whole file."""
+    result = _run(repo, "release.sh", "1.1.0")
+    assert result.returncode == 0, result.stderr
+
+    origin_tags = subprocess.run(
+        ["git", "-C", str(repo.parent / "origin.git"), "tag", "-l"],
+        capture_output=True, text=True, check=True).stdout
+    assert "v1.1.0" in origin_tags, "the cut did not push the tag"
+
+    log = (repo.parent / "gh.log").read_text()
+    create = next(line for line in log.splitlines() if line.startswith("release create"))
+    assert "v1.1.0" in create
+    assert "--verify-tag" in create, "the Release must verify the tag, never create one"
+    assert create.rstrip().endswith("--latest"), "a new cut is the latest release"
+
+    notes = (repo.parent / "gh-notes.txt").read_text()
+    assert "A thing that happened" in notes
+    assert "[Unreleased]" not in notes and "## [1.0.0]" not in notes, (
+        "the body is that version's section verbatim, not the whole changelog")
+
+
+def test_an_existing_release_is_skipped_not_an_error(repo):
+    """Idempotency: re-running a cut that died between push and publish -
+    or backfilling a tag the owner already published by hand - finishes
+    quietly instead of erroring on its own earlier success."""
+    result = _run(repo, "release.sh", "1.1.0",
+                  env_extra={"GH_STUB_RELEASE_EXISTS": "yes"})
+    assert result.returncode == 0, result.stderr
+
+    log = (repo.parent / "gh.log").read_text()
+    assert "release view v1.1.0" in log
+    assert "release create" not in log, "an existing Release must not be re-created"
+    assert "nothing to do" in result.stdout
 
 
 def test_red_scheduled_gates_refuse_the_release_before_any_health_check(repo):

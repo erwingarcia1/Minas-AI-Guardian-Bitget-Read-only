@@ -13,6 +13,28 @@ _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
 or Twilio credentials, terminate the retired us-east-1 instance._
 
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched — this changes
+how releases are published on GitHub, not what the product does.
+
+### Added
+
+- **Every version tag now has a GitHub Release, and the next gap is caught
+  by a machine** (#94). Thirteen tags (v1.1.0 through v1.6.2) had no
+  Release object — invisible on the repository's Releases page, and the
+  discovery was the owner noticing a screenshot. All thirteen are
+  backfilled with their CHANGELOG sections as the body, verbatim (v1.5.0's
+  additionally states it was tagged and CI-green but never deployed);
+  `scripts/release.sh` now pushes the tag and publishes its Release inside
+  the cut, refusing up front — before anything is written — when gh is
+  missing or unauthenticated rather than pushing a tag it cannot publish;
+  and a new `release objects` health-check gate fails whenever any version
+  tag lacks a Release object, so this drift cannot return silently. The
+  publisher (`scripts/github-release.sh`) never creates or moves tags and
+  treats an existing Release as done, so a re-run cut cannot error on its
+  own earlier success.
+
 ## [1.7.0] — 2026-08-21
 
 ### Changed detection behaviour

@@ -134,9 +134,11 @@ gate "pip-audit" pip-audit "$PIP_AUDIT" .
 if ! command -v gh >/dev/null 2>&1; then
   skip "issue-status audit" "gh not installed"
   skip "scheduled gates ran (8d)" "gh not installed"
+  skip "release objects" "gh not installed"
 elif ! gh auth status >/dev/null 2>&1; then
   skip "issue-status audit" "gh not authenticated"
   skip "scheduled gates ran (8d)" "gh not authenticated"
+  skip "release objects" "gh not authenticated"
 else
   gate "issue-status audit" issue-status scripts/audit-issue-status.sh
 
@@ -145,6 +147,11 @@ else
   # gate here: "did it RUN", not "did it pass" - a red scheduled run already
   # files its own truthfully-titled issues.
   gate "scheduled gates ran (8d)" scheduled-gates scripts/scheduled-gates-freshness.sh
+
+  # Every version tag has a GitHub Release object (#94). A tag with no
+  # Release reads fine from git and invisible from the Releases page - drift
+  # a machine should notice before the owner does.
+  gate "release objects" release-objects scripts/release-objects.sh
 fi
 
 if [ "$FAST" = true ]; then

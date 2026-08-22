@@ -17,12 +17,16 @@
 #   1. version looks like X.Y.Z
 #   2. working tree is clean
 #   3. tag vX.Y.Z does not already exist
-#   4. `[Unreleased]` has actual content
-#   5. the gates pass - fast gates locally when scheduled CI already ran
+#   4. gh is installed and authenticated - the cut ends by publishing the
+#      tag's GitHub Release (#94), and discovering it cannot AFTER the tag
+#      is pushed would leave exactly the tag-without-Release drift the
+#      release-objects gate exists to catch. Refused here, cheaply.
+#   5. `[Unreleased]` has actual content
+#   6. the gates pass - fast gates locally when scheduled CI already ran
 #      the slow ones on this exact tree and was green (#93); the full
 #      local health-check in every case that cannot be proven
-#   6. CHANGELOG surgery + pyproject bump
-#   7. commit, annotated tag
+#   7. CHANGELOG surgery + pyproject bump
+#   8. commit, annotated tag, push, GitHub Release (#94)
 #
 # Nothing is written until every check has passed, so a refusal leaves the tree
 # exactly as it found it.
@@ -38,8 +42,10 @@
 #
 # ## Pushing
 #
-# Deliberately not done here. `git push && git push --tags` is yours to run,
-# after you have looked at what the commit says.
+# Done here since #94: the GitHub Release must be created after the tag is
+# pushed, and splitting "push" from "publish" is how a tag ends up with no
+# Release. Read the notes BEFORE cutting - the diff this commits is the
+# [Unreleased] section you already wrote.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
@@ -81,7 +87,19 @@ if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
 Pick the next version, or delete the tag if it was never pushed."
 fi
 
-# --- 4. [Unreleased] has content --------------------------------------------
+# --- 4. gh can publish the Release --------------------------------------------
+#
+# Fail closed, and fail EARLY: without this, gh's absence surfaces only after
+# the tag is pushed, when the cut can no longer stop cleanly.
+
+command -v gh >/dev/null 2>&1 || die "gh is not installed. The cut publishes a GitHub Release for the tag (#94);
+pushing a tag it cannot publish is the exact drift the release-objects gate
+refuses. Install gh, run 'gh auth login', and run this again."
+gh auth status >/dev/null 2>&1 || die "gh is not authenticated. The cut publishes a GitHub Release for the tag
+(#94); pushing a tag it cannot publish is the exact drift the release-objects
+gate refuses. Run 'gh auth login' and run this again."
+
+# --- 5. [Unreleased] has content --------------------------------------------
 
 UNRELEASED_LINES=$("$PY" - "$VERSION" <<'EOF'
 import re, sys
@@ -114,7 +132,7 @@ fi
 
 echo "release: $TAG - [Unreleased] has $UNRELEASED_LINES lines of notes"
 
-# --- 5. health-check ---------------------------------------------------------
+# --- 6. health-check ---------------------------------------------------------
 #
 # The slow gates (design-guard probes, mutation floor) run canonically in
 # scheduled CI (#86). If the most recent scheduled run covers this exact
@@ -155,7 +173,7 @@ if [ -n "$(git status --porcelain)" ]; then
 Commit those separately, then run this again."
 fi
 
-# --- 6. CHANGELOG + pyproject ------------------------------------------------
+# --- 7. CHANGELOG + pyproject ------------------------------------------------
 
 "$PY" - "$VERSION" <<'EOF'
 import datetime, re, sys
@@ -242,21 +260,28 @@ pyproject.toml cannot be shown to agree. The tree has been modified;
   || die "the version-consistency tests fail after the edit - CHANGELOG.md and
 pyproject.toml disagree. The tree has been modified; 'git checkout -- .' to undo."
 
-# --- 7. commit + tag ---------------------------------------------------------
+# --- 8. commit + tag + push + Release -----------------------------------------
 
 git add CHANGELOG.md pyproject.toml
-git commit -q -m "Release $TAG" -m "$(printf 'Notes in CHANGELOG.md under [%s].\n\nCut with scripts/release.sh, which refuses an empty [Unreleased], a dirty\ntree, a duplicate tag, or a failing health-check.' "$VERSION")"
+git commit -q -m "Release $TAG" -m "$(printf 'Notes in CHANGELOG.md under [%s].\n\nCut with scripts/release.sh, which refuses an empty [Unreleased], a dirty\ntree, a duplicate tag, unpublishable gh, or a failing health-check.' "$VERSION")"
 git tag -a "$TAG" -m "Minas AI Guardian $TAG"
+
+git push
+git push origin "$TAG"
+
+# Idempotent (an existing Release is "nothing to do"), so re-running a cut
+# that died between push and publish finishes instead of erroring.
+scripts/github-release.sh "$TAG" --latest || die "the tag is pushed but its GitHub Release was not created.
+Run 'scripts/github-release.sh $TAG --latest' to finish - until then the
+release-objects gate will (rightly) fail."
 
 cat <<EOF
 
 release: done.
-  commit  $(git rev-parse --short HEAD)
-  tag     $TAG (annotated)
+  commit  $(git rev-parse --short HEAD)  (pushed)
+  tag     $TAG (annotated, pushed, GitHub Release published)
 
-Next:
-  git show $TAG          # read it before it leaves the machine
-  git push && git push --tags
+Next: confirm CI on the release commit is green (gh run list --limit 1).
 
 Then deploy it, on the VM:
   sudo /opt/minas-guardian/scripts/deploy.sh $TAG
