@@ -21,6 +21,19 @@ used to be write-once — but no detector, threshold, or routing rule moved.
 
 ### Added
 
+- **A new emergency contact is told they are one** (#89). The complaint
+  behind decision 1 came from a secondary contact who did not know what
+  her role meant — nobody should depend on the person who added her
+  remembering to say so. Whenever an emergency-contact email is newly
+  listed — at onboarding or via `set-contact` — that address receives a
+  single note saying why they are receiving it and what the role means in
+  decision 1's terms: normally they hear nothing; a high-severity alert
+  only after 60 unresponsive minutes; a critical one after 15; one closing
+  line when a critical alert is acknowledged. The note carries no
+  balances, amounts, addresses, or links; re-running the same values sends
+  no second note; and a dead mail server cannot fail the onboarding or
+  edit that triggered it. Both writer paths are pinned by design-guard
+  probes.
 - **An emergency contact can now be changed or removed** (#91). The
   secondary contact was written once at onboarding and never again, so
   when a real person asked to be removed there was no supported path — the

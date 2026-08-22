@@ -126,6 +126,72 @@ def notify_alert_destination_change(db: Database, account_label: str,
         logger.error("could not send the destination-change notice to %s: %s", old_email, exc)
 
 
+def notify_secondary_contact_added(db: Database, account_label: str,
+                                   email: str | None, rules=None) -> None:
+    """The one-time "you are listed as an emergency contact" note (#89).
+
+    The complaint that produced decision 1 (#27) came from a secondary
+    contact who did not know what her role meant - nobody should depend on
+    the person who added them remembering to say so. Fired from EVERY writer
+    of `alert_email_secondary` (onboarding and `set-contact`), exactly once
+    per newly-added address: the callers gate on an actual change, so a
+    re-run with the same values sends nothing.
+
+    Content rules are decision 1's, same as every secondary-facing message:
+    it says why she is receiving it, states the windows in the terms the
+    Escalator actually uses (read from rules when the caller has them, the
+    schema defaults otherwise - production runs the defaults), and carries
+    no balances, no amounts, no addresses, and no link to click.
+
+    Guarded like every notice on a change path: a send failure is logged,
+    never raised - the edit has already happened, and a dead SMTP server
+    must not look like a failed onboarding or settings change."""
+    if not email:
+        return
+    from sentinel.alerts.base import AlertMessage
+    from sentinel.alerts.contact import ContactRouter
+    from sentinel.portal import _PlainNotice
+    from sentinel.rules_schema import default_for
+
+    critical_min = default_for("alerting", "escalation_unacknowledged_minutes")
+    high_min = default_for("alerting", "escalation_unacknowledged_minutes_high")
+    if rules is not None:
+        critical_min = rules.get("alerting", "escalation_unacknowledged_minutes",
+                                 default=critical_min)
+        high_min = rules.get("alerting", "escalation_unacknowledged_minutes_high",
+                             default=high_min)
+    critical_min, high_min = int(critical_min), int(high_min)
+
+    message = AlertMessage(
+        account_label=account_label,
+        rule="secondary_contact_added",
+        severity="LOW",
+        confidence="n/a",
+        message=(
+            f"You have been listed as the emergency contact for '{account_label}', an "
+            f"account monitored by Minas AI Guardian. You are receiving this single note "
+            f"so the role never surprises you.\n\n"
+            f"What it means: normally you will hear nothing at all. We contact you only "
+            f"when the account's primary contact has not responded - after "
+            f"{high_min} minutes for a high-severity alert, and after {critical_min} "
+            f"minutes for a critical one. When a critical alert you were told about is "
+            f"acknowledged, you will get one closing line so you are not left "
+            f"wondering.\n\n"
+            f"Messages in this role never contain balances, amounts, or account "
+            f"addresses, and none of them will ever ask you to click a link or act on "
+            f"the account. If you did not expect to be listed for this account, "
+            f"contact Minas."
+        ),
+        evidence={},
+    )
+    try:
+        ContactRouter(db=db).send(
+            _PlainNotice(message), account_label, [email], [],
+        )
+    except Exception as exc:  # noqa: BLE001 - the edit has already happened
+        logger.error("could not send the emergency-contact note to %s: %s", email, exc)
+
+
 def record_member_security_event(db: Database, email: str, event_type: str,
                                  payload: dict | None = None) -> int:
     """Record a change to a member's LOGIN against every account that login

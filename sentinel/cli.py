@@ -720,7 +720,11 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
     secondary-only change cannot disturb where the alerts themselves go, and
     an invocation with no flags at all changes nothing (it used to clear the
     primary - a footgun, not a feature, removed with #91)."""
-    from sentinel.events import append_event, notify_alert_destination_change
+    from sentinel.events import (
+        append_event,
+        notify_alert_destination_change,
+        notify_secondary_contact_added,
+    )
     from sentinel.operators import is_active_operator, list_operators, operator_count
 
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
@@ -824,6 +828,13 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
             # notify_alert_destination_change.
             notify_alert_destination_change(
                 db, args.label, payload["email_from"], payload["email_to"])
+        elif event_type == "secondary_contact_updated" \
+                and payload["email_to"] and payload["email_to"] != payload["email_from"]:
+            # A newly-listed emergency contact gets the one-time note saying
+            # what the role means (#89). The diff-guard above makes it fire
+            # exactly once per addition - a re-run with the same address is
+            # not a change and sends nothing.
+            notify_secondary_contact_added(db, args.label, payload["email_to"])
     parts = []
     if primary_requested:
         parts.append(f"email={email or '-'} phone={phone or '-'}")

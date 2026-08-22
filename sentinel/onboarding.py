@@ -350,4 +350,13 @@ def onboard_account(
         actor=actor,
     )
 
+    # Onboarding is one of the two writers of alert_email_secondary (the
+    # other is set-contact), so the one-time "you are listed as an emergency
+    # contact" note fires from here too (#89). Last, and guarded inside the
+    # helper: a dead SMTP server must not fail an onboarding that succeeded.
+    if alert_email_secondary:
+        from sentinel.events import notify_secondary_contact_added
+
+        notify_secondary_contact_added(db, label, alert_email_secondary)
+
     return OnboardingResult(account_id=account_id, label=label)

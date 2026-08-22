@@ -1254,5 +1254,25 @@
       "tests/test_set_contact.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#89 onboarding with an emergency contact sends them no welcome note",
+    "file": "sentinel/onboarding.py",
+    "old": "    if alert_email_secondary:",
+    "new": "    if False and alert_email_secondary:",
+    "tests": [
+      "tests/test_secondary_contact_welcome.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#89 a newly-listed emergency contact via set-contact gets no welcome note",
+    "file": "sentinel/cli.py",
+    "old": "            notify_secondary_contact_added(db, args.label, payload[\"email_to\"])",
+    "new": "            _ignored = (db, args.label, payload[\"email_to\"])",
+    "tests": [
+      "tests/test_secondary_contact_welcome.py"
+    ],
+    "expect": "killed"
   }
 ]

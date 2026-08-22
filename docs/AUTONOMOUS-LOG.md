@@ -4364,3 +4364,20 @@ health check green, all nine gates, probes 136/136. Deliberately NOT here:
 email normalization (that boundary sweep is #90, next-but-one) and the
 "you were removed" notice to the departing contact (noted on the issue;
 #89 covers the ADD side). Next: #89.
+
+# 2026-08-22 · #89 built: the emergency contact is told they are one
+
+`notify_secondary_contact_added` (events.py, decision 1's content rules: the
+why, the real windows read from rules when given — production runs the
+15/60 defaults, verified in its rules.yaml — no balances/amounts/addresses,
+no links, one closing-line promise) fires from BOTH writers of
+`alert_email_secondary`: onboarding and set-contact, each pinned by a
+design-guard probe (2/2 land+kill; 138 total). Exactly once per
+newly-added address — the diff-guard means re-runs send nothing, removal
+sends nothing, replacement notes the new person only. A send failure
+cannot fail the edit (guarded like every change-path notice; tested with a
+raising router). Nine tests. Health-check note: the first full run failed
+ONLY on the issue-status audit — #91 auto-closed by its commit while still
+labelled broken; `--apply` flipped it, the audit re-ran green, and the
+other eight gates' pass stands (the label lives on GitHub, not in the
+tree the gates measured). Next: #90.
