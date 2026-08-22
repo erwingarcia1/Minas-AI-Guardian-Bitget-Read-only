@@ -1258,11 +1258,28 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
             "<span>Movements on it are not currently being detected. Minas has been alerted and is "
             "restoring access; if we asked you for a new API key, that is what this is.</span></div></li>"
         )
+    # The plain summary #9 asks for, stated as the outcome of verification
+    # rather than a promise: the key was proven read-only at connection (a
+    # key that could do more is refused, never accepted with a warning), and
+    # the permission re-check timestamp comes from the snapshots the slow
+    # loop actually takes - "not re-checked yet" is said plainly when true.
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT snapshot_at FROM permission_snapshots WHERE account_id = ? "
+            "ORDER BY snapshot_at DESC LIMIT 1", (account_id,))
+        perm_row = cur.fetchone()
+    perm_checked = (
+        f"last re-checked {_ts(perm_row['snapshot_at'])}" if perm_row
+        else "not re-checked since connection yet"
+    )
     posture = (
         '<section class="panel" aria-labelledby="posture-title"><h2 id="posture-title">Security posture</h2>'
         '<ul class="feature-list">'
-        "<li>" + _tick("yes") + "<div><strong>Read-only access.</strong>"
-        "<span>Minas holds a read-only key; it cannot trade, withdraw, or move your funds.</span></div></li>"
+        "<li>" + _tick("yes") + "<div><strong>This key can read balances and history. "
+        "It cannot trade or withdraw.</strong>"
+        "<span>Verified when the key was connected — a key that could trade or withdraw "
+        f"would have been refused, not accepted with a warning. Its permissions are "
+        f"re-checked as we poll ({perm_checked}), and any change raises an alert.</span></div></li>"
         + live_check +
         "<li>" + _tick("yes") + "<div><strong>Credentials encrypted.</strong>"
         "<span>Your API key is encrypted at rest and never displayed.</span></div></li>"

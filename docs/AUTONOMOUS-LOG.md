@@ -4444,3 +4444,18 @@ concurrently with the full probe run; its gates read a tree the probe
 runner was actively patching and it failed meaninglessly — discarded, and
 the fast gates re-run green on the quiet tree. The probe lock protects
 probe-vs-probe, not gates-vs-probe; one thing at a time. Next: #20.
+
+# 2026-08-22 · #9 built (last criterion): the guarantee is SHOWN, not only enforced
+
+The account page's security-posture panel now leads with the criterion's
+own sentence — "This key can read balances and history. It cannot trade
+or withdraw." — framed as the verification's outcome (a key that could do
+more was refused, never accepted with a warning), with the re-check time
+drawn from permission_snapshots and "not re-checked since connection yet"
+said plainly when true. The "any change raises an alert" line is pinned
+by test to the permission-drift detector's existence, so the claim cannot
+outlive the code it rests on. #20 before this: no build — its deep-link
+criterion collides with the sign-in page's own never-click-from-email
+training; recorded as decision 16, phone-readability criteria verified
+already built. Full HC green ×9 (mutation cold, 6060s, 125/127). Next:
+#45.

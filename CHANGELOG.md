@@ -50,6 +50,16 @@ fired before still fires, minus the accidental double.
   included — a prominent banner says so above everything else, with the
   count and a link to what each account needs; a customer who stops at the
   first screen still learns it.
+- **The account page shows that the read-only guarantee held** (#9). The
+  refusals were always enforced — a key that can trade or withdraw is
+  rejected, never accepted with a warning — but the customer could not
+  see that it worked. The security-posture panel now leads with the plain
+  summary: "This key can read balances and history. It cannot trade or
+  withdraw," stated as the verification's outcome, with the permission
+  re-check timestamp drawn from the snapshots the poll loop actually
+  takes — and "not re-checked since connection yet" said plainly when
+  that is the truth. The "any change raises an alert" sentence is pinned
+  to the existence of the permission-drift detector by test.
 - **Contact addresses are stored one way, not however they were typed**
   (#90). Production carried one person's address as `azdatoo@gmail.com` on
   four accounts and `AZDATOO@GMAIL.COM` on a fifth; every read behaved
