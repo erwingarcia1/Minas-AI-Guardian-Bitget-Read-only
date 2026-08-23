@@ -4518,3 +4518,27 @@ This closes the portal-screens batch (#34 #10-status #22 #20-verified
 #9 #45 #18 #21). Per the run brief's release rule: STOPPING here to
 report [Unreleased] and wait for the owner's release decision. #81/#8
 and the rest of the order remain unstarted, deliberately.
+
+# 2026-08-23 · v1.8.0 cut — the composer's first unattended release notes
+
+Both follow-ups landed first (digest truth-telling for dark accounts —
+paula's case — and the worker's escalating backoff with the one-time 409
+line). The cut ran the full nine-gate health check (probes 142/142,
+mutation 164/168 = 97% over the grown population — the selection
+registration held unattended), committed 4dba473, tagged, pushed, and the
+composer published the Release marked Latest. Both GitHub surfaces
+verified: ls-remote shows the annotated tag dereferencing to 4dba473;
+gh release list shows v1.8.0 Latest. CI on the release commit green.
+
+Composer verdict after reading the body against RELEASE-NOTES.md:
+structurally correct in all six sections (opener with true counts and the
+detection flag; What-you-need-to-do correctly OMITTED — no upgrade
+actions exist; detection section explicit; ten bold plain-language leads;
+deploy command; compare link). ONE cosmetic defect, reported to the owner
+rather than silently fixed: at the lead/detail seam the composer consumes
+the bold from a hard-wrapped changelog line and leaves the line's
+remainder as an orphan ("The" alone on a line before "refusals were
+always enforced") — GitHub renders single newlines as breaks, so several
+entries open with a one-word line. Fix would be a one-line reflow of the
+remainder in entries(); awaiting the owner's call. Deploy is the owner's:
+sudo /opt/minas-guardian/scripts/deploy.sh v1.8.0
