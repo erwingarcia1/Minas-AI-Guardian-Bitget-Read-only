@@ -11,7 +11,33 @@ Guardian**.
 
 _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
-or Twilio credentials, terminate the retired us-east-1 instance._
+or Twilio credentials, terminate the retired us-east-1 instance, install the
+#81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
+container")._
+
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched — this adds a
+host-side recovery mechanism, not a detector change.
+
+### Added
+
+- **An unhealthy container gets restarted — visibly, and never in a
+  silent loop** (#81, decision 12). The healthcheck verdict that went
+  unconsumed for six weeks (#79: `restart: unless-stopped` acts on exit,
+  not health) now has a consumer: a host-side systemd timer that checks
+  every two minutes and restarts the service on `unhealthy` — at most
+  once per 30 minutes. A second unhealthy verdict inside that window
+  means the restart didn't cure, and the timer goes loud exactly once
+  instead of reviving a flapping container forever: journald at err, a
+  timestamped line with the triggering health state in
+  `/var/log/minas-guardian-restarts.log`, and a marker in `/etc/motd`
+  the next SSH session cannot miss. Recovery resets the ladder; the motd
+  evidence stays until a human removes it. Deliberately a host timer and
+  not a docker.sock sidecar — that socket is root on the host, and no
+  third-party image belongs next to a credential-holding product for
+  fifteen lines of shell. Requires a one-time install on the host, in
+  the deployment docs.
 
 ## [1.8.0] — 2026-08-23
 

@@ -1,0 +1,14 @@
+# The timer half of #81's restart-on-unhealthy (decision 12): every two
+# minutes, judge the container's health and act. The script it drives caps
+# itself - a flapping container goes loud once instead of being revived
+# forever - so the short interval is safe.
+[Unit]
+Description=Judge the Minas Guardian container's health every two minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=2min
+Unit=minas-restart-on-unhealthy.service
+
+[Install]
+WantedBy=timers.target

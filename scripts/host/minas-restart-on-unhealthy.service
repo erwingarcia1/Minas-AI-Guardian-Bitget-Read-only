@@ -1,0 +1,10 @@
+# The service half of #81's restart-on-unhealthy timer (decision 12).
+# Install: see docs/deployment.md "Acting on an unhealthy container".
+[Unit]
+Description=Restart the Minas Guardian container when its healthcheck fails
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/minas-guardian/scripts/host/restart-on-unhealthy.sh

@@ -303,6 +303,35 @@ Two operational consequences of fetch-based deploys:
   `/opt/minas-guardian` — a re-clone under another name would come up with
   a fresh, empty database.
 
+## Acting on an unhealthy container (#81, decision 12)
+
+`restart: unless-stopped` acts on **exit**, not on health — an
+alive-but-broken container stays broken until a human notices, which is
+how #79 ran unhealthy for six weeks. A host-side systemd timer closes
+that gap: every two minutes it reads the container's health and, on
+`unhealthy`, restarts the service — **at most once per 30 minutes**. A
+second unhealthy verdict inside that window means the restart didn't
+cure: the timer stops restarting and goes loud once (journald at err, a
+line in `/var/log/minas-guardian-restarts.log`, and a marker appended to
+`/etc/motd` so the next SSH session trips over it). Once #63's external
+paging exists, the cap event is precisely what pages.
+
+Install (one-time, on the host — the units ship in the repo):
+
+```bash
+sudo cp /opt/minas-guardian/scripts/host/minas-restart-on-unhealthy.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now minas-restart-on-unhealthy.timer
+systemctl list-timers minas-restart-on-unhealthy.timer   # confirm it is scheduled
+```
+
+The record: every restart appends a timestamped line with the health
+state that triggered it to `/var/log/minas-guardian-restarts.log`, and
+the same lines reach `journalctl -t minas-restart-on-unhealthy`. A
+restart loop reads as a fault in that log, never as uptime. After a cap
+event, remove the notice from `/etc/motd` once handled — the script
+deliberately never removes it itself.
+
 ## Never run `docker compose down -v` on this box
 
 `docker compose down` is safe: it stops and removes **containers**, the
