@@ -27,6 +27,13 @@ restart timer (#81); no customer-facing detector logic moved.
 
 ### Added
 
+- **Onboarding a customer carries the operator's name from the CLI too**
+  (#7). The dashboard's add form already attributed onboarding through
+  its operator session; `sentinel onboard` recorded nobody. It now takes
+  `--as` on the standard gate — mandatory the moment operator accounts
+  exist, honest None before — checked *before* the secret prompts, so a
+  refusal never costs a pasted key, and the account's founding
+  `customer_added` event carries the name.
 - **Sensitivity can be tuned per customer, and each customer can see
   theirs** (#17). Any scalar threshold the schema declares can now be
   overridden for one account — `sentinel set-threshold --account <label>

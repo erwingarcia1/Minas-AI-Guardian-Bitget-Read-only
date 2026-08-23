@@ -4620,3 +4620,21 @@ the same layer, "set for this account" vs "standard". End-to-end proof:
 heartbeat threshold overridden to 2 alerts the tuned account at 2
 failures while the standard one stays quiet. Defaults untouched. Full HC
 green ×9 (mutation rebuilt under the new manifest, real pass). Next: #7.
+
+# 2026-08-23 · #7 built (CLI attribution); #6 parked as decision 17 — order exhausted
+
+#7: sentinel onboard now carries --as on the standard gate — checked
+BEFORE the secret prompts so a refusal never costs a pasted key — and the
+founding customer_added event carries the name; the dashboard half was
+already attributed via its operator session (verified in code, not
+assumed). Four tests including the no-operators upgrade path. #6: public
+self-serve signup + member-side key onboarding is a trust-model pivot
+(strangers handing keys to the service with nobody in the loop, before
+billing or abuse controls exist) — recorded as DECISIONS-NEEDED decision
+17 with the build order sketched; open, unbuilt on purpose.
+
+The run brief's order is now exhausted: #94-rider, jaypee investigation,
+#91, #89, #90, #34(+#10 status), #22, #20(decision 16), #9, #45, #18,
+#21, #81, #8, #42, #39, #13, #17, #7 done; #10/#20/#6 open on decision
+criteria (15/16/17); skip-list (#75/#19/billing/#29/#96/#97) honored.
+Stopping at the batch boundary per the release rule.

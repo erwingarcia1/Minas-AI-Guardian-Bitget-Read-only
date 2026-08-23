@@ -163,8 +163,33 @@ def build_operator_channels(rules: RulesConfig) -> dict[str, list]:
 
 
 def cmd_onboard(args: argparse.Namespace) -> int:
+    from sentinel.operators import is_active_operator, list_operators, operator_count
+
     db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     cipher = CredentialCipher()
+
+    # The `--as` gate (#7): creating a customer is the founding entry of the
+    # account's whole record, and it must carry a name the moment names
+    # exist. The dashboard's add form already attributes via its operator
+    # session; this closes the CLI half. Checked BEFORE prompting for
+    # secrets - a refusal after someone pasted a key is a key pasted for
+    # nothing.
+    actor = getattr(args, "as_operator", None)
+    if operator_count(db) > 0:
+        if not actor:
+            names = ", ".join(o["username"] for o in list_operators(db) if o["status"] == "active")
+            print(
+                f"--as <operator> is required: onboarding is recorded against a name. "
+                f"Active operators: {names or '(none active)'}",
+                file=sys.stderr,
+            )
+            return 2
+        if not is_active_operator(db, actor):
+            print(f"'{actor}' is not an active operator", file=sys.stderr)
+            return 2
+    elif actor:
+        print("no operator accounts exist - create one with `sentinel operator add`", file=sys.stderr)
+        return 2
 
     exchange = args.exchange
     api_key = args.api_key or input(f"{exchange} API key: ").strip()
@@ -181,6 +206,7 @@ def cmd_onboard(args: argparse.Namespace) -> int:
             db, cipher, label=args.label, topology=args.topology,
             api_key=api_key, secret=secret, passphrase=passphrase,
             exchange=exchange, alert_email=args.alert_email, alert_phone=args.alert_phone,
+            actor=actor,
         )
     except OnboardingRejected as exc:
         print(f"REJECTED: {exc}", file=sys.stderr)
@@ -951,6 +977,8 @@ def main() -> None:
 
     onboard_parser = sub.add_parser("onboard", help="Verify and register a read-only exchange key")
     onboard_parser.add_argument("--label", required=True)
+    onboard_parser.add_argument("--as", dest="as_operator", metavar="OPERATOR",
+                                help="record the onboarding against an operator (required once operators exist)")
     onboard_parser.add_argument("--exchange", choices=["bitget", "bybit", "okx", "binance"], default="bitget")
     onboard_parser.add_argument("--topology", choices=["independent", "sub_account"], default="independent")
     onboard_parser.add_argument("--api-key")

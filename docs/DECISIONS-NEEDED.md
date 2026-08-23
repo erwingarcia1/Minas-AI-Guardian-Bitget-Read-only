@@ -759,6 +759,31 @@ built and pinned by tests in `test_customer_email_template.py`.
 
 ---
 
+## 17. Self-serve signup is a trust-model pivot, not a screen (#6)
+
+#6 asks for public registration — email + password, confirmation, and a
+"connect your first exchange" screen straight after. Every piece is
+individually buildable (the password floor, the no-account-fishing reply,
+and the confirmation-token machinery all have in-house precedents), but
+together they change what this product IS: today every customer is
+operator-curated, every API key is taken in by a person or an
+operator-gated form, and the portal's whole write surface is scoped to
+accounts an operator created. Self-serve signup plus member-side key
+onboarding means **strangers register and hand the service exchange keys
+with nobody at Minas in the loop** — while billing (#43/#44) does not
+exist, abuse controls for a public registration endpoint do not exist,
+and the issue's own note says operator-added customers are "fine at pilot
+scale".
+
+**What is needed**: whether to open registration at all before billing
+lands; if yes, the order (confirmation-gated signup first, member-side
+key onboarding second or operator-approved), and what stands in for abuse
+control on a public endpoint. Until then #6 stays open, unbuilt on
+purpose — the bottleneck it names is real and arrives after pilot scale,
+which is where the product still is.
+
+---
+
 ## Not a decision, but needs saying: #16's remaining criterion
 
 G-12's third criterion — "threshold changes are recorded, showing **who**
