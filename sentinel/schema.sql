@@ -271,6 +271,20 @@ CREATE TABLE IF NOT EXISTS portal_meta (
     value TEXT NOT NULL
 );
 
+-- Per-account threshold overrides (#17, G-13). One row per (account,
+-- setting); absence means the global config answers, so deleting a row IS
+-- "back to defaults". `set_by` is the --as operator, nullable before
+-- operator accounts exist, same as every attributed write.
+CREATE TABLE IF NOT EXISTS account_threshold_overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    setting TEXT NOT NULL,
+    value TEXT NOT NULL,
+    set_by TEXT,
+    set_at TEXT NOT NULL,
+    UNIQUE(account_id, setting)
+);
+
 -- Self-serve Telegram connections (#18). One row per link attempt; the
 -- member's CURRENT connection is the newest 'connected' row. The code is a
 -- one-time secret with a short expiry, cleared the moment it is used; a

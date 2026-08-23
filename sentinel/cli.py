@@ -619,6 +619,45 @@ def cmd_set_threshold(args: argparse.Namespace) -> int:
         print("no operator accounts exist - create one with `sentinel operator add`", file=sys.stderr)
         return 2
 
+    # Per-account (#17): one customer's sensitivity, the global file
+    # untouched. Attributed by the gate above, diff-evented on /activity by
+    # the overrides module, validated against the schema's own leaves.
+    account_label = getattr(args, "account", None)
+    if account_label:
+        from sentinel.overrides import clear_override, set_override
+
+        try:
+            if getattr(args, "clear", False):
+                existed = clear_override(db, account_label, args.setting, actor)
+                print(f"{account_label}: {args.setting} "
+                      + ("override cleared - back to the defaults" if existed
+                         else "had no override - nothing recorded"))
+                return 0
+            if args.value is None:
+                print("a value is required (or pass --clear)", file=sys.stderr)
+                return 2
+            previous = set_override(db, account_label, args.setting, args.value, actor)
+            if previous == args.value:
+                print(f"{account_label}: {args.setting} is already {args.value}")
+            else:
+                was = f"was {previous}" if previous is not None else "was: the default"
+                by = f" (by {actor})" if actor else ""
+                print(f"{account_label}: {args.setting} = {args.value} ({was}){by}")
+            return 0
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        except LookupError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+
+    if getattr(args, "clear", False):
+        print("--clear needs --account: the global config is edited by setting a value", file=sys.stderr)
+        return 2
+    if args.value is None:
+        print("a value is required", file=sys.stderr)
+        return 2
+
     path = Path(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
     try:
         before = yaml.safe_load(path.read_text()) or {}
@@ -982,8 +1021,11 @@ def main() -> None:
     set_threshold_parser = sub.add_parser(
         "set-threshold", help="Change one detection threshold, recorded against an operator")
     set_threshold_parser.add_argument("--as", dest="as_operator", help="Operator making this change")
-    set_threshold_parser.add_argument("setting", help="Dotted path, e.g. polling.fast_loop_seconds")
-    set_threshold_parser.add_argument("value")
+    set_threshold_parser.add_argument("--account", help="apply to ONE account only (#17); the global config is untouched")
+    set_threshold_parser.add_argument("--clear", action="store_true",
+                                      help="with --account: remove the override, back to the defaults")
+    set_threshold_parser.add_argument("setting", help="Dotted path, e.g. detectors.withdrawal_burst.min_count")
+    set_threshold_parser.add_argument("value", nargs="?", default=None)
     set_threshold_parser.set_defaults(func=cmd_set_threshold)
 
     triage_parser = sub.add_parser("triage", help="Print an AI incident narrative for an account's recent events")

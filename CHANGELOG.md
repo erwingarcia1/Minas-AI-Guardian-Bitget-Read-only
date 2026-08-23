@@ -27,6 +27,24 @@ restart timer (#81); no customer-facing detector logic moved.
 
 ### Added
 
+- **Sensitivity can be tuned per customer, and each customer can see
+  theirs** (#17). Any scalar threshold the schema declares can now be
+  overridden for one account — `sentinel set-threshold --account <label>
+  detectors.withdrawal_burst.min_count 9`, attributed via `--as`, with
+  `--clear` returning to the defaults — while every other account keeps
+  the global configuration byte for byte (the overlay answers through
+  the same read API, so detector call sites cannot tell which layer
+  answered, and a registration test fails any poller read that bypasses
+  it). Every actual change lands on the account's activity page as
+  "Alert sensitivity changed" with old and new values, because how
+  easily the alerts fire is a setting whose silent change is an attack.
+  A corrupted stored override falls back to the global value, never to
+  no threshold. And the portal's Limits page grew "Your alert
+  sensitivity": the numbers each account is actually judged against, in
+  plain terms, read through the same override layer — with "set for
+  this account" marked against anything tuned, and "standard" said
+  otherwise. Defaults are unchanged: until an operator sets an override,
+  detection behaves identically.
 - **The permission-change alert says exactly what changed** (#13). The
   drift detector's alert used to say "permission state changed" and bury
   the diff in evidence; it now leads with the change itself, in the key's

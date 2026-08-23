@@ -4605,3 +4605,18 @@ first field silencing the allowlist diff) killed by name; final
 "The key GAINED the 'withdraw' authority", losses, allowlist entries,
 gains leading; reordered-list and unparseable shapes admitted honestly;
 proxy disclaimer intact. Eleven detector tests. Next: #17.
+
+# 2026-08-23 · #17 built: per-account sensitivity
+
+account_threshold_overrides (NEVER_PRUNE — configuration, not history) +
+AccountRules overlay with the global read API; ALL fifteen poller
+threshold reads swept through _account_rules(account_id), held by a
+registration test (one direct self._rules read = one customer whose
+override silently doesn't apply). set-threshold grew --account/--clear on
+the same --as gate; changes are /activity events ("Alert sensitivity
+changed") per diff; corrupt overrides fall back to the global value. The
+Limits page shows each account's EFFECTIVE numbers in plain terms through
+the same layer, "set for this account" vs "standard". End-to-end proof:
+heartbeat threshold overridden to 2 alerts the tuned account at 2
+failures while the standard one stays quiet. Defaults untouched. Full HC
+green ×9 (mutation rebuilt under the new manifest, real pass). Next: #7.

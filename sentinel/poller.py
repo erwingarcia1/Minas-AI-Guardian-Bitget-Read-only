@@ -137,6 +137,16 @@ class AccountPoller:
         self._contact_router = contact_router
         self._operator_alerter = operator_alerter
 
+    def _account_rules(self, account_id: int):
+        """This account's effective thresholds (#17): the global config with
+        the account's overrides on top, same read API. EVERY detector
+        threshold read in this module goes through here - a registration
+        test holds that, because one site reading `self._rules` directly is
+        one customer whose override silently doesn't apply."""
+        from sentinel.overrides import AccountRules
+
+        return AccountRules(self._rules, self._db, account_id)
+
     def _report_unidentifiable(self, account_id: int, label: str, account_row, withdrawals) -> None:
         """Pages when the exchange sends withdrawals with neither a reference
         nor a timestamp (#67).
@@ -221,13 +231,13 @@ class AccountPoller:
         if self._metrics is not None:
             self._metrics.detection_fired(detection.rule, detection.severity)
         cooldowns = {
-            sev: self._rules.get_int("alerting", "cooldown_minutes", sev)
+            sev: self._account_rules(account_id).get_int("alerting", "cooldown_minutes", sev)
             for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW")
         }
         rule_cooldowns = {
             # Repeats daily while unresolved: silence must never look like
             # safety, and a half-hourly repeat is its own kind of silence.
-            "account_unreachable": self._rules.get_int("alerting", "unreachable_repeat_minutes"),
+            "account_unreachable": self._account_rules(account_id).get_int("alerting", "unreachable_repeat_minutes"),
         }
         alert_id = dispatch(
             self._db, self._channels, account_id, label, detection, cooldowns,
@@ -394,8 +404,8 @@ class AccountPoller:
             self._emit(account_id, label, detection)
 
         if new_withdrawals:
-            window_minutes = self._rules.get_int("detectors", "withdrawal_burst", "window_minutes", default=60)
-            min_count = self._rules.get_int("detectors", "withdrawal_burst", "min_count", default=3)
+            window_minutes = self._account_rules(account_id).get_int("detectors", "withdrawal_burst", "window_minutes", default=60)
+            min_count = self._account_rules(account_id).get_int("detectors", "withdrawal_burst", "min_count", default=3)
             with self._db.cursor() as cur:
                 cur.execute(
                     "SELECT first_seen_at FROM seen_withdrawals WHERE account_id = ?",
@@ -492,15 +502,15 @@ class AccountPoller:
                     if last > 0:
                         reference_prices[sym] = last
 
-            max_dev = self._rules.get_decimal("detectors", "off_market", "max_deviation_pct", default=Decimal("10"))
+            max_dev = self._account_rules(account_id).get_decimal("detectors", "off_market", "max_deviation_pct", default=Decimal("10"))
             for detection in detect_off_market_fills(recent_fills, reference_prices, max_dev):
                 self._emit(account_id, label, detection)
 
             window_fees = sum_fees_by_coin(recent_fills)
             ema = load_fee_baseline(self._db, account_id)
-            multiplier = self._rules.get_decimal("detectors", "fee_anomaly", "multiplier", default=Decimal("5"))
-            floor = self._rules.get_decimal("detectors", "fee_anomaly", "min_fee_floor", default=Decimal("1"))
-            alpha = self._rules.get_decimal("detectors", "fee_anomaly", "ema_alpha", default=Decimal("0.2"))
+            multiplier = self._account_rules(account_id).get_decimal("detectors", "fee_anomaly", "multiplier", default=Decimal("5"))
+            floor = self._account_rules(account_id).get_decimal("detectors", "fee_anomaly", "min_fee_floor", default=Decimal("1"))
+            alpha = self._account_rules(account_id).get_decimal("detectors", "fee_anomaly", "ema_alpha", default=Decimal("0.2"))
             for detection in detect_fee_anomaly(window_fees, ema, multiplier, floor):
                 self._emit(account_id, label, detection)
             for coin, spent in window_fees.items():
@@ -512,7 +522,7 @@ class AccountPoller:
         totals = balance.get("total", {}) if isinstance(balance, dict) else {}
         current_balances = {k: v for k, v in totals.items() if v}
 
-        max_coins = self._rules.get_int("detectors", "transfers", "max_coins_per_cycle", default=5)
+        max_coins = self._account_rules(account_id).get_int("detectors", "transfers", "max_coins_per_cycle", default=5)
         top_coins = sorted(current_balances, key=lambda c: to_decimal(current_balances[c]), reverse=True)[:max_coins]
         new_transfers = []
         for coin in top_coins:
@@ -536,8 +546,8 @@ class AccountPoller:
         previous_balances, snapshot_at = latest_balance_snapshot_at(self._db, account_id)
         current_decimal = {k: to_decimal(v) for k, v in current_balances.items()}
 
-        tolerance_pct = self._rules.get_decimal("detectors", "quantity_drop", "tolerance_pct")
-        tolerance_abs = self._rules.get_decimal("detectors", "quantity_drop", "tolerance_absolute")
+        tolerance_pct = self._account_rules(account_id).get_decimal("detectors", "quantity_drop", "tolerance_pct")
+        tolerance_abs = self._account_rules(account_id).get_decimal("detectors", "quantity_drop", "tolerance_absolute")
 
         # The drop is measured from the previous balance snapshot, so only
         # activity at or after that snapshot can explain it. `withdrawals` and
@@ -547,7 +557,7 @@ class AccountPoller:
         # last 45 seconds and nothing is ever alerted (G-7).
         window_start_ms = None
         if snapshot_at is not None:
-            grace = self._rules.get_decimal(
+            grace = self._account_rules(account_id).get_decimal(
                 "detectors", "quantity_drop", "explanation_grace_seconds", default=Decimal("60")
             )
             window_start = datetime.fromisoformat(snapshot_at) - timedelta(seconds=float(grace))
@@ -622,7 +632,7 @@ class AccountPoller:
     def _handle_auth_failure(self, account_id: int, label: str, state: dict, exc: Exception) -> None:
         failures = state.get("consecutive_auth_failures", 0) + 1
         _update_poll_state(self._db, account_id, consecutive_auth_failures=failures, consecutive_failures=0)
-        threshold = self._rules.get_int("detectors", "tamper", "consecutive_auth_failures_threshold", default=2)
+        threshold = self._account_rules(account_id).get_int("detectors", "tamper", "consecutive_auth_failures_threshold", default=2)
         for detection in detect_tamper(failures, threshold):
             self._emit(account_id, label, detection)
 
@@ -632,7 +642,7 @@ class AccountPoller:
         # attack"; this answers "are you covered", and the customer needs the
         # second one to know their key must be replaced. Both fire: they say
         # different things and neither replaces the other.
-        unreachable_threshold = self._rules.get_int(
+        unreachable_threshold = self._account_rules(account_id).get_int(
             "detectors", "heartbeat", "consecutive_failures_threshold", default=5
         )
         for detection in detect_unreachable(failures, unreachable_threshold, auth_failures=failures):
@@ -645,7 +655,7 @@ class AccountPoller:
     def _handle_generic_failure(self, account_id: int, label: str, state: dict, exc: Exception) -> None:
         failures = state.get("consecutive_failures", 0) + 1
         _update_poll_state(self._db, account_id, consecutive_failures=failures)
-        threshold = self._rules.get_int("detectors", "heartbeat", "consecutive_failures_threshold", default=5)
+        threshold = self._account_rules(account_id).get_int("detectors", "heartbeat", "consecutive_failures_threshold", default=5)
         auth_failures = state.get("consecutive_auth_failures", 0)
         for detection in detect_unreachable(failures, threshold, auth_failures=auth_failures):
             self._emit(account_id, label, detection)

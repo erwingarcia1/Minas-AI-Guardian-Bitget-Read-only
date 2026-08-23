@@ -109,6 +109,9 @@ NEVER_PRUNE = frozenset({
     # where alert copies went, kept for the same reason snoozes are.
     # Volume is human-scale: one row per link attempt per member.
     "telegram_links",
+    # Configuration, not history (#17): a pruned override silently resets an
+    # account's sensitivity to the defaults. One row per (account, setting).
+    "account_threshold_overrides",
 })
 
 # Tables holding a row *about* one alert. Every one of them declares

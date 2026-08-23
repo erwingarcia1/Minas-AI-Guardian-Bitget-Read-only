@@ -62,6 +62,7 @@ ADMIN_EVENT_TYPES = (
     "member_telegram_connected",
     "member_telegram_disconnected",
     "digest_frequency_changed",
+    "threshold_override_changed",
     "monitoring_key_replaced",
 )
 
@@ -80,6 +81,7 @@ ADMIN_EVENT_LABELS = {
     "member_telegram_connected": "Telegram alerts connected",
     "member_telegram_disconnected": "Telegram alerts disconnected",
     "digest_frequency_changed": "Digest schedule changed",
+    "threshold_override_changed": "Alert sensitivity changed",
     "monitoring_key_replaced": "Monitoring key replaced",
 }
 

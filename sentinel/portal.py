@@ -1788,8 +1788,74 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
         "a legal review of retention obligations is still pending — if it changes these "
         "numbers, this page changes with them, because it reads the same configuration the "
         "deletion job runs on.</p></div></div></section>"
+        + _sensitivity_section(db, email, rules)
     )
     return _page(body, email, "/limits", title="Limits — Minas AI Guardian")
+
+
+def _sensitivity_section(db: Database, email: str, rules=None) -> str:
+    """#17's third criterion: the member sees their EFFECTIVE sensitivity in
+    plain terms — the same numbers detection actually runs on, read through
+    the same override layer, so this page and the alerts cannot disagree.
+    A value set specifically for the account says so; everything else says
+    'standard'."""
+    from sentinel.overrides import overrides_for
+
+    accounts = member_accounts(db, email)
+    if not accounts:
+        return ""
+
+    def _effective(overrides: dict, setting: str):
+        raw = overrides.get(setting)
+        if raw is not None:
+            return raw, True
+        segments = setting.split(".")
+        if rules is not None:
+            return rules.get(*segments, default=default_for(*segments)), False
+        return default_for(*segments), False
+
+    ROWS = [
+        ("Several withdrawals in a short time",
+         "detectors.withdrawal_burst.min_count",
+         lambda v, o: f"{v} or more within {_effective(o, 'detectors.withdrawal_burst.window_minutes')[0]} minutes"),
+        ("A trade far from the market price",
+         "detectors.off_market.max_deviation_pct",
+         lambda v, o: f"more than {v}% away"),
+        ("Unusual trading-fee spend",
+         "detectors.fee_anomaly.multiplier",
+         lambda v, o: f"{v}× your usual level"),
+        ("A balance drop no trade explains",
+         "detectors.quantity_drop.tolerance_pct",
+         lambda v, o: f"beyond {v}% tolerance"),
+        ("Contact with the account lost",
+         "detectors.heartbeat.consecutive_failures_threshold",
+         lambda v, o: f"after {v} failed checks in a row"),
+    ]
+
+    cards = ""
+    for acct in accounts:
+        overrides = overrides_for(db, int(acct["id"]))
+        rows_html = ""
+        for title, setting, phrase in ROWS:
+            value, custom = _effective(overrides, setting)
+            chip = ('<span class="badge badge--neutral"><span class="dot" aria-hidden="true"></span>'
+                    "set for this account</span>") if custom else (
+                    '<span class="meta">standard</span>')
+            rows_html += (f'<div class="kv__row"><dt>{html.escape(title)}</dt>'
+                          f"<dd>{html.escape(phrase(value, overrides))} {chip}</dd></div>")
+        cards += (
+            f'<article class="acct"><div class="acct__head"><div>'
+            f'<p class="acct__label">{html.escape(acct["label"])}</p></div></div>'
+            f'<dl class="kv">{rows_html}</dl></article>'
+        )
+    return (
+        '<section class="panel" aria-labelledby="sens-title"><h2 id="sens-title">Your alert sensitivity</h2>'
+        '<p class="muted">The thresholds your accounts are actually judged '
+        "against — read from the running configuration, including anything set "
+        "specifically for you. Ask the Minas team to tune these if your trading "
+        "style makes an alert too eager or too quiet.</p>"
+        + cards + "</section>"
+    )
 
 
 
