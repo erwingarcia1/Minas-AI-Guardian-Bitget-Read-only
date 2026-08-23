@@ -1,6 +1,6 @@
 [project]
 name = "sentinel"
-version = "1.7.0"
+version = "1.8.0"
 description = "24/7 Bitget account-compromise monitoring service"
 requires-python = ">=3.11"
 dependencies = [
