@@ -17,11 +17,28 @@ container")._
 
 ### Changed detection behaviour
 
-**None.** Which alerts fire, when, and to whom is untouched — this adds a
-host-side recovery mechanism, not a detector change.
+**Which alerts fire, when, and to whom is untouched — one alert's WORDING
+changed** (#13): the permission-drift alert now states exactly what
+changed in plain words ("The key GAINED the 'withdraw' authority") instead
+of "permission state changed". The trigger, severity, timing, and
+recipients are identical; two new operator pages exist (#42, Minas-only —
+checks behind schedule, account unwatchable too long) and a host-side
+restart timer (#81); no customer-facing detector logic moved.
 
 ### Added
 
+- **The permission-change alert says exactly what changed** (#13). The
+  drift detector's alert used to say "permission state changed" and bury
+  the diff in evidence; it now leads with the change itself, in the key's
+  own terms — "The key GAINED the 'withdraw' authority; the key lost the
+  'trade' authority; the key GAINED the '203.0.113.9' IP-allowlist
+  entry" — gains first, because a key gaining power is the attack the
+  detector exists to catch. List and comma-string shapes diff the same; a
+  reordered list reads as "rewritten without changing its entries", never
+  as a gain; and a shape that cannot be itemised is admitted with its
+  before/after rather than silently treated as empty. The proxy
+  disclaimer (Bitget exposes no key inventory for independent accounts)
+  stays.
 - **The operator dashboard surfaces trouble first** (#39). The accounts
   table now sorts by problem state by default — trouble, then watching,
   then paused (deliberate stillness last) — and filters to one bucket
