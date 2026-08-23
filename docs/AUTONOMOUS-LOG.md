@@ -4542,3 +4542,26 @@ always enforced") — GitHub renders single newlines as breaks, so several
 entries open with a one-word line. Fix would be a one-line reflow of the
 remainder in entries(); awaiting the owner's call. Deploy is the owner's:
 sudo /opt/minas-guardian/scripts/deploy.sh v1.8.0
+
+# 2026-08-23 · composer seam fixed + v1.8.0 body corrected; #81 and #8 built
+
+Composer: the lead/detail wrap seam now reflows (first newline joined,
+never across a blank line); tested as the bug's shape (no rendered
+paragraph opens with a <3-word line); v1.8.0's body re-rendered from the
+same CHANGELOG section and republished via gh release edit — tag hash
+unchanged, verified. #81 (decision 12): host systemd timer + script,
+restart-on-unhealthy capped once/30min, loud-once at the cap (journald
+err + host log + /etc/motd), recovery resets, evidence stays; 7 tests
+driving the real script over a stubbed docker; install is a documented
+one-time host step, listed in pending-ops. #8 (decision 14): text-only
+dated interface-named key steps per exchange on /key, provenance line
+customer-visible; rejections carry the verifier's reason verbatim (names
+the exact permission), the per-exchange fix, and the drift question.
+
+Honest red worth recording: #8's full health check FAILED the mutation
+gate 161/168 = 95% — five real survivors in the #21/#18 code (the digest
+follow-up had run suite-only): all-quiet shown on urgent-only days
+(and→or), any skipped digest member cutting off everyone after them
+(continue→break ×3), and plain chat messages earning a code-invalid
+reply (or→and). Killed by name with five tests; regenerated gate
+166/168 = 98%. The floor did not ratchet (still 96). Continuing: #42.
