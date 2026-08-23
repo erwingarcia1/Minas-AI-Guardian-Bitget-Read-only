@@ -4565,3 +4565,23 @@ follow-up had run suite-only): all-quiet shown on urgent-only days
 (continue→break ×3), and plain chat messages earning a code-invalid
 reply (or→and). Killed by name with five tests; regenerated gate
 166/168 = 98%. The floor did not ratchet (still 96). Continuing: #42.
+
+# 2026-08-23 · #42 and #39 built
+
+#42: WatchAlarms on the scheduler tick — one page when the whole engine is
+behind (freshest success across active accounts older than
+checks_behind_seconds, default 10m; the global case suppresses the
+per-account storm), a per-account page when one account is unwatchable
+(unwatchable_seconds, default 30m) while others check normally, counters
+in the message. Disabled and freshly-onboarded accounts never page;
+never-checked ages from onboarding. Wiring pinned per the #52 standard.
+Scheduler-thread limit stated in the docstring — a dead process is #63's.
+
+#39: the dashboard's accounts table sorts trouble-first by default
+(watching, then paused last) and filters by problem state with counted
+links — all server-side per the #82 no-framework decision. The state is a
+grouping of the page's own judgements (_status_pill + _watch_cell's
+threshold), and an unrecognised filter selects nothing, never everything.
+A session restart killed #39's first health check mid-run — killed check,
+no result: verified the tree carried no probe fragments and re-ran from
+the top, all nine green. Next: #13.

@@ -283,6 +283,24 @@ def _fail_cell(n: int) -> str:
     return f'<span class="fail">{n}</span>' if n else '<span class="zero">0</span>'
 
 
+def _problem_state(row, threshold: int) -> str:
+    """One of trouble / watching / paused, for #39's sort-and-filter.
+
+    Derived from exactly the judgements this page already renders - the
+    status pill and `_watch_cell`'s counter threshold - never a third
+    opinion, so the filter can only group what the row already says.
+    `paused` is deliberate stillness (disabled); everything else that is
+    not being watched is trouble, tamper_suspected included."""
+    if row["status"] == "disabled":
+        return "paused"
+    if row["status"] != "active":
+        return "trouble"
+    failures = (row["consecutive_failures"] or 0) + (row["consecutive_auth_failures"] or 0)
+    if failures >= threshold:
+        return "trouble"
+    return "watching"
+
+
 def _render_operator_login(error: str | None = None) -> str:
     """The ops sign-in. Deliberately says nothing about which usernames exist -
     one message for a bad username and a bad password alike."""
@@ -347,9 +365,10 @@ def _rules_banner(rules) -> str:
     )
 
 
-def _render(db: Database, rules=None) -> str:
+def _render(db: Database, rules=None, qs=None) -> str:
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=24)).isoformat()
+    qs = qs or {}
 
     with db.cursor() as cur:
         cur.execute(
@@ -377,16 +396,59 @@ def _render(db: Database, rules=None) -> str:
     high_24h = sum(1 for r in recent if r["severity"] == "HIGH")
     medlow_24h = sum(1 for r in recent if r["severity"] in ("MEDIUM", "LOW"))
 
+    # #39's last criterion, server-side per the #82 decision (no table JS):
+    # trouble surfaces first. The default order is by problem state -
+    # trouble, then watching, then paused (deliberate stillness last) - and
+    # `?state=` narrows to one bucket. An unrecognised filter value selects
+    # NOTHING, never everything: showing the whole fleet under a heading
+    # that claims a selection is the quiet inversion this repo keeps
+    # finding elsewhere.
+    threshold = _watch_threshold(rules)
+    states = {int(r["id"]): _problem_state(r, threshold) for r in accounts}
+    counts = {"trouble": 0, "watching": 0, "paused": 0}
+    for s in states.values():
+        counts[s] += 1
+    state_filter = (qs.get("state") or [""])[0].strip()
+    sort = (qs.get("sort") or ["problem"])[0].strip()
+
+    shown = list(accounts)
+    if state_filter:
+        shown = [r for r in shown if states[int(r["id"])] == state_filter]
+    if sort == "label":
+        shown.sort(key=lambda r: str(r["label"]).lower())
+    else:
+        rank = {"trouble": 0, "watching": 1, "paused": 2}
+        shown.sort(key=lambda r: (rank.get(states[int(r["id"])], 0), str(r["label"]).lower()))
+
+    def _filter_link(value: str, label: str, n: int | None = None) -> str:
+        current = " style='font-weight:700;text-decoration:underline'" if value == state_filter else ""
+        suffix = f" ({n})" if n is not None else f" ({len(accounts)})"
+        query = f"?state={value}" if value else "?"
+        return f"<a class='acctlink'{current} href='/{query}'>{label}{suffix}</a>"
+
+    filter_row = (
+        "<p class='count' style='margin:0 0 8px'>Show: "
+        + _filter_link("", "All")
+        + " · " + _filter_link("trouble", "Trouble", counts["trouble"])
+        + " · " + _filter_link("watching", "Watching", counts["watching"])
+        + " · " + _filter_link("paused", "Paused", counts["paused"])
+        + " — sorted by " + ("name" if sort == "label" else "problem state, trouble first")
+        + f" (<a class='acctlink' href='/?sort={'problem' if sort == 'label' else 'label'}"
+        + (f"&state={state_filter}" if state_filter else "") + "'>"
+        + ("sort by problem" if sort == "label" else "sort by name") + "</a>)</p>"
+    )
+
     account_rows = "".join(
         f"<tr><td><a class='acctlink' href='/account?id={r['id']}'>{html.escape(r['label'])} ›</a></td>"
         f"<td class='mono'>{html.escape((r['exchange'] if 'exchange' in r.keys() else 'bitget') or 'bitget')}</td>"
         f"<td class='mono'>{_account_type_label(r['topology'])}</td><td>{_status_pill(r['status'])}</td>"
         f"<td class='mono'>{_ts(r['last_success_at'])}</td>"
-        f"<td>{_watch_cell(r, _watch_threshold(rules))}</td>"
+        f"<td>{_watch_cell(r, threshold)}</td>"
         f"<td>{_fail_cell(r['consecutive_failures'] or 0)}</td>"
         f"<td>{_fail_cell(r['consecutive_auth_failures'] or 0)}</td></tr>"
-        for r in accounts
-    ) or "<tr><td colspan=7 class='empty'>No accounts onboarded yet</td></tr>"
+        for r in shown
+    ) or ("<tr><td colspan=8 class='empty'>No accounts match this filter</td></tr>"
+          if accounts else "<tr><td colspan=8 class='empty'>No accounts onboarded yet</td></tr>")
 
     alert_rows = "".join(
         f"<tr><td class='mono'>{_ts(r['sent_at'])}</td>"
@@ -418,7 +480,9 @@ def _render(db: Database, rules=None) -> str:
         f'<div class="kpi"><div class="label">Alerts · 24h</div><div class="val">{len(recent)}</div>'
         f'<div class="foot">{high_24h} high · {medlow_24h} med/low</div></div></div>'
         '<section><div class="card"><div class="card-head"><h2>Accounts</h2>'
-        f'<span class="count">{total} total</span></div><table><thead><tr><th>Account</th><th>Exchange</th>'
+        f'<span class="count">{len(shown)} shown · {total} total</span></div>'
+        + filter_row +
+        '<table><thead><tr><th>Account</th><th>Exchange</th>'
         "<th>Account type</th><th>Status</th><th>Watched</th><th>Last success</th><th>Failures</th><th>Auth</th></tr></thead>"
         f"<tbody>{account_rows}</tbody></table></div></section>"
         '<section><div class="card"><div class="card-head"><h2>Recent alerts</h2>'
@@ -1062,7 +1126,7 @@ def serve_dashboard(
                 self.send_response(204)
                 self.end_headers()
             else:
-                self._send(_render(db, rules).encode())
+                self._send(_render(db, rules, parse_qs(urlparse(self.path).query)).encode())
 
         def do_POST(self):
             # One chokepoint for every POST, /login included (the portal's

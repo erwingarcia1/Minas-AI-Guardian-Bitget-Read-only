@@ -22,6 +22,14 @@ host-side recovery mechanism, not a detector change.
 
 ### Added
 
+- **The operator dashboard surfaces trouble first** (#39). The accounts
+  table now sorts by problem state by default — trouble, then watching,
+  then paused (deliberate stillness last) — and filters to one bucket
+  with counted links, all server-side per the no-framework decision:
+  query parameters and re-render, no table JavaScript. The state is a
+  grouping of what each row already says (the status pill and the
+  watch-cell's counter threshold), never a third judgement, and an
+  unrecognised filter value selects nothing rather than everything.
 - **Minas gets paged when checks fall behind — one page, not one per
   account** (#42). The last two criteria of technical health monitoring,
   built on #53's operator route: when no account has completed a check
