@@ -115,8 +115,10 @@ restart timer (#81); no customer-facing detector logic moved.
   evidence stays until a human removes it. Deliberately a host timer and
   not a docker.sock sidecar — that socket is root on the host, and no
   third-party image belongs next to a credential-holding product for
-  fifteen lines of shell. Requires a one-time install on the host, in
-  the deployment docs.
+  fifteen lines of shell. **On upgrade: install the timer once on the
+  host** (docs/deployment.md, "Acting on an unhealthy container") —
+  nothing else changes, and the deploy itself works without it, but
+  until the units are enabled this protection is not running.
 
 ## [1.8.0] — 2026-08-23
 
