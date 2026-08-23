@@ -4585,3 +4585,23 @@ threshold), and an unrecognised filter selects nothing, never everything.
 A session restart killed #39's first health check mid-run — killed check,
 no result: verified the tree carried no probe fragments and re-ran from
 the top, all nine green. Next: #13.
+
+# 2026-08-23 · a hollow mutation green caught and closed; #13 built
+
+The #13 health check "passed" mutation in 30 seconds after a DETECTOR
+change — suspicious, checked, confirmed hollow: mutants/ carried the old
+new_api_key.py, and the gate's staleness check deliberately excluded .py
+files on the assumption mutmut refreshes changed sources itself. It does
+not. Fix: generation now writes mutants/.source-manifest (sha256 of every
+sentinel/*.py); any later mismatch — or a cache predating manifests,
+unverifiable-is-stale — rebuilds. Proven both directions: the manifest-
+less cache rebuilt (population 168→178, the new differ's decision points
+finally judged), and the valid cache then re-judged fast. Two fresh
+survivors in the differ (continue→break: an unchanged or unparseable
+first field silencing the allowlist diff) killed by name; final
+176/178 = 98%.
+
+#13 itself: the permission-drift alert now states exactly what changed —
+"The key GAINED the 'withdraw' authority", losses, allowlist entries,
+gains leading; reordered-list and unparseable shapes admitted honestly;
+proxy disclaimer intact. Eleven detector tests. Next: #17.

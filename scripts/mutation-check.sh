@@ -202,6 +202,24 @@ if [ -d mutants ]; then
   done < <(find sentinel -type f ! -name '*.py' ! -path '*__pycache__*')
 fi
 
+# The .py files above are deliberately excluded: mutmut REWRITES its copies
+# with the mutants embedded, so a byte comparison always differs. The
+# assumption that replaced it - "mutmut notices a changed source itself" -
+# is FALSE, proven 2026-08-23: a changed detector produced a 30-second pass
+# judged entirely against the old code. So generation records a manifest of
+# source hashes, and any mismatch (or a cache from before manifests existed
+# - unverifiable is stale, fail closed) rebuilds.
+if [ -d mutants ] && [ "$STALE" = false ]; then
+  MANIFEST=mutants/.source-manifest
+  CURRENT=$(find sentinel -name '*.py' ! -path '*__pycache__*' -type f | sort | xargs sha256sum)
+  if [ ! -f "$MANIFEST" ] || [ "$CURRENT" != "$(cat "$MANIFEST")" ]; then
+    echo "the Python sources have changed since mutants/ was generated (or the" >&2
+    echo "cache predates source manifests) - a score over the old code would" >&2
+    echo "read as a pass on the new. Rebuilding." >&2
+    STALE=true
+  fi
+fi
+
 if [ "$REGENERATE" = true ] || [ ! -d mutants ] || [ "$STALE" = true ]; then
   # Delete first. Generating over a surviving mutants/ is how every staleness
   # bug in this gate has started: mutmut keeps whatever is already there, both
@@ -211,6 +229,10 @@ if [ "$REGENERATE" = true ] || [ ! -d mutants ] || [ "$STALE" = true ]; then
   rm -rf mutants
   echo "Generating mutants (~8 min, cached afterwards)..."
   "$MUTMUT" run 'zzz.no.such.mutant' >/dev/null 2>&1 || true
+  # The staleness manifest: what the sources looked like when this cache was
+  # built. Written AFTER generation so a crash mid-generate leaves no
+  # manifest and the next run rebuilds rather than trusting a half-cache.
+  find sentinel -name '*.py' ! -path '*__pycache__*' -type f | sort | xargs sha256sum > mutants/.source-manifest
 fi
 
 mapfile -t MUTANTS < <("$PY" scripts/classify_mutants.py sentinel.detectors sentinel.alerts)
