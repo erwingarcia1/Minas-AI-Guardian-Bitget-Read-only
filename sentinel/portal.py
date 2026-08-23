@@ -2500,7 +2500,8 @@ def _render_replace_key(db: Database, email: str, account_id: int, *,
                    "You reached it by signing in, and that is the only way to reach it. If "
                    "a message ever asks you to paste an API key, it is not from us.")
         + "</ul></section>"
-        '<section class="panel"><form class="form" method="post" action="/key" autocomplete="off">'
+        + _key_instructions_panel(exchange)
+        + '<section class="panel"><form class="form" method="post" action="/key" autocomplete="off">'
         f'<input type="hidden" name="account_id" value="{int(account_id)}">'
         f'<div class="field"><label for="k-key">New API key ({html.escape(exchange)})</label>'
         '<input class="input" type="text" id="k-key" name="api_key" required '
@@ -2515,6 +2516,28 @@ def _render_replace_key(db: Database, email: str, account_id: int, *,
     )
     return _page(body, email, "/",
                  title="Replace the monitoring key — Minas AI Guardian")
+
+
+def _key_instructions_panel(exchange: str) -> str:
+    """The plain-English, text-only key-creation steps for THIS account's
+    exchange (#8, decision 14), with the dated interface line that makes
+    text honest: staleness is disclosed on the page, not discovered by the
+    person following stale steps."""
+    from sentinel.keyinstructions import instructions_for, provenance_line
+
+    entry = instructions_for(exchange)
+    steps = "".join(f"<li>{html.escape(s)}</li>" for s in entry["steps"])
+    provenance = provenance_line(entry)
+    provenance_html = (
+        f'<p class="muted" style="margin-top:var(--space-3)">{html.escape(provenance)}</p>'
+        if provenance else ""
+    )
+    return (
+        '<section class="panel" aria-labelledby="keysteps-title">'
+        f'<h2 id="keysteps-title">Creating a read-only key on {html.escape((exchange or "your exchange").title())}</h2>'
+        f'<ol class="muted" style="margin-top:var(--space-3);padding-left:var(--space-5)">{steps}</ol>'
+        f"{provenance_html}</section>"
+    )
 
 
 def _render_security(db: Database, email: str, *, secret: str | None = None,

@@ -22,6 +22,19 @@ host-side recovery mechanism, not a detector change.
 
 ### Added
 
+- **Plain-English key-creation steps for each exchange, and rejections
+  that name the exact permission** (#8, decision 14). The replace-key
+  page now walks through creating a read-only key on that account's own
+  exchange — Bitget, Bybit, OKX, or Binance — in text only, by the
+  owner's decision: written steps that stay accurate beat screenshots
+  that quietly stop matching the customer's screen. Every set is dated
+  and names the interface it was written against, visibly, on the page
+  ("Written against the Bitget web app — API Management page, 2026-08"),
+  so staleness is disclosed rather than discovered. A rejected key now
+  tells the customer exactly what the exchange reported — the offending
+  permission or flag by name — followed by the one-line fix for their
+  exchange and the drift question that keeps the text current: "did the
+  steps on this page match what your exchange showed you?"
 - **An unhealthy container gets restarted — visibly, and never in a
   silent loop** (#81, decision 12). The healthcheck verdict that went
   unconsumed for six weeks (#79: `restart: unless-stopped` acts on exit,

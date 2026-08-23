@@ -151,11 +151,23 @@ def replace_monitoring_key(
         # trade or withdrawal permission is refused here exactly as it is at
         # onboarding, and for the same reason: accepting one with a warning
         # makes the promise a preference.
+        #
+        # The customer copy carries the verifier's reason verbatim (#8): it
+        # names the exact permission or flag that caused the refusal and
+        # nothing else - no secrets appear in those strings - plus the
+        # per-exchange fix and decision 14's drift question, because a
+        # customer who followed current steps and still lands here is how
+        # anyone learns the instructions have drifted.
+        from sentinel.keyinstructions import instructions_for
+
+        fix = instructions_for(exchange)["fix"]
         return _refuse(
             "not_read_only",
-            "That key was refused because it is not read-only, or because we could not read "
-            "the account with it. Create a new key with view/read permission only - no trading, "
-            "no withdrawals - and try again. Nothing was changed.",
+            f"That key was refused. The exchange reports: {reason}. "
+            f"How to fix it: {fix} Nothing was changed. "
+            "One question that helps us: did the steps on this page match what "
+            "your exchange showed you? If not, tell us - that is how the "
+            "instructions stay current.",
             f"verify_read_only refused: {reason}",
         )
 
