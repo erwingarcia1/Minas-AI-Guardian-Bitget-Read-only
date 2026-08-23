@@ -22,6 +22,20 @@ host-side recovery mechanism, not a detector change.
 
 ### Added
 
+- **Minas gets paged when checks fall behind — one page, not one per
+  account** (#42). The last two criteria of technical health monitoring,
+  built on #53's operator route: when no account has completed a check
+  inside the window (default 10 minutes), one page says the engine as a
+  whole is behind; when a single account has been unwatchable too long
+  (default 30 minutes) *while others check normally*, a page names that
+  account with its failure counters — the contrast is what makes it a
+  fact about the account rather than a symptom of the global case, and
+  the global case deliberately suppresses the per-account storm. Never
+  paged: disabled accounts (an operator chose that stillness) and
+  freshly-onboarded ones (never-checked ages from onboarding, so a
+  two-minute-old account is not "behind"). Honest limit, stated in the
+  code: these run on the scheduler thread, so a fully dead process
+  cannot raise them — that remains #63's dead-man's-switch territory.
 - **Plain-English key-creation steps for each exchange, and rejections
   that name the exact permission** (#8, decision 14). The replace-key
   page now walks through creating a read-only key on that account's own

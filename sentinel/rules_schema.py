@@ -161,6 +161,11 @@ SPEC: dict = {
         # it is a format change rather than a blip.
         "untimestamped_window_seconds": POSITIVE,
         "untimestamped_consecutive_windows": POSITIVE,
+        # #42's two alarms. behind = the NEWEST successful check across all
+        # active accounts is older than this; unwatchable = one account is
+        # older than this while others check normally.
+        "checks_behind_seconds": POSITIVE,
+        "unwatchable_seconds": POSITIVE,
     },
     # Retention periods (#60). NON_NEGATIVE rather than POSITIVE: 0 is a
     # meaningful choice here - "keep this table forever" - and rejecting it
@@ -267,6 +272,8 @@ DEFAULTS: dict = {
         "cooldown_minutes": {"CRITICAL": 30, "HIGH": 60, "MEDIUM": 240, "LOW": 720},
         "untimestamped_window_seconds": 900,
         "untimestamped_consecutive_windows": 2,
+        "checks_behind_seconds": 600,
+        "unwatchable_seconds": 1800,
     },
     "retention": {
         "events_days": 730,

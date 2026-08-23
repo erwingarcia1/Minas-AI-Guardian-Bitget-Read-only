@@ -62,7 +62,14 @@ class Engine:
         # counter, whose resting value is exactly zero, so the threshold is
         # derived rather than chosen: any sustained rise is a format change.
         from sentinel.alarms import UntimestampedRecordAlarm
+        from sentinel.alerts.watch_alarms import WatchAlarms
 
+        # #42's two operator alarms: checks behind schedule, and an account
+        # unwatchable for too long. None when there is no alerter - a page
+        # with no destination is the silence #53 exists to end, not a fix.
+        self._watch_alarms = (
+            WatchAlarms(db, rules, operator_alerter) if operator_alerter is not None else None
+        )
         self._untimestamped_alarm = UntimestampedRecordAlarm(
             metrics,
             operator_alerter,
@@ -219,6 +226,8 @@ class Engine:
             self._prune_if_due()
             if self._untimestamped_alarm is not None:
                 self._untimestamped_alarm.evaluate(now=time.monotonic())
+            if self._watch_alarms is not None:
+                self._watch_alarms.evaluate()
         except Exception as exc:  # noqa: BLE001 - scheduler must survive anything
             logger.error("scheduler cycle failed: %s", exc)
 
