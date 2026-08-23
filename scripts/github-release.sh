@@ -128,6 +128,14 @@ def entries(sub_lines):
             lead = " ".join(m.group(1).split()).rstrip(".")
             issue = f" ({m.group(3)})" if m.group(3) else ""
             rest = body[m.end():].strip()
+            # Reflow the seam: consuming the lead from a hard-wrapped line
+            # leaves that line's remainder orphaned ("The" alone), and GitHub
+            # renders single newlines as breaks - so join it onto the next
+            # line. Only the FIRST newline, and never across a blank line:
+            # a paragraph break is content, the wrap point is not.
+            first, sep, tail = rest.partition("\n")
+            if sep and tail and not tail.startswith("\n"):
+                rest = f"{first} {tail}"
             blocks.append(f"**{lead}**{issue}" + (f"\n\n{rest}" if rest else ""))
         else:
             blocks.append(body)

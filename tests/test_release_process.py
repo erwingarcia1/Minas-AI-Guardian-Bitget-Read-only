@@ -485,6 +485,34 @@ def test_a_cut_pushes_the_tag_and_publishes_its_release(repo):
         "no upgrade effects in the changelog - the section is omitted, not written as 'nothing'")
 
 
+def test_no_detail_paragraph_opens_with_an_orphaned_fragment(repo):
+    """The v1.8.0 seam defect: consuming the bold lead from a hard-wrapped
+    changelog line left the line's remainder alone ('The'), and GitHub
+    renders single newlines as breaks - so entries opened with a one-word
+    line. The composer now reflows the remainder onto the following line.
+    Asserted as the bug's shape: no paragraph in the rendered body may
+    begin with a line of fewer than three words."""
+    text = (repo / "CHANGELOG.md").read_text()
+    (repo / "CHANGELOG.md").write_text(text.replace(
+        "- **A thing that happened.** With a body.",
+        "- **A thing that happened whose lead wraps across the line** (#7). The\n"
+        "  detail continues on the following line with plenty more words after\n"
+        "  the wrap point."))
+    _git(repo, "commit", "-qam", "a hard-wrapped entry")
+
+    result = _run(repo, "release.sh", "1.1.0")
+    assert result.returncode == 0, result.stderr
+
+    notes = (repo.parent / "gh-notes.txt").read_text()
+    assert "(#7)\n\nThe detail continues" in notes, "the seam must be joined"
+    for paragraph in notes.split("\n\n"):
+        first = paragraph.splitlines()[0].strip() if paragraph.strip() else ""
+        if not first or first.startswith(("#", "**", "    ", "-", "*")):
+            continue
+        assert len(first.split()) >= 3, (
+            f"a paragraph opens with an orphaned fragment: {first!r}")
+
+
 def test_upgrade_effects_are_lifted_into_what_you_need_to_do(repo):
     """The one hand-off the composer makes mechanical: a changelog sentence
     marked 'on upgrade' becomes the operator-facing section."""
