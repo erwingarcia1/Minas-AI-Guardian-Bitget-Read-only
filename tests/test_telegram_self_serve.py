@@ -297,3 +297,16 @@ def test_a_409_is_named_loudly_exactly_once(db, caplog):
     assert len(conflicts) == 1, "one clear line, not a drumbeat"
     assert "sendMessage is unaffected" in conflicts[0].getMessage(), (
         "the line must say alert delivery is safe, or it reads as an alerting outage")
+
+
+def test_an_ordinary_chat_message_is_ignored_silently(db, sent):
+    """Survivor x_process_update__mutmut_21 (or-to-and): a plain message to
+    the bot - no /start - must be ignored entirely. Replying 'code invalid'
+    to every hello teaches people the bot is broken, and replying at all to
+    arbitrary messages is surface nothing needs."""
+    _member_account(db)
+    create_link_code(db, EMAIL)
+    process_update(db, "tok", {"update_id": 5,
+                               "message": {"chat": {"id": 777}, "text": "hello there"}})
+    assert sent == [], "no reply of any kind to a non-/start message"
+    assert connected_link(db, EMAIL) is None

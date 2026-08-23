@@ -213,3 +213,46 @@ def test_changing_the_frequency_is_a_recorded_event(db, sent):
     assert "digest_frequency_changed" in ADMIN_EVENT_TYPES
     assert ADMIN_EVENT_LABELS["digest_frequency_changed"] == "Digest schedule changed"
     assert account_id  # the event itself is written by the portal handler, evented per diff
+
+
+# --- mutation survivors from the first cut, killed by name --------------------
+
+def test_urgent_alerts_alone_are_never_reported_as_all_quiet(db, sent):
+    """Survivor x_build_member_digest__mutmut_159 (and-to-or): a digest with
+    one CRITICAL and nothing routine must report the urgent count - the
+    all-quiet line on a day the customer was paged would be the digest
+    lying in the reassuring direction."""
+    account_id = _account(db)
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, "
+            "evidence_json, confidence, sent_at, delivered_to) "
+            "VALUES (?, 'r', 'CRITICAL', 'k', 'm', '{}', 'high', ?, 1)",
+            (account_id, datetime.now(timezone.utc).isoformat()))
+    body, _ = build_member_digest(db, EMAIL)
+    assert "all quiet" not in body
+    assert "1 urgent alert(s)" in body
+
+
+def test_one_members_skip_never_costs_the_members_after_them(db, sent):
+    """Survivors x_send_member_digests__mutmut_22/29/42 (continue-to-break):
+    every skip - off, weekly-on-a-Tuesday, already-sent-today - must skip
+    THAT member and keep going. A break would silently cut off everyone who
+    happens to sort later."""
+    from sentinel.alerts.digest import _set_digest_mark
+
+    _account(db, label="a-off", email="off@example.com")
+    _account(db, label="b-weekly", email="weekly@example.com")
+    _account(db, label="c-marked", email="marked@example.com")
+    _account(db, label="d-daily", email="daily@example.com")
+    _member(db, email="off@example.com", frequency="off")
+    _member(db, email="weekly@example.com", frequency="weekly")
+    tuesday = datetime(2026, 8, 25, 8, 0, tzinfo=timezone.utc)
+    _set_digest_mark(db, "marked@example.com", {"date": tuesday.isoformat(), "checks": {}})
+
+    n = send_member_digests(db, now=tuesday)
+
+    assert n == 1
+    recipients = {e for _, emails in sent for e in emails}
+    assert recipients == {"daily@example.com"}, (
+        f"the members after a skipped one were cut off: {recipients}")
