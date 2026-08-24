@@ -277,7 +277,10 @@ def test_the_digest_carries_the_pending_pause_line(db, sent):
                     "WHERE account_id = ?", (datetime.now(timezone.utc).isoformat(), account_id))
     request_pause(db, account_id, EMAIL, now=NOW)
     body, _ = build_member_digest(db, EMAIL)
-    assert "PAUSE PENDING" in body
+    # The label is asserted by name: two mutation survivors
+    # (x_build_member_digest__mutmut_127/136) proved "PAUSE PENDING" alone
+    # passes with the wrong account - or none - in the line.
+    assert "PAUSE PENDING: acct-p1 stops being watched" in body
     assert "unless cancelled" in body
 
 
