@@ -22,6 +22,20 @@ member-initiated way for monitoring to stop, deliberately slow and loud.
 
 ### Added
 
+- **The mutation gate's cache survives clean trees, fresh clones, and
+  CI — and a restored cache must prove itself or die** (#97). The
+  gate's expensive artifact (population, test map, per-mutant results)
+  now archives to `~/.cache/minas-guardian/mutants/` keyed on the exact
+  sources and gate config, and CI's scheduled job restores it via
+  actions/cache instead of paying the weekly cold rebuild. The rule that
+  makes it safe, enforced twice: a restored archive is kept only if its
+  recorded source manifest byte-matches the CURRENT sources — a
+  mismatched, manifest-less, or corrupt archive is deleted on the spot
+  and the honest rebuild runs, because a durable wrong cache is worse
+  than a slow honest one. `--regenerate` bypasses the cache entirely;
+  a partial run is never archived. Measured on the real gate: a wiped
+  `mutants/` restored, validated, and scored 176/178 in **2m07s**,
+  against 1.5–4 hours cold.
 - **The customer SMS says almost nothing — deliberately** (#19's copy
   half, #75's shared formatter). The old body shipped the raw detector
   message — amount, destination address — plus the internal rule name

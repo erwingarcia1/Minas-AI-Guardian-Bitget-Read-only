@@ -134,14 +134,34 @@ jobs:
           pip install -e ".[dev]"
           pip install mutmut
 
-      # The cold-run proof. A per-mutant cache can hand back a full score in
-      # seconds, and a cached pass is indistinguishable from a real one
-      # except in the log - the shape that hid a broken gate for weeks. A
-      # fresh runner cannot have a cache; asserting that makes it evidence
-      # instead of an assumption.
-      - name: A fresh runner has no gate caches
+      # #97 replaced the cold-run assert with a VALIDATED cache. The old
+      # proof ("a fresh runner cannot have a cache") bought trust by paying
+      # a 1.5-3h rebuild every week; the manifest check below buys the same
+      # trust for free: a restored mutants/ is only kept if its recorded
+      # source manifest byte-matches the CURRENT sources - and
+      # mutation-check.sh re-verifies the same manifest itself, so a wrong
+      # cache dies twice before it can hand back a score. The cache key
+      # already pins sources + gate config; validation catches corruption
+      # and anything the key missed.
+      - name: Restore the mutant cache (#97)
+        uses: actions/cache@v4
+        with:
+          path: mutants
+          key: mutants-${{ hashFiles('sentinel/**/*.py', 'sentinel/schema.sql', 'scripts/mutation-check.sh') }}
+
+      - name: A restored cache must match the sources, or it dies here
         run: |
-          test ! -d mutants || { echo "::error::mutants/ exists before the run - a cached score would be indistinguishable from a real one"; exit 1; }
+          if [ -d mutants ]; then
+            find sentinel -name '*.py' ! -path '*__pycache__*' -type f | sort | xargs sha256sum > /tmp/current-manifest
+            if [ ! -f mutants/.source-manifest ] || ! cmp -s mutants/.source-manifest /tmp/current-manifest; then
+              echo "::warning::restored mutant cache does not match current sources - discarded, running cold"
+              rm -rf mutants
+            else
+              echo "mutant cache restored and validated against the source manifest"
+            fi
+          else
+            echo "no cache for this key - running cold"
+          fi
           test ! -f .mutation-probe.lock || { echo "::error::a probe lock file exists on a fresh runner"; exit 1; }
 
       # continue-on-error on both gates: each must produce its own verdict.

@@ -216,7 +216,15 @@ def test_the_workflow_wires_both_gates_and_the_classifier():
     assert "mutation-probe.py scripts/probes/design-guards.json" in wf
     assert "mutation-check.sh --check" in wf
     assert "scheduled-gates-report.sh" in wf
-    assert "test ! -d mutants" in wf, "the cold-run proof is gone"
+    # #97 replaced the cold-run assert with a VALIDATED cache: trust now
+    # comes from the manifest check, not from paying the rebuild. What must
+    # never disappear is the validation - a cache restored without it is
+    # the hollow-green shape the old assert existed to kill.
+    assert "actions/cache" in wf, "the mutant cache restore is gone (#97)"
+    assert "cmp -s mutants/.source-manifest" in wf, (
+        "a restored cache is no longer validated against current sources - "
+        "that check is what replaced the cold-run proof (#97)")
+    assert "rm -rf mutants" in wf, "an invalid cache must be discarded, not run"
     assert wf.count("continue-on-error: true") >= 2, (
         "each gate must reach its own verdict; an abort reports the second gate as nothing")
     assert "if: always()" in wf, "a timeout kill must still be classified and filed"

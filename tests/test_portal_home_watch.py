@@ -16,8 +16,15 @@ import pytest
 from sentinel.config import RulesConfig
 from sentinel.portal import _render_home, _watch_state, member_status
 
-NOW = datetime.now(timezone.utc)
 EMAIL = "alice@example.com"
+
+
+def _now():
+    """Per-call, not module-level: a module-import NOW aged past the ~225s
+    staleness window when a loaded machine ran the suite slowly, and every
+    'fresh' account read as Trouble - a flake the 2026-08-24 run hit for
+    real. Freshness is measured from when the TEST runs."""
+    return datetime.now(timezone.utc)
 
 
 @pytest.fixture
@@ -26,7 +33,7 @@ def rules():
 
 
 def _account(db, label, *, last_ok=None, status="active", auth_failures=0):
-    last_ok = NOW - timedelta(seconds=10) if last_ok is None else last_ok
+    last_ok = _now() - timedelta(seconds=10) if last_ok is None else last_ok
     with db.cursor() as cur:
         cur.execute(
             "INSERT INTO accounts (label, exchange, topology, encrypted_api_key, encrypted_secret, "
@@ -62,7 +69,7 @@ def test_a_disabled_account_reads_paused_not_trouble(db, rules):
 
 
 def test_a_stale_account_reads_trouble_with_the_reason_in_the_card(db, rules):
-    _account(db, "alice-1", last_ok=NOW - timedelta(hours=6))
+    _account(db, "alice-1", last_ok=_now() - timedelta(hours=6))
     page = _render_home(db, EMAIL, rules)
     assert "Trouble" in page
     assert "no successful check recently" in page, (
@@ -90,7 +97,7 @@ def test_the_state_is_member_statuss_judgement_not_a_recomputation(db, rules):
 
 def test_one_dark_account_among_watched_raises_the_banner(db, rules):
     _account(db, "alice-1")
-    _account(db, "alice-2", last_ok=NOW - timedelta(hours=6))
+    _account(db, "alice-2", last_ok=_now() - timedelta(hours=6))
     page = _render_home(db, EMAIL, rules)
     assert 'role="alert"' in page
     assert "1 of your 2 accounts is not being watched." in page
@@ -98,7 +105,7 @@ def test_one_dark_account_among_watched_raises_the_banner(db, rules):
 
 
 def test_no_accounts_watched_raises_the_danger_banner(db, rules):
-    _account(db, "alice-1", last_ok=NOW - timedelta(hours=6))
+    _account(db, "alice-1", last_ok=_now() - timedelta(hours=6))
     _account(db, "alice-2", auth_failures=2)
     page = _render_home(db, EMAIL, rules)
     assert "Your accounts are NOT being watched." in page

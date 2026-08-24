@@ -211,9 +211,9 @@ fi
 # judged entirely against the old code. So generation records a manifest of
 # source hashes, and any mismatch (or a cache from before manifests existed
 # - unverifiable is stale, fail closed) rebuilds.
+CURRENT=$(find sentinel -name '*.py' ! -path '*__pycache__*' -type f | sort | xargs sha256sum)
 if [ -d mutants ] && [ "$STALE" = false ]; then
   MANIFEST=mutants/.source-manifest
-  CURRENT=$(find sentinel -name '*.py' ! -path '*__pycache__*' -type f | sort | xargs sha256sum)
   if [ ! -f "$MANIFEST" ] || [ "$CURRENT" != "$(cat "$MANIFEST")" ]; then
     echo "the Python sources have changed since mutants/ was generated (or the" >&2
     echo "cache predates source manifests) - a score over the old code would" >&2
@@ -222,6 +222,14 @@ if [ -d mutants ] && [ "$STALE" = false ]; then
   fi
 fi
 
+# The durable cache key (#97): the exact sources AND the gate config the
+# archive was built under. A config change (test selection, runner flags)
+# changes which results are trustworthy, so it changes the key.
+CACHE_KEY=$( { printf '%s\n' "$CURRENT"; cat setup.cfg; } | sha256sum | cut -c1-32)
+CURRENT_MANIFEST_FILE=$(mktemp)
+printf '%s\n' "$CURRENT" > "$CURRENT_MANIFEST_FILE"
+trap 'rm -f setup.cfg "$CURRENT_MANIFEST_FILE"' EXIT
+
 if [ "$REGENERATE" = true ] || [ ! -d mutants ] || [ "$STALE" = true ]; then
   # Delete first. Generating over a surviving mutants/ is how every staleness
   # bug in this gate has started: mutmut keeps whatever is already there, both
@@ -229,12 +237,20 @@ if [ "$REGENERATE" = true ] || [ ! -d mutants ] || [ "$STALE" = true ]; then
   # test-to-function map and will happily reuse one built by a broken run.
   # A regeneration that leaves anything behind is not a regeneration.
   rm -rf mutants
-  echo "Generating mutants (~8 min, cached afterwards)..."
-  "$MUTMUT" run 'zzz.no.such.mutant' >/dev/null 2>&1 || true
-  # The staleness manifest: what the sources looked like when this cache was
-  # built. Written AFTER generation so a crash mid-generate leaves no
-  # manifest and the next run rebuilds rather than trusting a half-cache.
-  find sentinel -name '*.py' ! -path '*__pycache__*' -type f | sort | xargs sha256sum > mutants/.source-manifest
+  # #97: before paying the rebuild, try the durable archive - keyed on the
+  # exact sources+config, and RE-validated against the current manifest on
+  # extraction (a durable wrong cache is worse than a slow honest one).
+  # An explicit --regenerate bypasses it: forced means forced.
+  if [ "$REGENERATE" != true ] && scripts/mutant-cache.sh restore "$CACHE_KEY" "$CURRENT_MANIFEST_FILE"; then
+    : # restored and validated - population AND prior results are warm
+  else
+    echo "Generating mutants (~8 min, cached afterwards)..."
+    "$MUTMUT" run 'zzz.no.such.mutant' >/dev/null 2>&1 || true
+    # The staleness manifest: what the sources looked like when this cache
+    # was built. Written AFTER generation so a crash mid-generate leaves no
+    # manifest and the next run rebuilds rather than trusting a half-cache.
+    find sentinel -name '*.py' ! -path '*__pycache__*' -type f | sort | xargs sha256sum > mutants/.source-manifest
+  fi
 fi
 
 mapfile -t MUTANTS < <("$PY" scripts/classify_mutants.py sentinel.detectors sentinel.alerts)
@@ -274,6 +290,12 @@ if [ "$TOTAL" -ne "${#MUTANTS[@]}" ]; then
   exit 2
 fi
 SCORE=$(( KILLED * 100 / TOTAL ))
+
+# #97: archive the population WITH this run's results - a later restore of
+# the same sources+config starts warm instead of re-judging 180 mutants.
+# After the completeness guards above, so a partial run is never archived;
+# guarded, because a full disk must not turn a real score into a failure.
+scripts/mutant-cache.sh save "$CACHE_KEY" || echo "mutant-cache save failed (non-fatal)" >&2
 
 echo
 echo "SURVIVORS (${SURVIVED}):"

@@ -4738,3 +4738,20 @@ portal-domain question (#88): SMS no longer wants it at all, but email's
 sign-in line still degrades to link-less copy until a domain is decided.
 Old truncation-boundary tests replaced with the sharper property: the
 body is INDEPENDENT of the detector message entirely.
+
+# 2026-08-24 · Item 2: #97 built — the durable, self-validating mutant cache
+
+scripts/mutant-cache.sh (save/restore/prune-to-3, key = sha256 of source
+manifest + gate config) + mutation-check.sh integration (restore tried
+before any rebuild, archive refreshed only after the completeness guards
+accept a scored run, --regenerate bypasses) + CI: the scheduled job's
+cold-run assert replaced by actions/cache restore WITH manifest
+validation — the old assert bought trust by paying a weekly 1.5-3h
+rebuild; the manifest check buys the same trust free, and
+mutation-check.sh re-verifies the same manifest itself, so a wrong cache
+dies twice. Eight tests incl. THE rule: a restore that mismatches
+current sources exits 3, deletes both the extraction and the lying
+archive, and the caller rebuilds honestly. MEASURED live: rm -rf
+mutants && mutation-check --check → "restored ... manifest validated" →
+176/178 in 2m06.7s, vs 1.5-4h cold this week. CI's next scheduled run
+will populate its own cache; the validation step is in the workflow.
