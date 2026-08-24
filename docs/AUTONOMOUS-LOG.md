@@ -4638,3 +4638,17 @@ The run brief's order is now exhausted: #94-rider, jaypee investigation,
 #21, #81, #8, #42, #39, #13, #17, #7 done; #10/#20/#6 open on decision
 criteria (15/16/17); skip-list (#75/#19/billing/#29/#96/#97) honored.
 Stopping at the batch boundary per the release rule.
+
+# 2026-08-23 · v1.9.0 cut complete, notes correction landed
+
+The cut itself finished in one motion (release.sh: full nine-gate health
+check — probes 142/142, mutation 176/178 = 98% off the manifest-valid
+cache — commit f30f0ad, annotated tag pushed, Release composed and
+published --latest, CI green). Post-cut notes work, interrupted by a
+session restart and completed on the owner's retry: the #81 host install
+is an operator action, so its [1.9.0] entry now carries the "on upgrade"
+marker (reworded once — the sentence-lifter stops at the dot in a
+filename); and the composer strips bold from lifted sentences (a mid-bold
+lift left unbalanced **), test-pinned. Body republished via gh release
+edit; tag hashes verified unchanged before and after. Deploy is the
+owner's: sudo /opt/minas-guardian/scripts/deploy.sh v1.9.0
