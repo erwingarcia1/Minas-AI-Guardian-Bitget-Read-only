@@ -34,7 +34,10 @@ member-initiated way for monitoring to stop, deliberately slow and loud.
   test-pinned). Cancellable any time by the member from the portal or by
   Minas (`sentinel cancel-pause`, attributed). Every contact is emailed
   at the request and again near expiry — linkless, saying contact Minas,
-  which still works for an owner locked out of the portal. While
+  which still works for an owner locked out of the portal — and both
+  ENDINGS close the loop for the same people: cancellation says who
+  cancelled (the member, or Minas) and that monitoring continues
+  unchanged; execution says monitoring has stopped and how to resume. While
   pending, the pause is impossible to miss: a banner on the portal home
   ("Monitoring is about to stop"), a warning block on the account page,
   and a line in the proof-of-life digest. Re-requesting restarts a full

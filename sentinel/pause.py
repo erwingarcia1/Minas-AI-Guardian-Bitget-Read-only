@@ -102,9 +102,16 @@ def request_pause(db: Database, account_id: int, member_email: str,
 
 
 def cancel_pause(db: Database, account_id: int, by: str,
-                 now: datetime | None = None) -> bool:
+                 now: datetime | None = None, *,
+                 who: str = "the account's member") -> bool:
     """Cancel the pending countdown. `by` is the member email or the
-    operator name - the row says who. Returns whether one was pending."""
+    operator name - the row says who; `who` is how the closing notice names
+    them ("the account's member" or "Minas"). Returns whether one was
+    pending.
+
+    The closing notice is decision 1's principle applied here: everyone who
+    was alarmed by the request notice hears the resolution - a warning with
+    no ending trains people to ignore the next warning."""
     now = now or _now()
     with db.cursor() as cur:
         cur.execute(
@@ -116,6 +123,16 @@ def cancel_pause(db: Database, account_id: int, by: str,
     from sentinel.events import append_event
 
     append_event(db, account_id, "pause_cancelled", "LOW", {"cancelled_by": by}, actor=None)
+    _notify_contacts(
+        db, account_id,
+        subject_rule="pause_cancelled",
+        text=(
+            "The pause you were told about for '{label}' was CANCELLED by "
+            f"{who}. Nothing changes: monitoring continues exactly as before. "
+            "If you did not expect this cancellation, or the original request, "
+            + CONTACT_MINAS
+        ),
+    )
     return True
 
 

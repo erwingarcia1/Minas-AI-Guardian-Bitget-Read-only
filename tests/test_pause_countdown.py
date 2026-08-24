@@ -329,3 +329,66 @@ def test_a_member_cannot_pause_an_account_that_is_not_theirs(db, sent):
         server.server_close()
 
     assert pending_pause(db, other_id) is None, "no countdown started on the refusal"
+
+
+# --- both endings reach the people who were alarmed (decision 1's principle) --
+
+def test_cancellation_by_the_member_closes_the_loop_for_every_contact(db, sent):
+    account_id = _account(db)
+    request_pause(db, account_id, EMAIL, now=NOW)
+    sent.clear()
+
+    cancel_pause(db, account_id, EMAIL)
+
+    (detection, emails), = sent
+    assert set(emails) == {EMAIL, "kin@example.com"}, (
+        "the same people who got the warning hear the resolution")
+    assert "CANCELLED by the account's member" in detection.message
+    assert "monitoring continues exactly as before" in detection.message
+    assert "http" not in detection.message.lower(), "linkless, same as the rest"
+
+
+def test_cancellation_by_minas_says_so(db, sent, monkeypatch):
+    from sentinel.cli import cmd_cancel_pause
+
+    account_id = _account(db, "acct-p3")
+    request_pause(db, account_id, EMAIL, now=NOW)
+    sent.clear()
+    monkeypatch.setenv("SENTINEL_DB_PATH", str(db._path))
+
+    assert cmd_cancel_pause(argparse.Namespace(label="acct-p3", as_operator=None)) == 0
+
+    (detection, _), = sent
+    assert "CANCELLED by Minas" in detection.message
+
+
+def test_execution_ending_says_stopped_and_how_to_resume(db, sent):
+    """The executed half of the loop, pinned explicitly: stopped, plus the
+    way back."""
+    account_id = _account(db)
+    request_pause(db, account_id, EMAIL, now=NOW)
+    sent.clear()
+
+    PauseMaintenance(db).evaluate(now=NOW + timedelta(hours=25))
+
+    endings = [d for d, e in sent if "has taken effect" in d.message]
+    assert endings, "contacts must hear that it happened"
+    assert "no longer being watched" in endings[0].message
+    assert "Monitoring resumes when Minas re-enables the account" in endings[0].message, (
+        "how to resume is part of the ending")
+    assert "http" not in endings[0].message.lower()
+
+
+def test_a_superseding_rerequest_sends_no_confusing_cancellation(db, sent):
+    """Re-requesting internally cancels the old row, but the contacts get
+    ONE story: the new request notice. A cancelled-then-requested pair for
+    one action would read as two people fighting over the account."""
+    account_id = _account(db)
+    request_pause(db, account_id, EMAIL, now=NOW)
+    sent.clear()
+
+    request_pause(db, account_id, EMAIL, now=NOW + timedelta(hours=1))
+
+    assert len(sent) == 1
+    assert "CANCELLED" not in sent[0][0].message
+    assert "will take effect" in sent[0][0].message

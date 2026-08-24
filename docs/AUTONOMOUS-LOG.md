@@ -4696,3 +4696,15 @@ If the owner verifies john.great@minastech.ca on GitHub or disables the
 block, revert the config. (2) The tailnet SSH to production is timing
 out (Tailscale wants a re-auth check); the SMS phone survey could not be
 measured — the rest of the recon was code-complete and reported.
+
+# 2026-08-24 · #98 addendum: both endings close the notification loop
+
+Decision 1's closing-line principle applied to the pause: everyone
+alarmed by the request notice now hears the resolution. CANCELLED — new
+notice to every contact naming who cancelled ("the account's member" /
+"Minas") and that monitoring continues unchanged; EXECUTED already
+existed and is now pinned explicitly (stopped + how to resume). A
+superseding re-request deliberately sends ONE story (the new request),
+never a cancelled-then-requested pair that reads as two people fighting
+over the account. All linkless. Four new tests (19 total). Full HC green
+×9; mutation 11330s on the loaded box, real pass.

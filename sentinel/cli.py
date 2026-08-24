@@ -972,7 +972,8 @@ def cmd_cancel_pause(args: argparse.Namespace) -> int:
     if row is None:
         print(f"no account labeled '{args.label}'", file=sys.stderr)
         return 1
-    if cancel_pause(db, int(row["id"]), f"operator {actor}" if actor else "operator (unattributed)"):
+    if cancel_pause(db, int(row["id"]), f"operator {actor}" if actor else "operator (unattributed)",
+                    who="Minas"):
         by = f" by {actor}" if actor else ""
         print(f"pending pause for '{args.label}' cancelled{by}")
     else:
