@@ -15,6 +15,34 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+### Changed detection behaviour
+
+**None.** Which alerts fire, when, and to whom is untouched — this adds a
+member-initiated way for monitoring to stop, deliberately slow and loud.
+
+### Added
+
+- **Members can request a pause — a real 24-hour cancellable countdown,
+  never an instant off-switch** (#98, decision 15). An immediate quiet
+  pause is the button an attacker with a stolen session presses before
+  moving funds, so the member path is request → countdown → automatic
+  execution: the pending pause lives in the database with its target
+  time, and the executor resumes from the table on every scheduler tick —
+  **a deadline that passed while the process was down executes on the
+  next startup, never skipped and never lost** (deploys happen, and the
+  restart timer can bounce the container on its own; both are probe- and
+  test-pinned). Cancellable any time by the member from the portal or by
+  Minas (`sentinel cancel-pause`, attributed). Every contact is emailed
+  at the request and again near expiry — linkless, saying contact Minas,
+  which still works for an owner locked out of the portal. While
+  pending, the pause is impossible to miss: a banner on the portal home
+  ("Monitoring is about to stop"), a warning block on the account page,
+  and a line in the proof-of-life digest. Re-requesting restarts a full
+  24 hours; the clock never shortens. And the fast path stays human: a
+  phone call to Minas gets an immediate, attributed pause — the
+  anonymous path is slow and loud, the immediate path requires a person
+  who knows the customer.
+
 ## [1.9.0] — 2026-08-23
 
 ### Changed detection behaviour

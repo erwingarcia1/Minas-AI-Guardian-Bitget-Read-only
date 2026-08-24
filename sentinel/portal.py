@@ -1091,6 +1091,46 @@ def _repeat_note(r) -> str:
             f"last {_ts(r['last_repeat_at'])}</span>")
 
 
+def _pause_section(db: Database, account_id: int, status: str) -> str:
+    """Request or cancel the 24-hour pause countdown (#98, decision 15).
+    The explainer IS the security design said out loud: the wait, the
+    linkless emails, and the phone-Minas fast path are why a stolen
+    session cannot quietly turn monitoring off."""
+    from sentinel.pause import PAUSE_COUNTDOWN_HOURS, pending_pause
+
+    pending = pending_pause(db, account_id)
+    if pending is not None:
+        return (
+            '<section class="panel" aria-labelledby="pause-title">'
+            '<div class="state state--warn" role="alert">'
+            '<span class="state__eyebrow">' + _EYE_WARN + "Pause pending</span>"
+            f'<p class="state__answer">Monitoring stops {_ts(pending["execute_at"])} '
+            "unless cancelled.</p>"
+            '<p class="state__detail">Every contact on this account was emailed when this '
+            "was requested. If you did not request it, contact Minas directly — we never "
+            "email links, and a phone call works even if you cannot sign in.</p></div>"
+            '<form class="form" method="post" action="/pause/cancel" style="margin-top:var(--space-4)">'
+            f'<input type="hidden" name="account_id" value="{account_id}">'
+            '<button class="btn btn--primary" type="submit">Cancel the pause</button>'
+            "</form></section>"
+        )
+    if status != "active":
+        return ""
+    return (
+        '<section class="panel" aria-labelledby="pause-title"><h2 id="pause-title">Pause monitoring</h2>'
+        f'<p class="muted">Requesting a pause starts a {PAUSE_COUNTDOWN_HOURS}-hour '
+        "countdown: monitoring stops automatically when it ends, unless you (or Minas) "
+        "cancel first. Every contact on the account is emailed at the request and again "
+        "near the end. The wait is deliberate — an instant off-switch is what someone "
+        "with a stolen session would want. Need it paused right now? Call Minas; a "
+        "person can do it immediately.</p>"
+        '<form class="form" method="post" action="/pause/request" style="margin-top:var(--space-4)">'
+        f'<input type="hidden" name="account_id" value="{account_id}">'
+        '<button class="btn btn--secondary" type="submit">Request a pause</button>'
+        "</form></section>"
+    )
+
+
 def _watch_state(watch: dict | None) -> tuple[str, str]:
     """The tri-state a customer reads on an account card (#34, #10):
     Watching (checked recently, nothing failing), Paused (deliberately
@@ -1160,6 +1200,26 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     # first screen must still learn it. Paused-by-choice accounts still
     # count: paused IS not watched, and the banner is where that stays
     # visible.
+    # A pending pause is "about to not be watched" (#98): its own banner,
+    # shown even when everything is currently green - the whole point is
+    # warning BEFORE the stillness starts, on the one screen everyone sees.
+    from sentinel.pause import pending_pauses_for
+
+    pending = pending_pauses_for(db, [int(i) for i in ids])
+    pause_banner = ""
+    if pending:
+        by_id = {int(r["id"]): r for r in accounts}
+        lines = "; ".join(
+            f"{html.escape(str(by_id[aid]['label']))} at {_ts(p['execute_at'])}"
+            for aid, p in sorted(pending.items()))
+        pause_banner = (
+            '<div class="state state--warn" role="alert" style="margin-bottom:var(--space-5)">'
+            f'<span class="state__eyebrow">{_EYE_WARN}Pause pending</span>'
+            f'<p class="state__answer">Monitoring is about to stop: {lines}.</p>'
+            '<p class="state__detail">Cancel from the account page — and if you did not '
+            "request this, contact Minas directly. We never email links.</p></div>"
+        )
+
     banner = ""
     if accounts and watch["overall"] != "watching":
         dark = [a for a in watch["accounts"] if not a["watched"]]
@@ -1190,7 +1250,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     ) or '<p class="empty">No alerts — all quiet.</p>'
 
     body = (
-        banner
+        pause_banner + banner
         + '<section aria-labelledby="accounts-title"><div class="page-head">'
         '<h1 id="accounts-title">My accounts</h1>'
         f'<p class="muted">{len(accounts)} exchange account'
@@ -1333,7 +1393,8 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
         f'<div class="kv__row"><dt>Monitored since</dt><dd>{_ts(acct["onboarded_at"])}</dd></div>'
         f'<div class="kv__row"><dt>Last successful check</dt><dd>{_ts(last_ok, "Never")}</dd></div>'
         "</dl></article>"
-        + posture +
+        + posture
+        + _pause_section(db, int(account_id), acct["status"]) +
         '<section class="panel" aria-labelledby="events-title"><h2 id="events-title">Events</h2>'
         f'<p class="count">latest 20</p>{event_items}</section>'
         '<section class="panel" aria-labelledby="acct-alerts-title"><h2 id="acct-alerts-title">Alerts</h2>'
@@ -3045,6 +3106,35 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             if remaining > 0:
                 time.sleep(remaining)
 
+        def _pause(self, path, form):
+            """Start or cancel the pause countdown (#98). Session-scoped and
+            account-scoped: the account must belong to the signed-in member,
+            and one the member cannot see is indistinguishable from one that
+            does not exist."""
+            member = self._session_email()
+            if member is None:
+                self._send(_render_login().encode())
+                return
+            try:
+                account_id = int((form.get("account_id") or [""])[0])
+            except (TypeError, ValueError):
+                self._send(_render_not_found().encode(), 404)
+                return
+            if account_id not in {int(r["id"]) for r in member_accounts(db, member)}:
+                self._send(_render_not_found().encode(), 404)
+                return
+            from sentinel.pause import cancel_pause, request_pause
+
+            if path == "/pause/request":
+                request_pause(db, account_id, member)
+                logger.info("portal: pause requested on account %d by %s", account_id, member)
+            else:
+                cancelled = cancel_pause(db, account_id, member)
+                logger.info("portal: pause cancel on account %d by %s (pending=%s)",
+                            account_id, member, cancelled)
+            page = _render_member_account(db, member, account_id, rules)
+            self._send((page or _render_not_found()).encode())
+
         def _digest_frequency(self, form):
             """The member's own digest choice (#21). Session-scoped; an
             unrecognized value changes nothing rather than guessing."""
@@ -3464,6 +3554,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
 
             if path == "/digest/frequency":
                 self._digest_frequency(form)
+                return
+
+            if path in ("/pause/request", "/pause/cancel"):
+                self._pause(path, form)
                 return
 
             if path == "/login-code":

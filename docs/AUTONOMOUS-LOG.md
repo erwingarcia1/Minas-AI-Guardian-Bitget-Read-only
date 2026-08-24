@@ -4667,3 +4667,21 @@ behind billing (#43/#44) and legal (#46/#47); waitlist recorded as the
 fallback; the phone-jaypee property named as what it protects. Criteria
 reworded on #10 and #20; outcome comments on #10/#45/#20/#6; the pause
 fully specified as #98 (p2). Nothing built beyond the records.
+
+# 2026-08-24 · #98 built: the 24-hour cancellable pause, durable by construction
+
+The table IS the countdown: pause_requests holds the target time
+(NEVER_PRUNE), PauseMaintenance runs on the scheduler tick and reads it
+fresh, so a deadline that passed while the process was down executes on
+the next startup — THE test constructs a brand-new maintenance instance
+over an overdue row and asserts executed-not-lost, and a probe pins the
+<= comparison the resume rests on. Request restarts a full 24h and
+supersedes (probe-pinned); cancel by member (portal) or Minas
+(cancel-pause CLI, gated); execution disables idempotently
+(disable-first, mark-executed-second, crash-safe retry); linkless
+contact-Minas emails to every contact at request, near expiry (once),
+and at execution; pending state on the home banner, the account page,
+and the digest; portal writes are session- and scope-checked (server-
+level 404 test). 15 tests + 2 probes (144 total). Full HC green ×9;
+mutation rebuilt honestly (14118s — the machine is loaded; #97 again).
+Closes #98 and with it #10's last criterion.

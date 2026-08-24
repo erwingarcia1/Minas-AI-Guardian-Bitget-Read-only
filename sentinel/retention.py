@@ -112,6 +112,9 @@ NEVER_PRUNE = frozenset({
     # Configuration, not history (#17): a pruned override silently resets an
     # account's sensitivity to the defaults. One row per (account, setting).
     "account_threshold_overrides",
+    # Live countdowns plus their forensic record (#98): a pruned pending row
+    # IS a lost pause, and executed/cancelled rows are who-asked-when facts.
+    "pause_requests",
 })
 
 # Tables holding a row *about* one alert. Every one of them declares

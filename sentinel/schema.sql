@@ -271,6 +271,29 @@ CREATE TABLE IF NOT EXISTS portal_meta (
     value TEXT NOT NULL
 );
 
+-- Member-requested pauses (#98, decision 15): request -> 24-hour countdown
+-- -> automatic execution unless cancelled. THE TABLE IS THE COUNTDOWN:
+-- nothing about a pending pause lives only in memory, so a deploy or a #81
+-- restart between request and deadline changes nothing - the executor
+-- resumes from these rows on its next tick, and a deadline that passed
+-- while the process was down executes on startup rather than being lost.
+-- Rows are never deleted: who asked for a pause, who cancelled it, and
+-- when it took effect are facts about an account's monitoring history.
+CREATE TABLE IF NOT EXISTS pause_requests (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    requested_by TEXT NOT NULL,
+    requested_at TEXT NOT NULL,
+    execute_at TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'cancelled', 'executed')),
+    cancelled_by TEXT,
+    cancelled_at TEXT,
+    executed_at TEXT,
+    expiry_notified_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_pause_requests_pending ON pause_requests(status, execute_at);
+
 -- Per-account threshold overrides (#17, G-13). One row per (account,
 -- setting); absence means the global config answers, so deleting a row IS
 -- "back to defaults". `set_by` is the --as operator, nullable before

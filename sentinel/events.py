@@ -63,6 +63,9 @@ ADMIN_EVENT_TYPES = (
     "member_telegram_disconnected",
     "digest_frequency_changed",
     "threshold_override_changed",
+    "pause_requested",
+    "pause_cancelled",
+    "pause_executed",
     "monitoring_key_replaced",
 )
 
@@ -82,6 +85,9 @@ ADMIN_EVENT_LABELS = {
     "member_telegram_disconnected": "Telegram alerts disconnected",
     "digest_frequency_changed": "Digest schedule changed",
     "threshold_override_changed": "Alert sensitivity changed",
+    "pause_requested": "Monitoring pause requested (24-hour countdown)",
+    "pause_cancelled": "Pause request cancelled",
+    "pause_executed": "Monitoring paused",
     "monitoring_key_replaced": "Monitoring key replaced",
 }
 

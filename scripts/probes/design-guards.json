@@ -1314,5 +1314,25 @@
       "tests/test_customer_digest.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#98 a pause whose deadline passed while the process was down is skipped forever",
+    "file": "sentinel/pause.py",
+    "old": "                \"WHERE p.status = 'pending' AND p.execute_at <= ?\", (now.isoformat(),))",
+    "new": "                \"WHERE p.status = 'pending' AND p.execute_at = ?\", (now.isoformat(),))",
+    "tests": [
+      "tests/test_pause_countdown.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#98 a re-request leaves the old countdown alive alongside the new one",
+    "file": "sentinel/pause.py",
+    "old": "            (f\"superseded by a new request from {member_email}\", now.isoformat(), account_id))",
+    "new": "            (f\"superseded by a new request from {member_email}\", now.isoformat(), -1))",
+    "tests": [
+      "tests/test_pause_countdown.py"
+    ],
+    "expect": "killed"
   }
 ]

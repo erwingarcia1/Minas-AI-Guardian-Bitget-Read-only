@@ -941,6 +941,45 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_cancel_pause(args: argparse.Namespace) -> int:
+    """Cancel a member's pending pause countdown (#98) - the Minas half of
+    "cancellable by the member OR by Minas", for the owner phoning in from
+    outside the portal. Same --as gate as every attributed action."""
+    from sentinel.operators import is_active_operator, list_operators, operator_count
+    from sentinel.pause import cancel_pause
+
+    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    actor = getattr(args, "as_operator", None)
+    if operator_count(db) > 0:
+        if not actor:
+            names = ", ".join(o["username"] for o in list_operators(db) if o["status"] == "active")
+            print(
+                f"--as <operator> is required: cancelling a pause is recorded against a "
+                f"name. Active operators: {names or '(none active)'}",
+                file=sys.stderr,
+            )
+            return 2
+        if not is_active_operator(db, actor):
+            print(f"'{actor}' is not an active operator", file=sys.stderr)
+            return 2
+    elif actor:
+        print("no operator accounts exist - create one with `sentinel operator add`", file=sys.stderr)
+        return 2
+
+    with db.cursor() as cur:
+        cur.execute("SELECT id FROM accounts WHERE label = ?", (args.label,))
+        row = cur.fetchone()
+    if row is None:
+        print(f"no account labeled '{args.label}'", file=sys.stderr)
+        return 1
+    if cancel_pause(db, int(row["id"]), f"operator {actor}" if actor else "operator (unattributed)"):
+        by = f" by {actor}" if actor else ""
+        print(f"pending pause for '{args.label}' cancelled{by}")
+    else:
+        print(f"'{args.label}' has no pending pause - nothing recorded")
+    return 0
+
+
 def cmd_triage(args: argparse.Namespace) -> int:
     from sentinel.triage import TriageEngine
 
@@ -1055,6 +1094,13 @@ def main() -> None:
     set_threshold_parser.add_argument("setting", help="Dotted path, e.g. detectors.withdrawal_burst.min_count")
     set_threshold_parser.add_argument("value", nargs="?", default=None)
     set_threshold_parser.set_defaults(func=cmd_set_threshold)
+
+    cancel_pause_parser = sub.add_parser(
+        "cancel-pause", help="Cancel a member's pending 24-hour pause countdown (#98)")
+    cancel_pause_parser.add_argument("--label", required=True)
+    cancel_pause_parser.add_argument("--as", dest="as_operator", metavar="OPERATOR",
+                                     help="record the cancellation against an operator")
+    cancel_pause_parser.set_defaults(func=cmd_cancel_pause)
 
     triage_parser = sub.add_parser("triage", help="Print an AI incident narrative for an account's recent events")
     triage_parser.add_argument("--label", required=True)

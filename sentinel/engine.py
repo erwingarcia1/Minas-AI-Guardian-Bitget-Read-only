@@ -70,6 +70,13 @@ class Engine:
         self._watch_alarms = (
             WatchAlarms(db, rules, operator_alerter) if operator_alerter is not None else None
         )
+        # #98's countdown executor. Table-driven: the first tick after ANY
+        # restart resumes every pending countdown from pause_requests, so a
+        # deadline that passed while the process was down executes on
+        # startup instead of being lost.
+        from sentinel.pause import PauseMaintenance
+
+        self._pause_maintenance = PauseMaintenance(db)
         self._untimestamped_alarm = UntimestampedRecordAlarm(
             metrics,
             operator_alerter,
@@ -228,6 +235,8 @@ class Engine:
                 self._untimestamped_alarm.evaluate(now=time.monotonic())
             if self._watch_alarms is not None:
                 self._watch_alarms.evaluate()
+            if self._pause_maintenance is not None:
+                self._pause_maintenance.evaluate()
         except Exception as exc:  # noqa: BLE001 - scheduler must survive anything
             logger.error("scheduler cycle failed: %s", exc)
 

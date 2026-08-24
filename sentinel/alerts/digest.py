@@ -163,6 +163,15 @@ def build_member_digest(db: Database, email: str, rules=None,
                          "ask us if you didn't expect this")
         else:
             lines.append(f"  - {a['label']}: NOT being watched — {a['reason']}")
+    # A pending pause is "about to not be watched" (#98) - the digest is a
+    # proof of life, and this is advance notice of deliberate death.
+    from sentinel.pause import pending_pauses_for
+
+    for account_id, pause in sorted(pending_pauses_for(db, ids).items()):
+        label = next((a["label"] for a in accounts if a["account_id"] == account_id), "?")
+        lines.append(f"  ! PAUSE PENDING: {label} stops being watched at "
+                     f"{pause['execute_at'][:16]} UTC unless cancelled - if you did not "
+                     "request this, contact Minas.")
     lines.append("")
     lines.append(f"Checks performed {period}: {checks_delta:,}.")
     lines.append("")
