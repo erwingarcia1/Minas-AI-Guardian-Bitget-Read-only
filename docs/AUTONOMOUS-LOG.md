@@ -4652,3 +4652,18 @@ filename); and the composer strips bold from lifted sentences (a mid-bold
 lift left unbalanced **), test-pinned. Body republished via gh release
 edit; tag hashes verified unchanged before and after. Deploy is the
 owner's: sudo /opt/minas-guardian/scripts/deploy.sh v1.9.0
+
+# 2026-08-23 · Decisions 15, 16, 17 recorded as decided; the pause specified
+
+All three written into DECISIONS-NEEDED as ANSWERED with the owner's
+reasoning (not just verdicts): 15 — 24-hour cancellable countdown, never
+immediate; the linkless contact-Minas recovery path; visible-everywhere
+pending state; clock never shortens; operator path stays the only
+immediate one; #45's Minas-side revoke DROPPED. 16 — no email links ever;
+non-clickable incident reference + home pins the newest unacknowledged
+incident (gap-checked against #34: both halves are gap, both small; work
+queued on #20's reworded criterion). 17 — no self-serve signup; ordered
+behind billing (#43/#44) and legal (#46/#47); waitlist recorded as the
+fallback; the phone-jaypee property named as what it protects. Criteria
+reworded on #10 and #20; outcome comments on #10/#45/#20/#6; the pause
+fully specified as #98 (p2). Nothing built beyond the records.

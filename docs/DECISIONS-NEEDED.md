@@ -29,6 +29,9 @@ whoever builds one should build it to cover both.
 | 12 | Restart-on-unhealthy: sidecar, systemd timer, or page-only | ~~#81~~ | **ANSWERED 2026-08-21** — systemd timer accepted; see section 12 |
 | 13 | Browser push notifications | ~~#23~~ | **ANSWERED 2026-08-21** — won't-do; no-JS posture stands; see section 13 |
 | 14 | Exchange key-creation instructions: screenshots or text | ~~#8~~ | **ANSWERED 2026-08-21** — text-only, dated and interface-named; see section 14 |
+| 15 | Member self-serve pause | #10 (reworded) | **ANSWERED 2026-08-23** — 24-hour cancellable countdown, never immediate; see section 15 |
+| 16 | Deep incident links in alert emails | #20 (reworded) | **ANSWERED 2026-08-23** — no links; non-clickable reference + portal lands on the incident; see section 16 |
+| 17 | Self-serve signup | #6 (stays open) | **ANSWERED 2026-08-23** — no; behind billing + legal, waitlist as fallback; see section 17 |
 
 ---
 
@@ -693,96 +696,89 @@ load), are on the issue. Buildable; not built before v1.6.1.
 
 ---
 
-## 15. May a portal member remove (pause) their own account? (#10)
+## 15. May a portal member remove (pause) their own account? (#10, #45) — **ANSWERED 2026-08-23: 24-hour cancellable countdown, never immediate**
 
-#10's last criterion reads "I can remove an account, and the system stops
-watching it immediately." The supported removal exists and is immediate —
-`sentinel disable-account` (#80), offboarding-is-disable-never-delete, the
-account leaves the scheduler's queue at once — but it is an **operator**
-action, done on request. The open question is whether the portal should
-offer it to the member directly.
+**The decision.** No immediate self-serve pause. A member may REQUEST a
+pause; it executes automatically at T+24h unless cancelled — by the member
+or by Minas. The immediate quiet pause is the button an attacker with a
+stolen session presses before moving funds, and every genuine customer
+reason (closing the exchange account, key already revoked, leaving)
+tolerates a day.
 
-The case against is the product's own threat model: "stop watching this
-account, right now, from a portal session" is exactly the button an
-attacker with a stolen session presses before moving funds — the same
-shape as redirecting the alerts, which this product treats as an attack
-tell. A self-serve pause would need at least: re-authentication at the
-moment of use, the tripwire email to every contact the way a destination
-change sends one, a prominent standing banner while paused (built with
-#34 — paused already counts as "not watched" there), and arguably a delay
-window a real owner can cancel within.
+**The design, owner-specified** (full build spec on the new pause issue):
 
-The case for is the criterion as written: a customer's account is theirs,
-and "email Minas and wait" is not "I can remove an account".
+- The countdown is REAL, not decorative: it executes automatically at
+  T+24h with no operator in the loop, so the customer's guarantee does not
+  depend on anyone being awake.
+- The notification email carries NO link (decision 16's rule) — it says
+  contact Minas. A human channel is ample inside 24 hours, and it must
+  work for an owner locked out of the portal because the attacker changed
+  the password.
+- Emails every contact at request time, and again near expiry.
+- Visible everywhere while pending: #34's banner treatment on the home
+  screen, and a line in the proof-of-life digest — a pending pause is
+  "about to not be watched".
+- Re-requesting restarts a full 24 hours; the clock never shortens.
+- The fast path stays human-verified: a customer calls Minas and an
+  operator pauses immediately, attributed. Deliberately inverted from
+  what an attacker would want out of each path: the anonymous path is
+  slow and loud, the immediate path requires a human who knows the
+  customer.
 
-**What is needed**: whether to build member self-serve pause at all; if
-yes, which of the safeguards above are required for v1. Until then #10
-stays open on this criterion alone — its status-per-account criterion
-shipped with #34's home screen.
+**#45's Minas-side revoke is DROPPED, not deferred.** The account page
+already states the real kill switch is at the exchange — which is truer
+than a button that only makes Minas look away.
 
-**#45's "revoke from the portal" is this same decision** (added
-2026-08-22): a true revoke happens at the exchange — a read-only key
-cannot delete itself, and the account page now says so plainly — so the
-only portal-side "revoke" possible is "Minas forgets/stops using the
-key", which is monitoring-off-from-a-portal-session in different words.
-If this decision lands as "build it", #45's revoke half rides the same
-safeguards; #45 is otherwise complete.
-
----
-
-## 16. Deep incident links in alert emails vs the anti-phishing training (#20)
-
-#20's last criterion: "Every alert email links to the full incident in the
-portal." The machinery is ready — since #22, the alert row id exists before
-any channel sends, so `/incident?id=N` is constructible at send time — but
-the criterion collides head-on with copy the product already teaches, from
-the owner's own sign-in mockup: *"Never enter your password after
-following a link from an email. Open the portal address you were given
-directly"* and *"don't click through from email or messages."* Two
-docstrings (`monitoring_note`, `portal_action_line`) and the #26 judgement
-record the same posture: the email prints the portal address to open, and
-never makes clicking the natural path.
-
-A deep link would be view-only and still sign-in-gated — it hands nobody a
-mute button (#26's actual target) — but it trains the click-from-email
-habit that the sign-in page spends a paragraph untraining, and a phisher's
-"incident" link is exactly what it would look like.
-
-**What is needed**: either (a) keep the front door as the ceiling and
-reword #20's criterion to match ("the email says where to sign in; the
-incident is at the top of the home screen"), or (b) decide the deep view
-link is worth the training cost, in which case the build also needs
-sign-in to carry a validated `next` path (open-redirect-proof) so the
-link actually lands on the incident. Until decided, #20 stays open on
-this criterion alone — its phone-readability and first-line criteria are
-built and pinned by tests in `test_customer_email_template.py`.
+**#10's removal criterion is reworded** to match: request-then-countdown,
+never "stops watching it immediately".
 
 ---
 
-## 17. Self-serve signup is a trust-model pivot, not a screen (#6)
+## 16. Deep incident links in alert emails (#20) — **ANSWERED 2026-08-23: NO — non-clickable reference + portal lands on the incident**
 
-#6 asks for public registration — email + password, confirmation, and a
-"connect your first exchange" screen straight after. Every piece is
-individually buildable (the password floor, the no-account-fishing reply,
-and the confirmation-token machinery all have in-house precedents), but
-together they change what this product IS: today every customer is
-operator-curated, every API key is taken in by a person or an
-operator-gated form, and the portal's whole write surface is scoped to
-accounts an operator created. Self-serve signup plus member-side key
-onboarding means **strangers register and hand the service exchange keys
-with nobody at Minas in the loop** — while billing (#43/#44) does not
-exist, abuse controls for a public registration endpoint do not exist,
-and the issue's own note says operator-added customers are "fine at pilot
-scale".
+**The decision.** No links to incidents in alert emails, ever. The
+sign-in page teaches customers never to click through from email, and
+these customers are crypto holders — a phisher's "view your incident"
+link is indistinguishable from a real one, and training the click defeats
+the training the product already does.
 
-**What is needed**: whether to open registration at all before billing
-lands; if yes, the order (confirmation-gated signup first, member-side
-key onboarding second or operator-approved), and what stands in for abuse
-control on a public endpoint. Until then #6 stays open, unbuilt on
-purpose — the bottleneck it names is real and arrives after pilot scale,
-which is where the product still is.
+**Instead, two halves** (queued on #20, criterion reworded):
+1. The alert email carries a NON-CLICKABLE incident reference —
+   "incident #370" — so the customer can find and name it.
+2. The portal home surfaces the most recent unacknowledged incident at
+   the top, so opening the portal directly lands on it in one step.
+
+**Gap assessment against what #34 already built** (checked in code,
+2026-08-23): the home's alert list is newest-first with acknowledgement
+state, but nothing PINS the most recent unacknowledged incident above the
+fold, and customer email copy carries no incident reference (it was
+deliberately free of internal identifiers; the row id is a support
+reference, not an internal identifier). Both halves are gap — small ones.
 
 ---
+
+## 17. Self-serve signup (#6) — **ANSWERED 2026-08-23: NO — ordered behind billing and legal**
+
+**The decision.** No public registration. Strangers handing over exchange
+credentials with nobody at Minas in the loop, while billing (#43/#44)
+does not exist, abuse controls for a public endpoint do not exist, and
+#46/#47 are unresolved, is the wrong trade at this scale.
+
+**What it would trade away, in the owner's words**: the jaypee CRITICAL
+resolved in under an hour because the owner could phone him. That is a
+property of having fifteen known customers, and it is worth more than a
+funnel right now.
+
+**The recorded fallback if funnel pressure becomes real**: a WAITLIST —
+public interest capture, operator-approved activation. Interest is
+captured without anyone handing us a key unvetted.
+
+**#6 stays open and unbuilt on purpose**, with the ordering stated on the
+issue: billing (#43/#44) and legal (#46/#47) first, waitlist as the
+middle step, self-serve last if ever.
+
+---
+
 
 ## Not a decision, but needs saying: #16's remaining criterion
 
