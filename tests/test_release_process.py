@@ -558,3 +558,23 @@ def test_red_scheduled_gates_refuse_the_release_before_any_health_check(repo):
     assert not args_file.exists(), "the health check ran despite a known-red tree"
     # And nothing was written: a refusal leaves the tree as it found it.
     assert "1.1.0" not in (repo / "pyproject.toml").read_text()
+
+
+def test_lifted_upgrade_sentences_carry_no_unbalanced_bold(repo):
+    """A changelog upgrade effect written inside a bold span lifts as plain
+    text - a cut mid-bold would render literal asterisks in the one section
+    an operator must be able to read at a glance."""
+    text = (repo / "CHANGELOG.md").read_text()
+    (repo / "CHANGELOG.md").write_text(text.replace(
+        "- **A thing that happened.** With a body.",
+        "- **A thing that happened.** Detail here. **On upgrade every operator "
+        "runs the install step once — nothing else changes.** More detail."))
+    _git(repo, "commit", "-qam", "a bolded upgrade effect")
+
+    result = _run(repo, "release.sh", "1.1.0")
+    assert result.returncode == 0, result.stderr
+
+    notes = (repo.parent / "gh-notes.txt").read_text()
+    section = notes.split("## What you need to do")[1].split("##")[0]
+    assert "runs the install step once" in section
+    assert "**" not in section, "no unbalanced bold in the lifted sentence"

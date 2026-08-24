@@ -182,7 +182,10 @@ flat = " ".join(" ".join(line for _, c in subs for line in c).split())
 todo = [m.group(0).strip() for m in
         re.finditer(r"[^.!?]*\bon upgrade\b[^.!?]*[.!?]", flat, re.I)]
 if todo:
-    out += ["## What you need to do", ""] + [" ".join(todo), ""]
+    # Bold markers are stripped from lifted sentences: a lift that starts or
+    # ends mid-bold leaves unbalanced ** that renders as literal asterisks,
+    # and the section heading already carries the emphasis.
+    out += ["## What you need to do", ""] + [" ".join(todo).replace("**", ""), ""]
 
 out += ["## Changed detection behaviour", ""]
 if detection is None:
