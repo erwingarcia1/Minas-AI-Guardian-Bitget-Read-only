@@ -18,7 +18,10 @@ class ClickSendSmsChannel(AlertChannel):
 
     MAX_LEN = SMS_MAX_LEN
 
-    def __init__(self, username: str, api_key: str, from_id: str | None, to_numbers: list[str], timeout: float = 15.0):
+    def __init__(self, username: str, api_key: str, from_id: str | None, to_numbers: list[str], timeout: float = 15.0, *, audience: str = "customer"):
+        if audience not in ("operator", "customer"):
+            raise ValueError(f"unknown audience {audience!r}")
+        self._audience = audience
         self._username = username
         self._api_key = api_key
         self._from = from_id
@@ -30,7 +33,7 @@ class ClickSendSmsChannel(AlertChannel):
         receipt per number: {to, provider, provider_message_id, status}.
         Raises when ClickSend rejects the request or fails to queue any
         message, so callers can log the failure for admin review."""
-        body = format_sms_body(alert, self.MAX_LEN)
+        body = format_sms_body(alert, self.MAX_LEN, audience=self._audience)
         messages = []
         for number in self._to:
             msg = {"source": "minas", "body": body, "to": number}

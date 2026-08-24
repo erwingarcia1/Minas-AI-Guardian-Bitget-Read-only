@@ -4708,3 +4708,33 @@ superseding re-request deliberately sends ONE story (the new request),
 never a cancelled-then-requested pair that reads as two people fighting
 over the account. All linkless. Four new tests (19 total). Full HC green
 ×9; mutation 11330s on the loaded box, real pass.
+
+# 2026-08-24 · Item 1: the SMS body is lock-screen-strict, and a guard owns the rule
+
+The rendered strings, for the owner to read:
+  customer: "Minas AI Guardian CRITICAL alert on acct-1. Sign in to the
+             Minas portal to review. We never send links by SMS."
+  operator: "Minas ops CRITICAL: withdrawal_initiated on acct-1. Full
+             evidence on Telegram/email."
+Customer copy carries severity + label + sign-in and NOTHING else — no
+amounts, addresses, balances, rule names, or links, even when a portal
+URL is configured; "we never send links by SMS" is itself the
+anti-phishing tell. Ops recommendation, applied with its justification:
+the rule name is what a pager needs and is Minas's own vocabulary, but
+the raw detector message (amounts, addresses) stays off operator lock
+screens too — full evidence rides Telegram/email in parallel; no links.
+
+The structural half (the bigger fix): tests/test_customer_channel_guard.py
+— every AlertChannel subclass discovered by inspection must be claimed
+customer-capable or operator-only-with-a-reason (a later unclassified
+channel FAILS before its first send), and every customer-capable channel
+plus the ContactRouter telegram leg is driven with a poisoned detection
+(canary, amount, address, URL) through stubbed transports, asserting the
+outgoing body clean. The exact customer string is pinned so a "helpful"
+future addition is a test failure, not a review comment.
+
+SENTINEL_PORTAL_URL is UNSET in the environment — noted against the open
+portal-domain question (#88): SMS no longer wants it at all, but email's
+sign-in line still degrades to link-less copy until a domain is decided.
+Old truncation-boundary tests replaced with the sharper property: the
+body is INDEPENDENT of the detector message entirely.

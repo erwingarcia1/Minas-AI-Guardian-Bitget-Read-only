@@ -22,6 +22,20 @@ member-initiated way for monitoring to stop, deliberately slow and loud.
 
 ### Added
 
+- **The customer SMS says almost nothing — deliberately** (#19's copy
+  half, #75's shared formatter). The old body shipped the raw detector
+  message — amount, destination address — plus the internal rule name
+  and a link, on the most spoofable channel there is, straight onto a
+  lock screen. The customer body is now fixed copy: severity, account,
+  "sign in to the Minas portal", and "we never send links by SMS" — the
+  last line doubling as the anti-phishing tell. Operator SMS keeps the
+  rule name (a pager needs it) but also drops the raw message: a
+  customer's amounts do not belong on an operator's lock screen either.
+  And the rule is now structural, not per-channel: a guard discovers
+  every alert channel, demands each be classified customer-capable or
+  operator-only-with-a-reason, and drives the customer-capable ones with
+  a poisoned alert, asserting nothing raw and no URL ever leaves — a
+  channel added later that forgets fails before its first send.
 - **Members can request a pause — a real 24-hour cancellable countdown,
   never an instant off-switch** (#98, decision 15). An immediate quiet
   pause is the button an attacker with a stolen session presses before

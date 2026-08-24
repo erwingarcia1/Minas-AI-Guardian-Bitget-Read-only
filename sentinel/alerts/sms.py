@@ -10,23 +10,37 @@ from sentinel.alerts.base import AlertChannel, AlertMessage
 SMS_MAX_LEN = 320
 
 
-def format_sms_body(alert: AlertMessage, max_len: int = SMS_MAX_LEN) -> str:
-    """Short, action-focused SMS body: product name, severity, alert type,
-    affected account, what happened, and a log-in instruction. The login
-    link (SENTINEL_PORTAL_URL, the member portal's public URL) is appended
-    last and is never truncated away - only the free-text detail shrinks."""
-    portal_url = (os.environ.get("SENTINEL_PORTAL_URL") or "").strip()
-    action = (f" Log in now to review: {portal_url}" if portal_url
-              else " Log in to Minas AI Guardian now to review.")
-    prefix = f"Minas AI Guardian {alert.severity} alert: {alert.rule} on {alert.account_label}."
-    detail = f" {alert.message}." if alert.message else ""
-    room = max_len - len(prefix) - len(action)
-    if len(detail) > room:
-        detail = detail[: max(0, room - 3)] + "..." if room > 3 else ""
-    return prefix + detail + action
+def format_sms_body(alert: AlertMessage, max_len: int = SMS_MAX_LEN,
+                    audience: str = "customer") -> str:
+    """Lock-screen-strict SMS bodies, by audience.
+
+    An SMS shows on a lock screen and is the most spoofable channel, so it
+    gets the most conservative copy of any surface - stricter than email:
+
+      customer:  severity, account label, "sign in to the Minas portal".
+                 Nothing else. No amounts, no addresses, no balances, no
+                 internal rule names, and NO link - a real Minas SMS never
+                 carries one, which is itself the anti-phishing tell.
+      operator:  severity, rule name, account label. Rule names are ours
+                 and mean something to the person paged - but the raw
+                 detector message (which embeds amounts and addresses)
+                 stays off an operator's lock screen too, and the full
+                 evidence rides Telegram/email in parallel. No link either.
+
+    The old body shipped `alert.message` raw plus a portal URL - the exact
+    compare-side-only failure email fixed with render_customer(), and
+    tests/test_customer_channel_guard.py is what now stops the next
+    channel from repeating it."""
+    if audience == "customer":
+        body = (f"Minas AI Guardian {alert.severity} alert on {alert.account_label}. "
+                "Sign in to the Minas portal to review. We never send links by SMS.")
+    else:
+        body = (f"Minas ops {alert.severity}: {alert.rule} on {alert.account_label}. "
+                "Full evidence on Telegram/email.")
+    return body[:max_len]
 
 
-def build_sms_channel(recipients: list[str]) -> AlertChannel | None:
+def build_sms_channel(recipients: list[str], audience: str = "customer") -> AlertChannel | None:
     """Return an SMS channel for `recipients` based on configured env, or None
     if no SMS provider is set. ClickSend is preferred when its credentials are
     present; Twilio is the fallback. Callers no-op cleanly when this is None."""
@@ -37,14 +51,15 @@ def build_sms_channel(recipients: list[str]) -> AlertChannel | None:
     if cs_user and cs_key:
         from sentinel.alerts.clicksend import ClickSendSmsChannel
 
-        return ClickSendSmsChannel(cs_user, cs_key, os.environ.get("CLICKSEND_FROM"), recipients)
+        return ClickSendSmsChannel(cs_user, cs_key, os.environ.get("CLICKSEND_FROM"), recipients,
+                                   audience=audience)
     sid, token, frm = (
         os.environ.get("TWILIO_ACCOUNT_SID"),
         os.environ.get("TWILIO_AUTH_TOKEN"),
         os.environ.get("TWILIO_FROM_NUMBER"),
     )
     if sid and token and frm:
-        return TwilioSmsChannel(sid, token, frm, recipients)
+        return TwilioSmsChannel(sid, token, frm, recipients, audience=audience)
     return None
 
 
@@ -55,7 +70,10 @@ class TwilioSmsChannel(AlertChannel):
 
     MAX_LEN = SMS_MAX_LEN
 
-    def __init__(self, account_sid: str, auth_token: str, from_number: str, to_numbers: list[str], timeout: float = 15.0):
+    def __init__(self, account_sid: str, auth_token: str, from_number: str, to_numbers: list[str], timeout: float = 15.0, *, audience: str = "customer"):
+        if audience not in ("operator", "customer"):
+            raise ValueError(f"unknown audience {audience!r}")
+        self._audience = audience
         self._sid = account_sid
         self._token = auth_token
         self._from = from_number
@@ -65,7 +83,7 @@ class TwilioSmsChannel(AlertChannel):
     def send(self, alert: AlertMessage) -> list[dict]:
         """Sends to every recipient; returns one delivery receipt per number:
         {to, provider, provider_message_id, status}."""
-        body = format_sms_body(alert, self.MAX_LEN)
+        body = format_sms_body(alert, self.MAX_LEN, audience=self._audience)
         url = f"https://api.twilio.com/2010-04-01/Accounts/{self._sid}/Messages.json"
         receipts = []
         for number in self._to:

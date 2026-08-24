@@ -182,6 +182,7 @@ pytest_add_cli_args_test_selection=
     tests/test_customer_digest.py
     tests/test_watch_alarms.py
     tests/test_pause_countdown.py
+    tests/test_customer_channel_guard.py
 runner=python -m pytest -x -q -p no:cacheprovider
 EOF
 trap 'rm -f setup.cfg' EXIT

@@ -73,29 +73,33 @@ def _deliveries(db, account_id):
 
 # --- AC2/AC3: body content and length ---------------------------------------
 
-def test_sms_body_has_name_severity_rule_account_and_login_link(monkeypatch):
+def test_customer_sms_body_is_lock_screen_strict(monkeypatch):
+    """The rewritten contract (owner, 2026-08-24): severity, account label,
+    sign in. Nothing else - no rule name, no detail, no link, even when a
+    portal URL is configured. tests/test_customer_channel_guard.py holds
+    the structural version of this over every channel."""
     monkeypatch.setenv("SENTINEL_PORTAL_URL", "https://guardian.example.com")
     body = format_sms_body(_alert())
     assert "Minas AI Guardian" in body
     assert "CRITICAL" in body
-    assert "withdrawal_initiated" in body
     assert "acct-1" in body
-    assert "0.5 BTC withdrawal" in body
-    assert body.endswith("Log in now to review: https://guardian.example.com")
+    assert "withdrawal_initiated" not in body, "internal rule names stay internal"
+    assert "0.5 BTC withdrawal" not in body, "the raw detector message never ships"
+    assert "http" not in body.lower(), "no link, even when the URL exists"
+    assert "We never send links by SMS" in body, "the anti-phishing tell is part of the copy"
 
 
-def test_sms_body_has_login_instruction_without_portal_url(monkeypatch):
-    monkeypatch.delenv("SENTINEL_PORTAL_URL", raising=False)
-    body = format_sms_body(_alert())
-    assert body.endswith("Log in to Minas AI Guardian now to review.")
+def test_operator_sms_carries_the_rule_but_not_the_raw_message():
+    body = format_sms_body(_alert(), audience="operator")
+    assert "withdrawal_initiated" in body, "the rule name is what a pager needs"
+    assert "acct-1" in body
+    assert "0.5 BTC withdrawal" not in body, "amounts stay off operator lock screens too"
+    assert "http" not in body.lower()
 
 
-def test_sms_body_truncation_never_cuts_the_login_link(monkeypatch):
-    monkeypatch.setenv("SENTINEL_PORTAL_URL", "https://guardian.example.com")
+def test_sms_body_never_exceeds_two_segments(monkeypatch):
     body = format_sms_body(_alert(message="x" * 600))
     assert len(body) <= 320
-    assert body.endswith("Log in now to review: https://guardian.example.com")
-    assert "..." in body  # detail was truncated, not the action
 
 
 # --- AC5: ClickSend receipts capture the provider message id -----------------

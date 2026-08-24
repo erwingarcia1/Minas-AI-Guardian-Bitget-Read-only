@@ -82,40 +82,18 @@ def test_the_digest_names_each_account_exactly_once(db):
     assert body.index("— acct-b —") < body.index("fee_spend_b")
 
 
-# --- SMS: spend the whole budget before cutting ---------------------------
+# --- SMS: the body no longer depends on the message at all -----------------
 
 
-def test_a_message_that_exactly_fits_is_not_truncated(monkeypatch):
-    """`len(detail) > room` truncates; at exactly `room` the text fits.
-
-    Loosened to `>=`, the longest message we will send is one character
-    shorter than the one that fits, and the customer loses the last character
-    of the detail to an ellipsis for no reason."""
-    monkeypatch.delenv("SENTINEL_PORTAL_URL", raising=False)
-    max_len = 160
-
-    longest = max(n for n in range(1, max_len) if "..." not in _sms("x" * n, max_len))
-    body = _sms("x" * longest, max_len)
-
-    # The exactly-fitting message uses every character of the budget.
-    assert len(body) == max_len
-    assert "x" * longest in body
-
-
-def test_three_characters_of_room_is_spent_on_nothing_rather_than_an_ellipsis(monkeypatch):
-    """`... if room > 3 else ""`.
-
-    With exactly three characters left, the only detail that fits is the
-    ellipsis itself. Sending "..." spends the whole remaining budget saying
-    that something was omitted without saying anything about it; sending
-    nothing leaves the severity, the rule, the account and the log-in
-    instruction, which is the part that is acted on. Loosened to `>= 3`, the
-    ellipsis comes back."""
-    monkeypatch.delenv("SENTINEL_PORTAL_URL", raising=False)
-    without_detail = _sms("", 1000)          # prefix + action, nothing else
-    room_for_three = len(without_detail) + 3
-
-    assert _sms("a message far too long to fit", room_for_three) == without_detail
+def test_the_sms_body_is_independent_of_the_detector_message(monkeypatch):
+    """The 2026-08-24 rewrite made the old truncation-boundary questions
+    moot in the best way: the customer body is FIXED copy - severity,
+    account, sign-in - so no detector message of any length can change a
+    single character of what reaches a lock screen. That independence IS
+    the boundary property now."""
+    monkeypatch.setenv("SENTINEL_PORTAL_URL", "https://guardian.example.com")
+    assert _sms("", 320) == _sms("x" * 600, 320) == _sms("secret 0xdeadbeef 1250 USDT", 320)
+    assert len(_sms("x" * 600, 320)) <= 320
 
 
 # --- burst: the window edge is inside the window --------------------------

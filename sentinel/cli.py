@@ -72,7 +72,11 @@ def _build_named_channels() -> dict[str, object]:
     if sms_to:
         from sentinel.alerts.sms import build_sms_channel
 
-        sms_channel = build_sms_channel([n.strip() for n in sms_to.split(",")])
+        # audience="operator": these numbers are Minas's own pagers. Rule
+        # names mean something to the person paged; the raw detector message
+        # (amounts, addresses) still stays off their lock screens too.
+        sms_channel = build_sms_channel([n.strip() for n in sms_to.split(",")],
+                                        audience="operator")
         if sms_channel is not None:
             named["sms"] = sms_channel
 
