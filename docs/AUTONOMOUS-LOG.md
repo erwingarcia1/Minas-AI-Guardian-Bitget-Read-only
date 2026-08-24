@@ -4685,3 +4685,14 @@ and the digest; portal writes are session- and scope-checked (server-
 level 404 test). 15 tests + 2 probes (144 total). Full HC green ×9;
 mutation rebuilt honestly (14118s — the machine is loaded; #97 again).
 Closes #98 and with it #10's last criterion.
+
+# 2026-08-24 · SMS recon done (report to owner); git identity forced to noreply
+
+Two operational notes for future sessions: (1) GitHub began rejecting
+pushes with "email privacy restrictions" mid-session — the account
+setting changed server-side; commits now author as
+302372737+johngreat-minas@users.noreply.github.com (local repo config).
+If the owner verifies john.great@minastech.ca on GitHub or disables the
+block, revert the config. (2) The tailnet SSH to production is timing
+out (Tailscale wants a re-auth check); the SMS phone survey could not be
+measured — the rest of the recon was code-complete and reported.
