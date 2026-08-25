@@ -32,8 +32,6 @@ whoever builds one should build it to cover both.
 | 15 | Member self-serve pause | #10 (reworded) | **ANSWERED 2026-08-23** — 24-hour cancellable countdown, never immediate; see section 15 |
 | 16 | Deep incident links in alert emails | #20 (reworded) | **ANSWERED 2026-08-23** — no links; non-clickable reference + portal lands on the incident; see section 16 |
 | 17 | Self-serve signup | #6 (stays open) | **ANSWERED 2026-08-23** — no; behind billing + legal, waitlist as fallback; see section 17 |
-| 18 | How wide is "the same customer action" for sibling acknowledgement | #99 (widening only; core built) | Keep order_id-only; owner decides on address/burst widening and the production backfill |
-| 19 | Operator two-factor: mandatory or opt-in, and last-operator recovery | #87 (gate + break-glass only; opt-in enrolment built) | Mandatory once anyone has enrolled; on-host break-glass over the tailnet |
 | 18 | Sibling-alert definition width + production backfill | #99 (built conservatively) | Keep order_id-only; owner sizes/backfills |
 | 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | #87, and #82's dashboard pass behind it | Mandatory; recovery via operator-add from the host |
 
@@ -806,34 +804,6 @@ false negatives are the safe failure direction.
 to backfill the ~199 existing unacknowledged CRITICALs whose siblings
 were already acknowledged. Sizing query (read-only) and the co-ack are
 one operator session; the run left the data untouched.
-
----
-
-## 19. Two-factor for operators: mandatory or opt-in, and who rescues the last operator? (#87)
-
-The dashboard is the higher-privilege surface (adds customers, reads every
-contact, attributes operator actions) and sits behind a password-only
-login while the customer portal has TOTP. The MECHANISM is buildable
-without a call - #32's `twofactor.py` is already subject-generic
-(`OPERATOR` kind exists) - and the run builds it as opt-in enrolment
-from the dashboard, the same code-prompt step, the same throttle. Two
-things are the owner's:
-
-1. **Mandatory or opt-in?** Recommendation: mandatory once an operator
-   has enrolled at least once, and a loud unprotected banner (the
-   dashboard already has one for zero-operator deployments) until then.
-   Making it mandatory from day one locks out an owner who enrols on a
-   phone they then lose before adding a second operator.
-2. **Recovery when the last operator loses their device.** The portal's
-   answer (recovery codes, or Minas resets you) does not transfer: an
-   operator can reset another operator, but the LAST operator has nobody.
-   Recommendation: recovery codes at enrolment (built), plus a documented
-   break-glass that is deliberately manual and on-host - `sentinel
-   operator disable-2fa <name>` over SSH, which the tailnet already gates.
-   Whether that break-glass is acceptable is the decision.
-
-**What it blocks**: the mandatory gate and the break-glass command. The
-opt-in enrolment itself ships now.
 
 ---
 

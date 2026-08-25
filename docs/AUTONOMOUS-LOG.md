@@ -1,5 +1,53 @@
 # Autonomous work log
 
+> ## Run summary — 2026-08-25 (SMS body → #97 → #20 → #99 → #96)
+>
+> **Shipped on main, every commit CI-green by run id:** the customer SMS
+> body is lock-screen-strict with a structural channel guard (9a6f4ec);
+> #97 the mutant cache is durable and a restored cache must revalidate
+> (1e78c39; measured 176/178 restored in 2m07s vs 1.5–14h cold); #20
+> alert emails name their incident and the portal lands on it (9619f29,
+> decision 16); #99 sibling acknowledgement (71349fe + 3b7dc36, four new
+> survivors killed by name, mutation 186/188 = 98%); #96 design-guard
+> probes in parallel (5befd59; 144/144 in 162s at 8 workers vs 746s
+> serial — a full health check is now ~8 min warm). #98 pause with both
+> endings shipped earlier in this run (4719b8e). #27 closed on code
+> evidence.
+>
+> **In [Unreleased]:** SMS body + guard, #97, #20, #98, #99, #96. Nothing
+> was cut, tagged or deployed.
+>
+> **Needs a decision from you** (docs/DECISIONS-NEEDED.md): **18** sibling
+> widening + the production backfill of already-open pairs (a prod write,
+> yours); **19** dashboard 2FA mandatory vs opt-in + last-operator
+> recovery — #87 and #82's dashboard pass wait on it (no #87 code was
+> written; the mechanism is reusable from #32). Standing: 2 (#37), 3/5
+> (#29), 4 (#24), 6 (#46/#47, lawyer), 7 (#63). Not decisions but yours:
+> #88 needs a customer-facing domain; #56 is owner-triggered by #63's
+> outcome; #19/#75's credentials half; #43/#44 plan-only; #6 stays open
+> per decision 17; #48 gated on #6.
+>
+> **Contradicts the docs / things you should know:** (1) GitHub's
+> email-privacy block now rejects pushes authored with the real address —
+> commits carry the noreply identity. (2) `SENTINEL_PORTAL_URL` is unset
+> in production, so any copy that would name the portal address cannot;
+> the SMS body says "the Minas portal" by name only. (3) **A duplicate
+> session existed for ~2.5h**: a background job forked from the same
+> transcript was live while `claude --continue` resumed this one — both
+> in this working tree, which the standing rule forbids. It made 71349fe
+> and 1689e86, then stood down at 14:45 UTC without further changes; the
+> only damage was duplicated decision-18/19 rows and a second section 19
+> claiming "opt-in enrolment built" (it was not), removed in the final
+> docs commit. Do not start `claude --continue` while a background job is
+> running on this tree, or vice versa. (4) The 2026-08-25 09:54 health
+> check took 3h16m because siblings.py grew the mutant population and the
+> cache key changed — expected, and the one cold path #97 cannot avoid.
+>
+> **Run out of work I can do alone.** Every open issue now needs one of:
+> a decision (#37, #29, #24, #63, #87, #82), a lawyer (#46, #47), a
+> domain (#88), credentials (#19, #75), billing-plan-only (#43, #44),
+> owner trigger (#56), or decision 17's gate (#6, #48).
+
 > ## Session summary — 2026-08-14/15
 >
 > **Closed:** #68 (the suite's real credentials), #69 (self-serve key
