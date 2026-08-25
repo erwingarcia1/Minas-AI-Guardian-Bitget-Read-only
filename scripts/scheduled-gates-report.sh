@@ -171,6 +171,16 @@ if [ -n "$mut_noresult" ]; then
 fi
 [ -z "$mut_regression" ] && [ -z "$mut_noresult" ] && note "mutation floor" "pass ($(grep -E '^Killed' "$MUTATION_LOG" 2>/dev/null | tail -n1 || echo '?'))"
 
+# The survivor ledger's size, every week, whatever the verdict. The ledger
+# turns anonymous slack into named slack; this row is what resists it
+# growing - a count that only ever goes up is noticed here, a file is not.
+ledger_line=$(grep -E '^  Survivor ledger: [0-9]+ accepted' "$MUTATION_LOG" 2>/dev/null | tail -n1 || true)
+if [ -n "$ledger_line" ]; then
+  note "survivor ledger" "${ledger_line#*ledger: }"
+else
+  note "survivor ledger" "? (the gate did not state it)"
+fi
+
 # --- summary ------------------------------------------------------------------
 
 TABLE=$(printf '| gate | verdict |\n|---|---|\n%s' "$SUMMARY")

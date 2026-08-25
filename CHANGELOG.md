@@ -118,6 +118,11 @@ member-initiated way for monitoring to stop, deliberately slow and loud.
   any survivor missing from it, whatever the score. Not the suspected
   cause: every mutant the gate names is re-run on every run, restore or
   not — so no test manifest was added and no test edit costs a rebuild.
+  Against the ledger itself growing: every row must carry its reason on
+  the same line (`equivalent:` / `unreachable:` / `deliberate:` and why),
+  a row without one fails the gate on every run, and the gate prints the
+  ledger's size each run — the weekly scheduled-gates report carries it
+  as its own row.
 - **Pushes go over HTTPS, permanently.** `git push` over SSH connects
   before the pre-push hook runs, and the ~9-minute suite outlasts
   GitHub's idle window: green hook, then exit 141. The hook installer

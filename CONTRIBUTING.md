@@ -666,6 +666,15 @@ and add the fingerprint with the reason. Adding a line is a claim; the
 review is the commit that adds it. A survivor whose diff cannot be read
 fails closed, the same rule as a manifest that cannot be checked.
 
+Two things resist the ledger growing, because adding a row is easier than
+writing a test and each addition looks legitimate on the day. Every row
+carries its reason on the same line — `<fingerprint> <file> <kind>: <why>`,
+kind one of `equivalent`, `unreachable`, `deliberate` — and a row without one
+fails the gate on every run, survivors or not. And the gate prints the
+ledger's size on every run (`Survivor ledger: N accepted`); the weekly
+scheduled-gates report carries that number as its own row. A count that only
+ever goes up is the signal that rows are being added instead of tests.
+
 ### Hand-written probes, and why they need a tool
 
 ```bash

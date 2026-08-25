@@ -4906,3 +4906,15 @@ Also: the push failure is permanent-fixed (installer sets a repo-local
 pushInsteadOf to HTTPS; the hook still runs; CONTRIBUTING explains exit
 141), and hard rule 7 - one session per tree, never `--continue` beside a
 background job - records what 2.5h of a duplicate session cost.
+
+# 2026-08-25 · Ledger follow-up: rows must carry a reason; the count is reported weekly
+
+`scripts/mutation_survivors.py` now loads and validates the ledger on
+EVERY run, survivors or not: each row is `<fingerprint> <file> <kind>:
+<why>` with kind in equivalent/unreachable/deliberate, and a row without
+one fails `--check`. The two equivalents carry `equivalent:` and their
+#70 argument. The gate prints `Survivor ledger: N accepted` each run and
+`scripts/scheduled-gates-report.sh` adds a `survivor ledger | N accepted`
+row to the weekly table (or `?` if the gate did not state it). Tests pin
+the row format, the every-run validation, the printed line, and the
+report's grep of the exact string the gate emits.

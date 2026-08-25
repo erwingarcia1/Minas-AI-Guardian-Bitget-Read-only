@@ -179,3 +179,43 @@ def test_every_named_mutant_is_rejudged_each_run():
     mutmut = pytest.importorskip("mutmut", reason="mutmut not installed here; the gate job checks it for real")
     main_src = Path(mutmut.__file__).parent / "__main__.py"
     assert "if not mutant_names and result is not None:" in main_src.read_text()
+
+
+# --- what resists the ledger growing ---------------------------------------------
+
+def test_every_ledger_row_names_its_kind_and_reason(tool):
+    for reason in tool.load_ledger(LEDGER).values():
+        kind, _, why = reason.partition(":")
+        assert kind in tool.REASON_KINDS
+        assert why.strip()
+
+
+def test_a_row_without_a_reason_fails_the_gate_even_with_no_survivors(tool, tmp_path, monkeypatch):
+    """Adding a row is easier than writing a test; the row must say why,
+    and the gate checks that on every run, not only when it needs the row."""
+    bad = tmp_path / "ledger.txt"
+    bad.write_text("deadbeefdeadbeef sentinel/x.py\n")
+    monkeypatch.setattr(tool, "LEDGER", bad)
+    survivors = tmp_path / "survivors.txt"
+    survivors.write_text("")
+    err = io.StringIO()
+    with redirect_stdout(io.StringIO()), redirect_stderr(err):
+        assert tool.main(["x", str(survivors), "--check"]) == 1
+    assert "no reason" in err.getvalue()
+
+
+@pytest.mark.parametrize("reason", ["looks fine", "because: it is fine", "equivalent:", "equivalent"])
+def test_a_reason_must_name_its_kind_and_say_why(tool, tmp_path, reason):
+    bad = tmp_path / "ledger.txt"
+    bad.write_text(f"deadbeefdeadbeef sentinel/x.py {reason}\n")
+    with pytest.raises(ValueError, match="no reason"):
+        tool.load_ledger(bad)
+
+
+def test_the_gate_states_the_ledger_size_on_every_run(tool, tmp_path):
+    survivors = tmp_path / "survivors.txt"
+    survivors.write_text("")
+    out = io.StringIO()
+    with redirect_stdout(out):
+        assert tool.main(["x", str(survivors), "--check"]) == 0
+    assert "  Survivor ledger: 2 accepted" in out.getvalue()

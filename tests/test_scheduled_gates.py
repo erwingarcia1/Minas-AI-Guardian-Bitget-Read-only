@@ -236,3 +236,26 @@ def test_the_local_health_check_watches_the_schedules_own_pulse():
     ran recently - 'did it run', not 'did it pass'."""
     hc = (ROOT / "scripts" / "health-check.sh").read_text()
     assert "scheduled-gates-freshness.sh" in hc
+
+
+# --- the survivor ledger's size, weekly ---------------------------------------
+
+def test_the_weekly_report_carries_the_ledger_size(tmp_path):
+    """A count that only ever goes up is noticed in a report; a file that has
+    to be opened is not. The row is there whatever the mutation verdict."""
+    log = tmp_path / "mutation.log"
+    log.write_text("  Survivor ledger: 2 accepted\nKilled 186/188 = 98%\nFloor: 96%\n")
+    result = _run(tmp_path, mutation_log=log)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "| survivor ledger | 2 accepted |" in result.stdout
+
+
+def test_a_gate_that_did_not_state_the_ledger_size_is_reported_as_such(tmp_path):
+    result = _run(tmp_path)  # the plain green log carries no ledger line
+    assert "| survivor ledger | ? (the gate did not state it) |" in result.stdout
+
+
+def test_the_report_greps_the_line_the_gate_actually_prints():
+    tool = (ROOT / "scripts" / "mutation_survivors.py").read_text()
+    assert 'f"  Survivor ledger: {len(ledger)} accepted"' in tool
+    assert "Survivor ledger: [0-9]+ accepted" in REPORT.read_text()

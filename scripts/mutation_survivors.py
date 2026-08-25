@@ -69,8 +69,18 @@ def fingerprint(diff: str) -> tuple[str, str, list[str]]:
     return digest, file, changed
 
 
-def load_ledger(path: Path = LEDGER) -> dict[str, str]:
-    """fingerprint -> reason. Blank lines and # comments are ignored."""
+REASON_KINDS = ("equivalent", "unreachable", "deliberate")
+
+
+def load_ledger(path: Path | None = None) -> dict[str, str]:
+    """fingerprint -> reason. Blank lines and # comments are ignored.
+
+    Every row carries its reason on the same line, and the reason starts by
+    naming its kind - equivalent, unreachable or deliberate - followed by
+    the argument. A row without one fails the gate: adding a row is easier
+    than writing a test, and each addition looks legitimate on the day, so
+    the row itself has to say why, where the next reader will see it."""
+    path = path or LEDGER
     entries = {}
     if not path.exists():
         return entries
@@ -79,9 +89,14 @@ def load_ledger(path: Path = LEDGER) -> dict[str, str]:
         if not line or line.startswith("#"):
             continue
         parts = line.split(None, 2)
-        if len(parts) < 3:
-            raise ValueError(f"ledger line needs <fingerprint> <file> <reason>: {raw!r}")
-        entries[parts[0]] = parts[2]
+        reason = parts[2].strip() if len(parts) == 3 else ""
+        kind = reason.split(":", 1)[0].strip().lower() if ":" in reason else ""
+        if kind not in REASON_KINDS or not reason.split(":", 1)[1].strip():
+            raise ValueError(
+                f"ledger row has no reason: {raw!r}\n"
+                f"  each row is <fingerprint> <file> <kind>: <why>, kind one of "
+                f"{', '.join(REASON_KINDS)} - a survivor accepted without a reason is not accepted")
+        entries[parts[0]] = reason
     return entries
 
 
@@ -108,11 +123,20 @@ def main(argv: list[str]) -> int:
         print("usage: scripts/mutation_survivors.py <survivors-file> [--check]", file=sys.stderr)
         return 2
     names = [line.strip() for line in Path(args[0]).read_text().splitlines() if line.strip()]
+    # The ledger is validated and its size stated on EVERY run, survivors or
+    # not: a number that only ever goes up is noticed in a weekly report; a
+    # file someone has to open is not.
+    try:
+        ledger = load_ledger()
+    except ValueError as exc:
+        print(f"survivor ledger is malformed: {exc}", file=sys.stderr)
+        return 1
+    print(f"  Survivor ledger: {len(ledger)} accepted")
     if not names:
         print("  no survivors")
         return 0
     try:
-        unaccepted = review(names, load_ledger())
+        unaccepted = review(names, ledger)
     except (RuntimeError, ValueError) as exc:
         print(f"survivor could not be matched to the ledger: {exc}", file=sys.stderr)
         return 1
