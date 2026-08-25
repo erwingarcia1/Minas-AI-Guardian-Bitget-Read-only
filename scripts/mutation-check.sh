@@ -96,6 +96,13 @@
 # provider configured half way), six in the `_in_window` log line. A survivor
 # appearing here now is therefore news, not backlog.
 #
+# "News" is enforced, not hoped for: `scripts/mutation-known-survivors.txt`
+# lists the accepted survivors by file + diff fingerprint, and
+# `scripts/mutation_survivors.py` fails `--check` on any survivor missing from
+# it - independently of the floor, whose two points of headroom would
+# otherwise absorb one lost kill in silence (proven 2026-08-25: one deleted
+# assertion, 185/188, gate green).
+#
 # ## What this gate does not cover
 #
 # The scope is the two packages named in the `classify_mutants.py` call below:
@@ -303,6 +310,21 @@ echo "SURVIVORS (${SURVIVED}):"
 sed 's/^/  /' /tmp/mutation-survivors.txt
 echo
 echo "Killed ${KILLED}/${TOTAL} = ${SCORE}%"
+
+# The ledger: every survivor must be one the gate has accepted, by diff.
+# Proven 2026-08-25: delete one assertion from a selected test, touch nothing
+# under sentinel/, and the mutant it killed comes back a survivor - and the
+# score still clears the floor, because the headroom below is two points.
+# The floor catches erosion; this catches the single decision that quietly
+# stopped being pinned. It fails --check on its own, whatever the score.
+echo
+echo "Survivor ledger (scripts/mutation-known-survivors.txt):"
+LEDGER_ARGS=(/tmp/mutation-survivors.txt)
+[ "$CHECK" = true ] && LEDGER_ARGS+=(--check)
+if ! "$PY" scripts/mutation_survivors.py "${LEDGER_ARGS[@]}"; then
+  echo "A survivor the ledger does not know is a decision nobody is pinning." >&2
+  exit 1
+fi
 
 if [ "$CHECK" = true ]; then
   # A missing floor file used to default to 0, so `--check` passed whatever it

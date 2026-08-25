@@ -1,0 +1,8 @@
+# Survivors the mutation gate accepts. One per line: <fingerprint> <file> <reason>.
+# Fingerprint = scripts/mutation_survivors.py over the file + the -/+ lines of
+# `mutmut show`, so it survives regeneration (mutant numbers do not). Anything
+# the gate finds surviving that is NOT here fails `--check`, whatever the score.
+# Adding a line is a claim of equivalence - write down why, and only after the
+# diff has been read. The two below are argued in scripts/mutation-check.sh.
+b2a4372b677f3152 sentinel/detectors/off_market.py  `<= 0` -> `< 0`: `not reference` is already true for a zero Decimal; the arm only differs on a negative reference price no ticker produces (#70)
+97452414445f4899 sentinel/detectors/quantity_drop.py  `<= 0` -> `< 0`: with a drop of exactly zero, `unexplained` cannot exceed a non-negative tolerance, same no-detection by a longer route (#70)

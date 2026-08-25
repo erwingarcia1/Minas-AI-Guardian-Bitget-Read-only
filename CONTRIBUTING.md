@@ -42,6 +42,25 @@ scripts/health-check.sh                # every gate, one table — "Is everythin
 6. **Verify against live docs, never memory.** New exchange endpoints/fields
    get cited from CCXT source or the exchange's docs; anything unverifiable is
    marked UNVERIFIED rather than guessed.
+7. **One session per working tree.** Before starting any issue, confirm no
+   other `claude` process (or person) is working in this directory — and
+   NEVER start `claude --continue` while a background job holds this tree,
+   or a background job while a session is live, or vice versa. A resumed
+   session and the background job it was resumed from are two sessions. The
+   design-guard probes patch `sentinel/` in place, so a second session's
+   edit inside that window is restored *away*; and two sessions writing the
+   same docs do not conflict, they duplicate. Measured 2026-08-25: a
+   forked duplicate ran for two and a half hours before the alone-check
+   caught it, and in that time it wrote a false claim into
+   docs/DECISIONS-NEEDED.md — "opt-in enrolment built" for #87, code that
+   does not exist — plus duplicate decision rows and a second section 19.
+   Late detection cost: the false claim stood in a document the owner
+   decides from, a cleanup commit and its ~9-minute push, and every log
+   entry from that window had to be re-read against `git log` before it
+   could be believed. Early detection costs one `pgrep` line. The check must
+   look for a *peer session's* signature — `git commit`/`git push`/`gh run
+   watch` chains under a bash this session did not start — not only for
+   gate processes.
 
 ## Adding an exchange
 
@@ -365,6 +384,18 @@ scripts/install-hooks.sh
   last moment before a commit can cost anyone else anything, which is exactly
   where a slow check belongs.
 
+  The suite is now ~9 minutes, and that is longer than GitHub keeps an idle
+  SSH connection open. `git push` over SSH connects *before* it runs the
+  hook, so the hook passes and then the push dies with exit 141 —
+  "Connection to github.com closed by remote host" — and a retry does the
+  same thing nine minutes later. That was misread as a transient network
+  failure for a month. Over HTTPS the upload is a fresh request after the
+  hook, so the installer sets a repo-local `url.https://github.com/.pushInsteadOf
+  git@github.com:` (push only; fetch is untouched) and `gh` supplies the
+  credential. If you see exit 141 after "All checks passed", you are pushing
+  over SSH: run `scripts/install-hooks.sh` again. Never answer it with
+  `--no-verify`.
+
 Bypass with `--no-verify` when you genuinely need to. It is possible on
 purpose — a hook that blocks an urgent fix gets uninstalled — and it is never
 silent.
@@ -614,6 +645,26 @@ by design and not in CI.
 The mutmut invocation quirks (whole-package `source_paths`, newline-separated
 test selection, the cached `mutants/` copy, unstable mutant numbering) are
 documented at the top of the script so nobody rediscovers them.
+
+### The survivor ledger
+
+The floor has two points of headroom on purpose (see the ratchet comment in
+`scripts/mutation-check.sh`). The price, proven 2026-08-25 on a warm
+`mutants/` and on a `#97` restore alike: delete one assertion from a selected
+test, touch nothing under `sentinel/`, run the gate — the mutant that
+assertion killed is re-judged (every mutant the gate names is, restore or
+not) and comes back a survivor, 185/188 instead of 186/188, and the gate
+passes. One decision quietly unpinned, inside the headroom.
+
+So `scripts/mutation-known-survivors.txt` lists every survivor the gate
+accepts — today the two argued equivalents — by file plus the `-`/`+` lines of
+`mutmut show`, hashed (`scripts/mutation_survivors.py`); not by mutant number,
+which changes on every regeneration. `--check` fails on any survivor not in
+the ledger, whatever the score, and prints its diff. If a run shows `NEW`,
+either kill it with a test or, if it is a proven equivalent, read the diff
+and add the fingerprint with the reason. Adding a line is a claim; the
+review is the commit that adds it. A survivor whose diff cannot be read
+fails closed, the same rule as a manifest that cannot be checked.
 
 ### Hand-written probes, and why they need a tool
 

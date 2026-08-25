@@ -80,3 +80,15 @@ def test_a_missing_ruff_does_not_block_a_commit():
     """A contributor who has not installed dev dependencies must not be unable
     to commit. The hook is a guard rail, not a gate — CI is the gate."""
     assert "skipping lint" in (HOOKS / "pre-commit").read_text()
+
+
+def test_pushes_go_over_https_so_the_hook_can_outlast_ssh_idle():
+    """`git push` over SSH connects before the pre-push hook runs; the full
+    suite outlasts GitHub's idle window, so the hook passes and the push
+    dies with exit 141. The installer makes HTTPS the push transport, and
+    CONTRIBUTING says why - both, or the next person rediscovers it."""
+    installer = (REPO / "scripts" / "install-hooks.sh").read_text()
+    assert 'url."https://github.com/".pushInsteadOf "git@github.com:"' in installer
+    contributing = (REPO / "CONTRIBUTING.md").read_text()
+    assert "pushInsteadOf" in contributing
+    assert "141" in contributing

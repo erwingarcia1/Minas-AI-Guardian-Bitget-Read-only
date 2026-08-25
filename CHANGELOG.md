@@ -106,6 +106,24 @@ member-initiated way for monitoring to stop, deliberately slow and loud.
   like a probe that did not land; the lock is held in both modes;
   `--workers 1` is the old in-place path unchanged. The health check and
   CI both use `--workers auto`.
+- **The mutation gate keeps a ledger of accepted survivors, and fails
+  on any other.** Proven on a warm `mutants/` and on a #97 restore alike:
+  delete one assertion from a selected test, touch nothing under
+  `sentinel/`, and the mutant it killed is re-judged into a survivor —
+  and the gate passed, because 98% clears a 96% floor. The ratchet's two
+  points of headroom is deliberate; what was missing was a hard stop on
+  a survivor nobody has accepted. `scripts/mutation-known-survivors.txt`
+  lists the two argued equivalents by file + diff fingerprint (stable
+  across regeneration, unlike mutant numbers), and `--check` now fails on
+  any survivor missing from it, whatever the score. Not the suspected
+  cause: every mutant the gate names is re-run on every run, restore or
+  not — so no test manifest was added and no test edit costs a rebuild.
+- **Pushes go over HTTPS, permanently.** `git push` over SSH connects
+  before the pre-push hook runs, and the ~9-minute suite outlasts
+  GitHub's idle window: green hook, then exit 141. The hook installer
+  now sets a repo-local `pushInsteadOf`; CONTRIBUTING says why. Hard
+  rule 7 — one session per working tree, never `claude --continue`
+  beside a background job — records what late detection cost.
 
 ## [1.9.0] — 2026-08-23
 

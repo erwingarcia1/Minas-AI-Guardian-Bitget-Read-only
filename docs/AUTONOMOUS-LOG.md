@@ -239,6 +239,16 @@ edit from another session, which is the case this rule exists for.
 Cost of not doing it, measured: fourteen minutes on 2026-08-14, spent proving
 that a second `claude` process was not editing the tree.
 
+Cost of doing it late, measured: 2026-08-25, a background job forked from this
+transcript and a `claude --continue` resume ran side by side for ~2.5 hours.
+The duplicate wrote "opt-in enrolment built" for #87 into DECISIONS-NEEDED.md
+(nothing of the kind exists) plus duplicate decision rows and a second section
+19. The `pgrep` for gate processes did not see it, because a peer session
+looks like a `git commit`/`gh run watch` chain, not a gate. NEVER run
+`claude --continue` while a background job holds this tree, or vice versa;
+and check for a peer's git/gh chains, not just for gates. CONTRIBUTING hard
+rule 7.
+
 ## The tell for an accidental overwrite: the commit cites what it deleted
 
 2026-08-14. `ef8a7f7` ("update deployment docs") pasted an `### Infrastructure`
@@ -4859,3 +4869,40 @@ unchanged. Measured: 144/144 in 162s at 8 workers vs 746s serial in
 this morning's health check (4.6x; issue's target ~2min at 6-8). Health
 check and CI wired with `--workers auto`; ten new tests, including the
 hollow-copy proof failing on purpose.
+
+# 2026-08-25 · The mutation gate's blind spot: proven, and it was not the cache
+
+Owner's hypothesis: a #97 restore leaves killed verdicts standing, so a
+weakened test in the selection passes the gate. Proof run as asked, twice:
+one assertion deleted from tests/test_sibling_acknowledgement.py (the 24h
+edge, which kills siblings mutmut_47), nothing under sentinel/ touched.
+(1) Warm mutants/: mutant 47 RE-JUDGED, came back a survivor, 185/188 =
+98%, gate EXIT 0. (2) `rm -rf mutants` then the gate - archive restored
+and manifest-validated, 47 re-judged, survivor, 185/188, EXIT 0, 64s.
+
+So the mechanism is refuted: killed verdicts ARE re-run on every run,
+restore or not, because the gate names every selected mutant and mutmut's
+rule is "rerun if explicitly mentioned" (`if not mutant_names and result
+is not None: continue`). My earlier wording "only survivors get re-run"
+was wrong. The hole is real but lives one level up: the ratchet's two
+points of headroom (BUFFER=2, by design) absorb one lost kill - 98% still
+clears 96% - so a single decision can stop being pinned and the score
+cannot tell that from the two known equivalents.
+
+Fix, precise to that: scripts/mutation-known-survivors.txt, a ledger of
+accepted survivors keyed by file + the -/+ lines of `mutmut show` (stable
+across regeneration; mutant numbers are not), checked by
+scripts/mutation_survivors.py; `--check` fails on any survivor not in it,
+whatever the score, and prints the diff. The prescribed test-manifest
+re-judge was NOT built: it would re-do work the gate already does on every
+run, and a test that pins the explicit-name rerun now guards against a
+future change that would make the manifest necessary. Proof in the bug's
+shape on the wired gate: weakened test → EXIT 1, `NEW 63aed9bd49db0412
+... mutmut_47` with the diff; restored → EXIT 0, 186/188, both equivalents
+`accepted`. An unrelated test edit still costs no rebuild: manifest and
+cache key hash sentinel/ and setup.cfg only (pinned by test).
+
+Also: the push failure is permanent-fixed (installer sets a repo-local
+pushInsteadOf to HTTPS; the hook still runs; CONTRIBUTING explains exit
+141), and hard rule 7 - one session per tree, never `--continue` beside a
+background job - records what 2.5h of a duplicate session cost.
