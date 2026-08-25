@@ -17,8 +17,20 @@ container")._
 
 ### Changed detection behaviour
 
-**None.** Which alerts fire, when, and to whom is untouched — this adds a
-member-initiated way for monitoring to stop, deliberately slow and loud.
+Which alerts *fire* is untouched. Who hears about them changes in two
+deliberate ways:
+
+- **Acknowledging one alert now closes its siblings** (#99): an
+  unacknowledged alert on the same account carrying the same exchange
+  order reference within 24 hours is acknowledged alongside, so its
+  escalation ladder stops and the emergency contact is no longer paged
+  about a withdrawal someone already handled. Before, the second alert
+  of a pair escalated on its own. Alerts with no order reference, and
+  other accounts' alerts, are never touched.
+- **A member can stop monitoring on their account, 24 hours after asking**
+  (#98): once a requested pause executes, no alerts fire for that account
+  until it is resumed. The request is emailed to every contact twice
+  before it takes effect, and cancelling is one click.
 
 ### Added
 
@@ -126,9 +138,11 @@ member-initiated way for monitoring to stop, deliberately slow and loud.
 - **Pushes go over HTTPS, permanently.** `git push` over SSH connects
   before the pre-push hook runs, and the ~9-minute suite outlasts
   GitHub's idle window: green hook, then exit 141. The hook installer
-  now sets a repo-local `pushInsteadOf`; CONTRIBUTING says why. Hard
-  rule 7 — one session per working tree, never `claude --continue`
-  beside a background job — records what late detection cost.
+  now sets a repo-local `pushInsteadOf`; CONTRIBUTING says why. On
+  upgrade, developers re-run `scripts/install-hooks.sh` once so their
+  pushes take the HTTPS path. Hard rule 7 — one session per working
+  tree, never `claude --continue` beside a background job — records what
+  late detection cost.
 
 ## [1.9.0] — 2026-08-23
 
