@@ -210,11 +210,19 @@ def session_operator(db: Database, token: str | None) -> str | None:
 
 # --- attribution ---------------------------------------------------------------
 
-def acknowledge_alert(db: Database, alert_id: int, actor: str | None) -> bool:
+def acknowledge_alert(db: Database, alert_id: int, actor: str | None,
+                      include_siblings: bool = True) -> bool:
     """Marks an alert acknowledged, by name. False if it was already
     acknowledged - the first ack keeps its name and its time, because an
     acknowledgement is a claim someone made at a moment and overwriting it
-    would rewrite the record of who responded."""
+    would rewrite the record of who responded.
+
+    Siblings - alerts born of the same customer action, #99's definition -
+    are acknowledged alongside, THROUGH this same writer, so every
+    per-alert consequence (first-claim rule, decision 1's closing note,
+    the escalation ladder stopping) fires for each of them exactly as it
+    would for a direct acknowledgement. The recursion terminates because a
+    sibling's own sibling pass runs with include_siblings=False."""
     with db.cursor() as cur:
         cur.execute(
             "UPDATE alerts SET acknowledged_at = ?, acknowledged_by = ? "
@@ -229,4 +237,9 @@ def acknowledge_alert(db: Database, alert_id: int, actor: str | None) -> bool:
         from sentinel.alerts.escalation import send_critical_ack_closing_note
 
         send_critical_ack_closing_note(db, alert_id)
+        if include_siblings:
+            from sentinel.alerts.siblings import sibling_alert_ids
+
+            for sibling in sibling_alert_ids(db, alert_id):
+                acknowledge_alert(db, sibling, actor, include_siblings=False)
     return acknowledged

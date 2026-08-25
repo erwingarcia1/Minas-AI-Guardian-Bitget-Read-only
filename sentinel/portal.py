@@ -918,6 +918,15 @@ def acknowledge_alert_as_member(
         from sentinel.alerts.escalation import send_critical_ack_closing_note
 
         send_critical_ack_closing_note(db, alert_id)
+        # Siblings from the same customer action (#99). Same-account by the
+        # sibling definition, so still inside this member's scope by
+        # construction - and re-checked anyway by recursing through this
+        # same scoped writer, because a boundary held in one place is a
+        # boundary a later definition change could silently move.
+        from sentinel.alerts.siblings import sibling_alert_ids
+
+        for sibling in sibling_alert_ids(db, alert_id):
+            acknowledge_alert_as_member(db, sibling, email, account_ids)
     return acknowledged
 
 

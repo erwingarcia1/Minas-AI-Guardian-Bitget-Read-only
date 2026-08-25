@@ -4768,3 +4768,17 @@ that renders both). Acknowledged incidents unpin; one incident, not a
 list. Also fixed en route: the home-watch test suite's module-level NOW
 flake (freshness now measured at test time) and the workflow guard that
 pinned the retired cold-run assert (#97's validation is the pin now).
+
+# 2026-08-25 · Item 4 in flight (#99 built, health check running); item-5 prep
+
+#99 filed with the measured definition (#369/#370 share order_id
+424427676): siblings = same account + same non-empty order_id + 24h;
+built through BOTH ack writers so closing notes / first-claim / ladder-
+stop fire per sibling; decision 18 records the widening question and the
+production backfill (a prod write - the owner's). Meanwhile, read-only:
+#27 verified built on all four criteria and CLOSED with the code
+evidence; #56's own trigger recorded as fired by #42's in-process
+WatchAlarms - not built, its receiver config would carry operator
+credentials (standing rule); decision 19 written for #87 (mandatory vs
+opt-in, last-operator recovery) with the opt-in mechanism queued to
+build next.

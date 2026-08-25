@@ -22,6 +22,19 @@ member-initiated way for monitoring to stop, deliberately slow and loud.
 
 ### Added
 
+- **Acknowledging an alert closes the whole customer action** (#99).
+  Two detectors seeing one withdrawal used to mean two alerts and one
+  orphan: the measured case is a pair sharing one exchange order
+  reference, seven seconds apart — one acknowledged, the other left
+  open and escalated to the emergency contact about an incident already
+  handled. Acknowledging now also acknowledges siblings — unacknowledged
+  alerts on the same account carrying the same order reference within 24
+  hours — through the same writers, so the first-claim rule, decision
+  1's closing note to the emergency contact, and the escalation stop
+  apply to each. Deliberately conservative: no order reference claims no
+  sameness, other accounts are untouchable, and widening the definition
+  is decision 18, the owner's call — a false co-acknowledgement removes
+  attention, so leaving an alert open is the safe failure.
 - **Alert emails name their incident, and the portal lands on it**
   (#20, decision 16). No links in email, ever — instead the customer
   email's first line now ends with "This is incident #370." as plain
