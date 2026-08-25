@@ -32,6 +32,10 @@ whoever builds one should build it to cover both.
 | 15 | Member self-serve pause | #10 (reworded) | **ANSWERED 2026-08-23** — 24-hour cancellable countdown, never immediate; see section 15 |
 | 16 | Deep incident links in alert emails | #20 (reworded) | **ANSWERED 2026-08-23** — no links; non-clickable reference + portal lands on the incident; see section 16 |
 | 17 | Self-serve signup | #6 (stays open) | **ANSWERED 2026-08-23** — no; behind billing + legal, waitlist as fallback; see section 17 |
+| 18 | How wide is "the same customer action" for sibling acknowledgement | #99 (widening only; core built) | Keep order_id-only; owner decides on address/burst widening and the production backfill |
+| 19 | Operator two-factor: mandatory or opt-in, and last-operator recovery | #87 (gate + break-glass only; opt-in enrolment built) | Mandatory once anyone has enrolled; on-host break-glass over the tailnet |
+| 18 | Sibling-alert definition width + production backfill | #99 (built conservatively) | Keep order_id-only; owner sizes/backfills |
+| 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | #87, and #82's dashboard pass behind it | Mandatory; recovery via operator-add from the host |
 
 ---
 
@@ -779,6 +783,91 @@ middle step, self-serve last if ever.
 
 ---
 
+
+## 18. How wide is "the same customer action"? (#99)
+
+Sibling acknowledgement shipped with the conservative definition: same
+account + same non-empty exchange `order_id` + 24 hours. That is provable
+sameness (the measured case: #369/#370 shared order 424427676), and a
+false co-acknowledgement removes attention from an unrelated alert, so
+false negatives are the safe failure direction.
+
+**What needs the owner**: whether to widen, and how far -
+- shared destination ADDRESS within a window (a burst to one address is
+  one action to a human, but two withdrawals to a saved address on
+  different days are not);
+- burst membership (`withdrawal_burst` alerts carry no single order_id -
+  should acknowledging the burst acknowledge the per-withdrawal alerts
+  inside its window, and vice versa?);
+- plain time-clustering (catches everything, over-groups dangerously -
+  recommended against).
+
+**Also the owner's, because production is read-only to the run**: whether
+to backfill the ~199 existing unacknowledged CRITICALs whose siblings
+were already acknowledged. Sizing query (read-only) and the co-ack are
+one operator session; the run left the data untouched.
+
+---
+
+## 19. Two-factor for operators: mandatory or opt-in, and who rescues the last operator? (#87)
+
+The dashboard is the higher-privilege surface (adds customers, reads every
+contact, attributes operator actions) and sits behind a password-only
+login while the customer portal has TOTP. The MECHANISM is buildable
+without a call - #32's `twofactor.py` is already subject-generic
+(`OPERATOR` kind exists) - and the run builds it as opt-in enrolment
+from the dashboard, the same code-prompt step, the same throttle. Two
+things are the owner's:
+
+1. **Mandatory or opt-in?** Recommendation: mandatory once an operator
+   has enrolled at least once, and a loud unprotected banner (the
+   dashboard already has one for zero-operator deployments) until then.
+   Making it mandatory from day one locks out an owner who enrols on a
+   phone they then lose before adding a second operator.
+2. **Recovery when the last operator loses their device.** The portal's
+   answer (recovery codes, or Minas resets you) does not transfer: an
+   operator can reset another operator, but the LAST operator has nobody.
+   Recommendation: recovery codes at enrolment (built), plus a documented
+   break-glass that is deliberately manual and on-host - `sentinel
+   operator disable-2fa <name>` over SSH, which the tailnet already gates.
+   Whether that break-glass is acceptable is the decision.
+
+**What it blocks**: the mandatory gate and the break-glass command. The
+opt-in enrolment itself ships now.
+
+---
+
+## 19. Dashboard two-factor: policy and the last-operator recovery (#87, gates #82's dashboard pass)
+
+**The question.** The ops dashboard - the higher-privilege surface: it
+adds customers, reads every contact, attributes operator actions - has a
+password-only login while the member portal carries #32's TOTP. The
+mechanics are reusable as-is (sentinel/totp.py, sentinel/twofactor.py,
+the shared LoginThrottle). What is not engineering:
+
+1. **Mandatory or per-operator opt-in?** Opt-in means the weakest
+   operator sets the surface's security; mandatory means enrolment is
+   part of `sentinel operator add` and a first-login step, and an
+   operator without a device cannot sign in at all.
+2. **Recovery when an operator loses their device.** The portal's
+   answer - recovery codes, plus Minas as the human fallback - does not
+   transfer cleanly: operators can reset each other, but the LAST (or
+   only) operator cannot. Production has zero operator accounts today,
+   so "the only operator" is the launch state, not an edge case.
+
+**Recommendation**: mandatory, with recovery for the last operator
+being host access - `sentinel operator add` / a reset subcommand run on
+the VM over the tailnet, which is already the root of trust for
+everything else (deploys, the restart timer). That keeps the dashboard
+never weaker than the portal and never locks out the person who holds
+the box. Opt-in is recommended against for a surface that can read
+every customer's contact details.
+
+**What it blocks**: #87 itself, and #82's dashboard design pass, which
+the owner ordered to wait for the access model so login and look land
+together.
+
+---
 
 ## Not a decision, but needs saying: #16's remaining criterion
 
