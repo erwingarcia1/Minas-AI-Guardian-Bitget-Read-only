@@ -158,7 +158,7 @@ if [ "$FAST" = true ]; then
   skip "design-guard probes" "--fast" requested
   skip "mutation floor (${MUT_FLOOR}%)" "--fast" requested
 else
-  gate "design-guard probes" design-guards "$PY" scripts/mutation-probe.py scripts/probes/design-guards.json
+  gate "design-guard probes" design-guards "$PY" scripts/mutation-probe.py scripts/probes/design-guards.json --workers auto
 
   # The probes patch the working tree, so mutation-probe.py refuses to start
   # while another run holds its lock rather than interleaving with it. That is

@@ -4796,3 +4796,18 @@ out-of-window or malformed candidate must not end the scan; an empty
 order_id claims no sameness), re-judged 186/188 = 98% with only the two
 pre-existing equivalents left. Decisions 18 (widening + backfill) and 19
 (operator 2FA policy) recorded in 1689e86. Item 6 (#96) next.
+
+# 2026-08-25 · Item 6 built: #96 design-guard probes in parallel
+
+`scripts/mutation-probe.py --workers N|auto`: one private copy of the
+tree per worker from `git ls-files` (no .venv, no mutants/), patch/test/
+restore only inside the copy, working tree never written. The trap this
+had to close: an editable install means a copy CAN import the real
+tree - verified first (PYTHONPATH-first resolves to the copy), and each
+worker now proves `import sentinel` resolves inside its copy before its
+first probe; a failed proof fails the run like a probe that did not
+land. Lock held in both modes; `--workers 1` (default) is the old path
+unchanged. Measured: 144/144 in 162s at 8 workers vs 746s serial in
+this morning's health check (4.6x; issue's target ~2min at 6-8). Health
+check and CI wired with `--workers auto`; ten new tests, including the
+hollow-copy proof failing on purpose.

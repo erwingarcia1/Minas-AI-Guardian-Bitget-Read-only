@@ -172,7 +172,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          time python scripts/mutation-probe.py scripts/probes/design-guards.json 2>&1 | tee probes.log
+          time python scripts/mutation-probe.py scripts/probes/design-guards.json --workers auto 2>&1 | tee probes.log
 
       # Fails if the score drops below scripts/mutation-floor.txt, and raises
       # the floor when it improves - so a decision this suite pins today

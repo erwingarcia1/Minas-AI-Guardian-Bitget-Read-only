@@ -618,7 +618,7 @@ documented at the top of the script so nobody rediscovers them.
 ### Hand-written probes, and why they need a tool
 
 ```bash
-scripts/mutation-probe.py scripts/probes/design-guards.json
+scripts/mutation-probe.py scripts/probes/design-guards.json --workers auto
 ```
 
 mutmut can only mutate what it can parse an operator out of. It cannot express
@@ -659,3 +659,20 @@ for however long somebody else's run takes. The kernel drops the lock when the
 process dies however it dies, so a killed run can't leave it stuck. The health
 check reports a refusal as `skipped`, never `pass`, and still exits non-zero:
 the guards went unchecked either way.
+
+**Workers (#96).** The probes were 75% of a full health check — 144 of them
+strictly in series on an idle multi-core machine. `--workers N` (or `auto`:
+one per core, at most 8) fans them across N private copies of the tree, one
+per worker, built from `git ls-files` (tracked plus untracked-not-ignored, so
+no `.venv`, no `mutants/`); each worker patches, tests and restores only
+inside its copy and the working tree is never written. `xargs -P` over the
+script would be wrong by construction — that is the corruption the lock
+exists to prevent. The tests run with the copy as cwd and first on
+`PYTHONPATH`, and before a worker touches a probe it proves `import sentinel`
+resolves *inside its copy*: a worker importing the real tree would run every
+probe against unmutated code and report `survived` for all of them — an
+absence of evidence, one level up from the one the tool already refuses. A
+worker that fails that proof fails the run, like a probe that did not land.
+The lock is held in worker mode too (a copy taken mid-mutation of an in-place
+run carries the mutant into every worker), and `--workers 1` — the default —
+is the original in-place path unchanged.

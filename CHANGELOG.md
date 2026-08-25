@@ -95,6 +95,17 @@ member-initiated way for monitoring to stop, deliberately slow and loud.
   phone call to Minas gets an immediate, attributed pause — the
   anonymous path is slow and loud, the immediate path requires a person
   who knows the customer.
+- **Design-guard probes run in parallel** (#96). The 144 hand-written
+  probes were 75% of a full health check, strictly in series on an idle
+  multi-core machine. `scripts/mutation-probe.py --workers auto` fans
+  them across one private copy of the tree per core (from `git
+  ls-files`; the working tree is never written), and each worker proves
+  `import sentinel` resolves inside its copy before it runs a probe — a
+  worker importing the real tree would test unmutated code and report
+  every probe survived. A worker that fails that proof fails the run,
+  like a probe that did not land; the lock is held in both modes;
+  `--workers 1` is the old in-place path unchanged. The health check and
+  CI both use `--workers auto`.
 
 ## [1.9.0] — 2026-08-23
 
