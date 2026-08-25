@@ -194,6 +194,7 @@ class ContactRouter:
             # whole meaning in `message` and must render it verbatim; a
             # detection must not, because that text embeds addresses.
             notice=getattr(detection, "is_notice", False),
+            incident_id=alert_id,
         )
 
         if emails:

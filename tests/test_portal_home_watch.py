@@ -126,3 +126,54 @@ def test_a_member_with_no_accounts_gets_no_banner(db, rules):
     page = _render_home(db, EMAIL, rules)
     assert 'role="alert"' not in page
     assert "No accounts yet" in page
+
+
+# --- decision 16's landing half (#20) -----------------------------------------
+
+def _alert(db, account_id, *, severity="CRITICAL", acked=False, when=None):
+    when = (when or _now()).isoformat()
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, evidence_json, "
+            "confidence, sent_at, delivered_to, acknowledged_at) VALUES (?, 'withdrawal_initiated', "
+            "?, ?, 'm', '{}', 'high', ?, 1, ?)",
+            (account_id, severity, f"k{when}", when, when if acked else None))
+        return cur.lastrowid
+
+
+def test_the_newest_unacknowledged_incident_is_pinned_above_the_fold(db, rules):
+    account_id = _account(db, "alice-1")
+    old = _alert(db, account_id, when=_now() - timedelta(hours=3))
+    newest = _alert(db, account_id, when=_now() - timedelta(minutes=5))
+
+    page = _render_home(db, EMAIL, rules)
+
+    assert f"Needs your attention — incident #{newest}" in page
+    assert f'href="/incident?id={newest}"' in page
+    assert page.index("Needs your attention") < page.index('id="accounts-title"'), "above the fold"
+    assert f"incident #{old}" not in page, "one incident pinned, not a list"
+
+
+def test_an_acknowledged_incident_is_not_pinned(db, rules):
+    account_id = _account(db, "alice-1")
+    _alert(db, account_id, acked=True)
+    page = _render_home(db, EMAIL, rules)
+    assert "Needs your attention" not in page
+
+
+def test_the_pinned_number_is_what_the_email_reference_names(db, rules):
+    """The email says "This is incident #N" (plain text, decision 16); the
+    portal's pinned block carries the same number - the two halves meet."""
+    from sentinel.alerts.base import AlertMessage
+
+    account_id = _account(db, "alice-1")
+    alert_id = _alert(db, account_id)
+
+    email_body = AlertMessage(
+        account_label="alice-1", rule="withdrawal_initiated", severity="CRITICAL",
+        confidence="high", message="raw", evidence={}, incident_id=alert_id,
+    ).render_customer()
+
+    assert f"This is incident #{alert_id}." in email_body
+    assert "http" not in email_body.lower(), "a reference, never a link"
+    assert f"incident #{alert_id}" in _render_home(db, EMAIL, rules)

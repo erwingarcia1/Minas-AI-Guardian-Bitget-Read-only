@@ -4755,3 +4755,16 @@ archive, and the caller rebuilds honestly. MEASURED live: rm -rf
 mutants && mutation-check --check → "restored ... manifest validated" →
 176/178 in 2m06.7s, vs 1.5-4h cold this week. CI's next scheduled run
 will populate its own cache; the validation step is in the workflow.
+
+# 2026-08-24 · Item 3: #20's decision-16 gap closed
+
+AlertMessage grew incident_id (known pre-send since #22's claim-first);
+render_customer's first line ends "This is incident #N." — plain text,
+never a link — threaded from dispatch's severity channels and the
+ContactRouter per-contact leg alike. The portal home pins the newest
+unacknowledged incident above the fold with the acknowledge link; the
+email's number and the pinned number are the same row (pinned by a test
+that renders both). Acknowledged incidents unpin; one incident, not a
+list. Also fixed en route: the home-watch test suite's module-level NOW
+flake (freshness now measured at test time) and the workflow guard that
+pinned the retired cold-run assert (#97's validation is the pin now).

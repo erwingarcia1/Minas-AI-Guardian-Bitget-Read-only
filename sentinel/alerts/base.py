@@ -152,6 +152,12 @@ class AlertMessage:
     # Set by the notice adapters (portal._PlainNotice). Detections leave it
     # False and are rendered from the headline map instead of their free text.
     notice: bool = False
+    # The alerts-table row id, known before any send since #22 claimed the
+    # row first. Decision 16's replacement for a deep link: the customer
+    # email names "incident #N" as PLAIN TEXT - findable and quotable, but
+    # nothing to click - and the portal home pins the newest unacknowledged
+    # incident so signing in directly lands on it in one step.
+    incident_id: int | None = None
 
     def render(self) -> str:
         """Operator format: rule names, confidence and raw evidence, all of
@@ -197,8 +203,12 @@ class AlertMessage:
         # better for a customer holding more than one.
         headline = self.headline()
         opener = f"{self.account_label} - {headline[0].lower()}{headline[1:]}."
+        # Plain text on purpose (decision 16): a reference the customer can
+        # quote and find at the top of the portal home, never a link -
+        # training the click is what a phisher's "view your incident" needs.
+        reference = f" This is incident #{self.incident_id}." if self.incident_id else ""
         parts = [
-            f"{opener} {portal_action_line()}",
+            f"{opener}{reference} {portal_action_line()}",
             "",
             "We are telling you because it does not match how this account normally "
             "behaves. It may well be something you did - only you can say.",

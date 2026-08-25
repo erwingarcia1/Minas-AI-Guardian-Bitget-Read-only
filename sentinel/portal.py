@@ -1249,8 +1249,35 @@ def _render_home(db: Database, email: str, rules=None) -> str:
         for r in alerts
     ) or '<p class="empty">No alerts — all quiet.</p>'
 
+    # Decision 16's landing half: no links in email, so the portal itself
+    # must land the customer on what needs them. The newest unacknowledged
+    # incident sits above the fold - opening the portal directly reaches it
+    # in one step, and the email's "incident #N" reference matches this
+    # block's number.
+    incident_hero = ""
+    if ids:
+        marks2 = ",".join("?" for _ in ids)
+        with db.cursor() as cur:
+            cur.execute(
+                f"SELECT al.id, al.rule, al.severity, al.sent_at, ac.label "
+                f"FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
+                f"WHERE al.account_id IN ({marks2}) AND al.acknowledged_at IS NULL "
+                f"ORDER BY al.sent_at DESC, al.id DESC LIMIT 1", ids)
+            hero = cur.fetchone()
+        if hero is not None:
+            cls = "state--danger" if hero["severity"] in ("CRITICAL", "HIGH") else "state--warn"
+            icon = _EYE_DANGER if cls == "state--danger" else _EYE_WARN
+            incident_hero = (
+                f'<div class="state {cls}" role="alert" style="margin-bottom:var(--space-5)">'
+                f'<span class="state__eyebrow">{icon}Needs your attention — incident #{int(hero["id"])}</span>'
+                f'<p class="state__answer">{_sev_badge(hero["severity"])} {html.escape(hero["rule"])} '
+                f"on {html.escape(hero['label'])}, {_ts(hero['sent_at'])} — not yet acknowledged.</p>"
+                f'<p class="state__detail"><a class="acctlink" href="/incident?id={int(hero["id"])}">'
+                "Open the incident and acknowledge it ›</a></p></div>"
+            )
+
     body = (
-        pause_banner + banner
+        incident_hero + pause_banner + banner
         + '<section aria-labelledby="accounts-title"><div class="page-head">'
         '<h1 id="accounts-title">My accounts</h1>'
         f'<p class="muted">{len(accounts)} exchange account'

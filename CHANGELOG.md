@@ -22,6 +22,15 @@ member-initiated way for monitoring to stop, deliberately slow and loud.
 
 ### Added
 
+- **Alert emails name their incident, and the portal lands on it**
+  (#20, decision 16). No links in email, ever — instead the customer
+  email's first line now ends with "This is incident #370." as plain
+  text, and the portal home pins the newest unacknowledged incident
+  above the fold ("Needs your attention — incident #370") with the
+  acknowledge path one click away. The number in the email and the
+  number on the pinned block are the same row, so a customer reading
+  the email and opening the portal directly lands on the thing that
+  needs them in one step — the anti-phishing training intact.
 - **The mutation gate's cache survives clean trees, fresh clones, and
   CI — and a restored cache must prove itself or die** (#97). The
   gate's expensive artifact (population, test map, per-mutant results)

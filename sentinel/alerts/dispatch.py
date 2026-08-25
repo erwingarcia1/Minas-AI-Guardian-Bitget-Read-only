@@ -142,6 +142,7 @@ def dispatch(
         confidence=detection.confidence,
         message=detection.message,
         evidence=detection.evidence,
+        incident_id=alert_id,
     )
     # Each send is a network call - Telegram HTTP, SMTP, an SMS provider - and
     # each is guarded on its own. Unguarded, one flaky channel skipped every
