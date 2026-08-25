@@ -578,3 +578,45 @@ def test_lifted_upgrade_sentences_carry_no_unbalanced_bold(repo):
     section = notes.split("## What you need to do")[1].split("##")[0]
     assert "runs the install step once" in section
     assert "**" not in section, "no unbalanced bold in the lifted sentence"
+
+
+def test_a_lifted_sentence_is_not_cut_at_a_dot_inside_a_filename(repo):
+    """The v1.10.0 defect: 'On upgrade, developers re-run `scripts/install-
+    hooks.sh` once' lifted as '...re-run `scripts/install-hooks.' - the
+    lifter ended the sentence at the first dot, inside the filename. A
+    sentence ends at a dot followed by whitespace or the end, nowhere else."""
+    text = (repo / "CHANGELOG.md").read_text()
+    (repo / "CHANGELOG.md").write_text(text.replace(
+        "- **A thing that happened.** With a body.",
+        "- **A thing that happened.** With a body. On upgrade, developers "
+        "re-run `scripts/install-hooks.sh` once so v1.9.0 hooks are replaced. "
+        "Nothing else."))
+    _git(repo, "commit", "-qam", "an upgrade effect containing dotted names")
+
+    result = _run(repo, "release.sh", "1.1.0")
+    assert result.returncode == 0, result.stderr
+
+    notes = (repo.parent / "gh-notes.txt").read_text()
+    section = notes.split("## What you need to do")[1].split("##")[0]
+    assert "re-run `scripts/install-hooks.sh` once so v1.9.0 hooks are replaced." in section
+    assert "Nothing else" not in section, "the lift must stop at the sentence's real end"
+
+
+def test_a_lead_that_hands_over_with_a_colon_opens_its_detail_cleanly(repo):
+    """The other v1.10.0 defect: '**lead** (#99): an unacknowledged alert...'
+    rendered as the bold lead, then a paragraph beginning ': an'. The colon
+    is consumed with the lead and the detail is capitalised."""
+    text = (repo / "CHANGELOG.md").read_text()
+    (repo / "CHANGELOG.md").write_text(text.replace(
+        "- **A thing that happened.** With a body.",
+        "- **Acknowledging one alert now closes its siblings** (#99): an\n"
+        "  unacknowledged alert on the same account is acknowledged alongside,\n"
+        "  so its escalation ladder stops."))
+    _git(repo, "commit", "-qam", "a colon-led entry")
+
+    result = _run(repo, "release.sh", "1.1.0")
+    assert result.returncode == 0, result.stderr
+
+    notes = (repo.parent / "gh-notes.txt").read_text()
+    assert "**Acknowledging one alert now closes its siblings** (#99)\n\nAn unacknowledged alert" in notes
+    assert "\n\n: " not in notes and "\n\n:" not in notes

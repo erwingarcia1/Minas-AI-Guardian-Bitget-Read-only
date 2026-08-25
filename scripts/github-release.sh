@@ -123,11 +123,17 @@ def entries(sub_lines):
         blocks.append(joined_stray)
     for b in bullets:
         body = "\n".join(trimmed(b))
-        m = re.match(r"\*\*(.+?)\*\*\s*(\((#\d+[^)]*)\))?\.?\s*", body, re.S)
+        # The lead may end its sentence with a period or hand over with a
+        # colon ("**lead** (#99): detail"); either way the detail starts a
+        # paragraph of its own, so a colon-led detail is capitalised - a
+        # paragraph opening with ": an ..." was the v1.10.0 defect.
+        m = re.match(r"\*\*(.+?)\*\*\s*(\((#\d+[^)]*)\))?\s*([.:])?\s*", body, re.S)
         if m:
             lead = " ".join(m.group(1).split()).rstrip(".")
             issue = f" ({m.group(3)})" if m.group(3) else ""
             rest = body[m.end():].strip()
+            if m.group(4) == ":" and rest:
+                rest = rest[0].upper() + rest[1:]
             # Reflow the seam: consuming the lead from a hard-wrapped line
             # leaves that line's remainder orphaned ("The" alone), and GitHub
             # renders single newlines as breaks - so join it onto the next
@@ -179,8 +185,13 @@ out = [opening, ""]
 # "What you need to do": sentences the changelog marks with "on upgrade".
 # Omitted entirely when there are none - never written as "nothing".
 flat = " ".join(" ".join(line for _, c in subs for line in c).split())
+# A sentence ends at . ! or ? followed by whitespace or the end - not at
+# the dot inside `scripts/install-hooks.sh` or `v1.9.0`, which truncated
+# v1.10.0's one operator action to "re-run `scripts/install-hooks." and
+# was worked around by rewording once before.
+SENTENCE_BODY = r"(?:[^.!?]|[.!?](?!\s|$))*"
 todo = [m.group(0).strip() for m in
-        re.finditer(r"[^.!?]*\bon upgrade\b[^.!?]*[.!?]", flat, re.I)]
+        re.finditer(rf"{SENTENCE_BODY}\bon upgrade\b{SENTENCE_BODY}[.!?](?=\s|$)", flat, re.I)]
 if todo:
     # Bold markers are stripped from lifted sentences: a lift that starts or
     # ends mid-bold leaves unbalanced ** that renders as literal asterisks,

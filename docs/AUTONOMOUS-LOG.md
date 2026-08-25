@@ -4918,3 +4918,26 @@ one fails `--check`. The two equivalents carry `equivalent:` and their
 row to the weekly table (or `?` if the gate did not state it). Tests pin
 the row format, the every-run validation, the printed line, and the
 report's grep of the exact string the gate emits.
+
+# 2026-08-25 · v1.10.0 cut complete; two composer defects fixed in the body
+
+release.sh ran the whole cut: full nine-gate health check (probes
+144/144 at 8 workers, mutation 186/188 = 98%, ledger 2 accepted, evidence
+.health-check-logs/20260825T180426Z-9564bd6), release commit dbf52c3,
+annotated tag v1.10.0 (2647ab7 -> dbf52c3, identical local and remote),
+pushed over HTTPS, Release composed and published --latest, CI
+32883008245 green on the release commit. Before the cut the notes were
+corrected: "Changed detection behaviour: None" had been written for the
+pause alone, but #99 changes which alerts reach the emergency contact
+and #98 lets a member stop them - both now stated as the operator
+experiences them; and the hook change got its "on upgrade" sentence.
+
+Read against docs/RELEASE-NOTES.md, the composed body had two defects:
+the lifter cut "re-run `scripts/install-hooks.sh`" at the dot in the
+filename (v1.9.0's workaround was to reword; this time the composer is
+fixed: a sentence ends at .!? followed by whitespace or the end), and a
+lead handing over with a colon left a paragraph opening ": an" (the
+colon is consumed and the detail capitalised). Both test-pinned in the
+bug's shape. Body republished via `gh release edit`; tag hashes verified
+unchanged before and after. Deploy is the owner's:
+sudo /opt/minas-guardian/scripts/deploy.sh v1.10.0
