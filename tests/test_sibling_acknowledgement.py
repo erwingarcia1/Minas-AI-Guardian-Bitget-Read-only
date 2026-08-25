@@ -145,3 +145,45 @@ def test_member_acknowledgement_carries_the_siblings_in_scope(db, notes):
     assert state["acknowledged_at"] is not None
     assert state["acknowledged_by"] == "alice@example.com"
     assert sorted(notes) == sorted([a, b])
+
+
+def test_exactly_24h_apart_is_still_inside_the_window(db, notes):
+    """The window is inclusive at its edge: `> window` skips, `>= window`
+    would not, and the difference is one alert left open."""
+    account_id = make_account(db)
+    a = _alert(db, account_id)
+    b = _alert(db, account_id, offset_s=24 * 3600)
+    assert sibling_alert_ids(db, a) == [b]
+
+
+def test_an_out_of_window_candidate_does_not_end_the_scan(db, notes):
+    """A `break` where a `continue` belongs would let one old alert hide
+    every sibling inserted after it."""
+    account_id = make_account(db)
+    a = _alert(db, account_id)
+    _alert(db, account_id, offset_s=-30 * 3600)
+    c = _alert(db, account_id, offset_s=5)
+    assert sibling_alert_ids(db, a) == [c]
+
+
+def test_a_malformed_candidate_does_not_end_the_scan(db, notes):
+    account_id = make_account(db)
+    a = _alert(db, account_id)
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, evidence_json, "
+            "confidence, sent_at, delivered_to) VALUES (?, 'r', 'HIGH', 'kbad', 'm', ?, 'high', ?, 1)",
+            (account_id, "not json", NOW.isoformat()))
+    c = _alert(db, account_id, offset_s=5)
+    assert sibling_alert_ids(db, a) == [c]
+
+
+def test_an_empty_order_reference_claims_no_sameness_either(db, notes):
+    """`""` is as absent as None. Treating it as an identifier would make
+    every alert with a blank order_id a sibling of every other."""
+    account_id = make_account(db)
+    a = _alert(db, account_id, order_id="")
+    b = _alert(db, account_id, order_id="", offset_s=3)
+    assert sibling_alert_ids(db, a) == []
+    acknowledge_alert(db, a, "erwin")
+    assert _ack_state(db, b)["acknowledged_at"] is None

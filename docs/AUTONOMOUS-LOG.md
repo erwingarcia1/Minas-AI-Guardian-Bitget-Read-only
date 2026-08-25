@@ -4782,3 +4782,17 @@ WatchAlarms - not built, its receiver config would carry operator
 credentials (standing rule); decision 19 written for #87 (mandatory vs
 opt-in, last-operator recovery) with the opt-in mechanism queued to
 build next.
+
+# 2026-08-25 · Item 4 SHIPPED: #99 sibling acknowledgement (71349fe; CI 32853173642 success)
+
+Full health check green on the change set (.health-check-logs/
+20260825T095414Z-9619f29: 1318 tests, probes 144/144, mutation 11372s
+cold rebuild because siblings.py grew the population 178→188). The
+mutation gate landed EXACTLY on the 96% floor with four survivors in the
+new code - the window edge (`>` vs `>=`), two `continue`→`break`, and
+`or`→`and` on the empty-order guard. Passing at the floor is not the
+standard here: each was killed by a named test (24h-inclusive edge; an
+out-of-window or malformed candidate must not end the scan; an empty
+order_id claims no sameness), re-judged 186/188 = 98% with only the two
+pre-existing equivalents left. Decisions 18 (widening + backfill) and 19
+(operator 2FA policy) recorded in 1689e86. Item 6 (#96) next.
