@@ -6,11 +6,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from sentinel.alerts.base import AlertMessage
 from sentinel.alerts.clicksend import ClickSendSmsChannel
 from sentinel.alerts.contact import ContactRouter
 from sentinel.alerts.dispatch import dispatch
-from sentinel.alerts.sms import format_sms_body
+from sentinel.alerts.sms import TwilioSmsChannel, build_sms_channel, format_sms_body
 from sentinel.config import RulesConfig
 from sentinel.detectors.base import Detection
 from tests.conftest import make_account
@@ -301,3 +303,70 @@ def test_sms_goes_only_to_owning_accounts_phone(db, cipher, rules, monkeypatch):
     assert _deliveries(db, account_b) == []
     rows = _deliveries(db, account_a)
     assert len(rows) == 1 and rows[0]["phone"] == "+15550001111"
+
+
+# --- blank is unset ------------------------------------------------------------
+
+_SMS_ENV = ("CLICKSEND_USERNAME", "CLICKSEND_API_KEY", "CLICKSEND_FROM",
+            "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_FROM_NUMBER")
+
+
+def _clear_sms_env(monkeypatch):
+    for name in _SMS_ENV:
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.mark.parametrize("blank", ["", "   ", "\t"])
+def test_a_blank_or_whitespace_credential_is_unset(monkeypatch, blank):
+    """A half-filled .env must not build a channel that fails every send
+    while the not-configured warning stays silent. `""` was already falsy;
+    whitespace was not."""
+    _clear_sms_env(monkeypatch)
+    monkeypatch.setenv("CLICKSEND_USERNAME", "real-user")
+    monkeypatch.setenv("CLICKSEND_API_KEY", blank)
+    assert build_sms_channel(["+15550001"]) is None
+
+
+def test_whitespace_clicksend_does_not_shadow_a_real_twilio(monkeypatch):
+    _clear_sms_env(monkeypatch)
+    monkeypatch.setenv("CLICKSEND_USERNAME", " ")
+    monkeypatch.setenv("CLICKSEND_API_KEY", " ")
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "AC1 ")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", " tok")
+    monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15550000 ")
+    channel = build_sms_channel(["+15550001"])
+    assert isinstance(channel, TwilioSmsChannel)
+    # Stripped: a stray space never reaches the provider API.
+    assert (channel._sid, channel._token, channel._from) == ("AC1", "tok", "+15550000")
+
+
+def test_a_stripped_clicksend_credential_reaches_the_channel(monkeypatch):
+    _clear_sms_env(monkeypatch)
+    monkeypatch.setenv("CLICKSEND_USERNAME", " user ")
+    monkeypatch.setenv("CLICKSEND_API_KEY", "key\t")
+    monkeypatch.setenv("CLICKSEND_FROM", "  ")
+    channel = build_sms_channel(["+15550001"])
+    assert isinstance(channel, ClickSendSmsChannel)
+    assert (channel._username, channel._api_key, channel._from) == ("user", "key", None)
+
+
+def test_the_not_configured_warning_fires_on_a_half_filled_env(db, rules, monkeypatch, caplog):
+    """The property that matters, not the mechanism: with phones on file and
+    a half-filled env, the router must say no provider is configured, and
+    must not leave a failed delivery behind from a channel that should never
+    have been built. The REAL build_sms_channel, not the stub."""
+    _clear_sms_env(monkeypatch)
+    monkeypatch.delenv("SMTP_HOST", raising=False)
+    monkeypatch.setenv("CLICKSEND_USERNAME", "real-user")
+    monkeypatch.setenv("CLICKSEND_API_KEY", "   ")
+    router = ContactRouter(db=db, rules=rules)
+    account_id = make_account(db)
+    detection = _detection(severity="CRITICAL")
+    alert_id = _stored_alert(db, account_id, detection)
+
+    with caplog.at_level("WARNING", logger="sentinel.alerts.contact"):
+        router.send(detection, "acct-1", [], ["+15550001"], account_id=account_id, alert_id=alert_id)
+
+    assert any("no SMS provider is configured" in r.message for r in caplog.records)
+    assert not any("SMS to" in r.message and "failed" in r.message for r in caplog.records)
+    assert [r["status"] for r in _deliveries(db, account_id) if r["status"] == "failed"] == []

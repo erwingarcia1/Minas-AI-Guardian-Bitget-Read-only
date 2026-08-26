@@ -119,8 +119,8 @@
   {
     "name": "portal: the acknowledging member is not HTML-escaped",
     "file": "sentinel/portal.py",
-    "old": "who = html.escape(row[\"acknowledged_by\"] or \"\u2014\")",
-    "new": "who = row[\"acknowledged_by\"] or \"\u2014\"",
+    "old": "who = html.escape(row[\"acknowledged_by\"] or \"—\")",
+    "new": "who = row[\"acknowledged_by\"] or \"—\"",
     "tests": [
       "tests/test_portal_acknowledge.py"
     ]
@@ -326,7 +326,7 @@
   {
     "name": "#29: an unacknowledged incident omits the stage instead of stating it",
     "file": "sentinel/portal.py",
-    "old": "        acknowledged = \"<b>Not acknowledged</b> \u2014 nobody has confirmed seeing this alert.\"",
+    "old": "        acknowledged = \"<b>Not acknowledged</b> — nobody has confirmed seeing this alert.\"",
     "new": "        acknowledged = \"&nbsp;\"",
     "tests": [
       "tests/test_incident_page.py"
@@ -1332,6 +1332,16 @@
     "new": "            (f\"superseded by a new request from {member_email}\", now.isoformat(), -1))",
     "tests": [
       "tests/test_pause_countdown.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "blank-as-unset: a half-filled ClickSend pair must not build a channel (and -> or)",
+    "file": "sentinel/alerts/sms.py",
+    "old": "    if cs_user and cs_key:\n",
+    "new": "    if cs_user or cs_key:\n",
+    "tests": [
+      "tests/test_sms_notifications.py"
     ],
     "expect": "killed"
   }

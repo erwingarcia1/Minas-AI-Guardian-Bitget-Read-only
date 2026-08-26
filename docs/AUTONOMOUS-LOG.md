@@ -4941,3 +4941,19 @@ colon is consumed and the detail capitalised). Both test-pinned in the
 bug's shape. Body republished via `gh release edit`; tag hashes verified
 unchanged before and after. Deploy is the owner's:
 sudo /opt/minas-guardian/scripts/deploy.sh v1.10.0
+
+# 2026-08-26 · SMS blank-as-unset (build_sms_channel only)
+
+Report first: the truthiness check already treated `""` as unset; the
+defect was WHITESPACE (`"  "`, or a quoted value with a trailing space),
+which dotenv yields verbatim and which is truthy - a ClickSend channel
+built with garbage, every send failed, warning silent. `_env()` in
+sms.py: blank/whitespace -> None, else stripped, for all six variables.
+Tests: blank/whitespace -> None; whitespace ClickSend no longer shadows
+a real Twilio (and the values reach Twilio stripped); stripped ClickSend
+values reach the channel; and the one that matters - a real
+ContactRouter over a half-filled env logs "no SMS provider is
+configured" and leaves no failed delivery. Probe: `and -> or` on the
+ClickSend condition, killed. Scope held to build_sms_channel; SMTP /
+Telegram / SENTINEL_PORTAL_URL audited separately and reported, not
+changed.

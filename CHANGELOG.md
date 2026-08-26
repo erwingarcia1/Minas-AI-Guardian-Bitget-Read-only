@@ -15,6 +15,19 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+### Fixed
+
+- **A half-filled SMS configuration no longer looks configured.** A
+  whitespace-only or space-padded `CLICKSEND_*` / `TWILIO_*` value used to
+  read as present: a channel was built with garbage credentials, every
+  text failed, and the "no SMS provider is configured" warning never
+  fired because a provider apparently was. Blank and whitespace now mean
+  unset for all six SMS variables, values are stripped so a stray space
+  never reaches the provider, and a blank ClickSend pair falls through to
+  a real Twilio one. The warning's firing on a half-filled env is what the
+  test pins. SMTP, Telegram and the portal URL are deliberately untouched
+  in this change.
+
 ## [1.10.0] — 2026-08-25
 
 ### Changed detection behaviour
