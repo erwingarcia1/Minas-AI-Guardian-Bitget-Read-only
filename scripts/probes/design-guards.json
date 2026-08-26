@@ -1344,5 +1344,15 @@
       "tests/test_sms_notifications.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#100 a half-filled SMTP pair must not configure email (host and sender -> or)",
+    "file": "sentinel/alerts/contact.py",
+    "old": "        if host and sender:\n            return {\n                \"host\": host,",
+    "new": "        if host or sender:\n            return {\n                \"host\": host,",
+    "tests": [
+      "tests/test_env_setting.py"
+    ],
+    "expect": "killed"
   }
 ]

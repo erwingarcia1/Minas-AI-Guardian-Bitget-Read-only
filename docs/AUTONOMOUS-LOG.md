@@ -4957,3 +4957,19 @@ configured" and leaves no failed delivery. Probe: `and -> or` on the
 ClickSend condition, killed. Scope held to build_sms_channel; SMTP /
 Telegram / SENTINEL_PORTAL_URL audited separately and reported, not
 changed.
+
+# 2026-08-26 · #100 SMTP blank-as-unset; the two `_env`s are one name apart no more
+
+`env_setting()` now lives in sentinel/config.py (blank/whitespace ->
+default, else stripped; a clean value is the identity) and is the one
+reader for channel-configuration settings: sms.py's private `_env` folded
+in, `ContactRouter._smtp_config` and the cli ops email builder moved to
+it. The trap: cli's `_env` did NOT strip and sat one letter from a helper
+that does - renamed `_env_raw` with a docstring saying which to use, and a
+test asserts nothing named `_env` remains in cli or sms. Router-level
+test: whitespace SMTP_HOST (and, separately, SMTP_SENDER) with emails on
+file leaves "SMTP is not configured" in the log and builds no channel.
+What did NOT change, verified: a clean-env snapshot of every channel the
+process builds (email, sms, telegram, telegram_team: every attribute) and
+the router's SMTP dict, taken before the change and after, is
+byte-identical. Probe: `host and sender -> or`, killed.

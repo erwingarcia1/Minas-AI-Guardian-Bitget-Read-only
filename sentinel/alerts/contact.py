@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from sentinel.alerts.base import AlertMessage
 from sentinel.alerts.email import EmailChannel
 from sentinel.alerts.sms import build_sms_channel
+from sentinel.config import env_setting
 
 logger = logging.getLogger("sentinel.alerts.contact")
 
@@ -40,14 +41,17 @@ class ContactRouter:
 
     @staticmethod
     def _smtp_config() -> dict | None:
-        host = os.environ.get("SMTP_HOST")
-        sender = os.environ.get("SMTP_SENDER")
+        # Blank and whitespace are unset (env_setting): a half-filled SMTP_*
+        # must leave `_smtp` None so the not-configured warning fires once,
+        # rather than build a channel that fails on every email.
+        host = env_setting("SMTP_HOST")
+        sender = env_setting("SMTP_SENDER")
         if host and sender:
             return {
                 "host": host,
-                "port": int(os.environ.get("SMTP_PORT", "587")),
-                "username": os.environ.get("SMTP_USERNAME", ""),
-                "password": os.environ.get("SMTP_PASSWORD", ""),
+                "port": int(env_setting("SMTP_PORT", "587")),
+                "username": env_setting("SMTP_USERNAME", ""),
+                "password": env_setting("SMTP_PASSWORD", ""),
                 "sender": sender,
             }
         return None

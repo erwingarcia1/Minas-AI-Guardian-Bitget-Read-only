@@ -17,6 +17,17 @@ container")._
 
 ### Fixed
 
+- **A half-filled SMTP configuration no longer looks configured** (#100).
+  Same defect as the SMS fix, one channel over: a whitespace `SMTP_HOST` or
+  `SMTP_SENDER` built an email channel on garbage, every customer email
+  failed one log line at a time, and the one-shot "SMTP is not configured"
+  warning — and its operator page — never fired. Blank and whitespace now
+  mean unset for every `SMTP_*` read (router and ops channel alike), values
+  are stripped, and the warning fires on a half-filled env; that is what the
+  test pins. The helper is now one shared `env_setting` in `sentinel/config`
+  (the SMS one folded in), and the old non-stripping `cli._env` is renamed
+  `_env_raw` and says so, so two opposite contracts no longer share a name.
+  A correctly configured SMTP is built from byte-identical inputs.
 - **A half-filled SMS configuration no longer looks configured.** A
   whitespace-only or space-padded `CLICKSEND_*` / `TWILIO_*` value used to
   read as present: a channel was built with garbage credentials, every

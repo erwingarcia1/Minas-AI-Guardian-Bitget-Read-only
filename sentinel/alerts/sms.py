@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import os
-
 from sentinel import net
 from sentinel.alerts.base import AlertChannel, AlertMessage
+from sentinel.config import env_setting
 
 # Two SMS segments. Shared by every SMS transport: SMS is a pager, not a
 # report - the full evidence goes out on Telegram/email in parallel.
@@ -40,36 +39,21 @@ def format_sms_body(alert: AlertMessage, max_len: int = SMS_MAX_LEN,
     return body[:max_len]
 
 
-def _env(name: str) -> str | None:
-    """Blank and whitespace-only are UNSET, and the value comes back stripped.
-
-    A half-filled .env - `CLICKSEND_API_KEY="  "`, a quoted value with a
-    trailing space - used to read as configured: a channel was built with
-    garbage credentials, every send failed, and the "no SMS provider is
-    configured" warning never fired because a provider *was*, apparently,
-    configured. Blank must fall through to the next provider or to None, and
-    a stray space must never reach the provider API."""
-    value = os.environ.get(name)
-    if value is None or not value.strip():
-        return None
-    return value.strip()
-
-
 def build_sms_channel(recipients: list[str], audience: str = "customer") -> AlertChannel | None:
     """Return an SMS channel for `recipients` based on configured env, or None
     if no SMS provider is set. ClickSend is preferred when its credentials are
     present; Twilio is the fallback. Callers no-op cleanly when this is None.
-    "Present" means non-blank - see `_env`."""
+    "Present" means non-blank - see `sentinel.config.env_setting`."""
     recipients = [r for r in recipients if r]
     if not recipients:
         return None
-    cs_user, cs_key = _env("CLICKSEND_USERNAME"), _env("CLICKSEND_API_KEY")
+    cs_user, cs_key = env_setting("CLICKSEND_USERNAME"), env_setting("CLICKSEND_API_KEY")
     if cs_user and cs_key:
         from sentinel.alerts.clicksend import ClickSendSmsChannel
 
-        return ClickSendSmsChannel(cs_user, cs_key, _env("CLICKSEND_FROM"), recipients,
+        return ClickSendSmsChannel(cs_user, cs_key, env_setting("CLICKSEND_FROM"), recipients,
                                    audience=audience)
-    sid, token, frm = _env("TWILIO_ACCOUNT_SID"), _env("TWILIO_AUTH_TOKEN"), _env("TWILIO_FROM_NUMBER")
+    sid, token, frm = env_setting("TWILIO_ACCOUNT_SID"), env_setting("TWILIO_AUTH_TOKEN"), env_setting("TWILIO_FROM_NUMBER")
     if sid and token and frm:
         return TwilioSmsChannel(sid, token, frm, recipients, audience=audience)
     return None

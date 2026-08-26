@@ -16,7 +16,7 @@ from sentinel.alerts.email import EmailChannel
 from sentinel.alerts.escalation import Escalator
 from sentinel.alerts.telegram import TelegramChannel
 from sentinel.buildinfo import build_info
-from sentinel.config import RulesConfig
+from sentinel.config import RulesConfig, env_setting
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
 from sentinel.onboarding import OnboardingRejected, onboard_account
@@ -46,7 +46,14 @@ def _setup_logging() -> None:
     root.setLevel(logging.INFO)
 
 
-def _env(name: str, default: str | None = None) -> str | None:
+def _env_raw(name: str, default: str | None = None) -> str | None:
+    """The raw environment value - NOT stripped, blank NOT treated as unset.
+
+    Kept for paths, ports and bind hosts whose blank-handling has not been
+    reviewed. Anything that decides whether a CHANNEL is configured must use
+    `sentinel.config.env_setting` instead: the two contracts are opposite,
+    and this one used to be called `_env`, one letter away from reaching for
+    the wrong one."""
     return os.environ.get(name, default)
 
 
@@ -55,20 +62,20 @@ def _build_named_channels() -> dict[str, object]:
     routing config in rules.yaml decides which severities use which."""
     named: dict[str, object] = {}
 
-    token, chat_id = _env("TELEGRAM_BOT_TOKEN"), _env("TELEGRAM_CHAT_ID")
+    token, chat_id = _env_raw("TELEGRAM_BOT_TOKEN"), _env_raw("TELEGRAM_CHAT_ID")
     if token and chat_id:
         named["telegram"] = TelegramChannel(token, chat_id)
 
     # Optional team/VA Telegram group: the bot must be a member of the group.
     # Routed via the 'telegram_team' channel name in alerting.routing.
-    team_chat = _env("TELEGRAM_TEAM_CHAT_ID")
+    team_chat = _env_raw("TELEGRAM_TEAM_CHAT_ID")
     if token and team_chat:
         named["telegram_team"] = TelegramChannel(token, team_chat)
 
     # Global SMS ops channel - ClickSend preferred, Twilio fallback (see
     # sentinel/alerts/sms.build_sms_channel). Recipients come from whichever
     # provider's *_TO_NUMBERS is set.
-    sms_to = _env("CLICKSEND_TO_NUMBERS") or _env("TWILIO_TO_NUMBERS")
+    sms_to = _env_raw("CLICKSEND_TO_NUMBERS") or _env_raw("TWILIO_TO_NUMBERS")
     if sms_to:
         from sentinel.alerts.sms import build_sms_channel
 
@@ -80,13 +87,14 @@ def _build_named_channels() -> dict[str, object]:
         if sms_channel is not None:
             named["sms"] = sms_channel
 
-    host, sender, recipients = _env("SMTP_HOST"), _env("SMTP_SENDER"), _env("SMTP_RECIPIENTS")
+    host, sender, recipients = (env_setting("SMTP_HOST"), env_setting("SMTP_SENDER"),
+                                env_setting("SMTP_RECIPIENTS"))
     if host and sender and recipients:
         named["email"] = EmailChannel(
             host,
-            int(_env("SMTP_PORT", "587")),
-            _env("SMTP_USERNAME", ""),
-            _env("SMTP_PASSWORD", ""),
+            int(env_setting("SMTP_PORT", "587")),
+            env_setting("SMTP_USERNAME", ""),
+            env_setting("SMTP_PASSWORD", ""),
             sender,
             [r.strip() for r in recipients.split(",")],
         )
@@ -169,7 +177,7 @@ def build_operator_channels(rules: RulesConfig) -> dict[str, list]:
 def cmd_onboard(args: argparse.Namespace) -> int:
     from sentinel.operators import is_active_operator, list_operators, operator_count
 
-    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     cipher = CredentialCipher()
 
     # The `--as` gate (#7): creating a customer is the founding entry of the
@@ -359,28 +367,28 @@ def cmd_run(args: argparse.Namespace) -> int:
     from sentinel.events import record_config_changes
     from sentinel.metrics import Metrics
 
-    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     cipher = CredentialCipher()
     # Threshold changes go into the audit trail (G-12, #16). Wired here rather
     # than inside RulesConfig so the config layer stays free of the database -
     # it is constructed and validated before there is one.
     rules = RulesConfig(
-        _env("SENTINEL_RULES_PATH", "./config/rules.yaml"),
+        _env_raw("SENTINEL_RULES_PATH", "./config/rules.yaml"),
         on_change=lambda changes: record_config_changes(db, changes),
     )
     routing_problems: list = []
     channels = build_channels(rules, problems=routing_problems)
 
     metrics = Metrics()
-    metrics_port = int(_env("SENTINEL_METRICS_PORT", "9109"))
-    metrics_host = _env("SENTINEL_METRICS_HOST", "127.0.0.1")
+    metrics_port = int(_env_raw("SENTINEL_METRICS_PORT", "9109"))
+    metrics_host = _env_raw("SENTINEL_METRICS_HOST", "127.0.0.1")
     Metrics.serve(metrics_port, host=metrics_host)
     # Loopback by default: the dashboard has no login of its own, so the
     # quickstart must not put it on every interface (G-36). Widening either
     # one is deliberate, and logged below so it's visible at startup rather
     # than discovered by a port scan.
-    dashboard_port = int(_env("SENTINEL_DASHBOARD_PORT", "8390"))
-    dashboard_host = _env("SENTINEL_DASHBOARD_HOST", "127.0.0.1")
+    dashboard_port = int(_env_raw("SENTINEL_DASHBOARD_PORT", "8390"))
+    dashboard_host = _env_raw("SENTINEL_DASHBOARD_HOST", "127.0.0.1")
     # `rules` so the page can say when config/rules.yaml was rejected and the
     # thresholds in force are older than the file (G-12).
     operator_alerter = OperatorAlerter(db, build_operator_channels(rules), rules)
@@ -420,7 +428,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     # The self-serve Telegram handshake (#18) needs someone watching the
     # bot's updates. Absent token = the feature is off and the portal simply
     # never shows a working deep link; said in the log rather than silently.
-    telegram_token = _env("TELEGRAM_BOT_TOKEN")
+    telegram_token = _env_raw("TELEGRAM_BOT_TOKEN")
     if telegram_token:
         from sentinel.alerts.telegram_link import TelegramLinkWorker
 
@@ -434,8 +442,8 @@ def cmd_run(args: argparse.Namespace) -> int:
 
     from sentinel.portal import serve_portal
 
-    portal_port = int(_env("SENTINEL_PORTAL_PORT", "8391"))
-    portal_host = _env("SENTINEL_PORTAL_HOST", "127.0.0.1")
+    portal_port = int(_env_raw("SENTINEL_PORTAL_PORT", "8391"))
+    portal_host = _env_raw("SENTINEL_PORTAL_HOST", "127.0.0.1")
     serve_portal(db, portal_port, host=portal_host, rules=rules, cipher=cipher,
                  metrics=metrics, operator_alerter=operator_alerter)
     logger.info(
@@ -443,7 +451,7 @@ def cmd_run(args: argparse.Namespace) -> int:
         dashboard_host, dashboard_port, portal_host, portal_port, metrics_host, metrics_port,
     )
     level, message = bind_disclosure(
-        dashboard_host, dashboard_port, _env("SENTINEL_BIND_GATE"))
+        dashboard_host, dashboard_port, _env_raw("SENTINEL_BIND_GATE"))
     if level:
         getattr(logger, level)(message)
 
@@ -472,10 +480,10 @@ def cmd_run(args: argparse.Namespace) -> int:
 def cmd_digest(args: argparse.Namespace) -> int:
     from sentinel.alerts.digest import send_digest, send_member_digests
 
-    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     # Constructing it validates config/rules.yaml and refuses to run the
     # digest on a config the poller would also be rejecting (G-12).
-    rules = RulesConfig(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+    rules = RulesConfig(_env_raw("SENTINEL_RULES_PATH", "./config/rules.yaml"))
     named = _build_named_channels()
     # The ops digest goes to telegram + email when configured.
     targets = [c for name, c in named.items() if name in ("telegram", "email")]
@@ -503,7 +511,7 @@ def cmd_ack(args: argparse.Namespace) -> int:
     shell by whoever has SSH."""
     from sentinel.operators import acknowledge_alert, is_active_operator, list_operators, operator_count
 
-    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     actor = getattr(args, "as_operator", None)
 
     if operator_count(db) > 0:
@@ -577,7 +585,7 @@ def cmd_account_status(args: argparse.Namespace) -> int:
     from sentinel.onboarding import set_account_status
     from sentinel.operators import is_active_operator, list_operators, operator_count
 
-    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     actor = getattr(args, "as_operator", None)
 
     if operator_count(db) > 0:
@@ -631,7 +639,7 @@ def cmd_set_threshold(args: argparse.Namespace) -> int:
     from sentinel.operators import is_active_operator, list_operators, operator_count
     from sentinel.rules_schema import validate
 
-    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     actor = getattr(args, "as_operator", None)
     if operator_count(db) > 0:
         if not actor:
@@ -688,7 +696,7 @@ def cmd_set_threshold(args: argparse.Namespace) -> int:
         print("a value is required", file=sys.stderr)
         return 2
 
-    path = Path(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+    path = Path(_env_raw("SENTINEL_RULES_PATH", "./config/rules.yaml"))
     try:
         before = yaml.safe_load(path.read_text()) or {}
     except (OSError, yaml.YAMLError) as exc:
@@ -741,7 +749,7 @@ def cmd_operator(args: argparse.Namespace) -> int:
         set_operator_password,
     )
 
-    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
 
     if args.operator_command == "list":
         rows = list_operators(db)
@@ -813,7 +821,7 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
     )
     from sentinel.operators import is_active_operator, list_operators, operator_count
 
-    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
 
     # The `--as` gate, in cmd_disable_account's mold (#80): attribution is
     # mandatory the moment operator accounts exist, and not before. Where the
@@ -952,7 +960,7 @@ def cmd_cancel_pause(args: argparse.Namespace) -> int:
     from sentinel.operators import is_active_operator, list_operators, operator_count
     from sentinel.pause import cancel_pause
 
-    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     actor = getattr(args, "as_operator", None)
     if operator_count(db) > 0:
         if not actor:
@@ -988,8 +996,8 @@ def cmd_cancel_pause(args: argparse.Namespace) -> int:
 def cmd_triage(args: argparse.Namespace) -> int:
     from sentinel.triage import TriageEngine
 
-    db = Database(_env("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
-    rules = RulesConfig(_env("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    rules = RulesConfig(_env_raw("SENTINEL_RULES_PATH", "./config/rules.yaml"))
     engine = TriageEngine(rules)
     if not engine.enabled:
         print("triage is disabled (set triage.enabled: true in rules.yaml and ANTHROPIC_API_KEY)", file=sys.stderr)

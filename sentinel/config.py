@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
@@ -10,6 +11,30 @@ from typing import Any
 import yaml
 
 from sentinel.rules_schema import default_for, prune_invalid, validate
+
+
+def env_setting(name: str, default: str | None = None) -> str | None:
+    """An environment setting with blank and whitespace-only treated as UNSET,
+    and the value returned stripped.
+
+    The one way to read a setting that decides whether a channel is
+    configured. A half-filled .env - `SMTP_HOST="  "`, a quoted value with a
+    trailing space, which python-dotenv yields verbatim - used to read as
+    configured by plain truthiness: a channel was built on garbage, every
+    send failed and was logged one at a time, and the one-shot "not
+    configured" warning (and its operator page) never fired, because a
+    provider apparently *was* configured. Found on SMS first (79b089d), then
+    on SMTP and Telegram by audit.
+
+    `default` is what unset means for the caller (None, "", "587", a path):
+    blank falls to it exactly as absent does. A clean value comes back
+    unchanged - strip is the identity on it - so a correctly configured
+    channel is built from byte-identical inputs before and after this
+    helper existed."""
+    value = os.environ.get(name)
+    if value is None or not value.strip():
+        return default
+    return value.strip()
 
 logger = logging.getLogger("sentinel.config")
 
