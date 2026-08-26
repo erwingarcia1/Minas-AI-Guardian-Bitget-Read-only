@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime, timedelta, timezone
 
 from sentinel.alerts.base import AlertMessage
@@ -246,7 +245,9 @@ class ContactRouter:
         chats = chat_ids_for_emails(self._db, emails)
         if not chats:
             return
-        token = os.environ.get("TELEGRAM_BOT_TOKEN")
+        # env_setting (#101): a whitespace token is unset, so the one-shot
+        # warning below fires instead of one failed post per chat per alert.
+        token = env_setting("TELEGRAM_BOT_TOKEN")
         if not token:
             self._warn_once(
                 "telegram",

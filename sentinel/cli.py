@@ -62,13 +62,15 @@ def _build_named_channels() -> dict[str, object]:
     routing config in rules.yaml decides which severities use which."""
     named: dict[str, object] = {}
 
-    token, chat_id = _env_raw("TELEGRAM_BOT_TOKEN"), _env_raw("TELEGRAM_CHAT_ID")
+    # Blank and whitespace are unset (env_setting, #101): a half-filled
+    # TELEGRAM_* must build nothing rather than a channel that fails every call.
+    token, chat_id = env_setting("TELEGRAM_BOT_TOKEN"), env_setting("TELEGRAM_CHAT_ID")
     if token and chat_id:
         named["telegram"] = TelegramChannel(token, chat_id)
 
     # Optional team/VA Telegram group: the bot must be a member of the group.
     # Routed via the 'telegram_team' channel name in alerting.routing.
-    team_chat = _env_raw("TELEGRAM_TEAM_CHAT_ID")
+    team_chat = env_setting("TELEGRAM_TEAM_CHAT_ID")
     if token and team_chat:
         named["telegram_team"] = TelegramChannel(token, team_chat)
 
@@ -428,7 +430,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     # The self-serve Telegram handshake (#18) needs someone watching the
     # bot's updates. Absent token = the feature is off and the portal simply
     # never shows a working deep link; said in the log rather than silently.
-    telegram_token = _env_raw("TELEGRAM_BOT_TOKEN")
+    telegram_token = env_setting("TELEGRAM_BOT_TOKEN")
     if telegram_token:
         from sentinel.alerts.telegram_link import TelegramLinkWorker
 

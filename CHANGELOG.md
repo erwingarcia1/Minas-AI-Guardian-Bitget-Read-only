@@ -17,6 +17,15 @@ container")._
 
 ### Fixed
 
+- **A half-filled Telegram configuration no longer looks configured**
+  (#101). A whitespace `TELEGRAM_BOT_TOKEN` built the ops channel (and the
+  team channel, and started the link worker) on a garbage token, so every
+  Bot API call failed; on the member path the one-shot "TELEGRAM_BOT_TOKEN
+  is not set" warning never fired — one failed post per connected chat per
+  alert instead. Every Telegram read now goes through `env_setting`: blank
+  and whitespace are unset, values are stripped, and the warning fires on
+  a half-filled env, which is what the test pins. A correctly configured
+  Telegram is built from byte-identical inputs.
 - **A half-filled SMTP configuration no longer looks configured** (#100).
   Same defect as the SMS fix, one channel over: a whitespace `SMTP_HOST` or
   `SMTP_SENDER` built an email channel on garbage, every customer email

@@ -4973,3 +4973,16 @@ What did NOT change, verified: a clean-env snapshot of every channel the
 process builds (email, sms, telegram, telegram_team: every attribute) and
 the router's SMTP dict, taken before the change and after, is
 byte-identical. Probe: `host and sender -> or`, killed.
+
+# 2026-08-26 · #101 Telegram blank-as-unset
+
+Every Telegram read - the cli ops and team channels, the link-worker
+gate, and the router's member-copy leg - now goes through
+`env_setting`. Router-level test: a member with a connected chat and a
+whitespace TELEGRAM_BOT_TOKEN leaves "TELEGRAM_BOT_TOKEN is not set" in
+the log and posts nothing (net.post is a tripwire). Cli tests: whitespace
+token builds neither channel; padded values reach TelegramChannel
+stripped; clean values unchanged. Byte-identical check as for #100: the
+clean-env snapshot of every channel plus the router SMTP dict matches
+the pre-#100 baseline exactly. Probe: `token and chat_id -> or`, killed.
+`_env_raw` remains for paths/ports/bind hosts only, documented as such.

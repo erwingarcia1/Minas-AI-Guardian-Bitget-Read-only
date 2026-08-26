@@ -1354,5 +1354,25 @@
       "tests/test_env_setting.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#101 a half-filled Telegram pair must not build the ops channel (token and chat_id -> or)",
+    "file": "sentinel/cli.py",
+    "old": "    if token and chat_id:\n        named[\"telegram\"] = TelegramChannel(token, chat_id)\n",
+    "new": "    if token or chat_id:\n        named[\"telegram\"] = TelegramChannel(token, chat_id)\n",
+    "tests": [
+      "tests/test_telegram_env.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "env_setting: whitespace must be unset (is None or not strip -> and) - out of mutmut's scope since it moved to config.py",
+    "file": "sentinel/config.py",
+    "old": "    if value is None or not value.strip():\n        return default\n",
+    "new": "    if value is None and not value.strip():\n        return default\n",
+    "tests": [
+      "tests/test_env_setting.py"
+    ],
+    "expect": "killed"
   }
 ]
