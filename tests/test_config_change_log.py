@@ -261,3 +261,15 @@ def test_set_threshold_requires_a_name_once_operators_exist(monkeypatch, tmp_pat
 
     assert code == 0
     assert _changes(db)[0]["actor"] == "erwin"
+
+
+def test_a_section_that_appears_or_disappears_is_reported_per_setting():
+    """`isinstance(old, dict) OR isinstance(new, dict)`: a section present on
+    one side only must still be walked, so each of its settings reads as a
+    change by its full path - not the whole section as one opaque blob."""
+    from sentinel.config import settings_diff
+
+    assert settings_diff({"alerting": {"sms_cooldown_minutes": 30}}, {}) == [
+        ("alerting.sms_cooldown_minutes", "30", None)]
+    assert settings_diff({}, {"alerting": {"sms_cooldown_minutes": 30}}) == [
+        ("alerting.sms_cooldown_minutes", None, "30")]

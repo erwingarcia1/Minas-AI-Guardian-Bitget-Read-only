@@ -4986,3 +4986,44 @@ stripped; clean values unchanged. Byte-identical check as for #100: the
 clean-env snapshot of every channel plus the router SMTP dict matches
 the pre-#100 baseline exactly. Probe: `token and chat_id -> or`, killed.
 `_env_raw` remains for paths/ports/bind hosts only, documented as such.
+
+# 2026-08-26 · The mutation gate regenerates incrementally, proves it, and the cold path is 90 s
+
+Where the hours went, measured before designing anything: a warm no-op
+regeneration 10 s; a full test-map re-collection 27 s; regenerating one
+changed file (sms.py, 120 mutants) 9 s; regenerating portal.py alone
+**10955 s** - 3669 lines, never in the gate's scope, generated only
+because mutmut must copy the whole package. Every cold run this month
+(10602 s, 11786 s, 23669 s) was portal.py.
+
+Two changes, both fail-closed. (1) `only_mutate` scopes GENERATION to
+what the gate scores (detectors, alerts, config.py); the rest is copied
+plain. From-scratch is now 90 s, warm 55 s. (2) scripts/mutant-refresh.py:
+on a manifest mismatch, `plan` deletes the copies of changed/added/
+removed files (mutmut's own change detection is by mtime, which a
+restored archive defeats - the 2026-08-23 hollow pass) and the test map;
+after regeneration `validate` demands every recorded per-function hash
+equal the CURRENT source's (mutmut's own compute_function_hashes) and
+every plain copy be byte-equal to its source; anything else, or a state
+the planner cannot map, rebuilds from scratch; the manifest is written
+only after the proof. sentinel.config joined the scope (198 mutants;
+settings_diff's tests in the selection); the ledger caught a NEW
+survivor there on the first run (`or`→`and` on the dict walk), killed by
+name.
+
+Proofs, in the hollow pass's shape, against the real gate:
+- P1 changed function + weakened test: siblings.py edited (hash change,
+  behaviour same) and the 24h-edge assertion deleted → plan "1 changed,
+  63 unchanged", validate "64 files ... matches", NEW survivor
+  63aed9bd49db0412 (siblings mutmut_47), gate EXIT 1, 73 s.
+- P2 unchanged verdicts: .meta verdict maps of off_market (85),
+  quantity_drop (315), dispatch (120), contact (459) identical before and
+  after; the full re-judge agreed (only the deliberate survivor new).
+- P3 unmappable: an unchanged file's .meta removed + another source
+  change → "cannot plan incrementally ... refused - rebuilding from
+  scratch", full generation, 196/198, 83 s. A failed `validate` takes the
+  same path (gate-wired and unit-tested; not fabricable end to end
+  without a hook, said plainly).
+Restored, re-judged: 196/198 = 98%, ledger 2 accepted, tree clean.
+CONTRIBUTING records that #93's predicate is sufficient only with the
+survivor ledger, beside both mechanisms.

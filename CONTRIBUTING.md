@@ -248,6 +248,18 @@ The division of labour:
   outright. The predicate (`scripts/scheduled-gates-cover.sh`) may only
   make a release cheaper, never weaker.
 
+  **#93 alone is NOT sufficient for a safe release — #93 plus the survivor
+  ledger is.** The predicate proves the slow gates *ran* on this code and
+  were green; it does not prove the ratchet *noticed* anything. A scheduled
+  run is green when the score merely clears the floor, and the floor has two
+  points of headroom by design — so a decision can stop being pinned, the
+  weekly run stays green, and #93 covers the release. What closes that is
+  `scripts/mutation-known-survivors.txt`: a survivor not in the ledger fails
+  the gate whatever the score, so the scheduled run that #93 trusts is red
+  for exactly the case the floor lets through. Remove the ledger and #93
+  becomes a proof that the gates ran, not that they held. Do not remove it
+  thinking it duplicates the floor; it covers what the floor cannot.
+
 The eighth gate closes the quiet failure of that arrangement: a cron that
 silently stops firing reads as permanently green, so
 `scripts/scheduled-gates-freshness.sh` asserts a scheduled (or dispatched)
@@ -646,6 +658,32 @@ The mutmut invocation quirks (whole-package `source_paths`, newline-separated
 test selection, the cached `mutants/` copy, unstable mutant numbering) are
 documented at the top of the script so nobody rediscovers them.
 
+### Regeneration is incremental, and proven
+
+`mutants/` is expensive to build from scratch — generation of the whole
+package is single-threaded and took 2h57m and 6h34m for eighteen changed
+lines on 2026-08-26 — and cheap to bring up to date: a changed file
+regenerates in ~9 s (portal.py, the largest, is the bound; see the log), a
+full re-collection of the test-to-function map in ~27 s, a no-op in 10 s.
+So when the source manifest says files changed, the gate regenerates only
+those (`scripts/mutant-refresh.py plan` deletes their copies so mutmut must
+rebuild them — mutmut's own change detection is by mtime, which a restored
+archive or a checkout defeats; that was the 2026-08-23 hollow pass), always
+re-collects the test map (a new function with no map entry would score "no
+tests"), and then **proves the result**: `mutant-refresh.py validate` reads
+every `.meta`'s per-function hashes and demands each equal the hash of the
+CURRENT source, computed with mutmut's own function. A missing copy, a
+missing `.meta`, a recorded function absent from the source, or a differing
+hash fails the proof, and a failed proof — like anything the planner cannot
+map (no recorded manifest, an unchanged file with no `.meta`) — goes to the
+from-scratch path. The manifest is written only after the proof. Unverifiable
+is stale; fail closed.
+
+`--regenerate` still means from scratch. The scope is `sentinel.detectors`,
+`sentinel.alerts` and, since `env_setting` moved there, `sentinel.config`
+(its `settings_diff` tests are in the selection for that reason: the
+completeness guard refuses an unreached module rather than scoring it).
+
 ### The survivor ledger
 
 The floor has two points of headroom on purpose (see the ratchet comment in
@@ -674,6 +712,12 @@ fails the gate on every run, survivors or not. And the gate prints the
 ledger's size on every run (`Survivor ledger: N accepted`); the weekly
 scheduled-gates report carries that number as its own row. A count that only
 ever goes up is the signal that rows are being added instead of tests.
+
+**The ledger is also what makes #93 safe** (see "Is everything okay?"): the
+release predicate trusts a green scheduled run, and a run is green on a
+dropped score as long as the floor's headroom absorbs it. The ledger is the
+part of that run that fails on one lost kill. The two mechanisms depend on
+each other; neither is redundant with the floor.
 
 ### Hand-written probes, and why they need a tool
 

@@ -105,8 +105,8 @@
 #
 # ## What this gate does not cover
 #
-# The scope is the two packages named in the `classify_mutants.py` call below:
-# `sentinel.detectors` and `sentinel.alerts`. Everything else in the package -
+# The scope is the packages named in the `classify_mutants.py` call below:
+# `sentinel.detectors`, `sentinel.alerts` and (since 2026-08-26) `sentinel.config`. Everything else in the package -
 # `keyreplacement.py`, `net.py`, `portal.py`, `exchange.py` - produces no
 # mutants here however many decisions it makes, and adding its tests to the
 # selection below buys nothing but a slower run. Those modules are covered by
@@ -158,9 +158,22 @@ command -v "$MUTMUT" >/dev/null 2>&1 || [ -x "$MUTMUT" ] || {
 #
 # Keep this a plain list. It is a configparser multi-line value, so an indented
 # `#` comment is read as another test path, not as a comment.
+#
+# `only_mutate` (2026-08-26): mutants are GENERATED only for the scope the
+# gate scores. Everything else under sentinel/ is still copied - tests need
+# the whole package importable (quirk 1) - but copied plain, not mutated.
+# Measured: generating portal.py alone, 3669 lines and never in scope, was
+# 10955 s - the entire from-scratch cost of every cold run this month. The
+# scored population is unchanged (the completeness guard below proves it),
+# and scripts/mutant-refresh.py validates plain copies by byte equality and
+# mutated ones by per-function hash, so a stale copy of EITHER kind fails.
 cat > setup.cfg <<'EOF'
 [mutmut]
 source_paths=sentinel
+only_mutate=
+    sentinel/detectors/*
+    sentinel/alerts/*
+    sentinel/config.py
 pytest_add_cli_args_test_selection=
     tests/test_detectors_phase2.py
     tests/test_detectors_withdrawal.py
@@ -191,6 +204,7 @@ pytest_add_cli_args_test_selection=
     tests/test_pause_countdown.py
     tests/test_customer_channel_guard.py
     tests/test_sibling_acknowledgement.py
+    tests/test_config_change_log.py
 runner=python -m pytest -x -q -p no:cacheprovider
 EOF
 trap 'rm -f setup.cfg' EXIT
@@ -238,7 +252,44 @@ CURRENT_MANIFEST_FILE=$(mktemp)
 printf '%s\n' "$CURRENT" > "$CURRENT_MANIFEST_FILE"
 trap 'rm -f setup.cfg "$CURRENT_MANIFEST_FILE"' EXIT
 
-if [ "$REGENERATE" = true ] || [ ! -d mutants ] || [ "$STALE" = true ]; then
+# Bringing mutants/ up to date, cheapest honest path first:
+#
+#   1. present and matching the manifest       -> use it (warm, ~1 min)
+#   2. present, sources changed                -> INCREMENTAL: regenerate only
+#      the files the manifest says changed, re-collect the test map, then
+#      PROVE it (scripts/mutant-refresh.py; per-function hashes against the
+#      current source). A refusal or a failed proof falls to 3.
+#   3. absent, --regenerate, a stale non-.py   -> from scratch: the durable
+#      file, or a failed proof                    archive (#97), else a full
+#                                                 generation (hours).
+#
+# Step 2 exists because step 3 cost 2h57m and 6h34m for eighteen changed
+# lines (2026-08-26) and the cost is not inherent: a changed file
+# regenerates in ~9 s and the test map in ~27 s. mutmut regenerates per
+# file on its own, but decides "changed" by MTIME - and a restored archive
+# or a checkout can leave a changed source older than its copy, which it
+# reads as unmodified. That is the 2026-08-23 hollow pass. The refresher
+# deletes changed copies so regeneration is unconditional, and the proof
+# afterwards is what lets a partial regeneration be trusted at all.
+INCREMENTAL=false
+if [ "$REGENERATE" != true ] && [ -d mutants ] && [ "$STALE" = true ] && [ -f mutants/.source-manifest ]; then
+  if "$PY" scripts/mutant-refresh.py plan mutants/.source-manifest "$CURRENT_MANIFEST_FILE"; then
+    echo "Regenerating changed files only (validated afterwards)..."
+    "$MUTMUT" run 'zzz.no.such.mutant' >/dev/null 2>&1 || true
+    if "$PY" scripts/mutant-refresh.py validate "$CURRENT_MANIFEST_FILE"; then
+      INCREMENTAL=true
+      printf '%s\n' "$CURRENT" > mutants/.source-manifest
+    else
+      echo "incremental regeneration could not be proven - rebuilding from scratch" >&2
+      rm -rf mutants
+    fi
+  else
+    echo "incremental regeneration refused - rebuilding from scratch" >&2
+    rm -rf mutants
+  fi
+fi
+
+if [ "$INCREMENTAL" != true ] && { [ "$REGENERATE" = true ] || [ ! -d mutants ] || [ "$STALE" = true ]; }; then
   # Delete first. Generating over a surviving mutants/ is how every staleness
   # bug in this gate has started: mutmut keeps whatever is already there, both
   # the non-Python files above and mutmut-stats.json, which caches the
@@ -252,7 +303,7 @@ if [ "$REGENERATE" = true ] || [ ! -d mutants ] || [ "$STALE" = true ]; then
   if [ "$REGENERATE" != true ] && scripts/mutant-cache.sh restore "$CACHE_KEY" "$CURRENT_MANIFEST_FILE"; then
     : # restored and validated - population AND prior results are warm
   else
-    echo "Generating mutants (~8 min, cached afterwards)..."
+    echo "Generating mutants from scratch (~2 min with scoped generation; cached afterwards)..."
     "$MUTMUT" run 'zzz.no.such.mutant' >/dev/null 2>&1 || true
     # The staleness manifest: what the sources looked like when this cache
     # was built. Written AFTER generation so a crash mid-generate leaves no
@@ -261,7 +312,7 @@ if [ "$REGENERATE" = true ] || [ ! -d mutants ] || [ "$STALE" = true ]; then
   fi
 fi
 
-mapfile -t MUTANTS < <("$PY" scripts/classify_mutants.py sentinel.detectors sentinel.alerts)
+mapfile -t MUTANTS < <("$PY" scripts/classify_mutants.py sentinel.detectors sentinel.alerts sentinel.config)
 echo "Decision-point mutants: ${#MUTANTS[@]}"
 [ "${#MUTANTS[@]}" -eq 0 ] && { echo "none selected - has mutants/ been generated?" >&2; exit 2; }
 

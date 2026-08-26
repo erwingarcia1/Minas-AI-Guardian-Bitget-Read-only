@@ -17,6 +17,18 @@ container")._
 
 ### Fixed
 
+- **The mutation gate regenerates only what changed, and proves it.** The
+  from-scratch rebuild cost 2h57m and 6h34m for eighteen changed lines;
+  a changed file regenerates in seconds and the test map in under a
+  minute. When sources change, the gate now regenerates only the files the
+  manifest names, re-collects the test map, and validates every recorded
+  per-function hash against the current source before trusting anything —
+  a failed or unmappable validation rebuilds from scratch, never passes.
+  Proven in the hollow pass's own shape. `sentinel.config` joins the
+  mutation scope (with `settings_diff`'s tests in the selection) so
+  `env_setting`, the chokepoint every channel decision routes through, is
+  measured on every run. CONTRIBUTING now records that #93's release
+  predicate is sufficient only together with the survivor ledger.
 - **A half-filled Telegram configuration no longer looks configured**
   (#101). A whitespace `TELEGRAM_BOT_TOKEN` built the ops channel (and the
   team channel, and started the link worker) on a garbage token, so every
