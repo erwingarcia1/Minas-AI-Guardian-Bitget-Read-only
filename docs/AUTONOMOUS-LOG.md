@@ -5061,3 +5061,19 @@ b6ca5c2 (2026-08-13, billing plans) with no source. docs/data-retention.md
 says "company operates from Canada (operator email .ca)" and names
 PIPEDA. The two documents contradict each other; the UK claim is the
 unsourced one. Not resolved - reported, and noted in §11.
+
+# 2026-08-27 · #87 built: mandatory dashboard two-factor (decision 19)
+
+Password → five-minute pending token (own context string, never a
+session) → code step (TOTP or recovery code, throttled with passwords)
+→ session. Unenrolled → first-login enrolment page (secret + otpauth
+URI) → confirm → recovery codes shown once, session issued, event
+`two_factor_enrolled` recorded. `operator add` enrols interactively at
+the keyboard (or defers to first sign-in without a tty / --enrol-later);
+`operator list` shows who has NOT YET enrolled; `operator reset-2fa
+<name> --as <who>` is the host-only break-glass, recorded in the new
+append-only `operator_events` table (actor NOT NULL). No cipher → 503,
+never password-only. No dashboard route can disable it (test-pinned).
+19 new tests + 3 existing moved to the two-step contract; 3 probes
+(wrong code must not sign in; enrolled goes to the code step; the reset
+must record who), all killed.

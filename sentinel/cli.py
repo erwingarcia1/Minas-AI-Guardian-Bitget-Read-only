@@ -754,14 +754,34 @@ def cmd_operator(args: argparse.Namespace) -> int:
     db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
 
     if args.operator_command == "list":
+        from sentinel.twofactor import OPERATOR, is_enabled
+
         rows = list_operators(db)
         if not rows:
             print("no operator accounts yet - the ops dashboard is unprotected until one exists")
             return 0
-        print(f"{'USERNAME':<20}{'STATUS':<12}{'LAST LOGIN':<28}NAME")
+        print(f"{'USERNAME':<20}{'STATUS':<12}{'2FA':<10}{'LAST LOGIN':<28}NAME")
         for row in rows:
-            print(f"{row['username']:<20}{row['status']:<12}"
+            twofa = "on" if is_enabled(db, OPERATOR, row["username"]) else "NOT YET"
+            print(f"{row['username']:<20}{row['status']:<12}{twofa:<10}"
                   f"{(row['last_login_at'] or '—'):<28}{row['display_name'] or ''}")
+        return 0
+
+    if args.operator_command == "reset-2fa":
+        # Decision 19: the last-operator recovery is host access. This is the
+        # only path that removes an operator's second factor, it runs only
+        # from a shell on the host, and it is recorded with who ran it.
+        from sentinel.operators import reset_second_factor
+
+        actor = getattr(args, "as_operator", None)
+        if not actor:
+            print("--as <operator> is required: a two-factor reset is recorded against a name", file=sys.stderr)
+            return 2
+        if not reset_second_factor(db, args.username, actor):
+            print(f"no such operator '{args.username}'", file=sys.stderr)
+            return 1
+        print(f"two-factor reset for '{args.username}' by '{actor}' - recorded; "
+              f"they will enrol again at their next sign-in")
         return 0
 
     username = args.username
@@ -781,6 +801,7 @@ def cmd_operator(args: argparse.Namespace) -> int:
         if args.operator_command == "add":
             create_operator(db, username, password, display_name=args.name)
             print(f"operator '{username}' created - the ops dashboard now requires a sign-in")
+            return _enrol_operator_now(db, username, enrol_later=getattr(args, "enrol_later", False))
         elif args.operator_command == "passwd":
             if not set_operator_password(db, username, password):
                 print(f"no such operator '{username}'", file=sys.stderr)
@@ -799,6 +820,45 @@ def cmd_operator(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    return 0
+
+
+def _enrol_operator_now(db, username: str, *, enrol_later: bool) -> int:
+    """Two-factor enrolment as part of `operator add` (decision 19).
+
+    Mandatory means the first sign-in enforces it either way; doing it here
+    means the person creating the account leaves with a working authenticator
+    and their recovery codes, instead of discovering the requirement at the
+    login form. Non-interactive (no tty) or --enrol-later: say so and let the
+    first-login step do it."""
+    if enrol_later or not sys.stdin.isatty():
+        print("two-factor is required: enrolment will happen at this operator's first sign-in")
+        return 0
+    try:
+        cipher = CredentialCipher()
+    except Exception as exc:  # noqa: BLE001 - explained to the person at the keyboard
+        print(f"cannot enrol now ({exc}); enrolment will happen at first sign-in", file=sys.stderr)
+        return 0
+    from sentinel.twofactor import OPERATOR, begin_enrolment, confirm_enrolment
+
+    secret, uri = begin_enrolment(db, cipher, OPERATOR, username)
+    print("\nAdd this to the authenticator app, then enter a code to switch two-factor on:")
+    print(f"  secret: {secret}")
+    print(f"  {uri}")
+    for _attempt in range(3):
+        code = input("code from the app: ").strip()
+        codes = confirm_enrolment(db, cipher, OPERATOR, username, code)
+        if codes:
+            from sentinel.operators import record_operator_event
+
+            record_operator_event(db, "two_factor_enrolled", username, actor=username,
+                                  detail="enrolled at `operator add`")
+            print("\ntwo-factor is ON. Recovery codes - each works once, shown only now:")
+            for c in codes:
+                print(f"  {c}")
+            return 0
+        print("that code was not accepted - nothing has changed; try again", file=sys.stderr)
+    print("enrolment not confirmed; it will be required at first sign-in", file=sys.stderr)
     return 0
 
 
@@ -1082,6 +1142,13 @@ def main() -> None:
             sp.add_argument("--password", help="Prompted for if omitted")
         if name == "add":
             sp.add_argument("--name", help="Display name")
+            sp.add_argument("--enrol-later", action="store_true",
+                            help="Skip two-factor enrolment now; it is required at first sign-in")
+    reset_parser = operator_sub.add_parser(
+        "reset-2fa", help="Host break-glass: remove an operator's second factor (recorded; re-enrol at next sign-in)")
+    reset_parser.add_argument("username")
+    reset_parser.add_argument("--as", dest="as_operator", metavar="OPERATOR", required=False,
+                              help="Who is doing this - required; the reset is recorded against the name")
     operator_sub.add_parser("list", help="List operator accounts")
     operator_parser.set_defaults(func=cmd_operator)
 

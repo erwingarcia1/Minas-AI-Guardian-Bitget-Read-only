@@ -88,6 +88,10 @@ KEEP_LATEST_PER_ACCOUNT: dict[str, tuple[str, str]] = {
 # identity and configuration (deleting a row removes a person or a setting), and
 # state tables that hold exactly one row per account.
 NEVER_PRUNE = frozenset({
+    # #87: operator two-factor enrolments and the host break-glass resets,
+    # with who did them. An audit row whose entire purpose is to be read
+    # later is not something a retention period may remove.
+    "operator_events",
     # Deleting an enrolment silently turns 2FA OFF for that person, and
     # deleting a recovery code silently removes their way back in. Both are
     # current state, not history (#32).

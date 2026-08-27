@@ -81,6 +81,24 @@ deliberate ways:
 
 ### Added
 
+- **Two-factor is mandatory on the ops dashboard** (#87, decision 19).
+  The dashboard — which adds customers, reads every customer's contact
+  details and attributes operator actions — had a password-only sign-in
+  while the member portal carried TOTP; and with no operator account in
+  production it had no sign-in at all. Now a correct password mints no
+  session: an enrolled operator must present a code from their
+  authenticator or a recovery code (throttled on the same limiter as
+  passwords), and an operator with no second factor is walked through
+  enrolment at first sign-in and cannot get past it — enrolment is not in
+  force until a code verifies, so a mis-scanned secret means "try again",
+  never "locked out". `sentinel operator add` enrols at the keyboard and
+  prints the recovery codes once. **On upgrade, every operator sets up
+  two-factor at their next sign-in.** The only thing that removes an
+  operator's second factor is the host break-glass `sentinel operator
+  reset-2fa <name> --as <who>` — a shell command on the VM, never a
+  dashboard route — recorded in a new append-only `operator_events` table
+  with who ran it. Without `SENTINEL_MASTER_KEY` the sign-in is refused,
+  not downgraded to password-only.
 - **Acknowledging an alert closes the whole customer action** (#99).
   Two detectors seeing one withdrawal used to mean two alerts and one
   orphan: the measured case is a pair sharing one exchange order

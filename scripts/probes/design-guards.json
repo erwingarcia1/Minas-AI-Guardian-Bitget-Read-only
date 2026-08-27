@@ -1374,5 +1374,35 @@
       "tests/test_env_setting.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#87 a wrong second-factor code must not sign in (not check -> check)",
+    "file": "sentinel/dashboard.py",
+    "old": "            if cipher is None or not check_second_factor(db, cipher, OPERATOR, username, code):\n",
+    "new": "            if cipher is None or check_second_factor(db, cipher, OPERATOR, username, code):\n",
+    "tests": [
+      "tests/test_operator_two_factor.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#87 an enrolled operator goes to the code step, never to enrolment (is_enabled -> False)",
+    "file": "sentinel/dashboard.py",
+    "old": "            if is_enabled(db, OPERATOR, username):\n                logger.info(\"operator %s passed the password step",
+    "new": "            if False and is_enabled(db, OPERATOR, username):\n                logger.info(\"operator %s passed the password step",
+    "tests": [
+      "tests/test_operator_two_factor.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#87 the break-glass reset must record who did it (record_operator_event dropped)",
+    "file": "sentinel/operators.py",
+    "old": "    record_operator_event(db, \"two_factor_reset\", username, actor,\n                          detail=\"host break-glass; re-enrolment required at next sign-in\")\n    return True\n",
+    "new": "    return True\n",
+    "tests": [
+      "tests/test_operator_two_factor.py"
+    ],
+    "expect": "killed"
   }
 ]

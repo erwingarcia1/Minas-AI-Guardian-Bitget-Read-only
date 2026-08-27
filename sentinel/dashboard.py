@@ -14,10 +14,13 @@ from sentinel.events import append_event
 from sentinel.operators import (
     SESSION_COOKIE,
     check_operator_login,
+    make_pending_token,
     make_session_token,
     operator_count,
+    record_operator_event,
     session_operator,
     session_secret,
+    verify_pending_token,
 )
 from sentinel.passwords import LoginThrottle
 from sentinel.rules_schema import default_for
@@ -318,6 +321,63 @@ def _render_operator_login(error: str | None = None) -> str:
         '</div><div style="margin-top:18px">'
         '<button class="submit" type="submit">Sign in</button></div>'
         "</form></div></section>"
+    )
+    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False)
+
+
+def _render_operator_code(pending: str, error: str | None = None) -> str:
+    """Step two of the sign-in: the code from the operator's app, or one of
+    their recovery codes. The pending token proves the password step happened
+    moments ago; nothing here says whether the username exists."""
+    banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
+    body = (
+        banner
+        + '<section><div class="card"><div class="card-head"><h2>Second factor</h2>'
+        '<span class="count">Minas staff only</span></div>'
+        '<form class="addf" method="post" action="/login/code">'
+        f'<input type="hidden" name="pending" value="{html.escape(pending)}">'
+        '<div class="fld"><label>Code from your authenticator app, or a recovery code</label>'
+        '<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus></div>'
+        '<div style="margin-top:18px"><button class="submit" type="submit">Sign in</button></div>'
+        "</form></div></section>"
+    )
+    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False)
+
+
+def _render_operator_enrol(pending: str, secret: str, uri: str, error: str | None = None) -> str:
+    """The first-login step (decision 19): two-factor is mandatory, so an
+    operator without a confirmed enrolment cannot get past here. It is not
+    in force until a code verifies - a mis-scanned secret leaves them able to
+    try again, not locked out."""
+    banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
+    body = (
+        banner
+        + '<section><div class="card"><div class="card-head"><h2>Set up two-factor</h2>'
+        '<span class="count">Required for every operator</span></div>'
+        "<p>Add this secret to your authenticator app, then enter a code to switch it on. "
+        "Two-factor is required for the ops dashboard; you cannot sign in without it.</p>"
+        f'<p class="mono" id="totp-secret">{html.escape(secret)}</p>'
+        f'<p class="mono">{html.escape(uri)}</p>'
+        '<form class="addf" method="post" action="/login/enrol">'
+        f'<input type="hidden" name="pending" value="{html.escape(pending)}">'
+        '<div class="fld"><label>Code from your app</label>'
+        '<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus></div>'
+        '<div style="margin-top:18px"><button class="submit" type="submit">Turn on two-factor and sign in</button></div>'
+        "</form></div></section>"
+    )
+    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False)
+
+
+def _render_operator_recovery_codes(codes: list[str]) -> str:
+    body = (
+        '<section><div class="card"><div class="card-head"><h2>Save your recovery codes</h2>'
+        '<span class="count">Shown once</span></div>'
+        "<p>Each code works once and signs you in if you lose your phone. They are stored "
+        "hashed, so this is the only time they can be shown. If all of them are gone too, "
+        "the reset is <code>sentinel operator reset-2fa</code> on the host - it is recorded.</p>"
+        '<p class="mono">' + "<br>".join(html.escape(c) for c in codes) + "</p>"
+        '<p style="margin-top:18px"><a class="submit" href="/">Continue to the dashboard</a></p>'
+        "</div></section>"
     )
     return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False)
 
@@ -1140,6 +1200,12 @@ def serve_dashboard(
             if post_path == "/login":
                 self._login()
                 return
+            if post_path == "/login/code":
+                self._login_code()
+                return
+            if post_path == "/login/enrol":
+                self._login_enrol()
+                return
             if not self._gate():
                 return
             if post_path == "/portal-access":
@@ -1348,16 +1414,117 @@ def serve_dashboard(
 
             _login_throttle.reset(f"ip:{client_ip}")
             _login_throttle.reset(f"user:{username.lower()}")
-            logger.info("operator %s signed in from %s", username.lower(), client_ip)
+            # The password alone mints NO session (#87, decision 19). It
+            # mints a five-minute pending token, and the second step - a
+            # code, or first-login enrolment - is what signs in.
+            if cipher is None:
+                # Without the master key there is no way to read a stored
+                # secret or store a new one. Refuse rather than fall back to
+                # password-only: a dashboard that is sometimes two-factor is
+                # a dashboard that is not.
+                logger.error("operator %s: two-factor cannot be checked - no master key", username.lower())
+                self._send(_render_operator_login("two-factor is unavailable on this server - "
+                                                  "SENTINEL_MASTER_KEY is not set").encode(), 503)
+                return
+            from sentinel.twofactor import OPERATOR, begin_enrolment, is_enabled
+
+            pending = make_pending_token(session_secret(db), username)
+            if is_enabled(db, OPERATOR, username):
+                logger.info("operator %s passed the password step from %s", username.lower(), client_ip)
+                self._send(_render_operator_code(pending).encode())
+                return
+            secret, uri = begin_enrolment(db, cipher, OPERATOR, username)
+            logger.info("operator %s has no second factor - enrolment required (from %s)",
+                        username.lower(), client_ip)
+            self._send(_render_operator_enrol(pending, secret, uri).encode())
+
+        def _pending_form(self):
+            """(username, code, form) for the second-step POSTs, or None after
+            an error response has been sent."""
+            length = int(self.headers.get("Content-Length", 0))
+            if length <= 0 or length > 4 * 1024:
+                self._send(_render_operator_login("empty or oversized submission").encode(), 400)
+                return None
+            form = parse_qs(self.rfile.read(length).decode("utf-8"))
+            pending = form.get("pending", [""])[0] or ""
+            username = verify_pending_token(session_secret(db), pending)
+            if username is None:
+                # Expired, forged, or a session cookie presented in its place.
+                logger.warning("operator second step with an invalid pending token from %s",
+                               self.client_address[0] if self.client_address else "?")
+                self._send(_render_operator_login("that sign-in expired - start again").encode(), 401)
+                return None
+            return username, (form.get("code", [""])[0] or "").strip(), pending
+
+        def _issue_session(self, username: str, body: bytes | None = None) -> None:
             token = make_session_token(session_secret(db), username)
-            self.send_response(303)
-            self.send_header("Location", "/")
-            self.send_header(
-                "Set-Cookie",
-                f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200",
-            )
-            self.send_header("Content-Length", "0")
+            cookie = f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200"
+            if body is None:
+                self.send_response(303)
+                self.send_header("Location", "/")
+                self.send_header("Set-Cookie", cookie)
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Set-Cookie", cookie)
+            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
+            self.wfile.write(body)
+
+        def _login_code(self):
+            parsed = self._pending_form()
+            if parsed is None:
+                return
+            username, code, pending = parsed
+            client_ip = self.client_address[0] if self.client_address else "?"
+            if _login_throttle.blocked(f"ip:{client_ip}") or _login_throttle.blocked(f"user:{username}"):
+                logger.warning("operator second factor throttled for %s from %s", username, client_ip)
+                self._send(_render_operator_code(pending, "too many attempts - wait and try again").encode(), 429)
+                return
+            from sentinel.twofactor import OPERATOR, check_second_factor
+
+            if cipher is None or not check_second_factor(db, cipher, OPERATOR, username, code):
+                # Counted on the same limiter as passwords: six digits is a
+                # million guesses, and a code endpoint that accepts them as
+                # fast as they arrive is not a second factor.
+                _login_throttle.record_failure(f"ip:{client_ip}")
+                _login_throttle.record_failure(f"user:{username}")
+                logger.warning("operator second factor rejected for %s from %s", username, client_ip)
+                self._send(_render_operator_code(pending, "that code was not accepted").encode(), 401)
+                return
+            _login_throttle.reset(f"ip:{client_ip}")
+            _login_throttle.reset(f"user:{username}")
+            logger.info("operator %s signed in from %s", username, client_ip)
+            self._issue_session(username)
+
+        def _login_enrol(self):
+            parsed = self._pending_form()
+            if parsed is None:
+                return
+            username, code, pending = parsed
+            client_ip = self.client_address[0] if self.client_address else "?"
+            from sentinel.totp import provisioning_uri
+            from sentinel.twofactor import OPERATOR, confirm_enrolment, pending_secret
+
+            if cipher is None:
+                self._send(_render_operator_login("two-factor is unavailable on this server").encode(), 503)
+                return
+            codes = confirm_enrolment(db, cipher, OPERATOR, username, code)
+            if codes is None:
+                secret = pending_secret(db, cipher, OPERATOR, username)
+                if secret is None:
+                    # No unconfirmed enrolment to confirm: start over.
+                    self._send(_render_operator_login("start the sign-in again").encode(), 401)
+                    return
+                self._send(_render_operator_enrol(pending, secret, provisioning_uri(secret, username),
+                                                  "that code was not accepted - nothing has changed").encode(), 401)
+                return
+            record_operator_event(db, "two_factor_enrolled", username, actor=username,
+                                  detail=f"first-login enrolment from {client_ip}")
+            logger.info("operator %s enrolled a second factor and signed in from %s", username, client_ip)
+            self._issue_session(username, _render_operator_recovery_codes(codes).encode())
 
         def log_message(self, *args):  # keep stdout JSON-clean
             pass

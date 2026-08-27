@@ -193,6 +193,44 @@ def verify_session_token(secret: bytes, token: str, now: float | None = None) ->
         return None
 
 
+PENDING_TTL_SECONDS = 300
+
+
+def make_pending_token(secret: bytes, username: str, now: float | None = None) -> str:
+    """Proof that this browser presented a correct password moments ago, and
+    nothing else (#87, the portal's #32 pattern).
+
+    Signed over its own context string, so a pending token presented as the
+    session cookie verifies as nothing - otherwise the two-step sign-in would
+    just rename the session and hand it over a step early. Five minutes: long
+    enough to open an authenticator app, short enough that a password
+    captured on a shared screen is not a standing half-credential."""
+    name_b64 = base64.urlsafe_b64encode(normalize_username(username).encode()).decode().rstrip("=")
+    expires = int((now if now is not None else time.time()) + PENDING_TTL_SECONDS)
+    payload = f"ops-pending.{name_b64}.{expires}"
+    sig = hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()
+    return f"{payload}.{sig}"
+
+
+def verify_pending_token(secret: bytes, token: str, now: float | None = None) -> str | None:
+    """The username a valid, unexpired pending token was minted for; None
+    otherwise - including for a real session token, which has a different
+    context and must not double as proof of a recent password."""
+    try:
+        context, name_b64, expires_s, sig = token.split(".")
+        if context != "ops-pending":
+            return None
+        payload = f"ops-pending.{name_b64}.{expires_s}"
+        if not hmac.compare_digest(sig, hmac.new(secret, payload.encode(), hashlib.sha256).hexdigest()):
+            return None
+        if int(expires_s) < (now if now is not None else time.time()):
+            return None
+        pad = "=" * (-len(name_b64) % 4)
+        return base64.urlsafe_b64decode(name_b64 + pad).decode()
+    except (ValueError, TypeError):
+        return None
+
+
 def session_operator(db: Database, token: str | None) -> str | None:
     """The signed-in operator for a cookie, or None.
 
@@ -243,3 +281,57 @@ def acknowledge_alert(db: Database, alert_id: int, actor: str | None,
             for sibling in sibling_alert_ids(db, alert_id):
                 acknowledge_alert(db, sibling, actor, include_siblings=False)
     return acknowledged
+
+
+# --- operator security events (#87) --------------------------------------------
+
+def record_operator_event(db: Database, event_type: str, username: str, actor: str,
+                          detail: str | None = None) -> int:
+    """Append-only, and the actor is required: every row here is a person
+    acting on an operator login, and the break-glass reset in particular
+    exists to be read afterwards."""
+    if not actor or not actor.strip():
+        raise ValueError("an operator event must name who did it")
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO operator_events (event_type, username, actor, detail, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (event_type, normalize_username(username), normalize_username(actor), detail, _now()),
+        )
+        return cur.lastrowid
+
+
+def operator_events(db: Database, username: str | None = None) -> list:
+    with db.cursor() as cur:
+        if username is None:
+            cur.execute("SELECT * FROM operator_events ORDER BY id")
+        else:
+            cur.execute("SELECT * FROM operator_events WHERE username = ? ORDER BY id",
+                        (normalize_username(username),))
+        return cur.fetchall()
+
+
+def reset_second_factor(db: Database, username: str, actor: str) -> bool:
+    """The host-only break-glass (decision 19): remove an operator's second
+    factor so their next sign-in re-enrols. False if no such operator.
+
+    This is the one path that removes an operator's 2FA - `twofactor.disable`
+    refuses for operators, and the dashboard exposes nothing for it - and it
+    is reachable only from a shell on the host, which the tailnet already
+    gates and which is the root of trust for everything else. It is recorded
+    with who did it, because the person who reaches for this is either the
+    locked-out operator themselves or somebody who should not have."""
+    from sentinel.twofactor import OPERATOR
+
+    username = normalize_username(username)
+    with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM operators WHERE username = ?", (username,))
+        if cur.fetchone() is None:
+            return False
+        cur.execute("DELETE FROM totp_enrolments WHERE subject_kind = ? AND subject = ?",
+                    (OPERATOR, username))
+        cur.execute("DELETE FROM totp_recovery_codes WHERE subject_kind = ? AND subject = ?",
+                    (OPERATOR, username))
+    record_operator_event(db, "two_factor_reset", username, actor,
+                          detail="host break-glass; re-enrolment required at next sign-in")
+    return True

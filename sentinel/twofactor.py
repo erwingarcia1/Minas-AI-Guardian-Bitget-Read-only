@@ -154,6 +154,16 @@ def _record_change(db: Database, kind: str, subject: str, event_type: str) -> No
         logger.error("could not record %s for %s: %s", event_type, subject, exc)
 
 
+def pending_secret(db: Database, cipher, kind: str, subject: str) -> str | None:
+    """The secret of an UNCONFIRMED enrolment, so a page that needs to show it
+    again (a mistyped first code) can. None when there is no enrolment or it
+    is already confirmed - a confirmed secret is never handed back out."""
+    row = _enrolment(db, kind, subject)
+    if row is None or row["confirmed"]:
+        return None
+    return cipher.decrypt(row["encrypted_secret"])
+
+
 def is_enabled(db: Database, kind: str, subject: str) -> bool:
     row = _enrolment(db, kind, subject)
     return bool(row and row["confirmed"])

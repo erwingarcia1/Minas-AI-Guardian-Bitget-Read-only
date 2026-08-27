@@ -234,6 +234,37 @@ def _serve(db, cipher):
     return server, server.server_address[1]
 
 
+def _sign_in(db, cipher, port, username, password):
+    """The full two-step sign-in (#87): enrol the operator's second factor
+    through the API, present the password, then a code. Returns the session
+    cookie, or '' when any step refused."""
+    from sentinel.totp import STEP_SECONDS, totp_at
+    from sentinel.twofactor import OPERATOR, begin_enrolment, confirm_enrolment, is_enabled
+    from tests.conftest import PINNED_TOTP_NOW
+
+    if not is_enabled(db, OPERATOR, username):
+        secret, _ = begin_enrolment(db, cipher, OPERATOR, username)
+        assert confirm_enrolment(db, cipher, OPERATOR, username, totp_at(secret, PINNED_TOTP_NOW))
+    else:
+        raise AssertionError("helper expects to own the enrolment")
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request("POST", "/login", urllib.parse.urlencode({"username": username, "password": password}),
+                 {"Content-Type": "application/x-www-form-urlencoded"})
+    response = conn.getresponse()
+    body = response.read().decode()
+    if response.status != 200 or 'name="pending"' not in body:
+        return ""
+    marker = 'name="pending" value="'
+    start = body.index(marker) + len(marker)
+    pending = body[start:body.index('"', start)]
+    conn.request("POST", "/login/code",
+                 urllib.parse.urlencode({"pending": pending, "code": totp_at(secret, PINNED_TOTP_NOW + STEP_SECONDS)}),
+                 {"Content-Type": "application/x-www-form-urlencoded"})
+    response = conn.getresponse()
+    response.read()
+    return (response.getheader("Set-Cookie") or "").split(";")[0]
+
+
 def test_the_dashboard_requires_a_sign_in_once_an_operator_exists(db, cipher):
     create_operator(db, "erwin", "correct-horse-battery")
     server, port = _serve(db, cipher)
@@ -254,18 +285,10 @@ def test_signing_in_gives_access(db, cipher):
     create_operator(db, "erwin", "correct-horse-battery")
     server, port = _serve(db, cipher)
     try:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        conn.request(
-            "POST", "/login",
-            urllib.parse.urlencode({"username": "erwin", "password": "correct-horse-battery"}),
-            {"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        response = conn.getresponse()
-        cookie = response.getheader("Set-Cookie")
-        response.read()
+        cookie = _sign_in(db, cipher, port, "erwin", "correct-horse-battery")
         assert cookie, "no session was issued"
-
-        conn.request("GET", "/", headers={"Cookie": cookie.split(";")[0]})
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        conn.request("GET", "/", headers={"Cookie": cookie})
         body = conn.getresponse().read().decode()
     finally:
         server.shutdown()
@@ -299,17 +322,12 @@ def test_a_disabled_operator_loses_dashboard_access(db, cipher):
     create_operator(db, "leaver", "password")
     server, port = _serve(db, cipher)
     try:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        conn.request("POST", "/login",
-                     urllib.parse.urlencode({"username": "leaver", "password": "password"}),
-                     {"Content-Type": "application/x-www-form-urlencoded"})
-        response = conn.getresponse()
-        cookie = (response.getheader("Set-Cookie") or "").split(";")[0]
-        response.read()
+        cookie = _sign_in(db, cipher, port, "leaver", "password")
         assert cookie
 
         disable_operator(db, "leaver")
 
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         conn.request("GET", "/", headers={"Cookie": cookie})
         body = conn.getresponse().read().decode()
     finally:
@@ -381,14 +399,8 @@ def test_generating_a_member_password_records_who(db, cipher):
 
     server, port = _serve(db, cipher)
     try:
+        cookie = _sign_in(db, cipher, port, "erwin", "correct-horse-battery")
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        conn.request("POST", "/login",
-                     urllib.parse.urlencode({"username": "erwin", "password": "correct-horse-battery"}),
-                     {"Content-Type": "application/x-www-form-urlencoded"})
-        response = conn.getresponse()
-        cookie = (response.getheader("Set-Cookie") or "").split(";")[0]
-        response.read()
-
         conn.request("POST", "/portal-access",
                      urllib.parse.urlencode({"account_id": account_id, "contact": "primary"}),
                      {"Content-Type": "application/x-www-form-urlencoded", "Cookie": cookie})

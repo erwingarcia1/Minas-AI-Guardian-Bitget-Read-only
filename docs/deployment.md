@@ -531,6 +531,38 @@ being delivered at all rather than landing in spam.
    (already provisioned behind the `scale` profile) replaces the in-process
    queue without changing worker logic.
 
+## Operator accounts and two-factor (#87, decision 19)
+
+The ops dashboard requires a sign-in once an operator account exists, and
+that sign-in is password **plus** a second factor — mandatory, not opt-in.
+On the host, inside the container's environment (it needs `SENTINEL_MASTER_KEY`):
+
+```bash
+sentinel operator add erwin --name "Erwin Garcia"   # prompts for a password,
+                                                     # then walks through enrolment:
+                                                     # scan the secret, enter a code,
+                                                     # save the recovery codes (shown once)
+sentinel operator list                               # 2FA column: on / NOT YET
+```
+
+An operator created with `--enrol-later` (or from a non-interactive shell)
+is walked through enrolment at their first sign-in and cannot get past it.
+Two-factor is not in force until a code verifies, so a mis-scanned secret
+means "try again", never "locked out".
+
+**Lost device.** A recovery code signs in once. When those are gone too,
+the only reset is on the host — there is deliberately no dashboard route
+for it:
+
+```bash
+sentinel operator reset-2fa erwin --as erwin        # recorded in operator_events
+```
+
+The reset is recorded with who ran it; the operator enrols again at their
+next sign-in. Host access over the tailnet is the root of trust here, as it
+is for deploys. `sentinel operator disable` still ends every session
+immediately.
+
 ## Operations quick reference
 
 All commands below assume the default EC2 posture (the `ubuntu` user is

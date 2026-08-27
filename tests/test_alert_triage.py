@@ -260,14 +260,11 @@ def test_the_triage_post_names_the_signed_in_operator(db, cipher):
     s.close()
     server = serve_dashboard(db, cipher, port)
     try:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        conn.request("POST", "/login",
-                     urllib.parse.urlencode({"username": "erwin", "password": "correct-horse-battery"}),
-                     {"Content-Type": "application/x-www-form-urlencoded"})
-        response = conn.getresponse()
-        cookie = (response.getheader("Set-Cookie") or "").split(";")[0]
-        response.read()
+        from tests.test_operator_identity import _sign_in
 
+        cookie = _sign_in(db, cipher, port, "erwin", "correct-horse-battery")  # password + code (#87)
+        assert cookie
+        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         conn.request("POST", "/triage",
                      urllib.parse.urlencode({"alert_id": alert, "act": "handle", "note": "on it"}),
                      {"Content-Type": "application/x-www-form-urlencoded", "Cookie": cookie})
