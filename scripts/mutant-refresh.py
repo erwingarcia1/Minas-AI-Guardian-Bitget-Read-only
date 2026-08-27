@@ -123,10 +123,9 @@ def validate(current: dict[str, str], mutants: Path = MUTANTS, repo: Path = REPO
     """Every file proves itself: a mutated file by every recorded function
     hash matching the current source, a plain copy by byte equality. Returns
     the problems; empty means proven."""
-    from mutmut.mutation.file_mutation import compute_function_hashes
-
     patterns = mutated_patterns() if patterns is None else patterns
     problems: list[str] = []
+    compute_function_hashes = None  # imported when the first mutated file needs it
     for source in sorted(current):
         copy = mutants / source
         meta = copy.with_name(copy.name + ".meta")
@@ -146,6 +145,11 @@ def validate(current: dict[str, str], mutants: Path = MUTANTS, repo: Path = REPO
         except (ValueError, OSError) as exc:
             problems.append(f"{source}: unreadable .meta ({exc})")
             continue
+        if compute_function_hashes is None:
+            # mutmut's own hash, so "matches" means what mutmut means by it.
+            # Imported here, not at the top: plain copies validate without
+            # mutmut installed (CI's test job has none; the gate job does).
+            from mutmut.mutation.file_mutation import compute_function_hashes
         actual = compute_function_hashes((repo / source).read_text())
         for func, digest in sorted(recorded.items()):
             if actual.get(func) != digest:

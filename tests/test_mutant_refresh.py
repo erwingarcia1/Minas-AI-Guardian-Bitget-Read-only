@@ -110,8 +110,11 @@ SOURCE_V2 = "def guard(x):\n    if x >= 1:\n        return True\n    return Fals
 
 
 def _hashes_of(source: str) -> dict[str, str]:
-    from mutmut.mutation.file_mutation import compute_function_hashes
-    return compute_function_hashes(source)
+    """mutmut's own hash - skipped where mutmut is not installed (CI's test
+    job); the gate job runs the real thing against the real population."""
+    mutmut = pytest.importorskip("mutmut.mutation.file_mutation",
+                                 reason="mutmut not installed here; the gate job validates for real")
+    return mutmut.compute_function_hashes(source)
 
 
 def test_validation_passes_when_every_recorded_hash_matches_the_current_source(tool, tmp_path):
