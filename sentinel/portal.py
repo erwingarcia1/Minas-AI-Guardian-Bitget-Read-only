@@ -2784,9 +2784,61 @@ def _render_security(db: Database, email: str, *, secret: str | None = None,
     # focused; the other settings join the page in its settled states.
     if not codes and not secret:
         body += _telegram_section(db, email)
+        body += _preferences_section(db, email)
         body += _digest_section(db, email)
     return _page(banner + body, email, "/security",
                  title="Security — Minas AI Guardian")
+
+
+def _preferences_section(db: Database, email: str) -> str:
+    """Alert preferences (#24, decision 4): timezone, quiet hours, and the
+    channel grid. The CRITICAL/email cell is rendered locked - it is the
+    floor - and the server refuses it off however the form is edited."""
+    from sentinel.alerts.digest import member_exists_for_digest
+    from sentinel.alerts.preferences import CHANNELS, FLOOR, SEVERITIES, member_prefs
+
+    if not member_exists_for_digest(db, email):
+        return ""
+    prefs = member_prefs(db, email)
+    import zoneinfo
+
+    zones = sorted(zoneinfo.available_timezones())
+    tz_options = '<option value="">— choose your timezone —</option>' + "".join(
+        f'<option value="{html.escape(z)}"{" selected" if z == prefs["timezone"] else ""}>{html.escape(z)}</option>'
+        for z in zones)
+    rows = ""
+    for sev in SEVERITIES:
+        cells = ""
+        for ch in CHANNELS:
+            name = f"grid_{sev}_{ch}"
+            checked = " checked" if prefs["grid"][sev][ch] else ""
+            if (sev, ch) == FLOOR:
+                cells += (f'<label style="margin-right:var(--space-4)"><input type="checkbox" checked disabled> '
+                          f'{ch.capitalize()} (always on)</label><input type="hidden" name="{name}" value="on">')
+            else:
+                cells += (f'<label style="margin-right:var(--space-4)"><input type="checkbox" name="{name}" '
+                          f'value="on"{checked}> {ch.capitalize()}</label>')
+        rows += f'<div class="kv__row"><dt>{sev.capitalize()}</dt><dd>{cells}</dd></div>'
+    quiet_checked = " checked" if prefs["quiet_hours_enabled"] else ""
+    return (
+        '<section class="panel" aria-labelledby="prefs-title"><h2 id="prefs-title">Alert preferences</h2>'
+        '<p class="muted">Which channels reach you for each level, and quiet hours for '
+        "everything except critical alerts. Critical alerts always reach you by email - that "
+        "cannot be switched off. Anything held during quiet hours arrives in your next digest.</p>"
+        '<form class="form" method="post" action="/preferences" style="margin-top:var(--space-3)">'
+        '<div class="field"><label for="tz">Your timezone</label>'
+        f'<select class="input" id="tz" name="timezone">{tz_options}</select>'
+        '<p class="hint">Quiet hours need this. Without it they cannot be enabled.</p></div>'
+        '<div class="field"><label><input type="checkbox" name="quiet_hours_enabled" value="on"'
+        f'{quiet_checked}> Quiet hours for non-critical alerts</label></div>'
+        '<div class="field"><label for="qs">From</label>'
+        f'<input class="input" type="time" id="qs" name="quiet_start" value="{html.escape(prefs["quiet_start"])}"></div>'
+        '<div class="field"><label for="qe">Until</label>'
+        f'<input class="input" type="time" id="qe" name="quiet_end" value="{html.escape(prefs["quiet_end"])}"></div>'
+        f'<dl class="kv">{rows}</dl>'
+        '<button class="btn btn--secondary" type="submit" style="margin-top:var(--space-4)">Save preferences</button>'
+        "</form></section>"
+    )
 
 
 def _digest_section(db: Database, email: str) -> str:
@@ -3178,6 +3230,35 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                             account_id, member, cancelled)
             page = _render_member_account(db, member, account_id, rules)
             self._send((page or _render_not_found()).encode())
+
+        def _preferences(self, form):
+            """#24: session-scoped like every preference here. Refusals come
+            back on the page with the reason; a save confirms on screen and
+            takes effect on the next alert."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            from sentinel.alerts.preferences import CHANNELS, SEVERITIES, set_member_prefs
+
+            grid = {sev: {ch: (form.get(f"grid_{sev}_{ch}", [""])[0] == "on") for ch in CHANNELS}
+                    for sev in SEVERITIES}
+            try:
+                changed = set_member_prefs(
+                    db, email,
+                    timezone_name=(form.get("timezone", [""])[0] or "").strip() or None,
+                    quiet_hours_enabled=(form.get("quiet_hours_enabled", [""])[0] == "on"),
+                    quiet_start=(form.get("quiet_start", ["22:00"])[0] or "22:00"),
+                    quiet_end=(form.get("quiet_end", ["07:00"])[0] or "07:00"),
+                    grid=grid)
+            except ValueError as exc:
+                self._send(_render_security(db, email, error=str(exc)).encode(), 400)
+                return
+            if changed:
+                from sentinel.events import record_member_security_event
+
+                record_member_security_event(db, email, "alert_preferences_changed")
+            self._send(_render_security(db, email, notice="Alert preferences saved - they apply from the next alert.").encode())
 
         def _digest_frequency(self, form):
             """The member's own digest choice (#21). Session-scoped; an
@@ -3598,6 +3679,9 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
 
             if path == "/digest/frequency":
                 self._digest_frequency(form)
+                return
+            if path == "/preferences":
+                self._preferences(form)
                 return
 
             if path in ("/pause/request", "/pause/cancel"):

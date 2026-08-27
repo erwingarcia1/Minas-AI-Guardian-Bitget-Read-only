@@ -15,6 +15,10 @@ class _EscalationDetection:
     reading this needs to know it is the second time, or it is
     indistinguishable from the message they already ignored."""
 
+    # An escalation is "nobody acknowledged this": it must reach the person
+    # whatever their #24 preferences say for ordinary detections.
+    bypass_preferences = True
+
     def __init__(self, alert: AlertMessage):
         self.rule = alert.rule
         self.severity = alert.severity

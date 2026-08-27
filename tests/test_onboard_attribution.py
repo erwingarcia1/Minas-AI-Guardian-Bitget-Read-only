@@ -19,7 +19,7 @@ def _args(**kw):
     ns = argparse.Namespace(
         label="acct-a1", exchange="bitget", topology="independent",
         api_key="k", secret="s", passphrase="p",
-        alert_email=None, alert_phone=None, as_operator=None,
+        alert_email="owner@example.com", alert_phone=None, as_operator=None,  # decision 4: email required
     )
     for k, v in kw.items():
         setattr(ns, k, v)

@@ -55,6 +55,7 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     # for why that is a foreign-key failure and not the harmless drift this
     # comment used to claim.
     "alert_triage": ("updated_at", "alerts_days"),
+    "held_alerts": ("held_at", "alerts_days"),  # #24: follows the alert it holds
     # Threshold changes (#16). History of what this product was tuned to
     # notice, on the same long window as `events` - an incident review asks
     # what the thresholds were at the time, not what they are now.
@@ -148,7 +149,9 @@ NEVER_PRUNE = frozenset({
 # this list stops a child outliving its parent, while the PRUNABLE entry lets
 # a *shorter* child window still delete a child early. The effective retention
 # of a child is min(its own window, the alert's).
-ALERT_CHILDREN = ("alert_triage", "expected_activity", "sms_deliveries")
+ALERT_CHILDREN = ("alert_triage", "expected_activity", "sms_deliveries",
+    "held_alerts",  # #24: a hold references the alert it holds
+)
 
 
 def _cutoff(days: float) -> str:

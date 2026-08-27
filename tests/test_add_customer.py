@@ -108,7 +108,7 @@ def test_post_add_trade_key_is_rejected_and_stores_nothing(server, db, monkeypat
     monkeypatch.setattr("sentinel.onboarding.make_client", _mock_trade_client)
     base, _ = server
     status, body = _post(base, {
-        "name": "Bad Actor", "exchange": "bitget", "topology": "independent",
+        "name": "Bad Actor", "exchange": "bitget", "topology": "independent", "email": "bad@x.test",
         "api_key": "k", "secret": "s", "passphrase": "p",
     })
     assert "only accepts read-only keys" in body

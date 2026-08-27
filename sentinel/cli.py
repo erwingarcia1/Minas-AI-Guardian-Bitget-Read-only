@@ -179,6 +179,13 @@ def build_operator_channels(rules: RulesConfig) -> dict[str, list]:
 def cmd_onboard(args: argparse.Namespace) -> int:
     from sentinel.operators import is_active_operator, list_operators, operator_count
 
+    # Decision 4 (#24): email is the channel that cannot be switched off, so
+    # an account with no email is refused at onboarding - before any secret
+    # is pasted - rather than silently onboarded unreachable.
+    if not (args.alert_email or "").strip():
+        print("--alert-email is required: email is the alert channel that cannot be switched off",
+              file=sys.stderr)
+        return 2
     db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
     cipher = CredentialCipher()
 
@@ -945,6 +952,14 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
                 changes.append(("sms_alerts_changed",
                                 {"from": bool(before["sms_alerts_enabled"]),
                                  "to": bool(enabled)}))
+        if primary_requested and (args.clear or (args.alert_email is not None and not args.alert_email.strip())):
+            # Decision 4 (#24): the primary email is the floor - the one
+            # channel that cannot be switched off - so it cannot be cleared
+            # either. Move it with --alert-email; clearing just the phone
+            # needs the email restated.
+            print("the primary email cannot be removed: it is the alert channel that cannot be "
+                  "switched off. Pass --alert-email <address> to change it.", file=sys.stderr)
+            return 2
         if args.clear:
             email, phone = None, None
         else:

@@ -407,7 +407,7 @@ def test_a_pruned_alert_takes_its_annotations_with_it(db, rules):
     prune_all(db, rules)
 
     assert _count(db, "alerts") == 0
-    for child in ("alert_triage", "sms_deliveries", "expected_activity"):
+    for child in ("alert_triage", "sms_deliveries", "expected_activity", "held_alerts"):
         assert _count(db, child) == 0, f"{child} outlived the alert it annotates"
 
 
@@ -517,6 +517,8 @@ _ROW_FACTORIES = {
     "alert_triage": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO alert_triage (alert_id, note, handled_at, handled_by, updated_at) "
         "VALUES (?, 'n', ?, 'john', ?)", (alert, ts, ts)),
+    "held_alerts": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO held_alerts (email, alert_id, held_at) VALUES ('a@b.test', ?, ?)", (alert, ts)),
     "config_changes": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO config_changes (setting, old_value, new_value, actor, changed_at) "
         "VALUES ('polling.fast_loop_seconds', '45', '60', 'john', ?)", (ts,)),

@@ -26,15 +26,24 @@ def test_set_contact_updates_existing_account(db, cipher, monkeypatch, tmp_path)
     assert row["alert_phone"] == "+15550001111"
 
 
-def test_set_contact_clear(db, cipher, monkeypatch):
+def test_set_contact_clear_refuses_to_remove_the_primary_email(db, cipher, monkeypatch, capsys):
+    """Decision 4 (#24): email is the alert channel that cannot be switched
+    off, so it cannot be cleared either. --clear is refused and nothing
+    changes; the phone alone can be cleared by restating the email."""
     make_account(db, "acct-d")
     monkeypatch.setenv("SENTINEL_DB_PATH", str(db._path))
-    cmd_set_contact(_args(label="acct-d", alert_email="a@b.com"))
-    cmd_set_contact(_args(label="acct-d", clear=True))
+    cmd_set_contact(_args(label="acct-d", alert_email="a@b.com", alert_phone="+15550001111"))
+    assert cmd_set_contact(_args(label="acct-d", clear=True)) == 2
+    assert "cannot be removed" in capsys.readouterr().err
     with db.cursor() as cur:
         cur.execute("SELECT alert_email, alert_phone FROM accounts WHERE label = 'acct-d'")
         row = cur.fetchone()
-    assert row["alert_email"] is None and row["alert_phone"] is None
+    assert row["alert_email"] == "a@b.com" and row["alert_phone"] == "+15550001111"
+    assert cmd_set_contact(_args(label="acct-d", alert_email="a@b.com")) == 0
+    with db.cursor() as cur:
+        cur.execute("SELECT alert_email, alert_phone FROM accounts WHERE label = 'acct-d'")
+        row = cur.fetchone()
+    assert row["alert_email"] == "a@b.com" and row["alert_phone"] is None
 
 
 def test_set_contact_unknown_account_returns_error(db, monkeypatch):
@@ -86,15 +95,16 @@ def test_rerunning_the_same_values_records_nothing(db, monkeypatch):
     assert len(_events(db, account_id)) == 1
 
 
-def test_clearing_contacts_is_recorded(db, monkeypatch):
+def test_clearing_the_phone_is_recorded(db, monkeypatch):
     account_id = make_account(db, "acct-g")
     monkeypatch.setenv("SENTINEL_DB_PATH", str(db._path))
+    cmd_set_contact(_args(label="acct-g", alert_email="a@b.com", alert_phone="+15550001111"))
     cmd_set_contact(_args(label="acct-g", alert_email="a@b.com"))
-    cmd_set_contact(_args(label="acct-g", clear=True))
     events = _events(db, account_id)
     assert events[-1][0] == "alert_contact_updated"
-    assert events[-1][1]["email_from"] == "a@b.com"
-    assert events[-1][1]["email_to"] is None
+    assert events[-1][1]["phone_from"] == "+15550001111"
+    assert events[-1][1]["phone_to"] is None
+    assert events[-1][1]["email_to"] == "a@b.com"
 
 
 # --- #91: the emergency contact has a supported write path -------------------

@@ -5118,3 +5118,37 @@ sentence tested in isolation. The step-1 probe re-aimed at the new line
 be already built and test-pinned (portal.py @media print,
 test_the_page_carries_print_styles_so_it_exports_cleanly) - verified,
 not rebuilt.
+
+# 2026-08-27 · #24 built: channels per level, quiet hours, the email floor (decision 4)
+
+sentinel/alerts/preferences.py: per-member grid (severity × email/
+telegram/sms) with the CRITICAL/email cell as an unremovable floor;
+timezone (IANA via zoneinfo) required to enable quiet hours, unknown at
+delivery = deliver; overnight and daytime windows; held_alerts queue
+(unique per member+alert) released into the next member digest in
+customer copy. ContactRouter applies it to primary contacts only when
+it has a db; notices and escalations bypass (`bypass_preferences` on
+_EscalationDetection); SMS follows the person via the account row's
+email↔phone pairing; a member who set nothing gets exactly today's
+delivery (test-pinned). Portal: "Alert preferences" on /security, POST
+/preferences with refusals on the page, event alert_preferences_changed.
+Email floor at both entry points: `onboard` refuses without
+--alert-email (before any secret is pasted), the dashboard add form
+refuses without an email, `set-contact --clear` refuses to remove the
+primary email. Schema: five portal_members columns via migrations,
+held_alerts in the alerts cascade and PRUNABLE. 22 tests, 4 probes
+(CRITICAL never held; floor; no-timezone guard; escalation bypass), the
+test file in the mutation selection.
+
+# 2026-08-27 · Incremental regeneration missed plain files - found by its own gate, fixed
+
+#24 changed sentinel/schema.sql. The refresher's plan and proof covered
+only the .py manifest; mutmut's copy step skips existing files; so the
+plain copy of schema.sql inside mutants/ stayed stale, the tests there
+built databases without held_alerts, and the mutation gate reported "no
+mutants ran - this gate measured nothing" (loud, as designed - the
+completeness guard, not a hollow pass). scripts/mutant-refresh.py now
+treats every non-.py file under sentinel/ as part of the plan (a
+differing plain copy is deleted so mutmut copies it fresh) and of the
+proof (byte-equality, or validation fails to the from-scratch path).
+Two unit tests in the miss's shape.

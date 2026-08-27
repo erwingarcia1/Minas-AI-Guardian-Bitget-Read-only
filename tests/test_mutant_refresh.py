@@ -216,3 +216,35 @@ def test_generation_is_scoped_to_what_the_gate_scores():
     block = gate.split("only_mutate=", 1)[1].split("pytest_add_cli_args_test_selection", 1)[0]
     assert "sentinel/detectors/*" in block and "sentinel/alerts/*" in block and "sentinel/config.py" in block
     assert "classify_mutants.py sentinel.detectors sentinel.alerts sentinel.config" in gate
+
+
+# --- plain files under sentinel/ (schema.sql): the 2026-08-27 miss ---------------
+
+def test_a_stale_plain_file_under_sentinel_fails_validation_and_is_refreshed_by_apply(tool, tmp_path):
+    """schema.sql changed, the .py manifest did not name it, mutmut's copy
+    step skipped the existing copy, and the tests inside mutants/ built
+    databases without the new table: the gate measured nothing. Plain files
+    are now part of both the plan and the proof."""
+    repo = tmp_path / "repo"
+    (repo / "sentinel").mkdir(parents=True)
+    (repo / "sentinel/schema.sql").write_text("CREATE TABLE b (id);\n")
+    mutants = repo / "mutants"
+    (mutants / "sentinel").mkdir(parents=True)
+    (mutants / "sentinel/schema.sql").write_text("CREATE TABLE a (id);\n")
+    assert tool.stale_plain_files(mutants, repo) == ["sentinel/schema.sql"]
+    problems = tool.validate({}, mutants, repo, patterns=["sentinel/alerts/*"])
+    assert problems and "plain (non-.py) copy" in problems[0]
+    tool.apply({"changed": [], "added": [], "removed": [], "unchanged": []}, mutants, repo)
+    assert not (mutants / "sentinel/schema.sql").exists(), "deleted so mutmut copies it fresh"
+    (mutants / "sentinel/schema.sql").write_text("CREATE TABLE b (id);\n")
+    assert tool.stale_plain_files(mutants, repo) == []
+    assert tool.validate({}, mutants, repo, patterns=["sentinel/alerts/*"]) == []
+
+
+def test_plain_files_exclude_caches_and_python(tool, tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "sentinel/__pycache__").mkdir(parents=True)
+    (repo / "sentinel/x.py").write_text("")
+    (repo / "sentinel/__pycache__/x.pyc").write_text("")
+    (repo / "sentinel/schema.sql").write_text("")
+    assert tool.plain_files(repo) == ["sentinel/schema.sql"]

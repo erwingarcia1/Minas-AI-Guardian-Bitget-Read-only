@@ -64,7 +64,7 @@ container")._
 
 ### Changed detection behaviour
 
-Which alerts *fire* is untouched. Who hears about them changes in two
+Which alerts *fire* is untouched. Who hears about them changes in three
 deliberate ways:
 
 - **Acknowledging one alert now closes its siblings** (#99): an
@@ -74,6 +74,13 @@ deliberate ways:
   about a withdrawal someone already handled. Before, the second alert
   of a pair escalated on its own. Alerts with no order reference, and
   other accounts' alerts, are never touched.
+- **A member can choose channels per level and quiet hours** (#24,
+  decision 4). Non-critical alerts inside a member's quiet hours are held
+  and delivered in their next digest instead of at once; a channel a
+  member turned off for a level is skipped for that member. Critical
+  alerts are never held and always reach the member by email. Escalations
+  and account notices ignore preferences. A member who sets nothing is
+  reached exactly as before.
 - **A member can stop monitoring on their account, 24 hours after asking**
   (#98): once a requested pause executes, no alerts fire for that account
   until it is resumed. The request is emailed to every contact twice
@@ -81,6 +88,20 @@ deliberate ways:
 
 ### Added
 
+- **Alert preferences: channels per level, quiet hours, and a floor**
+  (#24, decision 4). On the portal's security page a member picks which
+  of email, Telegram and SMS reach them for each level, sets their
+  timezone, and can enable quiet hours (22:00–07:00 by default, their
+  own local time) for everything except critical alerts. Anything held
+  during quiet hours is queued — never dropped — and listed in their
+  next proof-of-life digest. Email for critical alerts is the one cell
+  that cannot be turned off, on the page and in the writer; and because
+  email is the floor, an account cannot be onboarded without one and the
+  primary email cannot be cleared. Fail-closed on the clock: quiet hours
+  cannot be enabled without a timezone the runtime knows, and a stored
+  timezone it no longer knows delivers rather than holds — never UTC by
+  default. Changes take effect from the next alert and are confirmed on
+  the page.
 - **The incident page and the alert email now say what to do next, in
   the same words** (#29, decisions 3 and 9). Three steps, in this order:
   revoke any API key you do not recognise (and leave the Guardian's

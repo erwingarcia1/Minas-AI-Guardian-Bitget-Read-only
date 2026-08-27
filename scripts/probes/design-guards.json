@@ -1404,5 +1404,45 @@
       "tests/test_operator_two_factor.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#24 a CRITICAL is never held by quiet hours (severity guard dropped)",
+    "file": "sentinel/alerts/contact.py",
+    "old": "            if severity != \"CRITICAL\" and in_quiet_hours(prefs):\n",
+    "new": "            if in_quiet_hours(prefs):\n",
+    "tests": [
+      "tests/test_alert_preferences.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#24 the CRITICAL/email floor: the writer stops refusing it off",
+    "file": "sentinel/alerts/preferences.py",
+    "old": "    if not clean[FLOOR[0]][FLOOR[1]]:\n        raise ValueError(\"email for CRITICAL alerts cannot be switched off - at least one channel stays on\")\n",
+    "new": "    if False:\n        raise ValueError(\"email for CRITICAL alerts cannot be switched off - at least one channel stays on\")\n",
+    "tests": [
+      "tests/test_alert_preferences.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#24 quiet hours enabled without a timezone (fail-closed guard dropped)",
+    "file": "sentinel/alerts/preferences.py",
+    "old": "    if quiet_hours_enabled and tz is None:\n",
+    "new": "    if False and quiet_hours_enabled and tz is None:\n",
+    "tests": [
+      "tests/test_alert_preferences.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#24 an escalation bypasses preferences (the bypass flag dropped)",
+    "file": "sentinel/alerts/escalation.py",
+    "old": "    bypass_preferences = True\n",
+    "new": "    bypass_preferences = False\n",
+    "tests": [
+      "tests/test_alert_preferences.py"
+    ],
+    "expect": "killed"
   }
 ]

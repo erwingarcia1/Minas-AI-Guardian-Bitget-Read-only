@@ -188,6 +188,17 @@ def build_member_digest(db: Database, email: str, rules=None,
         if routine:
             parts.append(f"{routine} routine notice(s)")
         lines.append("Issues found: " + "; ".join(parts) + ".")
+    # #24: alerts held during the member's quiet hours are released here -
+    # queued, never dropped. Customer copy: label, severity word, time; no
+    # rule names, no evidence.
+    from sentinel.alerts.preferences import release_held
+
+    held = release_held(db, email, now)
+    if held:
+        lines.append("")
+        lines.append(f"Held during your quiet hours: {len(held)} alert(s), delivered here instead:")
+        for h in held:
+            lines.append(f"  - {h['label']}: {h['severity'].lower()} alert at {h['sent_at'][:16].replace('T', ' ')} UTC")
     lines.append("")
     lines.append(portal_action_line())
 

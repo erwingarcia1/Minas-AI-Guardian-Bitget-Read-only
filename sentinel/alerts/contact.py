@@ -37,6 +37,8 @@ class ContactRouter:
         self._smtp = self._smtp_config()
         self._warned: set[str] = set()
         self._operator_alerter = operator_alerter
+        self._email_muted: set[str] = set()
+        self._telegram_targets: list[str] = []
 
     @staticmethod
     def _smtp_config() -> dict | None:
@@ -186,6 +188,17 @@ class ContactRouter:
 
         if not emails and not phones:
             return
+        # #24: each primary contact's own preferences - which channels for
+        # this severity, and whether their quiet hours hold it for the next
+        # digest. Notices and escalations bypass (they must always arrive);
+        # a CRITICAL is never held; CRITICAL email is the floor. Only when
+        # the router has a db to read preferences from.
+        emails, phones, held_for = self._apply_preferences(detection, emails, phones, account_id, alert_id)
+        for held_email in held_for:
+            logger.info("alert %s held for %s during their quiet hours - released in their next digest",
+                        alert_id, held_email)
+        if not emails and not phones and not self._telegram_targets:
+            return
         alert = AlertMessage(
             account_label=account_label,
             rule=detection.rule,
@@ -200,7 +213,8 @@ class ContactRouter:
             incident_id=alert_id,
         )
 
-        if emails:
+        emails_for_email = [e for e in emails if e not in self._email_muted]
+        if emails_for_email:
             if self._smtp is None:
                 self._warn_once(
                     "smtp",
@@ -211,7 +225,7 @@ class ContactRouter:
                 try:
                     EmailChannel(
                         self._smtp["host"], self._smtp["port"], self._smtp["username"],
-                        self._smtp["password"], self._smtp["sender"], emails,
+                        self._smtp["password"], self._smtp["sender"], emails_for_email,
                         audience="customer",
                     ).send(alert)
                 except Exception as exc:  # noqa: BLE001 - delivery failure must not stall detection
@@ -225,12 +239,70 @@ class ContactRouter:
         # Guarded on its own like every leg: a Telegram outage must cost
         # neither the email above nor the SMS below.
         try:
-            self._send_telegram(alert, account_label, emails)
+            self._send_telegram(alert, account_label, self._telegram_targets)
         except Exception as exc:  # noqa: BLE001 - one channel must not cost the others
             logger.warning("per-member telegram for %s failed: %s", account_label, exc)
 
         if phones:
             self._send_sms(detection, alert, account_label, phones, account_id, alert_id, auditable)
+
+    def _apply_preferences(self, detection, emails, phones, account_id, alert_id):
+        """Filter the primary contacts by their #24 preferences. Sets
+        self._email_muted (addresses that keep telegram/sms but not email for
+        this severity) and self._telegram_targets (addresses whose telegram
+        copy is on). Returns (emails, phones, held_for)."""
+        self._email_muted: set[str] = set()
+        self._telegram_targets = list(emails)
+        if self._db is None or getattr(detection, "is_notice", False) \
+                or getattr(detection, "bypass_preferences", False):
+            return emails, phones, []
+        from sentinel.alerts.preferences import channel_allowed, hold_alert, in_quiet_hours, member_prefs
+
+        severity = detection.severity
+        owner_of_phone = self._phone_owners(account_id)
+        kept_emails, held_for, telegram = [], [], []
+        muted = set()
+        for email in emails:
+            prefs = member_prefs(self._db, email)
+            if severity != "CRITICAL" and in_quiet_hours(prefs):
+                if hold_alert(self._db, email, alert_id):
+                    held_for.append(email)
+                continue
+            kept_emails.append(email)
+            if channel_allowed(prefs, severity, "telegram"):
+                telegram.append(email)
+            if not channel_allowed(prefs, severity, "email"):
+                muted.add(email)
+        kept_phones = []
+        for phone in phones:
+            owner = owner_of_phone.get(phone)
+            if owner is None:
+                kept_phones.append(phone)  # a phone with no paired login keeps today's behaviour
+                continue
+            if owner in held_for:
+                continue
+            if channel_allowed(member_prefs(self._db, owner), severity, "sms"):
+                kept_phones.append(phone)
+        self._email_muted = muted
+        self._telegram_targets = telegram
+        return kept_emails, kept_phones, held_for
+
+    def _phone_owners(self, account_id) -> dict:
+        """phone -> the contact email it is paired with on the account row,
+        so SMS preferences follow the person, not the number."""
+        if self._db is None or account_id is None:
+            return {}
+        with self._db.cursor() as cur:
+            cur.execute("SELECT alert_email, alert_phone, alert_email_secondary, alert_phone_secondary "
+                        "FROM accounts WHERE id = ?", (account_id,))
+            row = cur.fetchone()
+        if row is None:
+            return {}
+        owners = {}
+        for email_col, phone_col in (("alert_email", "alert_phone"), ("alert_email_secondary", "alert_phone_secondary")):
+            if row[phone_col] and row[email_col]:
+                owners[row[phone_col]] = row[email_col].strip().lower()
+        return owners
 
     def _send_telegram(self, alert, account_label, emails) -> None:
         """Copies to chats the contacts connected themselves (#18). Resolution

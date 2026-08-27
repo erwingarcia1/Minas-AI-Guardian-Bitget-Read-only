@@ -80,6 +80,25 @@ def read_manifest(path: Path) -> dict[str, str]:
     return entries
 
 
+def plain_files(repo: Path = REPO) -> list[str]:
+    """Every non-.py file under sentinel/ that mutmut copies plain - the
+    source manifest tracks .py only, and a stale plain copy (schema.sql,
+    2026-08-27: the tests inside mutants/ built databases without a new
+    table and the gate measured nothing) is the same hollow shape as a
+    stale mutant. Excludes caches."""
+    root = repo / "sentinel"
+    out = []
+    for path in sorted(root.rglob("*")):
+        if path.is_file() and path.suffix != ".py" and "__pycache__" not in path.parts:
+            out.append(str(path.relative_to(repo)))
+    return out
+
+
+def stale_plain_files(mutants: Path = MUTANTS, repo: Path = REPO) -> list[str]:
+    return [f for f in plain_files(repo)
+            if not (mutants / f).exists() or (mutants / f).read_bytes() != (repo / f).read_bytes()]
+
+
 def _artifacts(source: str) -> list[Path]:
     copy = MUTANTS / source
     return [copy, copy.with_name(copy.name + ".meta"), copy.with_name(copy.name + ".spans")]
@@ -105,7 +124,13 @@ def plan(old: dict[str, str], current: dict[str, str], mutants: Path = MUTANTS,
     return {"changed": changed, "added": added, "removed": removed, "unchanged": unchanged}
 
 
-def apply(planned: dict[str, list[str]], mutants: Path = MUTANTS) -> None:
+def apply(planned: dict[str, list[str]], mutants: Path = MUTANTS, repo: Path = REPO) -> None:
+    # Plain (non-.py) copies that differ are deleted too, so mutmut's copy
+    # step - which skips anything already present - copies them fresh.
+    for plain in stale_plain_files(mutants, repo):
+        copy = mutants / plain
+        if copy.exists():
+            copy.unlink()
     for source in planned["changed"] + planned["added"] + planned["removed"]:
         copy = mutants / source
         for artifact in (copy, copy.with_name(copy.name + ".meta"), copy.with_name(copy.name + ".spans")):
@@ -126,6 +151,9 @@ def validate(current: dict[str, str], mutants: Path = MUTANTS, repo: Path = REPO
     patterns = mutated_patterns() if patterns is None else patterns
     problems: list[str] = []
     compute_function_hashes = None  # imported when the first mutated file needs it
+    for plain in stale_plain_files(mutants, repo):
+        problems.append(f"{plain}: plain (non-.py) copy missing or differs from the source - "
+                        f"the tests inside mutants/ would run against other data")
     for source in sorted(current):
         copy = mutants / source
         meta = copy.with_name(copy.name + ".meta")
@@ -170,7 +198,10 @@ def main(argv: list[str]) -> int:
         except (ValueError, RuntimeError) as exc:
             print(f"mutant-refresh: cannot plan incrementally: {exc}", file=sys.stderr)
             return 3
+        stale_plain = stale_plain_files()
         apply(planned)
+        if stale_plain:
+            print(f"mutant-refresh: refreshing {len(stale_plain)} plain (non-.py) file(s): {', '.join(stale_plain)}")
         print(f"mutant-refresh: regenerating {len(planned['changed'])} changed + {len(planned['added'])} added, "
               f"dropping {len(planned['removed'])} removed, keeping {len(planned['unchanged'])} unchanged; "
               f"test map re-collected")

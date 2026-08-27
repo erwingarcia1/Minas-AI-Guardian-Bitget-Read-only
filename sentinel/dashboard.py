@@ -1212,6 +1212,13 @@ def serve_dashboard(
             if not g("name") or not g("api_key") or not g("secret"):
                 self._send(_render_add_form(values, error="Name, API key and secret are required.").encode(), 400)
                 return
+            if not g("email"):
+                # Decision 4 (#24): email is the channel that cannot be switched
+                # off, so an account cannot be created without one.
+                self._send(_render_add_form(
+                    values, error="A contact email is required - it is the alert channel that cannot be switched off."
+                ).encode(), 400)
+                return
 
             from sentinel.onboarding import OnboardingRejected, generate_unique_label, onboard_account
 

@@ -277,8 +277,31 @@ CREATE TABLE IF NOT EXISTS portal_members (
     session_epoch INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL,
-    last_login_at TEXT
+    last_login_at TEXT,
+    -- Alert preferences (#24, decision 4). timezone is an IANA name or NULL;
+    -- quiet hours can only be enabled with a timezone (fail closed: an
+    -- unknown timezone means the window cannot be trusted, never UTC).
+    timezone TEXT,
+    quiet_hours_enabled INTEGER NOT NULL DEFAULT 0,
+    quiet_start TEXT NOT NULL DEFAULT '22:00',
+    quiet_end TEXT NOT NULL DEFAULT '07:00',
+    -- {severity: {channel: bool}}; NULL means every channel on, which is
+    -- exactly what happened before preferences existed.
+    channel_prefs_json TEXT
 );
+
+-- Alerts held back from a member during their quiet hours (#24): queued,
+-- never dropped, and released into their next digest. One row per (member,
+-- alert); released_at marks the digest that carried it.
+CREATE TABLE IF NOT EXISTS held_alerts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    alert_id INTEGER NOT NULL REFERENCES alerts(id),
+    held_at TEXT NOT NULL,
+    released_at TEXT,
+    UNIQUE (email, alert_id)
+);
+CREATE INDEX IF NOT EXISTS idx_held_alerts_member ON held_alerts(email, released_at);
 
 -- Small key/value store for portal runtime state (session-signing secret),
 -- so member sessions survive container restarts.
