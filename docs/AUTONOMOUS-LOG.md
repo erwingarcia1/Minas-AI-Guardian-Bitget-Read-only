@@ -5208,3 +5208,21 @@ message that reached you". Dashboard: Fire drills card. CLI: `drill
 [--account] --as`, `onboard --drill`. Config drills.enabled/interval_days
 (7). 16 tests, 4 probes. Owner's part: create the dedicated drill
 account on production with Minas's own contacts.
+
+# 2026-08-27 · Run summary: Part 0 recorded, Part 1 reported, Part 2 built 1-8
+
+Shipped on main, each CI-green by run id before the next: decisions
+recorded (4a18762); #87 mandatory dashboard 2FA (cd0f2e7); #82 dashboard
+half (7127625); #29 advice block (a2e41bd, issue closed on all four
+criteria); #24 quiet hours + channel grid + email floor (8f1baca);
+decision-6 interim pinned, decision 5 verified already built (7ec297e);
+#61 per-account grants (c91e0d9); #37 fire drills + delivery recency
+(902fb7c). Two process notes: one commit went out on a red check because
+a guard tested the wrong exit code (recorded above; the chain form was
+fixed and held on every later red); the incremental mutant refresher
+missed plain files once (schema.sql) and was fixed to plan and prove
+them. Owner's parts left: create the dedicated drill account on
+production (`sentinel onboard ... --drill`) - until then the weekly
+schedule pages HIGH once per interval, by design; decisions 11 and 18
+(reconsidering); #63's vendor; the lawyer; ClickSend credentials; the
+interim erasure path for #46 (decided, not on the build list).
