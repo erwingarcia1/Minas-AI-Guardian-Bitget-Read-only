@@ -5027,3 +5027,37 @@ Proofs, in the hollow pass's shape, against the real gate:
 Restored, re-judged: 196/198 = 98%, ledger 2 accepted, tree clean.
 CONTRIBUTING records that #93's predicate is sufficient only with the
 survivor ledger, beside both mechanisms.
+
+# 2026-08-27 · Decisions 2, 3+9, 4, 5, 6, 7, 10, 19 recorded as answered; 11 and 18 open (owner reconsidering)
+
+Recorded with the owner's reasoning, not verdicts, in DECISIONS-NEEDED
+(§2 A + real-delivery recency; §3/§9 one canonical text, reversible-only
+instruction, observed-not-inferred tone, no hedges; §4 fail-closed on
+unknown timezone; §5 print stylesheet; §6 interim 24 months + honest
+hard-delete with recorded gap; §7 dead-man's switch, digest, vendor still
+owner's; §10 per-account grants sooner; §19 mandatory 2FA, host-access
+recovery attributed). 11 and 18 marked "owner reconsidering" with no
+position recorded. Summary table repaired: 9, 10, 11 had no rows.
+Outcome comments on #37 #29 #24 #46 #47 #63 #61 #87 #82; state comments
+on #99 #43 #44.
+
+Part 1 investigations (report only):
+(a) Portal access for secondary contacts: `member_accounts` matches
+`lower(a.alert_email) = ? OR lower(a.alert_email_secondary) = ?` - a
+secondary (the escalation "emergency contact") who has been ISSUED a
+portal credential by an operator can sign in and sees exactly the
+accounts on which that address is listed, per row. It does NOT see every
+account its primary is a contact on. Documented as G-21 in the
+function's docstring. Not the live issue the owner asked about; no stop.
+Remaining fact: any address with a credential opens every account it is
+listed on in either column - decision 10's per-account grants (build
+item 7) is what makes that explicit.
+(b) `withdrawal_burst` evidence = count_in_window, window_minutes,
+threshold, timestamps. No order ids. Burst-widening by order reference
+is moot; recorded in §18's reconsidering note.
+(c) "UK": the ONLY place the repo asserts it is decision 11's own text
+("VAT on a UK-based service selling worldwide"), introduced by the run in
+b6ca5c2 (2026-08-13, billing plans) with no source. docs/data-retention.md
+says "company operates from Canada (operator email .ca)" and names
+PIPEDA. The two documents contradict each other; the UK claim is the
+unsourced one. Not resolved - reported, and noted in §11.

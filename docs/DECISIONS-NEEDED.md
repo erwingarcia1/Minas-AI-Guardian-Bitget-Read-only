@@ -20,20 +20,23 @@ whoever builds one should build it to cover both.
 | # | Decision | Blocks | Recommendation |
 |---|---|---|---|
 | 1 | Escalation timings | ~~#27~~ | **ANSWERED 2026-08-19** — see section 1 |
-| 2 | Fire drill cadence + what customers see | #37 (G-33) | Weekly, drill account, customers see result only |
-| 3 | Incident page "what to do next" wording | #29 (G-25) · depends on #69 | Three fixed actions, exchange-specific link |
-| 4 | Alert channel defaults + quiet hours | #24 (G-20) | Quiet hours non-critical only, 22:00–07:00 local |
-| 5 | PDF export for incidents | #29 (G-25) | Defer — print stylesheet now |
-| 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), #46 (G-42) | Start legal review now; 24 months interim |
-| 7 | External uptime monitoring: latency, vendor, what customers hear | #63 | Dead-man's switch, 15 min, third-party vendor |
+| 2 | Fire drill cadence + what customers see | ~~#37~~ | **ANSWERED 2026-08-27** — A: weekly, dedicated drill account, portal result, no customer texts, on-demand test button; real-delivery recency derived per customer; see section 2 |
+| 3 | Incident page "what to do next" wording | ~~#29~~ | **ANSWERED 2026-08-27** with 9 — one canonical text; reversible steps only; observed facts, no inferences; see section 3 |
+| 4 | Alert channel defaults + quiet hours | ~~#24~~ | **ANSWERED 2026-08-27** — off by default, non-critical, local time 22:00–07:00, queued to digest, email un-disableable, unknown tz = cannot enable; see section 4 |
+| 5 | PDF export for incidents | ~~#29~~ | **ANSWERED 2026-08-27** — print stylesheet + browser print-to-PDF, no library; see section 5 |
+| 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), #46 (G-42) — lawyer pending | **ANSWERED 2026-08-27 interim** — lawyer engaged (crypto-shredding question); 24 months configurable; erasure = hard delete + recorded gap + told; see section 6 |
+| 7 | External uptime monitoring: latency, vendor, what customers hear | #63 (vendor still owner's) | **ANSWERED 2026-08-27** — dead-man's switch, third party, 15 min, gaps in the digest; see section 7 |
+| 9 | What the incident page tells a customer to do next | ~~#29~~ | **ANSWERED 2026-08-27** with 3 — see section 9 |
+| 10 | Portal credential scoped to an account | #61 | **ANSWERED 2026-08-27** — per-account grants, sooner than when asked; backfill from contact rows; see section 10 |
+| 11 | Billing: provider, plans, prices, lapse | #43 (G-39), #44 (G-40) | **OPEN — owner reconsidering 2026-08-27**; plan-only, nothing dependent to be built |
 | 12 | Restart-on-unhealthy: sidecar, systemd timer, or page-only | ~~#81~~ | **ANSWERED 2026-08-21** — systemd timer accepted; see section 12 |
 | 13 | Browser push notifications | ~~#23~~ | **ANSWERED 2026-08-21** — won't-do; no-JS posture stands; see section 13 |
 | 14 | Exchange key-creation instructions: screenshots or text | ~~#8~~ | **ANSWERED 2026-08-21** — text-only, dated and interface-named; see section 14 |
 | 15 | Member self-serve pause | #10 (reworded) | **ANSWERED 2026-08-23** — 24-hour cancellable countdown, never immediate; see section 15 |
 | 16 | Deep incident links in alert emails | #20 (reworded) | **ANSWERED 2026-08-23** — no links; non-clickable reference + portal lands on the incident; see section 16 |
 | 17 | Self-serve signup | #6 (stays open) | **ANSWERED 2026-08-23** — no; behind billing + legal, waitlist as fallback; see section 17 |
-| 18 | Sibling-alert definition width + production backfill | #99 (built conservatively) | Keep order_id-only; owner sizes/backfills |
-| 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | #87, and #82's dashboard pass behind it | Mandatory; recovery via operator-add from the host |
+| 18 | Sibling-alert definition width + production backfill | #99 (built conservatively) | **OPEN — owner reconsidering 2026-08-27**; nothing dependent to be built |
+| 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | ~~#87~~, ~~#82~~ | **ANSWERED 2026-08-27** — mandatory; host-access recovery, attributed and logged; see section 19 |
 
 ---
 
@@ -105,7 +108,26 @@ is on the build list, so this decision won't be blocked by the time it's needed.
 
 ---
 
-## 2. Fire drill cadence and what customers see — blocks #37 (G-33)
+## 2. Fire drill cadence and what customers see — **ANSWERED 2026-08-27** (was: blocks #37)
+
+> **Answer (owner, 2026-08-27): option A.** Weekly drill on a DEDICATED
+> Minas drill account; the result shown in the portal; NO weekly customer
+> texts; plus an on-demand "test my alerts" button for a customer who wants
+> the proof on their own phone. A failed drill pages an operator.
+>
+> **Reasoning.** A weekly `[DRILL]` text nobody asked for trains customers to
+> skim the channel that must never be skimmed, and injecting simulated theft
+> into a real customer's forensic log corrupts the evidence that log exists
+> to be. The dedicated account proves the machinery end to end without either
+> cost. **The addition that closes the gap A leaves:** the drill proves the
+> machinery, not that a given customer's address still accepts mail. So
+> derive "last successful delivery per channel per customer" from REAL
+> traffic — `alerts.delivered_to` and `sms_deliveries` — and surface
+> staleness in the portal and to operators. Real deliveries are the evidence
+> for the customer; the drill is the evidence for the pipeline. Criterion 4
+> (a failed drill is an outage) is accepted as written; it shares decision
+> 7's dead-man's-switch drill machinery.
+
 
 The issue calls this "← highest-value new feature", and I agree with its
 reasoning: an expired Telegram token, a dead SMS account and a broken detector
@@ -154,7 +176,30 @@ my phone"), which is exactly why this is your call and not mine.
 
 ---
 
-## 3. Incident page "what to do next" wording — blocks #29 (G-25)
+## 3. Incident page "what to do next" wording — **ANSWERED 2026-08-27** with 9 (was: blocks #29)
+
+> **Answer (owner, 2026-08-27), jointly with decision 9: ONE canonical text
+> for the runbook and the incident page, from one source so they cannot
+> drift.** Order: revoke unrecognised keys → check the exchange's own
+> withdrawal history → contact exchange support with a reference. "Move your
+> funds" is NOT a step; it is mentioned only as something to raise with the
+> exchange.
+>
+> **The line: instruct for the reversible, never for the irreversible.**
+> Revoking an unrecognised key and reading a history are reversible and cost
+> nothing if the alert was the customer's own bot; moving funds is not, and
+> during a live compromise it can hand the attacker a destination.
+>
+> **Tone: certain about what was observed, never about what it means.** "A
+> withdrawal was initiated to an address this account has never used" is a
+> fact and may be stated flatly. "Your account is compromised" is an
+> inference and may not. This settles the advice-vs-instruction question
+> WITHOUT hedging language — the Gmail summariser (update above) proved that
+> hedges do not survive summarising, so the safety has to live in what is
+> asserted, not in qualifiers around it. Each sentence must read correctly
+> in isolation; a test pins that. Per-rule variation is held. Legal reviews
+> later and does not block.
+
 
 G-25 requires the incident page to state "in plain words what to do next
 (revoke the key, contact the exchange, move funds)".
@@ -292,7 +337,21 @@ above changes except where the sentence sits.)
 
 ---
 
-## 4. Alert channel defaults and quiet hours — blocks #24 (G-20)
+## 4. Alert channel defaults and quiet hours — **ANSWERED 2026-08-27** (was: blocks #24)
+
+> **Answer (owner, 2026-08-27): the recommendation, with one fail-closed
+> addition.** Quiet hours OFF by default; non-critical only; the customer's
+> local time; 22:00–07:00 when enabled; suppressed alerts are QUEUED into
+> the next digest, never dropped; email is the un-disableable CRITICAL
+> channel; removing the email is an onboarding-blocking validation error,
+> not a silent downgrade.
+>
+> **Fail-closed addition: an unknown timezone means quiet hours cannot be
+> enabled at all — never defaulted to UTC.** A window defaulted to a
+> timezone the customer does not live in silences alerts at the wrong hours,
+> which is the one failure quiet hours must not have; refusing to enable
+> them until the timezone is known is the safe direction.
+
 
 **What has to be decided:**
 
@@ -323,7 +382,14 @@ downgrade.
 
 ---
 
-## 5. PDF export for incidents — blocks part of #29 (G-25)
+## 5. PDF export for incidents — **ANSWERED 2026-08-27** (was: blocks part of #29)
+
+> **Answer (owner, 2026-08-27): option A.** Print stylesheet plus the
+> browser's print-to-PDF. No PDF library: the requirement is "something
+> official-looking I can send to someone", and a dependency with a
+> supply-chain surface on a security product is the wrong price for it.
+> Revisit only if a customer asks for server-side generation by name.
+
 
 G-25's fourth criterion: "I can export it as a PDF for the exchange or the
 police."
@@ -346,7 +412,22 @@ may mean something more specific to you.
 
 ---
 
-## 6. Retention periods — blocks #47 (G-43), touches #46 (G-42)
+## 6. Retention periods — **ANSWERED 2026-08-27** interim; lawyer engaged (was: blocks #47, touches #46)
+
+> **Answer (owner, 2026-08-27).** A lawyer is to be engaged, and asked
+> specifically whether crypto-shredding (option A) counts as erasure in the
+> relevant jurisdiction — it is the only option that does not trade the
+> forensic obligation for the legal one. **Interim:** 24 months for every
+> unbounded table, configurable so the real number lands without a deploy.
+>
+> **Addition — the interim answer to an erasure request is honest, not
+> deferred:** hard-delete on request (option B) now, record the forensic gap
+> explicitly as its own event, and tell the customer that is what happened.
+> A request answered "we are waiting for legal" is a request not answered;
+> a deletion whose gap is written down can be reasoned about later.
+> Publishing the policy and the sign-off (criteria 2 and 4) still wait for
+> the lawyer.
+
 
 **This one is not yours to answer alone — it needs a lawyer**, and it has the
 longest lead time on this list. Worth starting now even if everything else
@@ -391,7 +472,17 @@ without it: publishing the policy (criterion 4) and the lawyer sign-off
 
 ---
 
-## 7. External uptime monitoring — blocks #63
+## 7. External uptime monitoring — **ANSWERED 2026-08-27** (vendor still the owner's; was: blocks #63)
+
+> **Answer (owner, 2026-08-27): option A.** A dead-man's switch with a
+> third party, 15 minutes. Gaps in monitoring go to customers in the DIGEST,
+> not as alerts — a gap is not an emergency to wake someone for, and hiding
+> it is worse when discovered than when disclosed. Its drill shares decision
+> 2's machinery. **The vendor is still the owner's choice**; the mechanism is
+> built vendor-agnostic behind it. Reasoning as recorded below: the monitor
+> must not share fate with the monitored, and only A has that separation by
+> default without opening an inbound port.
+
 
 **The question.** Nothing tells us if the Guardian itself stops running. G-10
 (#14) covers losing sight of an *account* while the Guardian is up; it cannot
@@ -505,7 +596,15 @@ answer needed from real usage rather than from this file.
 
 ---
 
-## 9. What an incident page tells a customer to do next (G-25, #29)
+## 9. What an incident page tells a customer to do next (G-25, #29) — **ANSWERED 2026-08-27** with 3
+
+> **Answer (owner, 2026-08-27): see decision 3.** One canonical text, one
+> source, for the runbook and the incident page: revoke unrecognised keys →
+> check the exchange's own withdrawal history → contact exchange support
+> with a reference; "move your funds" only as something to raise with the
+> exchange. Instruct for the reversible, never the irreversible; state what
+> was observed, never what it means.
+
 
 The incident page is built and shipped — one page per incident, the
 detection → notification → acknowledgement timeline, balances as they were at
@@ -550,7 +649,16 @@ and "move funds" out until there is a considered position on both.
 
 ---
 
-## 10. Should a portal credential be scoped to an account? (#61)
+## 10. Should a portal credential be scoped to an account? (#61) — **ANSWERED 2026-08-27**
+
+> **Answer (owner, 2026-08-27): option 2 — per-account grants — and sooner
+> than "when a customer asks".** The affordance fix removed the acute risk,
+> but the section's own last paragraph decides the timing: the migration
+> touches live credentials and only gets more expensive as customers
+> accumulate accounts with shared contacts. Existing members are backfilled
+> from their current contact rows, so nobody loses access on the day it
+> lands.
+
 
 The **affordance** is fixed and shipped: the ops dashboard now lists, by name,
 every account a portal credential will open, before the operator clicks. An
@@ -598,7 +706,16 @@ late.
 
 ---
 
-## 11. Billing: provider, plans, prices, and what a lapse does (G-39/#43, G-40/#44)
+## 11. Billing: provider, plans, prices, and what a lapse does (G-39/#43, G-40/#44) — **owner reconsidering, 2026-08-27**
+
+> **Status 2026-08-27: OPEN — owner reconsidering.** No position recorded
+> as decided. Nothing that depends on this is to be built. Note for the
+> reconsideration: the text below reasons about VAT on "a UK-based service";
+> the repo's only jurisdiction statement (docs/data-retention.md) says the
+> company operates from Canada, and the UK claim entered this file in
+> b6ca5c2 (2026-08-13) without a source — see the investigation in
+> docs/AUTONOMOUS-LOG.md, 2026-08-27.
+
 
 **No code written**, per the standing instruction. Full implementation plans are
 in the issues, ready to build once these are answered.
@@ -782,7 +899,16 @@ middle step, self-serve last if ever.
 ---
 
 
-## 18. How wide is "the same customer action"? (#99)
+## 18. How wide is "the same customer action"? (#99) — **owner reconsidering, 2026-08-27**
+
+> **Status 2026-08-27: OPEN — owner reconsidering.** No position recorded
+> as decided; the conservative definition stays as built and neither the
+> widening nor the production backfill is to be started. Fact for the
+> reconsideration: `withdrawal_burst`'s evidence carries only
+> `count_in_window`, `window_minutes`, `threshold` and `timestamps` — no
+> order ids — so widening by burst membership cannot be done by order
+> reference as the text below assumes.
+
 
 Sibling acknowledgement shipped with the conservative definition: same
 account + same non-empty exchange `order_id` + 24 hours. That is provable
@@ -807,7 +933,19 @@ one operator session; the run left the data untouched.
 
 ---
 
-## 19. Dashboard two-factor: policy and the last-operator recovery (#87, gates #82's dashboard pass)
+## 19. Dashboard two-factor: policy and the last-operator recovery (#87, gates #82's dashboard pass) — **ANSWERED 2026-08-27**
+
+> **Answer (owner, 2026-08-27): MANDATORY, not opt-in.** Enrolment is part
+> of `sentinel operator add` and a first-login step; an operator without a
+> device cannot sign in. Recovery codes at enrolment. **Last-operator
+> recovery is host access** — a host-only reset subcommand run on the VM
+> over the tailnet, attributed and event-logged, so the person who holds
+> the box is never locked out and every use of the break-glass is on the
+> record. Reasoning: the dashboard is the higher-privilege surface and it
+> currently has no authentication at all while being reachable by ten
+> devices; opt-in would let the weakest operator set its security.
+> Unblocks #87, and #82's dashboard pass lands with it.
+
 
 **The question.** The ops dashboard - the higher-privilege surface: it
 adds customers, reads every contact, attributes operator actions - has a
