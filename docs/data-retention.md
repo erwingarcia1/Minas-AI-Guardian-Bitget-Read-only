@@ -79,3 +79,23 @@ answered for AWS Japan.
   question is answered (#46 tracks it).
 - The customer-visible summary (`/limits` on the portal) is derived from the
   same config the pruner reads, so the page and the practice cannot disagree.
+
+
+## Erasure on request — the interim answer (decision 6, 2026-08-27)
+
+Until the lawyer answers whether crypto-shredding counts as erasure, an
+erasure request is answered by **hard deletion, now**: from the portal's
+security page (password, and the second factor when on) or by Minas on a
+request that arrives by phone or email (`sentinel erase <email> --as <who>`).
+
+What goes, immediately: the monitoring credentials and every record for the
+accounts the person is the primary contact of, their portal login and its
+settings, and their contact details. On accounts where they are only the
+second contact, they are removed as a contact.
+
+What remains, deliberately: the account row as a tombstone — label replaced,
+nothing identifying on it — carrying one final event, `data_erased`, that
+states the date, the number of records removed, and that nothing before it
+can be reconstructed. **The forensic gap is recorded as a gap**, never left
+as silence that looks like nothing happened. The person receives a written
+confirmation saying exactly this.

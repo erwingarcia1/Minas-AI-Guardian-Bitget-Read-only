@@ -18,6 +18,10 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- it and nothing else; a customer never sees a simulated theft on their
     -- own account unless they ask for one.
     is_drill INTEGER NOT NULL DEFAULT 0,
+    -- #46 (decision 6 interim): set when this row became a tombstone - data
+    -- erased at the customer's request; the row stays so the gap has somewhere
+    -- to be recorded. Never polled, never listed to customers.
+    erased_at TEXT,
     alert_email_secondary TEXT,
     alert_phone_secondary TEXT,
     telegram_handle TEXT,

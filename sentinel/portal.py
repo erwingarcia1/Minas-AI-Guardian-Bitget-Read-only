@@ -1970,6 +1970,9 @@ def retention_summary(rules=None) -> list[tuple[str, str]]:
          + " — the record that the alert path was tested, and whether it reached anyone"),
         ("Your API key (encrypted) and contact details",
          "until your account is deleted"),
+        ("When you ask for your data to be deleted",
+         "deleted immediately, from the security page or by asking Minas — what remains is one entry "
+         "stating that a deletion happened, with the date and the number of records removed"),
         ("Baselines of your normal activity (addresses, pairs, routes)",
          "kept while your account is monitored — deleting one would make your own history look like an attack"),
     ]
@@ -2978,8 +2981,56 @@ def _render_security(db: Database, email: str, *, secret: str | None = None,
         body += _telegram_section(db, email)
         body += _preferences_section(db, email)
         body += _digest_section(db, email)
+        body += _erasure_section(db, email)
     return _page(banner + body, email, "/security",
                  title="Security — Minas AI Guardian")
+
+
+def _erasure_section(db: Database, email: str) -> str:
+    """Delete my data (#46, decision 6 interim). Download first, then delete
+    with the password (and the second factor when on). Says plainly what
+    goes, what stays, and that it is immediate."""
+    from sentinel.erasure import erasure_scope
+    from sentinel.twofactor import MEMBER as _MEMBER
+    from sentinel.twofactor import is_enabled
+
+    scope = erasure_scope(db, email)
+    primary = ", ".join(html.escape(a["label"]) for a in scope["primary"]) or "none"
+    secondary = ", ".join(html.escape(a["label"]) for a in scope["secondary"])
+    code_field = ""
+    if is_enabled(db, _MEMBER, email):
+        code_field = ('<div class="field"><label for="er-code">Code from your authenticator</label>'
+                      '<input class="input" type="text" id="er-code" name="code" inputmode="numeric" required></div>')
+    return (
+        '<section class="panel" aria-labelledby="erase-title"><h2 id="erase-title">Delete my data</h2>'
+        '<p class="muted">Deleting is immediate and cannot be undone. It removes the monitoring '
+        "credentials and every record for the accounts you are the main contact of "
+        f"(<strong>{primary}</strong>), your login and its settings, and your contact details. "
+        "What remains is one entry stating that a deletion happened at your request, with the date "
+        "and the number of records removed - nothing that identifies you. Monitoring of those accounts "
+        "stops.</p>"
+        + (f'<p class="muted">On <strong>{secondary}</strong> you are the second contact: you will be '
+           "removed as a contact; that account belongs to someone else.</p>" if secondary else "")
+        + '<p style="margin-top:var(--space-3)"><a class="btn btn--secondary btn--sm" href="/export.json">'
+        "Download my data first</a></p>"
+        '<form class="form" method="post" action="/erase" style="margin-top:var(--space-4)">'
+        '<div class="field"><label for="er-pw">Your password</label>'
+        '<input class="input" type="password" id="er-pw" name="password" autocomplete="current-password" required></div>'
+        + code_field +
+        '<div class="field"><label><input type="checkbox" name="confirm" value="yes" required> '
+        "I understand this deletes my data now and cannot be undone.</label></div>"
+        '<button class="btn btn--secondary" type="submit">Delete my data</button></form></section>'
+    )
+
+
+def _render_erased(email: str) -> str:
+    return _page(
+        '<section class="panel"><h2>Your data has been deleted</h2>'
+        f'<p>Everything Minas AI Guardian held for <strong>{html.escape(email)}</strong> has been removed, '
+        "and a confirmation has been sent to that address. One entry remains in our records stating that "
+        "a deletion happened at your request. Monitoring of your accounts has stopped.</p>"
+        "<p>Thank you for using Minas AI Guardian.</p></section>",
+        None, title="Data deleted — Member portal", shell=True)
 
 
 def _preferences_section(db: Database, email: str) -> str:
@@ -3342,6 +3393,9 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 self._send(body.encode())
             elif path == "/activity":
                 self._send(_render_activity(db, email).encode())
+            elif path == "/export.json":
+                self._export()
+                return
             elif path == "/alerts.csv":
                 qs = parse_qs(urlparse(self.path).query)
                 self._send(
@@ -3422,6 +3476,73 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                             account_id, member, cancelled)
             page = _render_member_account(db, member, account_id, rules)
             self._send((page or _render_not_found()).encode())
+
+        def _export(self):
+            """Download my data (#46 criterion 3): the member's own accounts'
+            events and alerts, as JSON, before erasure."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            import json as _json
+
+            from sentinel.erasure import export_member_data
+
+            payload = _json.dumps(export_member_data(db, email), indent=1, default=str).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Disposition", 'attachment; filename="minas-guardian-data.json"')
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def _erase(self, form):
+            """#46, decision 6 interim: proof of possession (password, and the
+            second factor when on), then hard-delete, gap recorded, written
+            confirmation sent, session ended."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            from sentinel.erasure import confirmation_text, erase_member
+            from sentinel.twofactor import MEMBER as _MEMBER
+            from sentinel.twofactor import is_enabled
+
+            password = form.get("password", [""])[0] or ""
+            if form.get("confirm", [""])[0] != "yes":
+                self._send(_render_security(db, email, error="Tick the confirmation to delete your data.").encode(), 400)
+                return
+            if not check_member_login(db, email, password):
+                self._send(_render_security(db, email, error="That password was not accepted.").encode(), 401)
+                return
+            if is_enabled(db, _MEMBER, email):
+                code = (form.get("code", [""])[0] or "").strip()
+                if cipher is None or not check_second_factor(db, cipher, TWOFACTOR_MEMBER, email, code):
+                    self._send(_render_security(db, email, error="That code was not accepted.").encode(), 401)
+                    return
+
+            def _notify(address, gap):
+                from sentinel.alerts.base import AlertMessage
+                from sentinel.alerts.contact import ContactRouter
+
+                message = AlertMessage(account_label="your Minas AI Guardian data", rule="data_erased",
+                                       severity="LOW", confidence="n/a", message=confirmation_text(gap),
+                                       evidence={})
+                ContactRouter(db=db).send(_PlainNotice(message), "your Minas AI Guardian data", [address], [])
+
+            try:
+                erase_member(db, email, actor=email, notify=_notify)
+            except ValueError as exc:
+                self._send(_render_security(db, email, error=str(exc)).encode(), 400)
+                return
+            logger.warning("member %s erased their data from %s", email, self._client_ip())
+            body = _render_erased(email).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Set-Cookie", f"{SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def _drill(self):
             """"Test my alerts" (#37, decision 2): an on-demand drill against
@@ -3912,6 +4033,9 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             if path == "/drill":
                 self._drill()
+                return
+            if path == "/erase":
+                self._erase(form)
                 return
 
             if path in ("/pause/request", "/pause/cancel"):

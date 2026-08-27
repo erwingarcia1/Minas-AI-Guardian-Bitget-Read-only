@@ -67,7 +67,9 @@ def test_every_writer_of_the_contact_columns_canonicalizes():
     a new writer fails here until it normalizes and is listed."""
     # db.py is listed because its migration UPDATEs match the writer shape -
     # and they ARE canonicalization (NULLIF(lower(trim(...)))), checked below.
-    KNOWN_WRITERS = {"sentinel/onboarding.py", "sentinel/cli.py", "sentinel/db.py"}
+    # erasure.py is listed because its tombstone UPDATE matches the writer
+    # shape - and it only ever writes NULL (#46), which needs no normalizing.
+    KNOWN_WRITERS = {"sentinel/onboarding.py", "sentinel/cli.py", "sentinel/db.py", "sentinel/erasure.py"}
     write_stmt = re.compile(
         r"(INSERT INTO accounts|UPDATE accounts SET)[^\"]*alert_email", re.S)
 
@@ -76,7 +78,8 @@ def test_every_writer_of_the_contact_columns_canonicalizes():
         text = path.read_text()
         if write_stmt.search(text):
             found.add(str(path.relative_to(ROOT)))
-            assert "canonical_contact_email" in text or "NULLIF(lower(trim(" in text, (
+            assert ("canonical_contact_email" in text or "NULLIF(lower(trim(" in text
+                    or "alert_email = NULL" in text), (
                 f"{path.name} writes a contact email column without the "
                 f"canonicalizer - the compare-side-only trap #90 closed")
     assert found == KNOWN_WRITERS, (

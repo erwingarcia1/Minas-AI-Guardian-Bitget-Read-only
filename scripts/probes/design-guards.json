@@ -1507,5 +1507,35 @@
       "tests/test_drill.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#46 erasure leaves no gap record (the data_erased event dropped)",
+    "file": "sentinel/erasure.py",
+    "old": "    for acct in erased_accounts:\n        append_event(db, acct[\"id\"], \"data_erased\", \"LOW\", gap, actor=actor)\n",
+    "new": "    for acct in []:\n        append_event(db, acct[\"id\"], \"data_erased\", \"LOW\", gap, actor=actor)\n",
+    "tests": [
+      "tests/test_erasure.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#46 erasure keeps the credentials on the tombstone (the blanking dropped)",
+    "file": "sentinel/erasure.py",
+    "old": "                \"UPDATE accounts SET label = ?, encrypted_api_key = '', encrypted_secret = '', \"\n",
+    "new": "                \"UPDATE accounts SET label = ?, encrypted_api_key = encrypted_api_key, encrypted_secret = encrypted_secret, \"\n",
+    "tests": [
+      "tests/test_erasure.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#46 a second contact erases the primary's account (scope query widened)",
+    "file": "sentinel/erasure.py",
+    "old": "        cur.execute(\"SELECT id, label FROM accounts WHERE lower(alert_email) = ? AND erased_at IS NULL \"\n                    \"ORDER BY id\", (normalized,))\n",
+    "new": "        cur.execute(\"SELECT id, label FROM accounts WHERE (lower(alert_email) = ? OR lower(alert_email_secondary) = ?) AND erased_at IS NULL \"\n                    \"ORDER BY id\", (normalized, normalized))\n",
+    "tests": [
+      "tests/test_erasure.py"
+    ],
+    "expect": "killed"
   }
 ]

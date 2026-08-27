@@ -877,6 +877,49 @@ def _enrol_operator_now(db, username: str, *, enrol_later: bool) -> int:
     return 0
 
 
+def cmd_erase(args: argparse.Namespace) -> int:
+    """Erase a member's data on request (#46, decision 6 interim) - the path
+    for a request that arrives by phone or email. Attributed; confirmed at
+    the keyboard unless --yes; the customer is told in writing."""
+    from sentinel.alerts.base import AlertMessage
+    from sentinel.alerts.contact import ContactRouter
+    from sentinel.erasure import confirmation_text, erase_member, erasure_scope
+    from sentinel.operators import is_active_operator, operator_count
+
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    actor = getattr(args, "as_operator", None)
+    if operator_count(db) > 0:
+        if not actor:
+            print("--as <operator> is required: an erasure is recorded against a name", file=sys.stderr)
+            return 2
+        if not is_active_operator(db, actor):
+            print(f"'{actor}' is not an active operator", file=sys.stderr)
+            return 2
+    scope = erasure_scope(db, args.email)
+    if not scope["primary"] and not scope["secondary"] and not scope["login"]:
+        print(f"nothing is held for '{args.email}'", file=sys.stderr)
+        return 1
+    print(f"erase {args.email}: accounts erased: {[a['label'] for a in scope['primary']]}; "
+          f"removed as second contact on: {[a['label'] for a in scope['secondary']]}; login: {scope['login']}")
+    if not getattr(args, "yes", False):
+        answer = input("This deletes the data now and cannot be undone. Type ERASE to continue: ").strip()
+        if answer != "ERASE":
+            print("not erased", file=sys.stderr)
+            return 1
+
+    def _notify(address, gap):
+        from sentinel.portal import _PlainNotice
+
+        message = AlertMessage(account_label="your Minas AI Guardian data", rule="data_erased",
+                               severity="LOW", confidence="n/a", message=confirmation_text(gap), evidence={})
+        ContactRouter(db=db).send(_PlainNotice(message), "your Minas AI Guardian data", [address], [])
+
+    gap = erase_member(db, args.email, actor=actor or "shell", notify=_notify)
+    print(f"erased: {sum(gap['rows_removed'].values())} record(s) across {len(gap['accounts'])} account(s); "
+          f"the gap is recorded; confirmation sent to {args.email}")
+    return 0
+
+
 def cmd_drill(args: argparse.Namespace) -> int:
     """Run a fire drill now (#37). Without --account it uses the dedicated
     drill account; with one it runs against that account - a customer's,
@@ -1219,6 +1262,12 @@ def main() -> None:
                               help="Who is doing this - required; the reset is recorded against the name")
     operator_sub.add_parser("list", help="List operator accounts")
     operator_parser.set_defaults(func=cmd_operator)
+
+    erase_parser = sub.add_parser("erase", help="Erase a member's data on request (#46): immediate, gap recorded, customer told")
+    erase_parser.add_argument("email")
+    erase_parser.add_argument("--as", dest="as_operator", metavar="OPERATOR", help="Who is doing this")
+    erase_parser.add_argument("--yes", action="store_true", help="Skip the typed confirmation")
+    erase_parser.set_defaults(func=cmd_erase)
 
     drill_parser = sub.add_parser("drill", help="Run a fire drill now (#37): the whole alert path, labelled as a drill")
     drill_parser.add_argument("--account", help="Account label to drill (default: the dedicated drill account)")

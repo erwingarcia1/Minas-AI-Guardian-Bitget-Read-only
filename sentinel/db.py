@@ -130,6 +130,7 @@ class Database:
             "ALTER TABLE accounts ADD COLUMN alert_email TEXT",
             "ALTER TABLE accounts ADD COLUMN alert_phone TEXT",
             "ALTER TABLE accounts ADD COLUMN is_drill INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE accounts ADD COLUMN erased_at TEXT",
             "ALTER TABLE accounts ADD COLUMN customer_name TEXT",
             "ALTER TABLE accounts ADD COLUMN alert_email_secondary TEXT",
             "ALTER TABLE accounts ADD COLUMN alert_phone_secondary TEXT",

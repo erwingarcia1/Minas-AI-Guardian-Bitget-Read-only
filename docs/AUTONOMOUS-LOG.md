@@ -5226,3 +5226,83 @@ production (`sentinel onboard ... --drill`) - until then the weekly
 schedule pages HIGH once per interval, by design; decisions 11 and 18
 (reconsidering); #63's vendor; the lawyer; ClickSend credentials; the
 interim erasure path for #46 (decided, not on the build list).
+
+# 2026-08-28 · Measured, closed, and #46's interim erasure built
+
+Open issues measured from GitHub (11): #6 #43 #44 closed as moot / not
+applicable on the owner's 2026-08-27 gate (Academy benefit, no strangers,
+no subscription); #48 closed as built - its one unticked criterion named
+a signup surface that will not exist, and the statement lives on /limits
+(portal.py, test_the_limits_page_says_the_thing_that_matters). Remaining
+seven: #46 (built now), #19/#75 credentials, #47 lawyer, #56 trigger,
+#63 vendor, #88 domain.
+
+#46: sentinel/erasure.py - erasure_scope (primary accounts erased,
+secondary contact removed, login), export_member_data (never
+credentials), erase_member (children of alerts, then account children,
+then alerts, then the tombstone: label erased-N, credentials '',
+contacts NULL, status disabled, erased_at; member tables and TOTP rows
+by email; ONE data_erased event per tombstone with rows_removed and the
+note that nothing before it can be reconstructed; confirmation via
+notify after the delete, guarded). Portal: security-page section,
+/export.json, POST /erase (password + 2FA when on + explicit tick),
+session ended, goodbye page, written confirmation through the router.
+CLI: erase <email> --as with typed ERASE. Retention doc + /limits line.
+11 tests, 3 probes.
+
+# 2026-08-28 · Production investigations (read-only, on a byte-complete copy) and the #99 backfill dry run
+
+Method: the live SQLite file and its WAL were streamed with `sudo cat`
+(no host write) to the scratchpad - 230,457,344 bytes, size-verified
+against the host. The copy's integrity_check reported one out-of-order
+rowid on one page (a live-copy artefact); PRAGMA integrity_check run
+READ-ONLY on production itself says `ok`. Every number below was checked
+on the copy; the two headline counts were confirmed on production
+read-only.
+
+(1) Open CRITICALs after #99: 208 on production now (the "194" was an
+earlier day's count; the oldest open is 2026-07-02). Of those, exactly
+ONE is a sibling of an already-acknowledged alert: #369 (withdrawal_
+initiated, order 424427676, 2026-08-22 00:06) whose sibling #370 was
+acknowledged at 00:49 by john.ruales - the measured case #99 was built
+from. The other 207 have no acknowledged sibling. Separately, 23 pairs
+(40 alerts) among the open ones are siblings of EACH OTHER - the co-ack
+that #99 now performs going forward will close those in pairs when
+either is acknowledged. 111 of the 208 carry an order_id at all. By
+rule: 97 unexplained_quantity_decrease, 97 withdrawal_initiated, 14
+withdrawal_to_unseen_address. Backfill dry run on the copy:
+scripts/backfill-siblings.py would acknowledge exactly 1 alert (#369),
+attributed "<operator> (backfill: sibling of #370)". Not run on
+production.
+
+(2) rules_config_rejected, 2026-08-20 12:35:49 UTC (operator_pages #139,
+rejected_at 12:35:17): the rejected problem was
+`alerting.escalation_unacknowledged_minutes_high: unknown setting`. That
+key entered both rules.yaml and the schema in ebb1bdc (decision 1),
+shipped in v1.6.0 - and 12:35:17 is exactly the v1.6.0 deploy timestamp
+(docs/DEPLOYMENTS.md). Reading: deploy.sh checked the tag out, the
+still-running v1.5.2 hot-reloaded the new rules.yaml, did not know the
+new key, rejected the file and paged; the v1.6.0 container then started
+and accepted it. Degradation: the page's own text says detection kept
+"the settings that validated plus built-in defaults", and the only new
+key was an escalation window the old build had no use for, so
+detection thresholds were unaffected; events continued through 12:xx
+and 13:xx. What is NOT knowable from surviving data: the exact moment
+the new build accepted the file - config_changes has zero rows (it
+records diffs between accepted loads, and a first load has no
+predecessor), no acceptance is paged, and the metric history is not
+stored. The bound is the switchover window of that deploy, minutes at
+most. No later rejection page exists.
+
+(3) john-great LOW/MEDIUM → secondary: cannot be verified from delivery
+data because NO LOW or MEDIUM alert has ever fired on john-great or
+john-great-2 (0 rows), and no sms_deliveries row to the secondary phone
+exists for any severity. What holds it instead is structural: the poller
+hands the router the PRIMARY contacts only (decision 1, #27;
+tests/test_secondary_contact_escalation.py::
+test_low_and_medium_never_reach_a_secondary_no_matter_how_stale and
+::test_the_immediate_alert_reaches_the_primary_only), and the escalator
+touches HIGH/CRITICAL only. Carrying this as "still to verify" from data
+would wait for an event that may never happen; the code path is pinned.
+Also found: contact_deliveries (#37) does not exist on production yet -
+expected, unreleased.

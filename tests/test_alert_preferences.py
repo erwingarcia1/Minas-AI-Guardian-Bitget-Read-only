@@ -352,3 +352,12 @@ def test_the_security_page_offers_preferences_with_the_floor_locked(db, member):
     assert "Alert preferences" in page and 'action="/preferences"' in page
     assert 'name="grid_CRITICAL_email" value="on"' in page and "disabled" in page
     assert "America/Toronto" in page
+
+
+def test_a_blank_stored_quiet_window_reads_as_the_default(db, member):
+    """A row that somehow holds '' for a window edge must read as the
+    default, not as an empty time that later fails to parse."""
+    with db.cursor() as cur:
+        cur.execute("UPDATE portal_members SET quiet_start = '', quiet_end = '' WHERE email = ?", (member,))
+    prefs = member_prefs(db, member)
+    assert prefs["quiet_start"] == "22:00" and prefs["quiet_end"] == "07:00"

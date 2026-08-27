@@ -96,6 +96,20 @@ deliberate ways:
 
 ### Added
 
+- **Delete my data — now, with the gap on record** (#46, decision 6's
+  interim). From the portal's security page (password, and the second
+  factor when on) or by Minas on a phoned request (`sentinel erase
+  <email> --as <who>`), a member's data is hard-deleted immediately: the
+  monitoring credentials and every record for the accounts they are the
+  primary contact of, their login and settings, their contact details.
+  On an account where they are only the second contact they are removed
+  as a contact. What remains is the account row as a tombstone carrying
+  one final event, `data_erased`, that states the date, the number of
+  records removed and that nothing before it can be reconstructed — the
+  forensic gap recorded as a gap, never left as silence. The member can
+  download their data first (`/export.json`) and receives a written
+  confirmation saying what went and what remains. The lawyer's
+  crypto-shredding question stays open and did not block this.
 - **Fire drills, and the last message that reached you** (#37, decision
   2). Weekly, the Guardian injects a simulated theft on its dedicated
   drill account (`sentinel onboard … --drill`) and records whether it
