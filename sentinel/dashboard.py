@@ -31,153 +31,124 @@ logger = logging.getLogger("sentinel.dashboard")
 # the stylesheet never passes through str.format / f-strings and needs no
 # brace-escaping.
 _STYLE = """
+  /* Ops dashboard (#82, decision 2 on the issue): plain, dense, unbranded.
+     No mark, no wordmark, no gradients, no glow, none of the identity hues
+     (sentinel/brand.py) - an ops screenshot must not pass for a customer
+     page, and a mispasted internal URL should look visibly wrong. Light,
+     neutral, tabular: a control surface, read at a desk, not a product. */
   :root {
-    --bg:#0b0813; --panel:#140f20; --panel-2:#191229; --line:#2b2140; --line-soft:#211935;
-    --txt:#ece8f4; --muted:#9a8fb5; --faint:#6b5f8a; --accent:#8b5cf6; --gold:#f0b429;
-    --ok:#34d399; --crit:#ff5d6c; --high:#ffa63d; --med:#ffd23d; --low:#8a7fa5;
+    --bg:#f4f5f7; --panel:#ffffff; --panel-2:#eef0f3; --line:#c9ced6; --line-soft:#e2e5ea;
+    --txt:#16191d; --muted:#4b5563; --faint:#6b7280; --accent:#1f4e79;
+    --ok:#15803d; --crit:#b91c1c; --high:#b45309; --med:#a16207; --low:#6b7280;
   }
   * { box-sizing: border-box; }
-  body {
-    margin:0;
-    background:
-      radial-gradient(1200px 600px at 85% -10%, rgba(139,92,246,.13), transparent 60%),
-      radial-gradient(900px 500px at 0% 0%, rgba(240,180,41,.06), transparent 55%),
-      var(--bg);
-    color:var(--txt); font-family:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
-    -webkit-font-smoothing:antialiased; letter-spacing:.1px; min-height:100vh;
-  }
-  .wrap { max-width:1120px; margin:0 auto; padding:40px 32px 64px; }
-  header { display:flex; align-items:center; justify-content:space-between; margin-bottom:34px; }
-  .brand { display:flex; align-items:center; gap:14px; }
-  .mark { width:40px; height:40px; border-radius:12px; background:linear-gradient(145deg,#1c1230,#0d0918);
-    border:1px solid rgba(139,92,246,.45); display:grid; place-items:center;
-    box-shadow:0 6px 22px rgba(139,92,246,.30), inset 0 1px 0 rgba(255,255,255,.08); }
-  .mark svg { width:24px; height:24px; }
-  .brand h1 { font-size:19px; font-weight:650; margin:0; letter-spacing:.2px; }
-  .brand h1 .minas { color:var(--gold); font-weight:780; letter-spacing:3px; }
-  .brand .sub { font-size:12px; color:var(--faint); margin-top:2px; }
-  .nav { display:flex; align-items:center; gap:10px; }
-  .live { display:inline-flex; align-items:center; gap:9px; font-size:12.5px; color:var(--muted);
-    background:var(--panel); border:1px solid var(--line); padding:8px 14px; border-radius:999px; text-decoration:none; }
-  a.live:hover { border-color:var(--accent); color:var(--txt); }
-  a.live.primary { color:#0b0813; background:linear-gradient(145deg,var(--gold),#e0a020); border-color:transparent; font-weight:650; }
-  a.live.primary:hover { filter:brightness(1.08); color:#0b0813; }
-  .dot { width:8px; height:8px; border-radius:50%; background:var(--ok); box-shadow:0 0 0 0 rgba(52,211,153,.6); animation:pulse 2.2s infinite; }
-  @keyframes pulse { 0% { box-shadow:0 0 0 0 rgba(52,211,153,.55); } 70% { box-shadow:0 0 0 8px rgba(52,211,153,0); } 100% { box-shadow:0 0 0 0 rgba(52,211,153,0); } }
-  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:16px; margin-bottom:30px; }
-  .kpi { background:linear-gradient(180deg,var(--panel-2),var(--panel)); border:1px solid var(--line); border-radius:16px; padding:18px 20px; position:relative; overflow:hidden; }
-  .kpi::after { content:""; position:absolute; inset:0 0 auto 0; height:2px; background:linear-gradient(90deg,transparent,rgba(139,92,246,.6),rgba(240,180,41,.5),transparent); opacity:.6; }
-  .kpi .label { font-size:11.5px; text-transform:uppercase; letter-spacing:.8px; color:var(--faint); }
-  .kpi .val { font-size:32px; font-weight:680; margin-top:8px; font-variant-numeric:tabular-nums; line-height:1; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:14px; line-height:1.45; min-height:100vh; }
+  .wrap { max-width:1240px; margin:0 auto; padding:16px 20px 40px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
+    padding:8px 0 12px; border-bottom:2px solid var(--txt); margin-bottom:18px; }
+  .brand { display:flex; align-items:baseline; gap:12px; }
+  .brand h1 { font-size:15px; font-weight:700; margin:0; letter-spacing:.4px; text-transform:uppercase; }
+  .brand .sub { font-size:12px; color:var(--faint); }
+  .nav { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .live { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);
+    background:var(--panel); border:1px solid var(--line); padding:5px 10px; border-radius:3px;
+    text-decoration:none; font-variant-numeric:tabular-nums; }
+  a.live:hover { border-color:var(--accent); color:var(--accent); }
+  a.live.primary { color:#fff; background:var(--accent); border-color:var(--accent); font-weight:600; }
+  a.live.primary:hover { filter:brightness(1.1); color:#fff; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--ok); }
+  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px; }
+  .kpi { background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:10px 12px; }
+  .kpi .label { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--faint); }
+  .kpi .val { font-size:26px; font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; line-height:1; }
   .kpi .val.crit { color:var(--crit); } .kpi .val.ok { color:var(--ok); }
-  .kpi .foot { font-size:12px; color:var(--muted); margin-top:8px; }
-  section { margin-top:26px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:16px; overflow:hidden; }
-  .card-head { display:flex; align-items:baseline; justify-content:space-between; padding:16px 22px; border-bottom:1px solid var(--line-soft); }
-  .card-head h2 { font-size:14px; font-weight:620; margin:0; letter-spacing:.3px; }
+  .kpi .foot { font-size:12px; color:var(--muted); margin-top:6px; }
+  section { margin-top:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:3px; overflow:hidden; }
+  .card-head { display:flex; align-items:baseline; justify-content:space-between; padding:8px 12px;
+    border-bottom:1px solid var(--line); background:var(--panel-2); }
+  .card-head h2 { font-size:12px; font-weight:700; margin:0; letter-spacing:.5px; text-transform:uppercase; }
   .card-head .count { font-size:12px; color:var(--faint); font-variant-numeric:tabular-nums; }
   table { width:100%; border-collapse:collapse; }
-  thead th { font-size:11px; text-transform:uppercase; letter-spacing:.7px; color:var(--faint); text-align:left; padding:12px 22px; font-weight:600; }
-  tbody td { padding:14px 22px; font-size:13.5px; border-top:1px solid var(--line-soft); }
-  tbody tr:hover { background:rgba(139,92,246,.05); }
-  .mono { font-family:"SF Mono","JetBrains Mono",ui-monospace,Menlo,monospace; font-size:12.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
-  .rule { font-family:"SF Mono",ui-monospace,Menlo,monospace; font-size:12.5px; }
-  .lbl { font-weight:550; }
-  .pill { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; padding:4px 11px; border-radius:999px; letter-spacing:.3px; }
-  .pill::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; }
-  .s-active { color:var(--ok); background:rgba(52,211,153,.12); }
-  .s-disabled { color:var(--faint); background:rgba(91,104,131,.15); }
-  .s-tamper { color:var(--crit); background:rgba(255,93,108,.12); }
-  .sev-CRITICAL { color:var(--crit); background:rgba(255,93,108,.13); }
-  .sev-HIGH { color:var(--high); background:rgba(255,166,61,.13); }
-  .sev-MEDIUM { color:var(--med); background:rgba(255,210,61,.13); }
-  .sev-LOW { color:var(--low); background:rgba(124,138,165,.15); }
+  thead th { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--faint); text-align:left;
+    padding:6px 12px; font-weight:600; border-bottom:1px solid var(--line); }
+  tbody td { padding:6px 12px; font-size:13px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  tbody tr:hover { background:var(--panel-2); }
+  .ts { white-space:nowrap; font-variant-numeric:tabular-nums; }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--muted);
+    font-variant-numeric:tabular-nums; }
+  .rule { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+  .lbl { font-weight:600; }
+  .pill { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:2px;
+    letter-spacing:.4px; text-transform:uppercase; border:1px solid currentColor; }
+  .s-active { color:var(--ok); } .s-disabled { color:var(--faint); } .s-tamper { color:var(--crit); }
+  .sev-CRITICAL { color:var(--crit); } .sev-HIGH { color:var(--high); }
+  .sev-MEDIUM { color:var(--med); } .sev-LOW { color:var(--low); }
   .ack-yes { color:var(--ok); } .ack-no { color:var(--faint); }
-  /* Member acknowledgement button (G-22). Deliberately quiet: it sits in every
-     unacknowledged row, and a row of loud buttons reads as the page asking to
-     be clicked rather than as a list of things that happened. */
-  .ackbtn { font:inherit; font-size:12px; cursor:pointer; padding:3px 10px;
-            border:1px solid var(--line); border-radius:6px;
-            background:transparent; color:var(--txt); }
+  .ackbtn { font:inherit; font-size:12px; cursor:pointer; padding:2px 8px; border:1px solid var(--line);
+    border-radius:2px; background:var(--panel); color:var(--txt); }
   .ackbtn:hover { border-color:var(--ok); color:var(--ok); }
-  .snoozesel { font:inherit; font-size:12px; margin-right:6px; padding:3px 6px;
-               border:1px solid var(--line); border-radius:6px;
-               background:var(--panel-2); color:var(--txt); }
+  .snoozesel { font:inherit; font-size:12px; margin-right:4px; padding:2px 4px; border:1px solid var(--line);
+    border-radius:2px; background:var(--panel); color:var(--txt); }
   .snoozed { font-size:12px; color:var(--muted); }
   .fail { color:var(--high); font-weight:600; } .zero { color:var(--faint); }
-  /* An incident page is handed to an exchange, an insurer or the police, so it
-     has to survive being printed. Export is the browser's own print-to-PDF
-     rather than a generated file: a PDF library is a new dependency in a
-     security product, server-side rendering drifts from what the customer
-     actually saw, and the browser's footer carries the URL and a timestamp -
-     better provenance for evidence than a document we composed ourselves. */
   @media print {
-    :root { --bg:#fff; --panel:#fff; --panel-2:#fff; --txt:#111; --muted:#444;
-            --faint:#666; --line:#bbb; --line-soft:#ddd; }
     body { background:#fff !important; color:#111; }
     .wrap { max-width:none; padding:0; }
     .noprint, .nav form, .ackbtn, .snoozesel { display:none !important; }
     .card { border:1px solid #bbb; break-inside:avoid; }
-    .kpi::after, .dot { display:none; }
+    .dot { display:none; }
     a { color:#111; text-decoration:none; }
   }
-  .empty { padding:34px; text-align:center; color:var(--faint); font-size:13px; }
-  footer { margin-top:28px; text-align:center; color:var(--faint); font-size:11.5px; }
-  footer .build { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11px; opacity:.85; }
-  a.acctlink { color:var(--txt); text-decoration:none; font-weight:550; }
-  a.acctlink:hover { color:var(--gold); }
+  .empty { padding:22px; text-align:center; color:var(--faint); font-size:13px; }
+  footer { margin-top:24px; padding-top:10px; border-top:1px solid var(--line); color:var(--faint); font-size:11.5px;
+    display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+  footer .build { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11px; }
+  a { color:var(--accent); }
+  a.acctlink { color:var(--txt); text-decoration:none; font-weight:600; }
+  a.acctlink:hover { color:var(--accent); text-decoration:underline; }
   /* --- Account detail --- */
-  .cols { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
-  .dl { display:grid; grid-template-columns:150px 1fr; gap:11px 16px; padding:20px 22px; font-size:13.5px; }
+  .cols { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .dl { display:grid; grid-template-columns:150px 1fr; gap:6px 12px; padding:10px 12px; font-size:13px; }
   .dl dt { color:var(--faint); font-size:12px; }
   .dl dd { margin:0; color:var(--txt); word-break:break-word; }
   .dl dd.dim { color:var(--faint); }
-  .checks { padding:6px 22px 18px; }
-  .check { display:flex; align-items:center; gap:11px; padding:11px 0; border-top:1px solid var(--line-soft); font-size:13.5px; }
+  .checks { padding:2px 12px 10px; }
+  .check { display:flex; align-items:center; gap:9px; padding:7px 0; border-top:1px solid var(--line-soft); font-size:13px; }
   .check:first-child { border-top:none; }
-  .check .ic { width:19px; height:19px; border-radius:50%; display:grid; place-items:center; font-size:11px; flex:none; font-weight:700; }
-  .check .ic.ok { background:rgba(52,211,153,.15); color:var(--ok); }
-  .check .ic.warn { background:rgba(255,166,61,.15); color:var(--high); }
-  .check .ic.na { background:rgba(139,92,246,.12); color:var(--accent); }
+  .check .ic { width:17px; height:17px; border-radius:2px; display:grid; place-items:center; font-size:11px; flex:none;
+    font-weight:700; border:1px solid currentColor; }
+  .check .ic.ok { color:var(--ok); } .check .ic.warn { color:var(--high); } .check .ic.na { color:var(--faint); }
   .check .txt { flex:1; } .check .meta { color:var(--faint); font-size:12px; text-align:right; }
-  .det { display:flex; align-items:center; gap:12px; padding:9px 22px; border-top:1px solid var(--line-soft); font-size:13px; }
+  .det { display:flex; align-items:center; gap:10px; padding:5px 12px; border-top:1px solid var(--line-soft); font-size:12.5px; }
   .det .desc { color:var(--muted); }
   @media (max-width:720px) { .cols { grid-template-columns:1fr; } }
-  /* --- Add-customer form --- */
-  form.addf { padding:22px; }
-  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:16px 20px; }
-  .fld { display:flex; flex-direction:column; gap:6px; }
+  /* --- Forms (add customer, sign-in, second factor, enrolment) --- */
+  form.addf { padding:14px 12px; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
+  .fld { display:flex; flex-direction:column; gap:4px; }
   .fld.full { grid-column:1 / -1; }
-  .fld label { font-size:11.5px; text-transform:uppercase; letter-spacing:.6px; color:var(--faint); }
-  .fld label .req { color:var(--gold); }
-  .fld input, .fld select { background:#0d0a16; border:1px solid var(--line); border-radius:10px; color:var(--txt);
-    padding:10px 12px; font-size:14px; font-family:inherit; }
-  .fld input:focus, .fld select:focus { outline:none; border-color:var(--accent); box-shadow:0 0 0 3px rgba(139,92,246,.18); }
+  .fld label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--faint); }
+  .fld label .req { color:var(--crit); }
+  .fld input, .fld select { background:var(--panel); border:1px solid var(--line); border-radius:2px; color:var(--txt);
+    padding:7px 9px; font-size:14px; font-family:inherit; }
+  .fld input:focus, .fld select:focus { outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent); }
   .fld .hint { font-size:11px; color:var(--faint); }
-  .grouphdr { grid-column:1 / -1; font-size:11px; text-transform:uppercase; letter-spacing:.7px; color:var(--accent);
-    margin-top:8px; padding-top:14px; border-top:1px solid var(--line-soft); }
-  .actions { display:flex; align-items:center; gap:14px; margin-top:24px; }
-  button.submit { background:linear-gradient(145deg,var(--gold),#e0a020); color:#0b0813; border:none; border-radius:10px;
-    padding:12px 22px; font-size:14px; font-weight:680; cursor:pointer; letter-spacing:.2px; }
-  button.submit:hover { filter:brightness(1.08); }
-  .banner { padding:14px 18px; border-radius:12px; margin-bottom:20px; font-size:13.5px; }
-  .banner.err { background:rgba(255,93,108,.12); border:1px solid rgba(255,93,108,.4); color:#ffb3bb; }
-  .banner.ok { background:rgba(52,211,153,.12); border:1px solid rgba(52,211,153,.4); color:#9df0cf; }
-  .banner code { font-family:"SF Mono",ui-monospace,Menlo,monospace; }
-  @media (max-width:720px) { .kpis { grid-template-columns:repeat(2,1fr); } .wrap { padding:24px 16px; } .grid2 { grid-template-columns:1fr; } }
+  .grouphdr { grid-column:1 / -1; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted);
+    margin-top:6px; padding-top:10px; border-top:1px solid var(--line-soft); }
+  .actions { display:flex; align-items:center; gap:12px; margin-top:16px; }
+  button.submit, a.submit { display:inline-block; background:var(--accent); color:#fff; border:1px solid var(--accent);
+    border-radius:2px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; text-decoration:none; font-family:inherit; }
+  button.submit:hover, a.submit:hover { filter:brightness(1.1); }
+  .banner { padding:9px 12px; border-radius:2px; margin-bottom:14px; font-size:13px; border:1px solid; }
+  .banner.err { background:#fef2f2; border-color:var(--crit); color:#7f1d1d; }
+  .banner.ok { background:#f0fdf4; border-color:var(--ok); color:#14532d; }
+  .banner code, code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
+  @media (max-width:720px) { .kpis { grid-template-columns:repeat(2,1fr); } .wrap { padding:12px; } .grid2 { grid-template-columns:1fr; } }
 """
 
-_MARK_SVG = (
-    '<div class="mark"><svg viewBox="0 0 24 24" fill="none"><defs><linearGradient id="inf" x1="3" y1="20" '
-    'x2="21" y2="4" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f0b429"/><stop offset=".48" '
-    'stop-color="#f0b429"/><stop offset=".58" stop-color="#8b5cf6"/><stop offset="1" stop-color="#6d28d9"/>'
-    '</linearGradient></defs><path fill="url(#inf)" d="M18.6 6.62c-1.44 0-2.8.56-3.77 1.53L12 10.66 10.48 12h.01'
-    'L7.8 14.39c-.64.64-1.49.99-2.4.99-1.87 0-3.39-1.51-3.39-3.38S3.53 8.62 5.4 8.62c.91 0 1.76.35 2.44 1.03l1.13 1 '
-    '1.51-1.34L9.22 8.2C8.2 7.18 6.84 6.62 5.4 6.62 2.42 6.62 0 9.04 0 12s2.42 5.38 5.4 5.38c1.44 0 2.8-.56 3.77-1.53'
-    'l2.83-2.5.01.01L13.52 12h-.01l2.69-2.39c.64-.64 1.49-.99 2.4-.99 1.87 0 3.39 1.51 3.39 3.38s-1.52 3.38-3.39 3.38'
-    'c-.9 0-1.76-.35-2.44-1.03l-1.14-1.01-1.51 1.34 1.27 1.12c1.02 1.01 2.37 1.57 3.82 1.57 2.98 0 5.4-2.41 5.4-5.38'
-    's-2.42-5.38-5.4-5.38z"/></svg></div>'
-)
 
 
 # Timestamps are stored and rendered in UTC (the forensic source of truth);
@@ -225,10 +196,12 @@ def _page(nav_html: str, body_html: str, refresh: bool = True) -> str:
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        "<title>Minas AI Guardian</title>" + refresh_meta + "<style>" + _STYLE + "</style></head><body>"
-        '<div class="wrap"><header><div class="brand">' + _MARK_SVG
-        + '<div><h1><span class="minas">MINAS</span> AI Guardian</h1>'
-        '<div class="sub">Multi-exchange account-compromise monitoring</div></div></div>'
+        "<title>Ops dashboard — internal</title>" + refresh_meta + "<style>" + _STYLE + "</style></head><body>"
+        # Plain and unbranded on purpose (#82): no mark, no wordmark. The
+        # header says what this is - an internal control surface - so a
+        # screenshot or a mispasted URL reads as exactly that.
+        '<div class="wrap"><header><div class="brand">'
+        '<h1>Ops dashboard</h1><span class="sub">internal · Minas staff only</span></div>'
         '<div class="nav">' + nav_html + "</div></header>"
         + body_html
         # The build line is here rather than tucked in a status page because
@@ -236,8 +209,8 @@ def _page(nav_html: str, body_html: str, refresh: bool = True) -> str:
         # else - an alert that should have fired, a fix that should have
         # landed. Showing it on every page means the answer is never a guess
         # about whether the last deploy took.
-        + '<footer>Minas AI Guardian · internal ops view · network-gated (Tailscale)'
-        + f'<br><span class="build">{html.escape(version_line())}</span></footer></div>'
+        + '<footer><span>Internal ops view · Tailscale-gated · operator sign-in with two-factor</span>'
+        + f'<span class="build">{html.escape(version_line())}</span></footer></div>'
         + _LOCAL_TIME_SCRIPT + "</body></html>"
     )
 
@@ -1041,7 +1014,8 @@ def serve_dashboard(
     db: Database, cipher: CredentialCipher, port: int, host: str = "127.0.0.1", rules=None,
     operator_alerter=None,
 ) -> ThreadingHTTPServer:
-    """Internal ops page. Network-gated (Tailscale) — it has no login of its
+    """Internal ops page. Network-gated (Tailscale), and since #54/#87 behind an
+    operator sign-in with a mandatory second factor. Historically it had no login of its
     own by design. The /add form runs the same fail-closed read-only gate as
     the CLI, so a trade/withdraw key can never be stored through it.
 

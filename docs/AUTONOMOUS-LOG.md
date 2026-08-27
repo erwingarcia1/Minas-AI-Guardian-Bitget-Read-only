@@ -5077,3 +5077,17 @@ never password-only. No dashboard route can disable it (test-pinned).
 19 new tests + 3 existing moved to the two-step contract; 3 probes
 (wrong code must not sign in; enrolled goes to the code step; the reset
 must record who), all killed.
+
+# 2026-08-27 · #82 dashboard half: plain, dense, unbranded
+
+Decision 2 on #82, now that #87 landed the access model: the dashboard's
+`_STYLE` is a light, neutral, tabular sheet with one navy accent; the
+mark, the MINAS wordmark, gradients, glow and the brand hues are gone
+from dashboard.py; the shell and tab title say "Ops dashboard · internal
+· Minas staff only"; the #87 sign-in/code/enrolment pages inherit it.
+Markup and class names untouched, so nothing else moved. Guards added to
+tests/test_surface_styles.py: no identity hue / gradient / mark /
+wordmark in the dashboard; the shell names the surface on every page;
+light vs dark grounds; every emitted class styled (the dashboard now has
+the same execution pair the portal had). Design note:
+design/dashboard/DESIGN-SYSTEM.md. No framework, no new JS.

@@ -81,6 +81,18 @@ deliberate ways:
 
 ### Added
 
+- **The ops dashboard is plain, dense and unbranded** (#82, the
+  dashboard half). Per the owner's decision on the issue: the member
+  portal carries the Minas identity; the internal dashboard now carries
+  none of it — no mark, no wordmark, no gradients, none of the brand hues
+  — on a light, tabular, utilitarian sheet that says "Ops dashboard ·
+  internal · Minas staff only" in its title and header. An ops
+  screenshot cannot pass for a customer page, and a mispasted internal
+  URL looks visibly wrong. The sign-in, second-factor and enrolment pages
+  from #87 land in the same look. Guards: no identity hue, gradient or
+  wordmark in the dashboard sheet; every class it emits is styled by its
+  own sheet; the two grounds differ. Design note in
+  `design/dashboard/DESIGN-SYSTEM.md`.
 - **Two-factor is mandatory on the ops dashboard** (#87, decision 19).
   The dashboard — which adds customers, reads every customer's contact
   details and attributes operator actions — had a password-only sign-in

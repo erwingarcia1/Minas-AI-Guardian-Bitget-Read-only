@@ -231,3 +231,62 @@ def test_reduced_motion_is_honoured_and_no_motion_exists():
     assert "prefers-reduced-motion" in portal._PORTAL_STYLE
     assert "animation:" not in portal._PORTAL_STYLE.replace("animation: none", "").replace("animation:none", "")
     assert "@keyframes" not in portal._PORTAL_STYLE
+
+
+# --- the dashboard half (#82, 2026-08-27): plain, dense, unbranded -----------
+
+def _dashboard_emitted_classes() -> set[str]:
+    tokens: set[str] = set()
+    style_start = DASHBOARD_SRC.index('_STYLE = """')
+    style_end = DASHBOARD_SRC.index('"""', style_start + 12)
+    markup = DASHBOARD_SRC[:style_start] + DASHBOARD_SRC[style_end:]
+    for attr in re.findall(r"""class=\\?["']([^"'\\]+)""", markup):
+        for token in attr.split():
+            if "{" not in token and "}" not in token:
+                tokens.add(token)
+    return tokens
+
+
+def test_the_dashboard_wears_no_brand():
+    """Decision 2 on #82: no mark, no wordmark, no identity hue, no
+    gradient. A screenshot of this page must not pass for a customer page."""
+    # Comments style nothing - the sheet's own header says "no gradients".
+    sheet = re.sub(r"/\*.*?\*/", "", dashboard._STYLE, flags=re.S).lower()
+    for hue in (brand.GOLD, brand.VIOLET, brand.VIOLET_DEEP):
+        assert hue.lower() not in sheet, f"identity hue {hue} in the dashboard sheet"
+    assert "gradient" not in sheet and "glow" not in sheet and "box-shadow" not in sheet
+    assert "_MARK_SVG" not in DASHBOARD_SRC and "brand.MARK_SVG" not in DASHBOARD_SRC
+    assert "<h1><span class=\"minas\">" not in DASHBOARD_SRC
+    assert "Ops dashboard" in DASHBOARD_SRC and "Minas staff only" in DASHBOARD_SRC
+
+
+def test_the_dashboard_says_what_it_is_on_every_page():
+    """The shell names the surface - the tab title and the header - so a
+    mispasted internal URL reads as exactly that to whoever opens it."""
+    from sentinel.dashboard import _page
+
+    page = _page("", "<p>x</p>")
+    assert "<title>Ops dashboard — internal</title>" in page
+    assert "Minas staff only" in page
+    assert "Member portal" not in page
+
+
+def test_the_two_grounds_differ():
+    """Light against dark: the cheapest distinction a glance can make."""
+    assert "--bg:#f4f5f7" in dashboard._STYLE
+    assert "--bg:#0d0f13" in portal._PORTAL_STYLE
+
+
+def test_every_class_the_dashboard_emits_is_styled_by_its_own_sheet():
+    """The execution pair, for this sheet too."""
+    missing = {
+        token for token in _dashboard_emitted_classes()
+        if not re.search(rf"\.{re.escape(token)}(?![\w-])", dashboard._STYLE)
+    }
+    assert not missing, f"dashboard emits classes its stylesheet never styles: {sorted(missing)}"
+
+
+def test_the_dashboard_design_note_exists_and_records_the_decision():
+    note = (ROOT / "design" / "dashboard" / "DESIGN-SYSTEM.md").read_text()
+    assert "unbranded" in note and "#82" in note
+    assert "#1f4e79" in note and "#1f4e79" in dashboard._STYLE
