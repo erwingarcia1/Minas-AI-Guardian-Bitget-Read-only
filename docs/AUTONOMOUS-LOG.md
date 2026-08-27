@@ -5152,3 +5152,23 @@ treats every non-.py file under sentinel/ as part of the plan (a
 differing plain copy is deleted so mutmut copies it fresh) and of the
 proof (byte-equality, or validation fails to the from-scratch path).
 Two unit tests in the miss's shape.
+
+# 2026-08-27 · Build items 5 and 6: already built - verified and pinned, not rebuilt
+
+Item 5 (decision 5, print stylesheet + browser print-to-PDF): portal.py
+carries the @media print rules and the incident page its print button;
+test_the_page_carries_print_styles_so_it_exports_cleanly pins it. No
+change.
+Item 6 (decision 6 interim, 24 months configurable on every unbounded
+table): sentinel/retention.py prunes every growing table (registration
+guard), periods come from config/rules.yaml `retention:` with 730-day
+defaults for every long-lived record (365 for dedup, 7 for balance
+snapshots, argued in docs/data-retention.md), the engine prunes hourly
+and pages on failure. What the decision adds is the number as a
+commitment: tests/test_retention_interim.py pins 730 in the defaults
+and the shipped config, that retention.py carries no number (the
+lawyer's answer lands as config), and that the customer-facing doc
+states it. Decision 6's ADDITION - the interim erasure answer
+(hard-delete on request, record the gap, tell the customer) - is
+decided but was not on the build list; #46 stays open on it and is
+buildable on the owner's word.
