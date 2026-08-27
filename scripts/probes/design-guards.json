@@ -939,10 +939,10 @@
     ]
   },
   {
-    "name": "runbook: a step loses its own condition, so a summariser turns advice into an instruction",
+    "name": "runbook: step 1 tells the customer to revoke EVERY key - ours included (decision 3's line)",
     "file": "sentinel/alerts/base.py",
-    "old": "        \"1. If you did not authorise this, freeze the account in the Bitget app.\",",
-    "new": "        \"1. Freeze the account in the Bitget app.\",",
+    "old": "        \"Revoke any API key on this account that you do not recognise. \"\n",
+    "new": "        \"Revoke every API key on this account. \"\n",
     "tests": [
       "tests/test_customer_email_template.py"
     ]

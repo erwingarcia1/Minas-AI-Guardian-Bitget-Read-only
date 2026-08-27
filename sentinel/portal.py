@@ -2266,6 +2266,8 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
     particular an alert with `delivered_to = 0` was detected and reached
     nobody (#57), and rendering that as "notified" because a row exists would
     undo that distinction in the one document where it matters most."""
+    from sentinel.alerts.base import advice_steps, monitoring_note
+
     account_ids = [r["id"] for r in member_accounts(db, email)]
     if not account_ids:
         return None
@@ -2394,6 +2396,12 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         f"{_balance_kv(before, 'before')}</section>"
         '<section class="panel" aria-labelledby="bal2-title"><h2 id="bal2-title">Balances after</h2>'
         f"{_balance_kv(after, 'after')}</section>"
+        # Decisions 3 and 9: the SAME steps the alert email carries, from the
+        # same function, so the page and the email cannot drift apart.
+        '<section class="panel" aria-labelledby="next-title"><h2 id="next-title">What to do next</h2>'
+        '<ol class="steps">' + "".join(f"<li>{html.escape(step)}</li>" for step in advice_steps(alert["exchange"]))
+        + "</ol>"
+        f'<p class="muted">{html.escape(monitoring_note())}</p></section>'
         '<div class="notice notice--info">' + _ICON_INFO
         + '<div><p class="notice__title">Minas cannot do this for you.</p>'
         '<p class="notice__body">Guardian is read-only. It can\'t revoke keys, cancel '

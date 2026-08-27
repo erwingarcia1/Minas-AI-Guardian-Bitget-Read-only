@@ -5,51 +5,66 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
 
-def runbook() -> str:
-    """What a customer can check, one step per line.
+def advice_steps(exchange: str | None = None) -> list[str]:
+    """THE canonical "what to do next" (decisions 3 and 9, 2026-08-27): one
+    source for the alert runbook and the incident page, so they cannot
+    drift. Three steps, in this order, and nothing else:
 
-    Two properties, both learned from what the reading environment does to
-    this text rather than from how it reads on its own.
+      revoke unrecognised keys -> check the exchange's own withdrawal
+      history -> contact exchange support with a reference.
 
-    **Every step carries its own condition.** Gmail's AI Overview summarised
-    the previous version as "You must immediately freeze account, revoke
-    unrecognized API keys" - it dropped the "if this was not you" preamble and
-    turned advice into an instruction we never gave. A conditional heading
-    followed by imperative steps does not survive being summarised, forwarded,
-    read aloud, or skimmed. So the hedge lives inside each sentence, where it
-    cannot be stripped without changing the sentence.
+    **The line: instruct for the reversible, never for the irreversible.**
+    Revoking an unrecognised key and reading a history cost nothing if the
+    alert was the customer's own bot. Moving funds is not a step - during a
+    live compromise it can hand the attacker a destination - so it appears
+    only as something to raise WITH the exchange.
 
-    **Step 2 is the one with teeth.** The Guardian's key is one of the keys on
-    that account. It is read-only and cannot move money, so revoking it takes
-    nothing from an attacker and switches the monitoring off - silently,
-    because nobody connects "I revoked my keys" with "I am no longer watched".
-    Panic makes revoke-everything the likely action, so ours is named.
+    **Tone: certain about what was observed, never about what it means.**
+    The alert's own first line states the observation as a fact. These
+    steps never say "compromised", "attacker" or "theft": that is an
+    inference the record does not support. And they carry no hedging
+    preamble - Gmail's summariser dropped "if this was not you" and turned
+    advice into an instruction we never gave - so each sentence has to read
+    correctly ALONE, as a plain instruction for a reversible act.
 
-    The numbered list holds only things to *do*. What happens if step 2 takes
-    our key with it is a consequence, not a sixth action, and numbering it as
-    one asked the reader to perform it. It sits below the list as a note.
+    **The Guardian's key is one of the keys on that account.** It is
+    read-only and cannot move money, so revoking it takes nothing from an
+    attacker and switches the monitoring off - silently, because nobody
+    connects "I revoked my keys" with "I am no longer watched". Panic makes
+    revoke-everything the likely action, so ours is named in step 1.
 
-    Plain text, deliberately: HTML mail is the phishing norm, and a plain-text
-    security alert is harder to imitate convincingly. Multipart HTML+text is a
-    separate decision, not an implementation detail.
-
-    Wording is still not signed off - decision 3 (legal/comms) owns it."""
-    steps = [
-        "1. If you did not authorise this, freeze the account in the Bitget app.",
-        "2. If you see an API key you do not recognise, revoke it. Leave the Minas "
-        "AI Guardian key - it is read-only, and revoking it stops your monitoring "
-        "without slowing an attacker down.",
-        "3. If your withdrawal whitelist has an address you do not recognise, "
-        "remove it in the Bitget app.",
-        "4. If two-factor authentication or Bitget's anti-phishing code is off, "
-        "turn it on.",
-        "5. If funds moved without your authorisation, contact Bitget support.",
+    Per-rule variation is held (decision 3). Legal reviews the wording
+    later and does not block it."""
+    name = (exchange or "").strip().title() or "the exchange"
+    return [
+        "Revoke any API key on this account that you do not recognise. "
+        "Leave the Minas AI Guardian key in place: it is read-only, and revoking it "
+        "stops your monitoring without slowing anyone else down.",
+        f"Check the withdrawal history in {name}'s own app or website for withdrawals "
+        "you did not make.",
+        f"Contact {name}'s support, quote the incident number above, and ask whether the "
+        "withdrawal can be held and what they advise about moving your funds.",
     ]
+
+
+def runbook(exchange: str | None = None) -> str:
+    """The advice as plain text for the alert email: numbered steps, then the
+    monitoring note below the list.
+
+    The numbered list holds only things to *do*. What happens if step 1
+    takes our key with it is a consequence, not a fourth action, and
+    numbering it as one asked the reader to perform it. It sits below the
+    list as a note.
+
+    Plain text, deliberately: HTML mail is the phishing norm, and a
+    plain-text security alert is harder to imitate convincingly. Multipart
+    HTML+text is a separate decision, not an implementation detail."""
+    steps = [f"{i}. {step}" for i, step in enumerate(advice_steps(exchange), 1)]
     return "\n\n".join(steps + [monitoring_note()])
 
 
 def monitoring_note() -> str:
-    """The consequence of step 2, sitting below the list rather than in it.
+    """The consequence of step 1 (revoking every key), sitting below the list.
 
     Points at the portal front door, not a deep link into the replacement page
     (#69). The page exists now, and the note says a customer can do it

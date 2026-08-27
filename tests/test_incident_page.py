@@ -1,9 +1,8 @@
 """One page per incident, and what it is allowed to say (G-25, #29).
 
-Three of the four criteria are built here. The third — "states in plain words
-what to do next (revoke the key, contact the exchange, move funds)" — is
-deliberately not, and is logged as a product decision. Telling a customer to
-move funds is advice with consequences, and the wording is the whole of it.
+All four criteria are built. The third — "states in plain words what to do
+next" — waited on decisions 3 and 9 (answered 2026-08-27) and is covered in
+tests/test_incident_advice.py: one canonical text shared with the alert email.
 
 The page is evidence. A customer hands it to an exchange or to the police, so
 what matters is less how it looks than what it is *allowed to claim*:

@@ -81,6 +81,18 @@ deliberate ways:
 
 ### Added
 
+- **The incident page and the alert email now say what to do next, in
+  the same words** (#29, decisions 3 and 9). Three steps, in this order:
+  revoke any API key you do not recognise (and leave the Guardian's
+  read-only key in place — revoking it stops your monitoring); check the
+  exchange's own withdrawal history; contact the exchange's support with
+  the incident number. Moving funds is not a step — it is something to
+  ask the exchange about. The steps instruct only reversible acts, state
+  nothing about what the event means, carry no "if this was not you"
+  preamble (a summariser strips it), and each sentence is tested to read
+  correctly alone. One function feeds both surfaces so they cannot
+  drift; the page carries no copy of its own. Wording is the owner's;
+  legal reviews later.
 - **The ops dashboard is plain, dense and unbranded** (#82, the
   dashboard half). Per the owner's decision on the issue: the member
   portal carries the Minas identity; the internal dashboard now carries

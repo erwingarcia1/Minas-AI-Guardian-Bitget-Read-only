@@ -279,7 +279,7 @@ def test_the_runbook_does_not_tell_a_customer_to_revoke_our_key_blind():
     their monitoring, at the one moment they need it."""
     text = runbook()
     assert "Revoke/rotate the API key(s)" not in text
-    assert "If you see an API key you do not recognise, revoke it" in text
+    assert "Revoke any API key on this account that you do not recognise" in text
     assert "read-only" in text
     # And it must say what revoking everything costs, not merely imply it.
     assert "stops your monitoring" in text
@@ -330,28 +330,32 @@ def _steps(text=None):
     return _blocks(text)[:-1]
 
 
-def test_every_step_carries_its_own_condition():
-    """Gmail's AI Overview summarised the previous version as "You must
-    immediately freeze account, revoke unrecognized API keys" - it dropped the
-    "if this was not you" preamble and turned advice into an instruction we
-    never gave. A conditional heading does not survive summarising, forwarding
-    or skimming, so each step has to hedge itself and read correctly alone."""
+def test_every_step_is_a_plain_instruction_that_reads_alone():
+    """Decision 3 (2026-08-27) settled the tone WITHOUT hedging language:
+    Gmail's AI Overview once summarised a conditional preamble away and
+    turned advice into an instruction we never gave, so the safety cannot
+    live in a hedge. It lives in what is asserted - each step instructs a
+    reversible act, on a plainly described object ("keys you do not
+    recognise"), and reads correctly alone."""
     steps = _steps()
-    assert len(steps) == 5
+    assert len(steps) == 3
     for number, step in enumerate(steps, start=1):
-        assert step.startswith(f"{number}. If "), f"step {number} is not conditional: {step!r}"
+        assert step.startswith(f"{number}. "), step
+        assert step.split(". ", 1)[1].split(" ")[0] in ("Revoke", "Check", "Contact"), step
+        assert not step.split(". ", 1)[1].startswith("If "), f"a conditional preamble is back: {step!r}"
 
 
 def test_the_monitoring_consequence_is_a_note_not_a_step():
-    """Steps 1-5 are things to do. What revoking every key costs is a
-    consequence of step 2, and numbering it asked the reader to perform it."""
+    """Steps 1-3 are things to do. What revoking every key costs is a
+    consequence of step 1, and numbering it asked the reader to perform it."""
     note = _blocks()[-1]
     assert note.startswith("Note: if you revoked every key,")
-    assert not note.startswith("6.")
-    # It still hedges itself - it is read alone as readily as any step.
+    assert not note.startswith("4.")
+    # Its condition is its subject - read alone it is about a thing that may
+    # not have happened.
     assert "if you revoked every key" in note
-    # And nothing above it may be numbered 6.
-    assert "\n\n6. " not in f"\n\n{runbook()}"
+    # And nothing above it may be numbered 4.
+    assert "\n\n4. " not in f"\n\n{runbook()}"
 
 
 @pytest.mark.parametrize("severity", ["CRITICAL", "HIGH"])
@@ -367,7 +371,7 @@ def test_one_step_per_line_with_a_blank_line_between():
     """It is read on a phone. A paragraph with inline 1) 2) 3) wraps into a
     wall that nobody parses in a hurry."""
     text = runbook()
-    for number in range(1, 6):
+    for number in range(1, 4):
         assert f"\n\n{number}. " in f"\n\n{text}"
     # The old inline form must not creep back.
     assert "1) " not in text
@@ -392,9 +396,10 @@ def test_the_account_label_is_not_repeated_in_the_opener():
     assert first.startswith(f"{label} - ")
 
 
-def test_step_two_stays_short():
-    """Somebody frightened is skimming. The safety point has to survive, but
-    it was four sentences inside a numbered step."""
-    step_two = _steps()[1]
-    assert step_two.count(".") <= 3, f"step 2 has grown back: {step_two!r}"
-    assert len(step_two) < 220
+def test_the_key_step_stays_short():
+    """Somebody frightened is skimming. The safety point (leave our key)
+    has to survive, but it was once four sentences inside a numbered step.
+    It is step 1 now."""
+    step_one = _steps()[0]
+    assert step_one.count(".") <= 3, f"step 1 has grown back: {step_one!r}"
+    assert len(step_one) < 220

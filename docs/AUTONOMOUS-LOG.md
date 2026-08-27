@@ -5091,3 +5091,30 @@ wordmark in the dashboard; the shell names the surface on every page;
 light vs dark grounds; every emitted class styled (the dashboard now has
 the same execution pair the portal had). Design note:
 design/dashboard/DESIGN-SYSTEM.md. No framework, no new JS.
+
+# 2026-08-27 · Process slip on #82's commit, recorded
+
+The health check before #82's commit was RED on one gate - the
+issue-status audit (#87 closed but still labelled partial) - and the
+commit chain's guard was written wrong (it tested `tail`'s exit, not
+the check's), so it committed and pushed on a red check. CI on
+7127625 is green and the red gate was a GitHub label, not code; the
+label was applied (#87 and #82 → built) and the full check re-run on
+the pushed tree for an honest evidence directory. The rule stands:
+a red check is a stop, whatever the gate. The chain form now used
+tests the check's own exit code, captured on the line it runs.
+
+# 2026-08-27 · #29 advice block: one canonical text on both surfaces (decisions 3 + 9)
+
+`advice_steps(exchange)` in sentinel/alerts/base.py is THE text; `runbook`
+numbers it for the email and the incident page renders it as "What to do
+next" from the same function (a test refuses a portal-side copy). Order
+and line per the owner: revoke unrecognised keys (Guardian's key named,
+left in place) → check the exchange's own withdrawal history → contact
+support quoting the incident number; "move your funds" only as a thing
+to ask the exchange. No inference words, no hedging preamble; every
+sentence tested in isolation. The step-1 probe re-aimed at the new line
+(revoke EVERY key → killed). Decision 5's print stylesheet turned out to
+be already built and test-pinned (portal.py @media print,
+test_the_page_carries_print_styles_so_it_exports_cleanly) - verified,
+not rebuilt.
