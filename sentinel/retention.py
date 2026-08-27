@@ -93,6 +93,7 @@ NEVER_PRUNE = frozenset({
     # with who did them. An audit row whose entire purpose is to be read
     # later is not something a retention period may remove.
     "operator_events",
+    "member_account_grants",  # #61: who may open which account - configuration, not history
     # Deleting an enrolment silently turns 2FA OFF for that person, and
     # deleting a recovery code silently removes their way back in. Both are
     # current state, not history (#32).

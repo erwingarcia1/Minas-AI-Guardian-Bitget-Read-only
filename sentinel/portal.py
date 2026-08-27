@@ -173,7 +173,8 @@ def verify_pending_token(secret: bytes, token: str) -> str | None:
 
 
 def set_member_password(db: Database, email: str, password: str, *,
-                        invalidate_sessions: bool = True, notify=None) -> None:
+                        invalidate_sessions: bool = True, notify=None,
+                        grant_account_id: int | None = None, actor: str | None = None) -> None:
     """Create or reset a member login.
 
     `invalidate_sessions` bumps `session_epoch`, which retires every cookie
@@ -194,12 +195,22 @@ def set_member_password(db: Database, email: str, password: str, *,
     now = datetime.now(timezone.utc).isoformat()
     bump = "session_epoch = session_epoch + 1, " if invalidate_sessions else ""
     with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM portal_members WHERE email = ?", (email,))
+        existed = cur.fetchone() is not None
         cur.execute(
             "INSERT INTO portal_members (email, password_hash, created_at, updated_at) VALUES (?, ?, ?, ?) "
             f"ON CONFLICT(email) DO UPDATE SET password_hash = excluded.password_hash, {bump}"
             "updated_at = excluded.updated_at",
             (email, hash_password(password), now, now),
         )
+    # #61: a credential issued from one account's page opens that account.
+    # A NEW login is scoped to it and nothing else; an existing login keeps
+    # what it had (materialised if it was legacy) and gains this one.
+    if grant_account_id is not None:
+        if not existed:
+            with db.cursor() as cur:
+                cur.execute("UPDATE portal_members SET scoped = 1 WHERE email = ?", (email,))
+        grant_account(db, email, int(grant_account_id), actor)
     # Recorded here rather than at the call sites, so no route that sets a
     # password can forget to leave a trace (G-32, #36). Guarded for the same
     # reason `notify` is: a customer resetting in a panic must not be left
@@ -259,14 +270,15 @@ def member_login_requires_code(db: Database, email: str) -> bool:
     return is_enabled(db, MEMBER, normalize_email(email))
 
 
-def member_accounts(db: Database, email: str) -> list:
-    """Every account this member is a contact on. THE isolation boundary: all
-    portal queries go through the ids returned here.
+_ACCOUNT_COLUMNS = ("SELECT a.*, p.last_success_at, p.consecutive_failures, p.consecutive_auth_failures "
+                    "FROM accounts a LEFT JOIN poll_state p ON p.account_id = a.id ")
 
-    Matches the secondary contact as well as the primary (G-21). The second
-    pair of eyes is alerted about an account, so it can look that account up -
-    and only that account: being someone's secondary contact confers nothing
-    over their other accounts, because the match is per-row.
+
+def contact_accounts(db: Database, email: str) -> list:
+    """Every account this address is a contact on (primary or secondary,
+    case-insensitive). The pre-#61 scope rule, kept as the LEGACY rule for
+    logins nobody has scoped yet, and the source a legacy login's grants are
+    materialised from.
 
     An empty lookup returns nothing rather than falling through to the query.
     `alert_email_secondary` is '' on accounts saved through a form that left it
@@ -277,13 +289,116 @@ def member_accounts(db: Database, email: str) -> list:
         return []
     with db.cursor() as cur:
         cur.execute(
-            "SELECT a.*, p.last_success_at, p.consecutive_failures, p.consecutive_auth_failures "
-            "FROM accounts a LEFT JOIN poll_state p ON p.account_id = a.id "
-            "WHERE lower(a.alert_email) = ? OR lower(a.alert_email_secondary) = ? "
+            _ACCOUNT_COLUMNS + "WHERE lower(a.alert_email) = ? OR lower(a.alert_email_secondary) = ? "
             "ORDER BY a.label",
             (normalized, normalized),
         )
         return cur.fetchall()
+
+
+def is_scoped(db: Database, email: str) -> bool:
+    with db.cursor() as cur:
+        cur.execute("SELECT scoped FROM portal_members WHERE email = ?", (normalize_email(email),))
+        row = cur.fetchone()
+    return bool(row and row["scoped"])
+
+
+def member_accounts(db: Database, email: str) -> list:
+    """The accounts this login opens. THE isolation boundary: all portal
+    queries go through the ids returned here.
+
+    #61 (decision 10): a SCOPED login opens exactly its grants - a credential
+    issued from one account's page opens that account, and revoking never
+    widens. A login nobody has scoped yet keeps the legacy rule (every
+    account the address is a contact on, G-21's per-row match for the
+    secondary), so no existing member sees a change until an operator
+    touches their scope - at which moment their contact rows are
+    materialised into grants first."""
+    normalized = normalize_email(email)
+    if not normalized:
+        return []
+    if not is_scoped(db, normalized):
+        return contact_accounts(db, normalized)
+    with db.cursor() as cur:
+        cur.execute(
+            _ACCOUNT_COLUMNS + "JOIN member_account_grants g ON g.account_id = a.id "
+            "WHERE g.email = ? ORDER BY a.label",
+            (normalized,),
+        )
+        return cur.fetchall()
+
+
+def materialise_scope(db: Database, email: str, actor: str | None = None) -> int:
+    """Turn a legacy login's contact-row scope into explicit grants, once.
+    Returns the number of grants written; 0 if already scoped. Called before
+    any grant or revoke so the first explicit change starts from what the
+    login already opened, never from nothing."""
+    normalized = normalize_email(email)
+    if not normalized or is_scoped(db, normalized):
+        return 0
+    now = datetime.now(timezone.utc).isoformat()
+    written = 0
+    if not member_exists(db, normalized):
+        return 0
+    # Read the contact rows BEFORE opening the writing cursor: a nested
+    # cursor on the same connection deadlocks.
+    rows = contact_accounts(db, normalized)
+    with db.cursor() as cur:
+        for row in rows:
+            cur.execute(
+                "INSERT OR IGNORE INTO member_account_grants (email, account_id, granted_at, granted_by) "
+                "VALUES (?, ?, ?, ?)", (normalized, int(row["id"]), now, actor))
+            written += cur.rowcount
+        cur.execute("UPDATE portal_members SET scoped = 1 WHERE email = ?", (normalized,))
+    return written
+
+
+def grant_account(db: Database, email: str, account_id: int, actor: str | None = None) -> bool:
+    """Let this login open one more account. Materialises a legacy scope
+    first. False when the grant already existed. Recorded on the account."""
+    normalized = normalize_email(email)
+    if not normalized:
+        raise ValueError("member email is empty")
+    materialise_scope(db, normalized, actor)
+    with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM portal_members WHERE email = ?", (normalized,))
+        if cur.fetchone() is None:
+            raise ValueError("no portal login for this address")
+        cur.execute("SELECT 1 FROM accounts WHERE id = ?", (int(account_id),))
+        if cur.fetchone() is None:
+            raise ValueError("no such account")
+        cur.execute(
+            "INSERT OR IGNORE INTO member_account_grants (email, account_id, granted_at, granted_by) "
+            "VALUES (?, ?, ?, ?)",
+            (normalized, int(account_id), datetime.now(timezone.utc).isoformat(), actor))
+        added = cur.rowcount > 0
+        cur.execute("UPDATE portal_members SET scoped = 1 WHERE email = ?", (normalized,))
+    if added:
+        from sentinel.events import append_event
+
+        append_event(db, int(account_id), "member_account_granted", "LOW",
+                     {"login": normalized}, actor=actor)
+    return added
+
+
+def revoke_account(db: Database, email: str, account_id: int, actor: str | None = None) -> bool:
+    """Stop this login opening one account. Materialises a legacy scope
+    first, so removing one account never widens to none-or-all. False when
+    there was nothing to revoke. Recorded on the account."""
+    normalized = normalize_email(email)
+    if not normalized:
+        return False
+    materialise_scope(db, normalized, actor)
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM member_account_grants WHERE email = ? AND account_id = ?",
+                    (normalized, int(account_id)))
+        removed = cur.rowcount > 0
+    if removed:
+        from sentinel.events import append_event
+
+        append_event(db, int(account_id), "member_account_revoked", "LOW",
+                     {"login": normalized}, actor=actor)
+    return removed
 
 
 def _token_hash(token: str) -> str:

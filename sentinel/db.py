@@ -123,6 +123,7 @@ class Database:
             "ALTER TABLE portal_members ADD COLUMN quiet_start TEXT NOT NULL DEFAULT '22:00'",
             "ALTER TABLE portal_members ADD COLUMN quiet_end TEXT NOT NULL DEFAULT '07:00'",
             "ALTER TABLE portal_members ADD COLUMN channel_prefs_json TEXT",
+            "ALTER TABLE portal_members ADD COLUMN scoped INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE operators ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE events ADD COLUMN actor TEXT",
             "ALTER TABLE accounts ADD COLUMN exchange TEXT NOT NULL DEFAULT 'bitget'",

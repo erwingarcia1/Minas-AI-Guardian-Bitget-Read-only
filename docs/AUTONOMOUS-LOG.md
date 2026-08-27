@@ -5172,3 +5172,18 @@ states it. Decision 6's ADDITION - the interim erasure answer
 (hard-delete on request, record the gap, tell the customer) - is
 decided but was not on the build list; #46 stays open on it and is
 buildable on the owner's word.
+
+# 2026-08-27 · #61 built: per-account grants (decision 10)
+
+member_account_grants + portal_members.scoped. member_accounts (THE
+isolation boundary, 16 callers) returns grants for a scoped login and
+the contact rule for an unscoped one; materialise_scope turns a legacy
+login's contact rows into grants before any grant/revoke, so the first
+explicit change starts from what it already opened and revoking never
+widens. set_member_password(grant_account_id=…) scopes a NEW login to
+that account alone and ensures it for an existing one; the dashboard's
+issuance passes the page's account, the card says "opens this account
+only" for a new login and names the rest as grantable, and /portal-grant
+grants/revokes one account attributed to the operator with an event on
+the account. Existing members untouched until scoped (test-pinned).
+16 tests, 2 probes; scope tests moved to the decided model.

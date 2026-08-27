@@ -287,8 +287,26 @@ CREATE TABLE IF NOT EXISTS portal_members (
     quiet_end TEXT NOT NULL DEFAULT '07:00',
     -- {severity: {channel: bool}}; NULL means every channel on, which is
     -- exactly what happened before preferences existed.
-    channel_prefs_json TEXT
+    channel_prefs_json TEXT,
+    -- #61 (decision 10): 1 once this login's scope is explicit - it opens
+    -- exactly the rows in member_account_grants. 0 is the legacy rule: every
+    -- account the address is a contact on. A legacy login is materialised
+    -- into grants the first time its scope is touched, never silently.
+    scoped INTEGER NOT NULL DEFAULT 0
 );
+
+-- Per-account portal grants (#61, decision 10): which accounts a portal
+-- login opens, one row each, with who granted it. Identity stays the email;
+-- scope is no longer inferred from contact rows once a login is scoped.
+CREATE TABLE IF NOT EXISTS member_account_grants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    account_id INTEGER NOT NULL REFERENCES accounts(id),
+    granted_at TEXT NOT NULL,
+    granted_by TEXT,
+    UNIQUE (email, account_id)
+);
+CREATE INDEX IF NOT EXISTS idx_member_grants_email ON member_account_grants(email);
 
 -- Alerts held back from a member during their quiet hours (#24): queued,
 -- never dropped, and released into their next digest. One row per (member,

@@ -56,8 +56,13 @@ def test_the_card_names_every_account_the_credential_will_open(db):
 
     card = _text(_portal_access_card(db, here, "alice@example.com"))
 
+    # #61 (decision 10) settled the model: a NEW credential issued here opens
+    # this account only. The other accounts are still named - as what it
+    # does NOT open, grantable from their own pages - so the operator sees
+    # the whole picture before clicking.
     for label in ("alice-trading", "alice-cold", "alice-futures"):
         assert label in card, f"{label} is not named on the card"
+    assert "opens this account only" in card
 
 
 def test_a_single_account_contact_is_not_warned_about_nothing(db):
@@ -144,6 +149,13 @@ def test_the_button_says_how_much_it_opens(db):
 
     card = _portal_access_card(db, here, "alice@example.com")
 
+    # A new credential: the button says the scope it will have.
+    assert "opens this account only" in card
+    # An existing login that opens three: the button says so.
+    from sentinel.portal import set_member_password
+
+    set_member_password(db, "alice@example.com", "pw-long-enough-1")
+    card = _portal_access_card(db, here, "alice@example.com")
     assert "opens 3 accounts" in card
 
 
@@ -154,5 +166,5 @@ def test_the_button_stays_plain_when_it_opens_only_this_account(db):
 
     card = _portal_access_card(db, here, "solo@example.com")
 
-    assert "opens" not in _text(card).lower()
+    assert "not just this one" not in _text(card).lower()
     assert "Generate portal password" in card

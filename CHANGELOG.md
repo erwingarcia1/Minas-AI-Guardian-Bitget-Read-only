@@ -88,6 +88,17 @@ deliberate ways:
 
 ### Added
 
+- **A portal credential opens exactly what was granted** (#61, decision
+  10). Generating a portal password on an account's page now opens that
+  account and nothing else; the other accounts the address is a contact
+  on are named on the card as not included, grantable from their own
+  pages. Each account page carries a grant/remove control for a contact's
+  existing login, attributed to the operator and recorded on the account.
+  A login nobody has scoped keeps today's behaviour — every account the
+  address is a contact on — until an operator first touches its scope, at
+  which moment its contact rows become explicit grants before anything
+  changes, so revoking never widens. Nothing is required on upgrade:
+  existing members keep exactly the access they have.
 - **Alert preferences: channels per level, quiet hours, and a floor**
   (#24, decision 4). On the portal's security page a member picks which
   of email, Telegram and SMS reach them for each level, sets their

@@ -638,28 +638,55 @@ def _portal_access_row(db: Database, account_id: int, email: str | None, contact
     if not email or not email.strip():
         return (f'<div class="det"><span class="desc">{title}: no email on file — '
                 "add one to enable member-portal access.</span></div>")
+    from sentinel.portal import contact_accounts
+
     exists = member_exists(db, email)
     status = "login active" if exists else "no login yet"
     label = "Reset portal password" if exists else "Generate portal password"
 
-    rows = member_accounts(db, email)
-    reachable = [r["label"] for r in rows]
-    others = [r for r in rows if r["id"] != account_id]
-    # The scope belongs on the button too, not only in the paragraph above it.
-    # The paragraph is read once; the button is what gets clicked, sometimes
-    # months later by somebody who scrolled past the paragraph. If the control
-    # is going to be pressed while thinking "this is an account A action", the
-    # words under the cursor are the last chance to say otherwise (#61).
+    # #61 (decision 10): scope is explicit. A NEW credential issued here
+    # opens this account and nothing else; the other accounts this address
+    # is a contact on are named as grantable from their own pages, never
+    # granted by implication. An EXISTING login shows exactly what it opens
+    # today (member_accounts - the function the portal enforces with) and a
+    # grant/remove control for this account.
     scope = ""
-    if others:
-        label += f" — opens {len(reachable)} accounts"
-        scope = (
-            '<div class="det"><span class="desc">This credential opens '
-            f'<b>{len(reachable)} account(s)</b>, not just this one: '
-            + ", ".join(f"<b>{html.escape(str(lbl))}</b>" for lbl in reachable)
-            + ". Portal identity is the email address, so anyone holding this password "
-              "sees every account that address is a contact on.</span></div>"
+    grant_control = ""
+    if exists:
+        rows = member_accounts(db, email)
+        reachable = [str(r["label"]) for r in rows]
+        opens_this = any(int(r["id"]) == int(account_id) for r in rows)
+        others = [r for r in rows if int(r["id"]) != int(account_id)]
+        if not opens_this:
+            opens = (", ".join(f"<b>{html.escape(lbl)}</b>" for lbl in reachable) or "nothing")
+            scope = ('<div class="det"><span class="desc">This login does not currently open '
+                     f"this account. It opens: {opens}.</span></div>")
+        elif others:
+            label += f" — opens {len(reachable)} accounts"
+            scope = (
+                '<div class="det"><span class="desc">This credential opens '
+                f'<b>{len(reachable)} account(s)</b>, not just this one: '
+                + ", ".join(f"<b>{html.escape(lbl)}</b>" for lbl in reachable)
+                + ".</span></div>"
+            )
+        action = "revoke" if opens_this else "grant"
+        button = "Remove access to this account" if opens_this else "Grant this account"
+        grant_control = (
+            f'<form method="post" action="/portal-grant" style="padding:0 22px 10px">'
+            f'<input type="hidden" name="account_id" value="{account_id}">'
+            f'<input type="hidden" name="contact" value="{contact}">'
+            f'<input type="hidden" name="action" value="{action}">'
+            f'<button class="ackbtn" type="submit">{button}</button></form>'
         )
+    else:
+        label += " — opens this account only"
+        elsewhere = [str(r["label"]) for r in contact_accounts(db, email) if int(r["id"]) != int(account_id)]
+        if elsewhere:
+            scope = (
+                '<div class="det"><span class="desc">This address is also a contact on '
+                + ", ".join(f"<b>{html.escape(lbl)}</b>" for lbl in elsewhere)
+                + " — not included; grant those from their own pages if they should be.</span></div>"
+            )
 
     return (
         f'<div class="det"><span class="desc">{title} — <b>{html.escape(email)}</b> · {status}</span></div>'
@@ -669,6 +696,7 @@ def _portal_access_row(db: Database, account_id: int, email: str | None, contact
         f'<input type="hidden" name="contact" value="{contact}">'
         f'<button class="submit" type="submit">{label}</button> '
         '<span class="hint">shown once — hand it to them securely</span></form>'
+        + grant_control
     )
 
 
@@ -1185,6 +1213,9 @@ def serve_dashboard(
             if post_path == "/portal-access":
                 self._portal_access()
                 return
+            if post_path == "/portal-grant":
+                self._portal_grant()
+                return
             if post_path == "/triage":
                 self._triage()
                 return
@@ -1325,8 +1356,13 @@ def serve_dashboard(
             from sentinel.portal import member_accounts, set_member_password
 
             password = _secrets.token_urlsafe(12)
-            set_member_password(db, email, password)
             actor = self._operator()
+            # #61 (decision 10): the credential opens THIS account. A new
+            # login is scoped to it alone; an existing login keeps what it
+            # had (materialised from contact rows if it was never scoped)
+            # and gains this one. What it opens is read back below from
+            # member_accounts, the same function the portal enforces with.
+            set_member_password(db, email, password, grant_account_id=aid, actor=actor)
             # What this credential opens, resolved at the moment it is issued.
             # The event below is a forensic record, and the question asked of
             # it later is "what did this password reach", which the email alone
@@ -1367,6 +1403,48 @@ def serve_dashboard(
                 f"<b>{html.escape(email.strip().lower())}</b>: <code>{html.escape(password)}</code>"
                 " — copy it now, it is shown only once." + scope_note + "</div>"
             )
+            self._send(_render_account(db, aid, notice_html=notice).encode())
+
+        def _portal_grant(self):
+            """Grant or revoke ONE account for a contact's existing login
+            (#61). Same-origin gated like every POST; attributed to the
+            operator; recorded on the account as an event."""
+            length = int(self.headers.get("Content-Length", 0))
+            if length <= 0 or length > 4 * 1024:
+                self._send(b"bad request", 400)
+                return
+            form = parse_qs(self.rfile.read(length).decode("utf-8"))
+            try:
+                aid = int(form.get("account_id", ["0"])[0])
+            except ValueError:
+                aid = 0
+            contact = (form.get("contact", ["primary"])[0] or "primary").strip()
+            action = (form.get("action", [""])[0] or "").strip()
+            if contact not in PORTAL_CONTACTS or action not in ("grant", "revoke"):
+                self._send(b"bad request", 400)
+                return
+            column, title = PORTAL_CONTACTS[contact]
+            with db.cursor() as cur:
+                cur.execute(f"SELECT {column} AS contact_email FROM accounts WHERE id = ?", (aid,))
+                row = cur.fetchone()
+            email = ((row["contact_email"] if row else None) or "").strip().lower()
+            if not email:
+                self._send(f"account not found or has no {title.lower()} email".encode(), 404)
+                return
+            from sentinel.portal import grant_account, member_exists, revoke_account
+
+            if not member_exists(db, email):
+                self._send(b"no login for that address - generate a password first", 404)
+                return
+            actor = self._operator()
+            try:
+                changed = (grant_account if action == "grant" else revoke_account)(db, email, aid, actor)
+            except ValueError as exc:
+                self._send(str(exc).encode(), 400)
+                return
+            verb = "now opens" if action == "grant" else "no longer opens"
+            notice = (f'<div class="banner ok">✓ <b>{html.escape(email)}</b> {verb} this account.'
+                      + ("" if changed else " (no change)") + "</div>")
             self._send(_render_account(db, aid, notice_html=notice).encode())
 
         def _login(self):

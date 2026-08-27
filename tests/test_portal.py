@@ -324,8 +324,10 @@ def test_the_confirmation_names_every_account_the_password_opens(db, cipher):
         ops.shutdown()
 
     assert status == 200
-    assert "bob-trading" in body and "bob-cold" in body
-    assert "This password opens" in body
+    # #61 (decision 10): a NEW credential issued from bob-trading's page opens
+    # bob-trading and nothing else - so the confirmation names no wider scope.
+    assert "bob-trading" in body
+    assert "This password opens" not in body
 
 
 def test_a_single_account_confirmation_does_not_manufacture_a_warning(db, cipher):
@@ -371,8 +373,10 @@ def test_the_event_records_what_the_credential_opened(db, cipher):
 
     assert row is not None, "handing out a credential left no record"
     payload = json.loads(row["payload_json"])
-    assert sorted(payload["granted_account_ids"]) == sorted([here, other])
-    assert sorted(payload["granted_account_labels"]) == ["dave-cold", "dave-trading"]
+    # #61 (decision 10): the grant is exactly this account; the record says so.
+    assert payload["granted_account_ids"] == [here]
+    assert payload["granted_account_labels"] == ["dave-trading"]
+    assert other not in payload["granted_account_ids"]
 
 
 def test_the_recorded_grant_does_not_drift_when_contacts_change(db, cipher):
@@ -400,4 +404,7 @@ def test_the_recorded_grant_does_not_drift_when_contacts_change(db, cipher):
         )
         payload = json.loads(cur.fetchone()["payload_json"])
 
-    assert other in payload["granted_account_ids"], "the record was rewritten by a later change"
+    # The record is what was handed over at the time - this account - and a
+    # later contact change neither adds to it nor removes from it.
+    assert payload["granted_account_ids"] == [here], "the record was rewritten by a later change"
+    assert other not in payload["granted_account_ids"]

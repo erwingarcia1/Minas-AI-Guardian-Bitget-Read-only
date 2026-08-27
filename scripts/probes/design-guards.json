@@ -381,28 +381,31 @@
   {
     "name": "#61: the blast radius is never shown",
     "file": "sentinel/dashboard.py",
-    "old": "    scope = \"\"\n    if others:\n        label +=",
-    "new": "    scope = \"\"\n    if False:\n        label +=",
+    "old": "        elif others:\n            label += f\" — opens {len(reachable)} accounts\"\n",
+    "new": "        elif False:\n            label += f\" — opens {len(reachable)} accounts\"\n",
     "tests": [
-      "tests/test_portal_access_scope.py"
+      "tests/test_portal_access_scope.py",
+      "tests/test_member_account_grants.py"
     ]
   },
   {
     "name": "#61: account labels reach the page unescaped",
     "file": "sentinel/dashboard.py",
-    "old": "+ \", \".join(f\"<b>{html.escape(str(lbl))}</b>\" for lbl in reachable)",
-    "new": "+ \", \".join(f\"<b>{lbl}</b>\" for lbl in reachable)",
+    "old": "                + \", \".join(f\"<b>{html.escape(lbl)}</b>\" for lbl in reachable)\n",
+    "new": "                + \", \".join(f\"<b>{lbl}</b>\" for lbl in reachable)\n",
     "tests": [
-      "tests/test_portal_access_scope.py"
+      "tests/test_portal_access_scope.py",
+      "tests/test_member_account_grants.py"
     ]
   },
   {
     "name": "#61: a caution is shown even when only this account is affected",
     "file": "sentinel/dashboard.py",
-    "old": "    others = [r for r in rows if r[\"id\"] != account_id]",
-    "new": "    others = rows",
+    "old": "        others = [r for r in rows if int(r[\"id\"]) != int(account_id)]\n",
+    "new": "        others = rows\n",
     "tests": [
-      "tests/test_portal_access_scope.py"
+      "tests/test_portal_access_scope.py",
+      "tests/test_member_account_grants.py"
     ]
   },
   {
@@ -1442,6 +1445,26 @@
     "new": "    bypass_preferences = False\n",
     "tests": [
       "tests/test_alert_preferences.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#61 a scoped login falls back to the contact rule (scope guard dropped)",
+    "file": "sentinel/portal.py",
+    "old": "    if not is_scoped(db, normalized):\n        return contact_accounts(db, normalized)\n",
+    "new": "    if True:\n        return contact_accounts(db, normalized)\n",
+    "tests": [
+      "tests/test_member_account_grants.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#61 revoking a legacy login without materialising its scope first (widens to nothing)",
+    "file": "sentinel/portal.py",
+    "old": "    if not normalized:\n        return False\n    materialise_scope(db, normalized, actor)\n    with db.cursor() as cur:\n        cur.execute(\"DELETE FROM member_account_grants",
+    "new": "    if not normalized:\n        return False\n    with db.cursor() as cur:\n        cur.execute(\"DELETE FROM member_account_grants",
+    "tests": [
+      "tests/test_member_account_grants.py"
     ],
     "expect": "killed"
   }
