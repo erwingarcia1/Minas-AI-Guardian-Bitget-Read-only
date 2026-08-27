@@ -56,6 +56,8 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     # comment used to claim.
     "alert_triage": ("updated_at", "alerts_days"),
     "held_alerts": ("held_at", "alerts_days"),  # #24: follows the alert it holds
+    "drills": ("started_at", "drills_days"),  # #37: the evidence the portal shows
+    "contact_deliveries": ("delivered_at", "alerts_days"),  # #37: per-contact delivery record
     # Threshold changes (#16). History of what this product was tuned to
     # notice, on the same long window as `events` - an incident review asks
     # what the thresholds were at the time, not what they are now.
@@ -152,6 +154,7 @@ NEVER_PRUNE = frozenset({
 # of a child is min(its own window, the alert's).
 ALERT_CHILDREN = ("alert_triage", "expected_activity", "sms_deliveries",
     "held_alerts",  # #24: a hold references the alert it holds
+    "drills", "contact_deliveries",  # #37: both reference the alert they record
 )
 
 

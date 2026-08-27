@@ -173,12 +173,25 @@ class AlertMessage:
     # nothing to click - and the portal home pins the newest unacknowledged
     # incident so signing in directly lands on it in one step.
     incident_id: int | None = None
+    # #37: a drill. The label is the whole point of a drill: a customer must
+    # never mistake it for a real event, and an operator must never treat it
+    # as one - so it is said first, on every surface, and the runbook is
+    # withheld (the "explicitly excluded" this file's gate anticipated).
+    drill: bool = False
 
     def render(self) -> str:
         """Operator format: rule names, confidence and raw evidence, all of
         which the operator needs and none of which a customer should receive.
         Unchanged - Telegram, SMS and the ops email channel all read this."""
         evidence_lines = "\n".join(f"  {k}: {v}" for k, v in self.evidence.items())
+        if self.drill:
+            return (
+                f"🛡 MINAS AI GUARDIAN - DRILL\n"
+                f"[DRILL] {self.rule} - {self.account_label}\n"
+                f"{self.message}\n"
+                "This is a scheduled test of the alert path, not a real event. No action is needed.\n"
+                f"Evidence:\n{evidence_lines}"
+            )
         return (
             f"🛡 MINAS AI GUARDIAN\n"
             f"[{self.severity}] {self.rule} - {self.account_label}\n"
@@ -189,6 +202,8 @@ class AlertMessage:
         )
 
     def operator_subject(self) -> str:
+        if self.drill:
+            return f"[Minas AI Guardian DRILL] {self.account_label}"
         return f"[Minas AI Guardian {self.severity}] {self.rule} - {self.account_label}"
 
     # --- customer-facing -----------------------------------------------------
@@ -200,6 +215,8 @@ class AlertMessage:
         """States the situation. No rule name, no severity token, no evidence."""
         if self.notice:
             return _NOTICE_SUBJECTS.get(self.rule, "A change was made to your Minas AI Guardian account")
+        if self.drill:
+            return f"[DRILL] A test of your Minas AI Guardian alerts - {self.account_label}"
         return f"{_SUBJECT_PREFIX.get(self.severity, '')}{self.headline()} - {self.account_label}"
 
     def render_customer(self) -> str:
@@ -210,6 +227,13 @@ class AlertMessage:
         the specifics stay in the portal rather than the mailbox."""
         if self.notice:
             return f"{self.message}\n\n--\n{_FOOTER}"
+        if self.drill:
+            return (
+                f"THIS IS A DRILL. {self.account_label} - a test of your Minas AI Guardian alerts. "
+                "Nothing has happened on your account and no action is needed. If this message "
+                "reached you, the path from our detection to your phone works.\n\n"
+                f"{portal_action_line()}\n\n--\n{_FOOTER}"
+            )
 
         # Account first, headline second. The subject ends with the label, so
         # a body opening with "headline (label)" put the same words twice in a

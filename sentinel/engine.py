@@ -77,6 +77,16 @@ class Engine:
         from sentinel.pause import PauseMaintenance
 
         self._pause_maintenance = PauseMaintenance(db)
+        # #37's weekly fire drill, table-driven like the pause countdown: the
+        # first tick after a restart reads the last drill from the table and
+        # resumes the cadence. Runs against the dedicated drill account.
+        from sentinel.drill import DrillSchedule, run_drill
+
+        self._drill_schedule = DrillSchedule(
+            db, rules,
+            lambda now: run_drill(db, channels, contact_router, operator_alerter, rules,
+                                  kind="scheduled", requested_by="schedule", now=now),
+        )
         self._untimestamped_alarm = UntimestampedRecordAlarm(
             metrics,
             operator_alerter,
@@ -237,6 +247,8 @@ class Engine:
                 self._watch_alarms.evaluate()
             if self._pause_maintenance is not None:
                 self._pause_maintenance.evaluate()
+            if self._drill_schedule is not None:
+                self._drill_schedule.evaluate()
         except Exception as exc:  # noqa: BLE001 - scheduler must survive anything
             logger.error("scheduler cycle failed: %s", exc)
 

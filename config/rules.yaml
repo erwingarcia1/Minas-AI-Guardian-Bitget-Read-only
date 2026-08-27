@@ -151,7 +151,16 @@ retention:
   dedup_days: "365"                   # see above - bounded below by correctness
   balance_snapshots_days: "7"         # only "what changed since the last poll" needs these
   permission_snapshots_days: "730"
+  drills_days: "730"                  # #37: drill results are evidence, same window
   prune_interval_minutes: "60"        # full-table deletes do not belong on the 45s loop
+
+# Fire drills (#37, decision 2): a simulated theft against the DEDICATED
+# drill account (onboard one with `sentinel onboard ... --drill`), weekly,
+# travelling the whole path. A failed drill pages Minas as an outage; so
+# does a schedule with no drill account to run against.
+drills:
+  enabled: true
+  interval_days: "7"
 
 triage:
   enabled: false               # AI triage narrative on incidents; additive only,

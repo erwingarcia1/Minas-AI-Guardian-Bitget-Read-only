@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- Optional per-account alert destination (in addition to severity routing).
     alert_email TEXT,
     alert_phone TEXT,
+    -- #37: the dedicated Minas drill account. Scheduled drills run against
+    -- it and nothing else; a customer never sees a simulated theft on their
+    -- own account unless they ask for one.
+    is_drill INTEGER NOT NULL DEFAULT 0,
     alert_email_secondary TEXT,
     alert_phone_secondary TEXT,
     telegram_handle TEXT,
@@ -307,6 +311,38 @@ CREATE TABLE IF NOT EXISTS member_account_grants (
     UNIQUE (email, account_id)
 );
 CREATE INDEX IF NOT EXISTS idx_member_grants_email ON member_account_grants(email);
+
+-- Fire drills (#37, decision 2): a simulated theft injected against the
+-- DEDICATED drill account on a schedule (kind='scheduled'), or against one
+-- of a member's own accounts when they press "test my alerts"
+-- (kind='on_demand'). The row is the evidence the portal shows: when,
+-- result, and detection-to-delivery latency. A failed drill pages Minas.
+CREATE TABLE IF NOT EXISTS drills (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id INTEGER REFERENCES accounts(id),
+    kind TEXT NOT NULL CHECK (kind IN ('scheduled', 'on_demand')),
+    requested_by TEXT,
+    started_at TEXT NOT NULL,
+    alert_id INTEGER REFERENCES alerts(id),
+    delivered_at TEXT,
+    delivered_to INTEGER NOT NULL DEFAULT 0,
+    result TEXT NOT NULL CHECK (result IN ('passed', 'failed')),
+    detail TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_drills_time ON drills(kind, started_at);
+
+-- Per-contact delivery record (#37's addition to decision 2): the drill
+-- proves the machinery, not that a given customer's address still accepts
+-- mail. "Last successful delivery per channel per customer" is derived from
+-- REAL traffic - these rows for email and Telegram, sms_deliveries for SMS.
+CREATE TABLE IF NOT EXISTS contact_deliveries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    channel TEXT NOT NULL CHECK (channel IN ('email', 'telegram')),
+    alert_id INTEGER REFERENCES alerts(id),
+    delivered_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_contact_deliveries_email ON contact_deliveries(email, channel, delivered_at);
 
 -- Alerts held back from a member during their quiet hours (#24): queued,
 -- never dropped, and released into their next digest. One row per (member,

@@ -63,7 +63,9 @@ def test_a_successful_prune_does_not_page(db, cipher):
 
     engine._scheduler_tick()
 
-    assert _pages(db) == []
+    # The tick also runs #37's drill schedule, which pages "no drill account"
+    # in a fixture with none - a different alarm, and not this test's subject.
+    assert [p for p in _pages(db) if p[0] != "drill_no_account"] == []
 
 
 def test_a_failing_prune_still_publishes_table_counts(db, cipher, metrics, registry, monkeypatch):

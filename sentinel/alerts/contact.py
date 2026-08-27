@@ -211,6 +211,7 @@ class ContactRouter:
             # detection must not, because that text embeds addresses.
             notice=getattr(detection, "is_notice", False),
             incident_id=alert_id,
+            drill=getattr(detection, "is_drill", False),
         )
 
         emails_for_email = [e for e in emails if e not in self._email_muted]
@@ -228,6 +229,7 @@ class ContactRouter:
                         self._smtp["password"], self._smtp["sender"], emails_for_email,
                         audience="customer",
                     ).send(alert)
+                    self._record_deliveries("email", emails_for_email, alert_id)
                 except Exception as exc:  # noqa: BLE001 - delivery failure must not stall detection
                     # Stays a log line, decided in the #58 sweep. One bounced
                     # email is noise - a wrong address, a full mailbox, a
@@ -337,8 +339,34 @@ class ContactRouter:
                     json={"chat_id": chat, "text": text}, timeout=10.0,
                 )
                 resp.raise_for_status()
+                self._record_deliveries("telegram", self._emails_for_chat(chat, emails),
+                                        getattr(alert, "incident_id", None))
             except Exception as exc:  # noqa: BLE001 - one dead chat must not cost the rest
                 logger.warning("telegram chat %s for %s failed: %s", chat, account_label, exc)
+
+    def _emails_for_chat(self, chat, emails) -> list[str]:
+        """The contact addresses this chat belongs to, for the delivery record."""
+        if self._db is None:
+            return []
+        with self._db.cursor() as cur:
+            cur.execute("SELECT member_email FROM telegram_links WHERE chat_id = ? AND status = 'connected'",
+                        (str(chat),))
+            owners = {r["member_email"] for r in cur.fetchall()}
+        return [e for e in emails if e and e.strip().lower() in owners]
+
+    def _record_deliveries(self, channel: str, emails, alert_id) -> None:
+        """A row per (contact, channel) on success (#37): the evidence behind
+        "last message to you". Guarded - a record failing must not turn a
+        delivered alert into a logged failure."""
+        if self._db is None or not emails:
+            return
+        try:
+            from sentinel.drill import record_contact_delivery
+
+            for email in emails:
+                record_contact_delivery(self._db, email, channel, alert_id)
+        except Exception as exc:  # noqa: BLE001 - the delivery already happened
+            logger.error("could not record %s delivery: %s", channel, exc)
 
     def _send_sms(self, detection, alert, account_label, phones, account_id, alert_id, auditable) -> None:
         # Member preference: opted-out accounts get no SMS, except CRITICAL

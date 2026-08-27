@@ -76,6 +76,7 @@ def test_every_pruned_table_is_represented_in_customer_terms():
         "password_resets_days", "snoozes_days",       # activity records line
         "balance_snapshots_days", "permission_snapshots_days",  # snapshots line
         "dedup_days",                                  # dedup line
+        "drills_days",                                 # fire-drill results line (#37)
     }
     enforced = {setting for _, setting in {**PRUNABLE, **KEEP_LATEST_PER_ACCOUNT}.values()}
 

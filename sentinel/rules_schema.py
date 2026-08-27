@@ -182,7 +182,14 @@ SPEC: dict = {
         "dedup_days": NON_NEGATIVE,
         "balance_snapshots_days": NON_NEGATIVE,
         "permission_snapshots_days": NON_NEGATIVE,
+        "drills_days": NON_NEGATIVE,
         "prune_interval_minutes": POSITIVE,
+    },
+    # Fire drills (#37, decision 2): weekly against the dedicated drill
+    # account. enabled=false stops the schedule (on-demand drills still work).
+    "drills": {
+        "enabled": _boolean(),
+        "interval_days": POSITIVE,
     },
     "triage": {
         "enabled": _boolean(),
@@ -287,8 +294,10 @@ DEFAULTS: dict = {
         "dedup_days": 365,
         "balance_snapshots_days": 7,
         "permission_snapshots_days": 730,
+        "drills_days": 730,
         "prune_interval_minutes": 60,
     },
+    "drills": {"enabled": True, "interval_days": 7},
     "triage": {"enabled": False, "model": "claude-opus-4-8", "max_events": 50},
 }
 

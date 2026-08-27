@@ -289,7 +289,10 @@ def test_the_scheduler_actually_runs_the_config_health_check(db, cipher, tmp_pat
     )
     engine._scheduler_tick()
 
-    assert len(recent_operator_pages(db)) == 1
+    # The tick also runs #37's drill schedule, which pages "no drill
+    # account" in a fixture with none - a different alarm, counted apart.
+    pages = [p for p in recent_operator_pages(db) if p["rule"] != "drill_no_account"]
+    assert len(pages) == 1
 
 
 def test_a_failing_health_check_does_not_kill_the_scheduler(db, cipher, tmp_path):

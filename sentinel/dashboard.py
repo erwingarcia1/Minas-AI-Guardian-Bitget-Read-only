@@ -521,7 +521,7 @@ def _render(db: Database, rules=None, qs=None) -> str:
         '<section><div class="card"><div class="card-head"><h2>Recent alerts</h2>'
         '<span class="count">latest 50</span></div><table><thead><tr><th>Time</th><th>Account</th>'
         f"<th>Severity</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
-        + _operator_pages_section(db)
+        + _drills_section(db) + _operator_pages_section(db)
         + _expected_activity_section(db)
     )
     return _page(nav, body)
@@ -561,6 +561,31 @@ def _expected_activity_section(db: Database) -> str:
         '<span class="count">what customers keep saying was them · top 20</span></div>'
         '<table><thead><tr><th>Rule</th><th>Account</th><th>Marked</th><th>Last</th>'
         f"</tr></thead><tbody>{body}</tbody></table></div></section>"
+    )
+
+
+def _drills_section(db: Database) -> str:
+    """#37: the last drills, so an operator sees the evidence the customer
+    sees - and a failed one before the page about it is read."""
+    from sentinel.drill import recent_drills
+
+    drills = recent_drills(db, limit=10)
+    if not drills:
+        return ""
+    rows = ""
+    for d in drills:
+        result = ('<span class="pill s-active">passed</span>' if d["result"] == "passed"
+                  else '<span class="pill s-tamper">FAILED</span>')
+        latency = f"{d['latency_ms']} ms" if d.get("latency_ms") is not None else "—"
+        rows += (f'<tr><td class="mono">{_ts(d["started_at"])}</td><td>{html.escape(d["kind"])}</td>'
+                 f'<td>{_dd(d.get("label"))}</td><td>{result}</td><td class="mono">{latency}</td>'
+                 f'<td class="mono">{int(d["delivered_to"])}</td>'
+                 f'<td>{html.escape(str(d.get("detail") or ""))}</td></tr>')
+    return (
+        '<section><div class="card"><div class="card-head"><h2>Fire drills</h2>'
+        '<span class="count">the alert path, tested · latest 10</span></div>'
+        '<table><thead><tr><th>Time</th><th>Kind</th><th>Account</th><th>Result</th><th>Latency</th>'
+        f"<th>Reached</th><th>Detail</th></tr></thead><tbody>{rows}</tbody></table></div></section>"
     )
 
 

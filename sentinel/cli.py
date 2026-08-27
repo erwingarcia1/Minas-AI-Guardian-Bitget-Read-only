@@ -234,6 +234,12 @@ def cmd_onboard(args: argparse.Namespace) -> int:
         return 1
 
     print(f"Onboarded '{result.label}' ({exchange}) as account id {result.account_id}")
+    if getattr(args, "drill", False):
+        from sentinel.drill import mark_drill_account
+
+        mark_drill_account(db, result.account_id, True)
+        print(f"'{result.label}' is the dedicated DRILL account: scheduled drills run against it and "
+              "nothing else. Give it Minas's own contacts, never a customer's.")
 
     # No operator alerter on this path, and deliberately none: the person who
     # ran this command is standing in front of the output, and paging somebody
@@ -449,12 +455,20 @@ def cmd_run(args: argparse.Namespace) -> int:
     serve_dashboard(db, cipher, dashboard_port, host=dashboard_host, rules=rules,
                     operator_alerter=operator_alerter)
 
+    # One router, shared. The escalator needs it to reach the customer's own
+    # contacts (#27) and it needs the alerter to report a channel with no
+    # provider (#58); a privately-constructed one inside Engine could do
+    # neither. Built before the portal, which hands it to #37's on-demand
+    # drill so "test my alerts" travels the same path a real alert does.
+    contact_router = ContactRouter(db=db, rules=rules, operator_alerter=operator_alerter)
+
     from sentinel.portal import serve_portal
 
     portal_port = int(_env_raw("SENTINEL_PORTAL_PORT", "8391"))
     portal_host = _env_raw("SENTINEL_PORTAL_HOST", "127.0.0.1")
     serve_portal(db, portal_port, host=portal_host, rules=rules, cipher=cipher,
-                 metrics=metrics, operator_alerter=operator_alerter)
+                 metrics=metrics, operator_alerter=operator_alerter,
+                 drill_channels=channels, drill_router=contact_router, drill_alerter=operator_alerter)
     logger.info(
         "dashboard on %s:%d, member portal on %s:%d, metrics on %s:%d",
         dashboard_host, dashboard_port, portal_host, portal_port, metrics_host, metrics_port,
@@ -463,12 +477,6 @@ def cmd_run(args: argparse.Namespace) -> int:
         dashboard_host, dashboard_port, _env_raw("SENTINEL_BIND_GATE"))
     if level:
         getattr(logger, level)(message)
-
-    # One router, shared. The escalator needs it to reach the customer's own
-    # contacts (#27) and it needs the alerter to report a channel with no
-    # provider (#58); a privately-constructed one inside Engine could do
-    # neither.
-    contact_router = ContactRouter(db=db, rules=rules, operator_alerter=operator_alerter)
 
     escalation_minutes = rules.get_int("alerting", "escalation_unacknowledged_minutes", default=15)
     escalation_minutes_high = rules.get_int(
@@ -869,6 +877,48 @@ def _enrol_operator_now(db, username: str, *, enrol_later: bool) -> int:
     return 0
 
 
+def cmd_drill(args: argparse.Namespace) -> int:
+    """Run a fire drill now (#37). Without --account it uses the dedicated
+    drill account; with one it runs against that account - a customer's,
+    on their request, which is the only time a customer sees a drill."""
+    from sentinel.drill import run_drill
+    from sentinel.operators import is_active_operator, operator_count
+
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    actor = getattr(args, "as_operator", None)
+    if operator_count(db) > 0:
+        if not actor:
+            print("--as <operator> is required: a drill is recorded against a name", file=sys.stderr)
+            return 2
+        if not is_active_operator(db, actor):
+            print(f"'{actor}' is not an active operator", file=sys.stderr)
+            return 2
+    cipher = CredentialCipher()
+    rules = RulesConfig(_env_raw("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+    channels = build_channels(rules)
+    from sentinel.alerts.contact import ContactRouter
+    from sentinel.alerts.operator import OperatorAlerter
+
+    operator_alerter = OperatorAlerter(db, build_operator_channels(rules), rules)
+    router = ContactRouter(db=db, rules=rules, operator_alerter=operator_alerter)
+    account_id = None
+    if getattr(args, "account", None):
+        with db.cursor() as cur:
+            cur.execute("SELECT id FROM accounts WHERE label = ?", (args.account,))
+            row = cur.fetchone()
+        if row is None:
+            print(f"no account labeled '{args.account}'", file=sys.stderr)
+            return 1
+        account_id = int(row["id"])
+    del cipher  # the drill needs no exchange access; the key is verified by construction only
+    outcome = run_drill(db, channels, router, operator_alerter, rules, account_id=account_id,
+                        kind="on_demand", requested_by=actor or "shell")
+    print(f"drill #{outcome['id']}: {outcome['result'].upper()} - {outcome['detail']}"
+          + (f" ({outcome['delivered_to']} delivery/deliveries, {outcome['latency_ms']} ms)"
+             if outcome["result"] == "passed" else ""))
+    return 0 if outcome["result"] == "passed" else 1
+
+
 def cmd_set_contact(args: argparse.Namespace) -> int:
     """Set/clear an existing account's alert destinations. Pass
     --alert-email/--alert-phone to set the primary; --clear to remove both.
@@ -1115,6 +1165,9 @@ def main() -> None:
     onboard_parser.add_argument("--passphrase")
     onboard_parser.add_argument("--alert-email", help="per-account alert destination (email)")
     onboard_parser.add_argument("--alert-phone", help="per-account alert destination (E.164 phone)")
+    onboard_parser.add_argument("--drill", action="store_true",
+                                help="This is the dedicated fire-drill account (#37): scheduled drills run "
+                                     "against it and nothing else")
     onboard_parser.set_defaults(func=cmd_onboard)
 
     version_parser = sub.add_parser(
@@ -1166,6 +1219,11 @@ def main() -> None:
                               help="Who is doing this - required; the reset is recorded against the name")
     operator_sub.add_parser("list", help="List operator accounts")
     operator_parser.set_defaults(func=cmd_operator)
+
+    drill_parser = sub.add_parser("drill", help="Run a fire drill now (#37): the whole alert path, labelled as a drill")
+    drill_parser.add_argument("--account", help="Account label to drill (default: the dedicated drill account)")
+    drill_parser.add_argument("--as", dest="as_operator", metavar="OPERATOR", help="Who is running this drill")
+    drill_parser.set_defaults(func=cmd_drill)
 
     ack_parser = sub.add_parser("ack", help="Acknowledge an alert by id (stops CRITICAL escalation)")
     ack_parser.add_argument("--as", dest="as_operator", help="Operator acknowledging this alert")

@@ -407,7 +407,7 @@ def test_a_pruned_alert_takes_its_annotations_with_it(db, rules):
     prune_all(db, rules)
 
     assert _count(db, "alerts") == 0
-    for child in ("alert_triage", "sms_deliveries", "expected_activity", "held_alerts"):
+    for child in ("alert_triage", "sms_deliveries", "expected_activity", "held_alerts", "drills", "contact_deliveries"):
         assert _count(db, child) == 0, f"{child} outlived the alert it annotates"
 
 
@@ -519,6 +519,12 @@ _ROW_FACTORIES = {
         "VALUES (?, 'n', ?, 'john', ?)", (alert, ts, ts)),
     "held_alerts": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO held_alerts (email, alert_id, held_at) VALUES ('a@b.test', ?, ?)", (alert, ts)),
+    "drills": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO drills (account_id, kind, started_at, alert_id, delivered_to, result, detail) "
+        "VALUES (?, 'scheduled', ?, ?, 1, 'passed', 'delivered')", (acct, ts, alert)),
+    "contact_deliveries": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO contact_deliveries (email, channel, alert_id, delivered_at) VALUES ('a@b.test', 'email', ?, ?)",
+        (alert, ts)),
     "config_changes": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO config_changes (setting, old_value, new_value, actor, changed_at) "
         "VALUES ('polling.fast_loop_seconds', '45', '60', 'john', ?)", (ts,)),

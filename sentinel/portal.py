@@ -1774,7 +1774,79 @@ _OVERALL_COPY = {
 }
 
 
-def _render_status(db: Database, email: str, rules=None) -> str:
+def _fmt_drill(d: dict | None, *, none: str) -> str:
+    if d is None:
+        return f'<p class="muted">{none}</p>'
+    when = _ts(d["started_at"])
+    if d["result"] == "passed":
+        latency = f" · detection to delivery {d['latency_ms']} ms" if d.get("latency_ms") is not None else ""
+        return (f'<p><span class="badge badge--ok">Passed</span> {when}{latency} · '
+                f"reached {int(d['delivered_to'])} destination(s)</p>")
+    return (f'<p><span class="badge badge--danger">Failed</span> {when} · '
+            f"{html.escape(str(d.get('detail') or ''))} — Minas has been paged.</p>")
+
+
+def _drill_section(db: Database, email: str, status: dict, notice: str | None = None) -> str:
+    """Decision 2 (#37): the fleet's scheduled drill proves the machinery -
+    shown here as the last drill, its result and its latency - and the
+    member can ask for the proof on their own phone with one button.
+    Customers never receive the scheduled drill; only the one they asked
+    for."""
+    from sentinel.drill import last_drill
+
+    fleet = last_drill(db, kind="scheduled")
+    mine = last_drill(db, kind="on_demand", account_ids=[a["account_id"] for a in status["accounts"]])
+    banner = ""
+    if notice:
+        banner = ('<div class="notice notice--info" role="status">' + _ICON_INFO
+                  + f'<div><p class="notice__title">{html.escape(notice)}</p></div></div>')
+    button = ""
+    if status["accounts"]:
+        button = ('<form class="no-print" method="post" action="/drill" style="margin-top:var(--space-3)">'
+                  '<button class="btn btn--secondary" type="submit">Test my alerts now</button>'
+                  '<p class="hint">Sends a message labelled DRILL to your contacts through every channel '
+                  "you have on - nothing else happens. Once an hour.</p></form>")
+    return (
+        '<section class="panel" aria-labelledby="drill-title"><h2 id="drill-title">Alert drills</h2>'
+        + banner +
+        '<p class="muted">Every week the Guardian injects a simulated theft on its own test account and '
+        "watches it travel the whole path to a phone. That proves the machinery; the message you can "
+        "send yourself proves the path to <em>you</em>.</p>"
+        '<dl class="kv"><div class="kv__row"><dt>Last scheduled drill</dt><dd>'
+        + _fmt_drill(fleet, none="No scheduled drill has run yet.")
+        + '</dd></div><div class="kv__row"><dt>Your last test</dt><dd>'
+        + _fmt_drill(mine, none="You have not run one yet.")
+        + "</dd></div></dl>" + button + "</section>"
+    )
+
+
+def _delivery_section(db: Database, email: str) -> str:
+    """The addition to decision 2: the drill proves the pipeline, not that
+    THIS address still accepts mail. Last successful delivery per channel,
+    from real traffic, with staleness said plainly."""
+    from sentinel.drill import STALE_DELIVERY_DAYS, delivery_recency
+
+    recency = delivery_recency(db, email)
+    rows = ""
+    for channel, label in (("email", "Email"), ("telegram", "Telegram"), ("sms", "SMS")):
+        info = recency[channel]
+        if info["last"]:
+            value = _ts(info["last"])
+            if info["stale"]:
+                value += (f' <span class="badge badge--warn">over {STALE_DELIVERY_DAYS} days ago</span>')
+        else:
+            value = '<span class="badge badge--neutral">Never</span>'
+        rows += f'<div class="kv__row"><dt>{label}</dt><dd>{value}</dd></div>'
+    return (
+        '<section class="panel" aria-labelledby="deliv-title"><h2 id="deliv-title">Last message that reached you</h2>'
+        '<p class="muted">Derived from what was actually delivered to you - alerts, digests and tests - '
+        "never from a drill on our test account. A channel that has not reached you in a while is "
+        "worth testing with the button above.</p>"
+        f'<dl class="kv">{rows}</dl></section>'
+    )
+
+
+def _render_status(db: Database, email: str, rules=None, drill_notice: str | None = None) -> str:
     """G-34 (#38): so the customer can trust the silence.
 
     The product's whole claim is that no news is good news. That claim is only
@@ -1844,7 +1916,9 @@ def _render_status(db: Database, email: str, rules=None) -> str:
         '<a href="/status" class="btn btn--primary">Check again now</a>'
         '<a href="/" class="btn btn--tertiary">Manage accounts</a></div>'
         '<div style="height:var(--space-5)"></div>'
-        + cards +
+        + cards
+        + _drill_section(db, email, status, notice=drill_notice)
+        + _delivery_section(db, email) +
         '<div class="notice notice--info no-print" style="margin-top:var(--space-6)">' + _ICON_INFO
         + '<div><p class="notice__title">What this page cannot tell you.</p>'
         '<p class="notice__body">This page is served by the Guardian itself, so if it loaded, '
@@ -1891,6 +1965,9 @@ def retention_summary(rules=None) -> list[tuple[str, str]]:
         ("Duplicate-detection records",
          phrase(days("dedup_days"))
          + " — bounded below by correctness: shorter, and an old movement could alert twice"),
+        ("Fire-drill results",
+         phrase(days("drills_days"))
+         + " — the record that the alert path was tested, and whether it reached anyone"),
         ("Your API key (encrypted) and contact details",
          "until your account is deleted"),
         ("Baselines of your normal activity (addresses, pairs, routes)",
@@ -3093,7 +3170,7 @@ def _render_not_found() -> str:
 
 def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                  rules=None, cipher=None, metrics=None,
-                 operator_alerter=None) -> ThreadingHTTPServer:
+                 operator_alerter=None, drill_channels=None, drill_router=None, drill_alerter=None) -> ThreadingHTTPServer:
     """Customer-facing member portal.
 
     Unlike the ops dashboard this one has its own login and is *meant* to be
@@ -3345,6 +3422,41 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                             account_id, member, cancelled)
             page = _render_member_account(db, member, account_id, rules)
             self._send((page or _render_not_found()).encode())
+
+        def _drill(self):
+            """"Test my alerts" (#37, decision 2): an on-demand drill against
+            one of the member's own accounts. Session-scoped; once an hour per
+            member, because a drill is a real message to a real phone."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            from sentinel.drill import last_drill, run_drill
+
+            accounts = member_accounts(db, email)
+            if not accounts:
+                self._send(_render_status(db, email, rules, drill_notice="No account to test yet.").encode())
+                return
+            ids = [int(a["id"]) for a in accounts]
+            recent = last_drill(db, kind="on_demand", account_ids=ids)
+            if recent is not None:
+                try:
+                    age = datetime.now(timezone.utc) - datetime.fromisoformat(recent["started_at"])
+                except ValueError:
+                    age = timedelta(hours=2)
+                if age < timedelta(hours=1):
+                    self._send(_render_status(
+                        db, email, rules,
+                        drill_notice="A test already ran in the last hour - its result is below.").encode())
+                    return
+            outcome = run_drill(db, drill_channels or {}, drill_router, drill_alerter, rules,
+                                account_id=ids[0], kind="on_demand", requested_by=email)
+            if outcome["result"] == "passed":
+                note = (f"Drill sent - it reached {outcome['delivered_to']} destination(s) in "
+                        f"{outcome['latency_ms']} ms. Check your phone.")
+            else:
+                note = "The drill did not reach anybody. Minas has been paged; contact us if you were expecting it."
+            self._send(_render_status(db, email, rules, drill_notice=note).encode())
 
         def _preferences(self, form):
             """#24: session-scoped like every preference here. Refusals come
@@ -3797,6 +3909,9 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             if path == "/preferences":
                 self._preferences(form)
+                return
+            if path == "/drill":
+                self._drill()
                 return
 
             if path in ("/pause/request", "/pause/cancel"):

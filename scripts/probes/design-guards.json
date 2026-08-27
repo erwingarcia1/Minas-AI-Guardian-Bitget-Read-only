@@ -1467,5 +1467,45 @@
       "tests/test_member_account_grants.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#37 the escalator escalates a drill (rule exclusion dropped)",
+    "file": "sentinel/alerts/escalation.py",
+    "old": "                \"AND a.rule != 'drill' \"\n",
+    "new": "                \"AND a.rule != 'drill-never' \"\n",
+    "tests": [
+      "tests/test_drill.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#37 a failed drill pages nobody (the outage page dropped)",
+    "file": "sentinel/drill.py",
+    "old": "        if operator_alerter is not None:\n            # Criterion 4: a failed drill is an outage. Paged as one.\n",
+    "new": "        if False:\n            # Criterion 4: a failed drill is an outage. Paged as one.\n",
+    "tests": [
+      "tests/test_drill.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#37 the drill no longer acknowledges its own alert (a ladder would start)",
+    "file": "sentinel/drill.py",
+    "old": "        acknowledge_alert(db, alert_id, \"drill\", include_siblings=False)\n",
+    "new": "        pass\n",
+    "tests": [
+      "tests/test_drill.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#37 the customer copy of a drill carries the runbook (drill branch dropped)",
+    "file": "sentinel/alerts/base.py",
+    "old": "        if self.drill:\n            return (\n                f\"THIS IS A DRILL.",
+    "new": "        if False:\n            return (\n                f\"THIS IS A DRILL.",
+    "tests": [
+      "tests/test_drill.py"
+    ],
+    "expect": "killed"
   }
 ]

@@ -72,6 +72,10 @@ class Escalator:
                 "ac.alert_phone_secondary "
                 "FROM alerts a JOIN accounts ac ON ac.id = a.account_id "
                 "WHERE a.acknowledged_at IS NULL AND a.escalated_at IS NULL "
+                # #37: a drill is acknowledged by the drill itself; if that
+                # ever failed, escalating a simulated theft to an emergency
+                # contact would be the drill causing the harm it tests for.
+                "AND a.rule != 'drill' "
                 "AND ((a.severity = 'CRITICAL' AND a.sent_at < ?) "
                 "  OR (a.severity = 'HIGH' AND a.sent_at < ?)) "
                 # A live snooze holds escalation too (G-26, #30). Escalating

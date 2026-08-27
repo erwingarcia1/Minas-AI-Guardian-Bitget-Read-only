@@ -64,7 +64,7 @@ container")._
 
 ### Changed detection behaviour
 
-Which alerts *fire* is untouched. Who hears about them changes in three
+Which alerts *fire* is untouched. Who hears about them changes in four
 deliberate ways:
 
 - **Acknowledging one alert now closes its siblings** (#99): an
@@ -74,6 +74,14 @@ deliberate ways:
   about a withdrawal someone already handled. Before, the second alert
   of a pair escalated on its own. Alerts with no order reference, and
   other accounts' alerts, are never touched.
+- **The Guardian drills itself weekly, on its own account** (#37,
+  decision 2). Every week a simulated theft is injected on the dedicated
+  Minas drill account and travels the whole path — detection, every
+  channel, the account's contacts — labelled DRILL on every surface. No
+  customer receives a scheduled drill; a member who presses "Test my
+  alerts" receives one on their own phone, once an hour at most,
+  whatever their quiet hours say. A drill that reaches nobody pages Minas
+  as an outage; so does a schedule with no drill account to run against.
 - **A member can choose channels per level and quiet hours** (#24,
   decision 4). Non-critical alerts inside a member's quiet hours are held
   and delivered in their next digest instead of at once; a channel a
@@ -88,6 +96,21 @@ deliberate ways:
 
 ### Added
 
+- **Fire drills, and the last message that reached you** (#37, decision
+  2). Weekly, the Guardian injects a simulated theft on its dedicated
+  drill account (`sentinel onboard … --drill`) and records whether it
+  arrived and how long detection-to-delivery took; the portal's status
+  page shows the last drill, its result and its latency, and offers "Test
+  my alerts now" — an on-demand drill to the member's own contacts,
+  labelled DRILL, no runbook, never escalated. A failed drill pages Minas
+  as an outage. Because a drill proves the machinery and not that a given
+  address still accepts mail, the same page shows the last successful
+  delivery to the member per channel — email, Telegram, SMS — derived
+  from real traffic, with anything older than 30 days or never flagged.
+  `sentinel drill [--account]` runs one from the shell; the ops dashboard
+  lists the latest ten. On upgrade, onboard the drill account with
+  `--drill`: until one exists the weekly schedule records a failed drill
+  and pages HIGH, because no drill is no evidence.
 - **A portal credential opens exactly what was granted** (#61, decision
   10). Generating a portal password on an account's page now opens that
   account and nothing else; the other accounts the address is a contact

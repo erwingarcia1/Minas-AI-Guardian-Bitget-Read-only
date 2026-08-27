@@ -5187,3 +5187,24 @@ only" for a new login and names the rest as grantable, and /portal-grant
 grants/revokes one account attributed to the operator with an event on
 the account. Existing members untouched until scoped (test-pinned).
 16 tests, 2 probes; scope tests moved to the decided model.
+
+# 2026-08-27 · #37 built: fire drills and delivery recency (decision 2)
+
+sentinel/drill.py: run_drill injects a Detection(rule="drill",
+is_drill, bypass_preferences) through the real dispatch and the real
+ContactRouter against the dedicated `is_drill` account (scheduled) or a
+member's own account (on demand), counts deliveries (alerts.delivered_to
++ contact_deliveries + sms_deliveries sent), acknowledges its own alert
+(actor "drill"), records the drills row with latency, and pages
+drill_failed CRITICAL on nothing-delivered or drill_no_account HIGH when
+no account is flagged. Labelled on every surface (operator render,
+subjects, customer copy opens THIS IS A DRILL, no runbook); the escalator
+excludes rule='drill'. DrillSchedule on the engine tick, table-driven
+(restart resumes the cadence). contact_deliveries recorded by the router
+on email/telegram success; delivery_recency per member from real traffic
+with 30-day staleness. Portal /status: Alert drills section (last
+scheduled, your last test, "Test my alerts now" once an hour) and "Last
+message that reached you". Dashboard: Fire drills card. CLI: `drill
+[--account] --as`, `onboard --drill`. Config drills.enabled/interval_days
+(7). 16 tests, 4 probes. Owner's part: create the dedicated drill
+account on production with Minas's own contacts.
