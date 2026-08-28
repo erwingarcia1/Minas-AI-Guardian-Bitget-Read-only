@@ -303,6 +303,41 @@ Two operational consequences of fetch-based deploys:
   `/opt/minas-guardian` — a re-clone under another name would come up with
   a fresh, empty database.
 
+## The liveness gate
+
+Every mechanism that needs a human switch-on step is declared in
+`sentinel/liveness.py` with the act that switches it on and the signal that
+proves it is running (operators > 0; a digest cron line AND a digest sent
+in 48 h; a backup newer than 48 h; a drill account; an SMS provider; a
+per-account threshold; the heartbeat URL; the restart timer; Telegram and
+SMTP). CI proves the declaration is complete
+(`tests/test_liveness_gate.py`: a `.env.example` variable, an `enabled:`
+flag or a host timer with no entry fails the build). Production proves
+liveness:
+
+```
+sudo docker compose exec -T sentinel sentinel liveness            # from the container: DB + env facts
+sudo /opt/minas-guardian/scripts/host/liveness.sh                  # from the host: adds cron, backup, timer facts
+```
+
+Exit 1 on any mechanism with no evidence of running - `unknown` counts. A
+deliberate hold is declared in `config/liveness-holds.yaml` with a reason
+and reports as `held`, not `DEAD`; an undeclared hold is exactly what the
+gate exists to catch.
+
+Install the hourly timer next to #81's:
+
+```
+sudo cp scripts/host/minas-liveness.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now minas-liveness.timer
+```
+
+The verdict pages an operator (Telegram ops chat + ops email - proven live
+by production's escalation pages, and not a path this gate checks; never
+the digest, never SMS) at most once per hour, and the host script writes
+journald + `/etc/motd` once per red transition, so a dead Telegram cannot
+hide a dead everything-else.
+
 ## Acting on an unhealthy container (#81, decision 12)
 
 `restart: unless-stopped` acts on **exit**, not on health — an

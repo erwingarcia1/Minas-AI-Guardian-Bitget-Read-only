@@ -1,0 +1,10 @@
+# The service half of the liveness timer (#103 item 4).
+# Install: see docs/deployment.md "The liveness gate".
+[Unit]
+Description=Run the Minas Guardian liveness gate
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/minas-guardian/scripts/host/liveness.sh

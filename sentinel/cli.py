@@ -757,6 +757,42 @@ def cmd_set_threshold(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_liveness(args: argparse.Namespace) -> int:
+    """`sentinel liveness`: evaluate every declared mechanism against this
+    database, this environment and the host facts handed in; print the
+    verdicts with the switch-on act for each failure; page an operator (a
+    path this gate does not itself check - see sentinel/liveness.py) at
+    most once per interval; exit 1 on any mechanism with no evidence of
+    running. UNKNOWN counts as failing: no evidence is no evidence."""
+    import json as _json
+
+    from sentinel.liveness import Facts, evaluate, failing, load_holds, page_verdict, render
+
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    try:
+        holds = load_holds()
+    except ValueError as exc:
+        print(f"liveness holds file refused: {exc}", file=sys.stderr)
+        return 2
+    yes_no = {"yes": True, "no": False, None: None}
+    facts = Facts(conn=db._conn, holds=holds,
+                  crontab_has_digest=yes_no[args.crontab_has_digest],
+                  newest_backup_age_seconds=args.newest_backup_age_seconds,
+                  restart_timer_active=yes_no[args.restart_timer_active],
+                  liveness_timer_active=yes_no[getattr(args, "liveness_timer_active", None)])
+    verdicts = evaluate(facts)
+    if getattr(args, "as_json", False):
+        print(_json.dumps([v.__dict__ for v in verdicts], indent=1))
+    else:
+        print(render(verdicts))
+    bad = failing(verdicts)
+    if bad and not getattr(args, "no_page", False):
+        rules = RulesConfig(_env_raw("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+        page_id = page_verdict(db, rules, verdicts)
+        print(f"operator page #{page_id}" if page_id else "operator page suppressed by cooldown (already paged this interval)")
+    return 1 if bad else 0
+
+
 def cmd_operator(args: argparse.Namespace) -> int:
     """Manage operator accounts. Offboarding is `disable`, never a DELETE:
     removing the row would orphan every action the person ever took."""
@@ -1275,6 +1311,19 @@ def main() -> None:
     drill_parser.add_argument("--account", help="Account label to drill (default: the dedicated drill account)")
     drill_parser.add_argument("--as", dest="as_operator", metavar="OPERATOR", help="Who is running this drill")
     drill_parser.set_defaults(func=cmd_drill)
+
+    live_parser = sub.add_parser("liveness", help="Which mechanisms are built but not running (#103 item 4); exit 1 on any")
+    live_parser.add_argument("--crontab-has-digest", choices=("yes", "no"), default=None,
+                             help="host fact: does root's crontab run `sentinel digest`")
+    live_parser.add_argument("--newest-backup-age-seconds", type=int, default=None,
+                             help="host fact: age of the newest file in /var/backups/minas-guardian (-1 = none)")
+    live_parser.add_argument("--restart-timer-active", choices=("yes", "no"), default=None,
+                             help="host fact: is minas-restart-on-unhealthy.timer active")
+    live_parser.add_argument("--liveness-timer-active", choices=("yes", "no"), default=None,
+                             help="host fact: is minas-liveness.timer active (the gate judging itself)")
+    live_parser.add_argument("--no-page", action="store_true", help="print only; do not page an operator")
+    live_parser.add_argument("--json", dest="as_json", action="store_true")
+    live_parser.set_defaults(func=cmd_liveness)
 
     ack_parser = sub.add_parser("ack", help="Acknowledge an alert by id (stops CRITICAL escalation)")
     ack_parser.add_argument("--as", dest="as_operator", help="Operator acknowledging this alert")

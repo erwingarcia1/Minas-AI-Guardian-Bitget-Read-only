@@ -5612,3 +5612,43 @@ all three direct channels and keeps severity MEDIUM; a routine MEDIUM
 still waits; escalation at 20 min reaches kin + pages, at 10 min waits;
 a routine MEDIUM never escalates; quiet hours + email-off cannot hold
 or mute it), 3 probes, curated selection updated.
+
+# 2026-08-28 · Item 4 of the #103 batch: the liveness gate, and its first run
+
+sentinel/liveness.py declares eleven mechanisms (operators, digest,
+backup, drill_account, sms, thresholds, heartbeat, restart_timer,
+liveness_timer, telegram, smtp), each with the switch-on act, the
+signal, the switch-shaped things in the codebase it covers, and a check
+against Facts (a read connection, env, holds, and four host facts the
+host script hands in: cron line, backup age, both timers). Verdicts are
+live / held / dead / unknown; DEAD and UNKNOWN both fail - no evidence is
+no evidence. NOT_A_SWITCH excuses, with reasons, every .env variable and
+enabled: flag that is not a mechanism. The completeness gate
+(tests/test_liveness_gate.py) scans .env.example, rules.yaml enabled
+flags, scripts/host/*.timer and the switch-creating CLI verbs and fails
+on anything neither declared nor excused - CI proves completeness,
+production proves liveness, never conflated. Holds: config/liveness-
+holds.yaml, only holdable entries (sms, thresholds, heartbeat), reason
+required, unknown keys refused. `sentinel liveness` CLI; scripts/host/
+liveness.sh gathers the host facts, runs the gate in the container, and
+is loud once per red transition (journald err + /etc/motd), cleared on
+green; minas-liveness.{service,timer} hourly, installed next to #81's.
+Report path (in the module docstring): an operator page over the
+Telegram ops chat + ops email - proven live by the 50 delivered
+critical_alert_escalated pages and not itself a declared mechanism -
+deduped by the HIGH cooldown so a persistently dead mechanism pages
+once per interval; the host script's journald/motd path needs no
+network. Never the digest, never SMS. 21 tests, 3 probes.
+
+Its own first run, on production, READ-ONLY (the module piped into the
+container's Python against mode=ro, host facts gathered on the host,
+nothing deployed, nothing written): 8 of 11 mechanisms DEAD - operators
+(table empty), digest (no cron line, none sent in 48h), backup
+(/var/backups/minas-guardian absent), drill account (schema predates
+#37), SMS (no provider), thresholds (none set), dead-man's switch (URL
+unset), and the gate's own timer (not installed - it judged itself
+dead, as designed); 3 live - restart timer, Telegram, SMTP. It exited 1
+and would have paged. Wiring: a separate hourly timer rather than a
+hook inside #81's two-minute one - one timer fires one unit, the two
+have different cadences and different loud-once state; both install
+the same way.

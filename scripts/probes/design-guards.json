@@ -1657,5 +1657,35 @@
    "tests/test_coverage_routing.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "#103 item 4: an unknown mechanism counts as fine (no evidence read as evidence)",
+  "file": "sentinel/liveness.py",
+  "old": "    return [v for v in verdicts if v.state in (DEAD, UNKNOWN)]\n",
+  "new": "    return [v for v in verdicts if v.state in (DEAD,)]\n",
+  "tests": [
+   "tests/test_liveness_gate.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#103 item 4: the SMS provider switch drops out of the declaration (completeness gate must notice)",
+  "file": "sentinel/liveness.py",
+  "old": "          (\"CLICKSEND_USERNAME\", \"CLICKSEND_API_KEY\", \"CLICKSEND_FROM\", \"CLICKSEND_TO_NUMBERS\",\n",
+  "new": "          (\"CLICKSEND_API_KEY\", \"CLICKSEND_FROM\", \"CLICKSEND_TO_NUMBERS\",\n",
+  "tests": [
+   "tests/test_liveness_gate.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#103 item 4: a hold with no reason is accepted",
+  "file": "sentinel/liveness.py",
+  "old": "        if not isinstance(reason, str) or not reason.strip():\n            raise ValueError(f\"{path}: hold for {key!r} needs a reason\")\n",
+  "new": "        if False:\n            raise ValueError(f\"{path}: hold for {key!r} needs a reason\")\n",
+  "tests": [
+   "tests/test_liveness_gate.py"
+  ],
+  "expect": "killed"
  }
 ]

@@ -29,6 +29,27 @@ container")._
   operator), not after. The login page says exactly this when the table
   is empty.
 
+### Added
+
+- **The liveness gate (#103 item 4).** Every mechanism that needs a human
+  switch-on step is declared in `sentinel/liveness.py` with the act that
+  switches it on and the signal that proves it is running: operator
+  accounts, the member digest (cron line AND a digest sent in 48 h), a
+  backup newer than 48 h, the drill account, an SMS provider, per-account
+  thresholds, the dead-man's switch, the restart timer, Telegram, SMTP,
+  and the gate's own timer. CI proves the declaration is complete (a
+  `.env.example` variable, an `enabled:` flag or a host timer with no
+  entry fails the build); `sentinel liveness` on production proves
+  liveness and exits non-zero on any mechanism with no evidence of
+  running - `unknown` counts. Deliberate holds live in
+  `config/liveness-holds.yaml` with a reason and report as `held`.
+  `scripts/host/liveness.sh` + `minas-liveness.timer` run it hourly,
+  gather the three host-only facts, and go loud once per red transition
+  (journald + /etc/motd). The verdict pages an operator on the Telegram
+  ops path - proven live independently and not one of the checked
+  mechanisms - never through the digest or SMS. First run on production
+  (read-only, 2026-08-28): 8 of 11 mechanisms DEAD, its own timer among them.
+
 ### Fixed
 
 - **An unreachable account reaches a human directly, whatever its level

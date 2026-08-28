@@ -1,0 +1,16 @@
+# The liveness gate's timer (#103 item 4): once an hour, judge whether every
+# mechanism that needs a human switch-on step is actually running. Sits next
+# to #81's restart-on-unhealthy timer and is installed the same way; it is
+# its own unit because a systemd timer fires one service, and the two
+# scripts have different cadences (2 min vs 1 h) and different loud-once
+# state.
+[Unit]
+Description=Judge which Minas Guardian mechanisms are built but not running, hourly
+
+[Timer]
+OnBootSec=10min
+OnUnitActiveSec=1h
+Unit=minas-liveness.service
+
+[Install]
+WantedBy=timers.target

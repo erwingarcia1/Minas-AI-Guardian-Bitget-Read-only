@@ -1,0 +1,11 @@
+# Deliberate holds for the liveness gate (#103 item 4). A mechanism listed
+# here with a reason is reported as "held", not "dead". Only holdable
+# mechanisms may appear (sms, thresholds, heartbeat); an operator account, a
+# digest schedule, a backup or a drill account cannot be held - they are
+# load-bearing. A hold with no reason is refused: this file is the owner's
+# declaration and must say what was decided.
+#
+# Nothing is held as shipped. Add entries like:
+#   holds:
+#     sms: "waiting on the ClickSend account; decision pending (#19, #75)"
+holds: {}
