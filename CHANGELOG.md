@@ -17,6 +17,19 @@ container")._
 
 ### Fixed
 
+- **An emergency contact can no longer change anything (#25).** A secondary
+  contact signed in to the portal could replace the monitoring key, delete
+  the member's data, change alert preferences, pause monitoring, snooze
+  and mark "that was me" - every mutating route, because the portal made
+  no primary/secondary distinction and the test that said otherwise posted
+  to paths that never existed. Decided role (decision 1): a non-primary may
+  read and may acknowledge, nothing else. The portal now classifies every
+  POST route as primary-only or non-primary-allowed (an allowlist, complete
+  by test), judges account-scoped routes against the account named, and
+  refuses with a plain page - same page whether or not the account exists.
+  Acknowledgements by a secondary were, and are, recorded under the
+  secondary's own address.
+
 - **The mutation gate regenerates only what changed, and proves it.** The
   from-scratch rebuild cost 2h57m and 6h34m for eighteen changed lines;
   a changed file regenerates in seconds and the test map in under a

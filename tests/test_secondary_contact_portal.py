@@ -185,51 +185,9 @@ def test_an_unknown_contact_selector_is_rejected_not_guessed(db, cipher, contact
         assert not member_exists(db, SECONDARY)
 
 
-# --- view but not change -----------------------------------------------------
-
-def test_the_portal_offers_no_way_to_change_settings_or_remove_accounts(db, cipher):
-    """Third criterion. It holds today because the member portal simply has no
-    mutating routes - `/login` and `/logout` are the only POSTs, and neither
-    touches an account.
-
-    Asserted rather than assumed, because the criterion is satisfied by an
-    absence: the day somebody adds a member-facing settings form, this is what
-    says the secondary contact's read-only guarantee just changed. Written as a
-    test that fails when the property silently stops holding, not one that
-    proves it holds today."""
-    from sentinel.portal import serve_portal
-
-    _account(db)
-    set_member_password(db, SECONDARY, "correct-horse-battery")
-
-    server = serve_portal(db, 0)
-    port = server.server_address[1]
-    try:
-        conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
-        conn.request("POST", "/login",
-                     urllib.parse.urlencode({"email": SECONDARY, "password": "correct-horse-battery"}),
-                     {"Content-Type": "application/x-www-form-urlencoded"})
-        response = conn.getresponse()
-        cookie = response.getheader("Set-Cookie")
-        response.read()
-        assert cookie, "the secondary contact could not establish a session"
-        session = cookie.split(";")[0]
-
-        # Every mutating shape a member portal might plausibly grow.
-        for path in ("/account", "/settings", "/accounts/1/delete", "/account/remove",
-                     "/contacts", "/thresholds", "/"):
-            conn.request("POST", path, urllib.parse.urlencode({"account_id": 1}),
-                         {"Content-Type": "application/x-www-form-urlencoded", "Cookie": session})
-            status = conn.getresponse().status
-            assert status in (404, 405, 403), (
-                f"POST {path} returned {status} - the member portal has grown a "
-                f"state-changing route, and the secondary contact can reach it"
-            )
-    finally:
-        server.shutdown()
-        server.server_close()
-
-    # And the account is untouched.
-    with db.cursor() as cur:
-        cur.execute("SELECT count(*) c FROM accounts")
-        assert cur.fetchone()["c"] == 1
+# What a secondary contact may and may not CHANGE lives in
+# tests/test_member_roles.py (#25, the role decided 2026-08-28). The test that
+# used to sit here POSTed to /account, /settings and /accounts/1/delete - paths
+# the portal never served - and passed for six weeks while /key, /erase and
+# /pause grew underneath it. A test that posts to a path that does not exist
+# always passes.

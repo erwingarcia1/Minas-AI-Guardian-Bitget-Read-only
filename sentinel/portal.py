@@ -328,6 +328,98 @@ def member_accounts(db: Database, email: str) -> list:
         return cur.fetchall()
 
 
+# --- #25: what a non-primary contact may change ------------------------------
+#
+# Decision 1 fixed the role: a secondary is an EMERGENCY contact, not a
+# co-owner. Owner's ruling (2026-08-28): a non-primary may READ and may
+# ACKNOWLEDGE. Nothing else. Every other change to an account is the primary
+# contact's alone.
+#
+# The gate is default-deny and lives in one place (`do_POST`, between the
+# route lookup and the handler). "Primary" is the account's `alert_email`;
+# anyone else the login opens - the secondary contact, a #61 grant issued
+# from an account page - is non-primary on that account. A login can be
+# primary on one account and secondary on another, so account-scoped routes
+# are judged against the account the request names, member-scoped routes
+# against whether the login is primary anywhere at all.
+#
+# Every POST route must sit in exactly ONE of the two sets below. A route in
+# neither is a build failure (tests/test_member_roles.py), because the first
+# version of this boundary was a test that POSTed to paths which had never
+# existed and passed for six weeks while /key, /erase and /pause grew
+# underneath it.
+
+# What a non-primary contact may reach. These touch the login itself (sign
+# in/out, recover a forgotten password, harden the login with a second
+# factor) or acknowledge an alert - the one account-facing act an emergency
+# contact exists to perform.
+NON_PRIMARY_ALLOWED = frozenset({
+    "/login", "/login-code", "/forgot", "/reset", "/logout",
+    "/security/2fa/start", "/security/2fa/confirm", "/security/2fa/disable",
+    "/acknowledge",
+})
+
+# Everything that changes what is watched, how, or where alerts go.
+# Account-scoped routes name the account they act on (see `_post_target`).
+PRIMARY_ONLY = frozenset({
+    "/key", "/erase", "/preferences", "/digest/frequency", "/drill",
+    "/telegram/link", "/telegram/unlink",
+    "/pause/request", "/pause/cancel", "/snooze", "/expected",
+})
+
+# Account-scoped primary-only routes: which form field names the account, and
+# whether it is an account id or an alert id (resolved to its account inside
+# the member's own scope - never outside it).
+# Every POST route the portal serves. The dispatch table in do_POST must equal
+# this set, and this set must be exactly PRIMARY_ONLY | NON_PRIMARY_ALLOWED.
+POST_ROUTES = PRIMARY_ONLY | NON_PRIMARY_ALLOWED
+
+ACCOUNT_SCOPED = {
+    "/key": ("account_id", "account"),
+    "/pause/request": ("account_id", "account"),
+    "/pause/cancel": ("account_id", "account"),
+    "/snooze": ("alert_id", "alert"),
+    "/expected": ("alert_id", "alert"),
+}
+
+
+def member_role(db: Database, email: str, account_id: int) -> str | None:
+    """'primary' if this login is the account's alert_email, 'non-primary'
+    if the login opens the account any other way, None if it does not open
+    it at all. Judged inside `member_accounts` so the answer never widens
+    past the isolation boundary."""
+    normalized = normalize_email(email)
+    for row in member_accounts(db, normalized):
+        if int(row["id"]) != int(account_id):
+            continue
+        return "primary" if normalize_email(row["alert_email"] or "") == normalized else "non-primary"
+    return None
+
+
+def primary_anywhere(db: Database, email: str) -> bool:
+    """Whether this login is the primary contact of at least one account it
+    opens. A login that is primary nowhere is an emergency contact
+    everywhere, and member-scoped changes are refused to it outright."""
+    normalized = normalize_email(email)
+    return any(normalize_email(row["alert_email"] or "") == normalized
+               for row in member_accounts(db, normalized))
+
+
+def _render_refused(email: str | None) -> str:
+    """The 403 for a non-primary contact. Says what happened and whom to
+    ask, and says the same thing whether or not the account in the request
+    exists - the refusal must not be a way to probe."""
+    return _page(
+        '<section class="panel"><h2>This change is for the primary contact</h2>'
+        '<p>You are signed in as an emergency contact. You can see everything on these '
+        'accounts and acknowledge alerts, but changes - keys, pauses, snoozes, alert '
+        'preferences, deleting data - are reserved for the account\'s primary contact.</p>'
+        '<p>If something needs changing, ask the primary contact to sign in and do it, or '
+        'contact Minas directly. Nothing was changed by this request.</p>'
+        '<p><a class="btn btn--secondary" href="/">Back to your accounts</a></p></section>',
+        email, "", title="Reserved for the primary contact - Minas AI Guardian")
+
+
 def materialise_scope(db: Database, email: str, actor: str | None = None) -> int:
     """Turn a legacy login's contact-row scope into explicit grants, once.
     Returns the number of grants written; 0 if already scoped. Called before
@@ -4010,70 +4102,97 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             form = parse_qs(self.rfile.read(length).decode("utf-8")) if length else {}
 
-            if path == "/logout":
-                self._redirect("/", [(
-                    "Set-Cookie",
-                    f"{SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
-                )])
-                return
-
-            if path.startswith("/security/2fa/"):
-                self._twofactor(path, form)
-                return
-
-            if path in ("/telegram/link", "/telegram/unlink"):
-                self._telegram_link(path)
-                return
-
-            if path == "/digest/frequency":
-                self._digest_frequency(form)
-                return
-            if path == "/preferences":
-                self._preferences(form)
-                return
-            if path == "/drill":
-                self._drill()
-                return
-            if path == "/erase":
-                self._erase(form)
-                return
-
-            if path in ("/pause/request", "/pause/cancel"):
-                self._pause(path, form)
-                return
-
-            if path == "/login-code":
-                self._login_code(form)
-                return
-
-            if path == "/forgot":
-                self._forgot(form)
-                return
-
-            if path == "/reset":
-                self._reset(form)
-                return
-
-            if path == "/acknowledge":
-                self._acknowledge(form)
-                return
-
-            if path == "/snooze":
-                self._snooze(form)
-                return
-
-            if path == "/expected":
-                self._expected(form)
-                return
-
-            if path == "/key":
-                self._replace_key(form)
-                return
-
-            if path != "/login":
+            # Every route, in one table, classified in exactly one of
+            # PRIMARY_ONLY / NON_PRIMARY_ALLOWED (#25). Add a route here and
+            # tests/test_member_roles.py fails until it is classified.
+            routes = {
+                "/login": self._login,
+                "/login-code": self._login_code,
+                "/forgot": self._forgot,
+                "/reset": self._reset,
+                "/logout": self._logout,
+                "/security/2fa/start": lambda form: self._twofactor(path, form),
+                "/security/2fa/confirm": lambda form: self._twofactor(path, form),
+                "/security/2fa/disable": lambda form: self._twofactor(path, form),
+                "/telegram/link": lambda form: self._telegram_link(path),
+                "/telegram/unlink": lambda form: self._telegram_link(path),
+                "/digest/frequency": self._digest_frequency,
+                "/preferences": self._preferences,
+                "/drill": lambda form: self._drill(),
+                "/erase": self._erase,
+                "/pause/request": lambda form: self._pause(path, form),
+                "/pause/cancel": lambda form: self._pause(path, form),
+                "/acknowledge": self._acknowledge,
+                "/snooze": self._snooze,
+                "/expected": self._expected,
+                "/key": self._replace_key,
+            }
+            assert set(routes) == POST_ROUTES, "POST_ROUTES must mirror the dispatch table"
+            handler = routes.get(path)
+            if handler is None:
                 self._send(_render_not_found().encode(), 404)
                 return
+            if path in PRIMARY_ONLY and not self._may_change(path, form):
+                return
+            handler(form)
 
+        def _may_change(self, path, form) -> bool:
+            """The #25 gate: True when the signed-in login is the primary
+            contact for what this route changes; otherwise the refusal page
+            has been sent and the handler must not run.
+
+            No session at all is the handler's own business (it renders the
+            login page). A login that is primary nowhere is refused every
+            primary-only route, whatever it names - including an account id
+            that does not exist, so the refusal cannot be used to probe.
+            An account-scoped route names its target; the login must be
+            primary on THAT account. A member-scoped route needs the login
+            to be primary somewhere."""
+            email = self._session_email()
+            if email is None:
+                return True
+            if not primary_anywhere(db, email):
+                self._refuse(email)
+                return False
+            scoped = ACCOUNT_SCOPED.get(path)
+            if scoped is None:
+                return True
+            target = self._post_target(email, form, *scoped)
+            if target is None:
+                # Unresolvable or outside the login's scope: the handler's
+                # own not-found is the right answer for a primary; the gate
+                # has nothing to add.
+                return True
+            role = member_role(db, email, target)
+            if role == "non-primary":
+                self._refuse(email)
+                return False
+            # 'primary' proceeds; None (outside the login's scope) is the
+            # handler's not-found, exactly as before this gate existed.
+            return True
+
+        def _post_target(self, email, form, field, kind):
+            try:
+                ident = int((form.get(field) or [""])[0])
+            except (TypeError, ValueError):
+                return None
+            if kind == "account":
+                return ident
+            account_ids = [r["id"] for r in member_accounts(db, email)]
+            alert = _member_alert(db, ident, account_ids)
+            return None if alert is None else int(alert["account_id"])
+
+        def _refuse(self, email):
+            logger.info("portal: non-primary contact %s refused a primary-only change", email)
+            self._send(_render_refused(email).encode(), 403)
+
+        def _logout(self, form):
+            self._redirect("/", [(
+                "Set-Cookie",
+                f"{SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+            )])
+
+        def _login(self, form):
             email = normalize_email((form.get("email", [""])[0] or ""))
             password = form.get("password", [""])[0] or ""
             ip = self._client_ip()

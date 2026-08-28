@@ -5425,3 +5425,60 @@ dashboard reset), HTTP handlers tested one layer down (#24 /preferences,
 issues have body checkboxes never ticked though built; eight
 implementing commits cite the G-number rather than #N so a literal grep
 misses them; #100/#101 carry no status label.
+
+# 2026-08-28 · #25: the emergency contact may read and acknowledge, nothing else
+
+Owner's ruling (per decision 1): a non-primary may READ and may
+ACKNOWLEDGE; every other mutating route is primary-only. Built
+default-deny in sentinel/portal.py: `do_POST` now dispatches through one
+table; every route sits in exactly one of `PRIMARY_ONLY` (/key, /erase,
+/preferences, /digest/frequency, /drill, /telegram/link|unlink,
+/pause/request|cancel, /snooze, /expected) or `NON_PRIMARY_ALLOWED`
+(/login, /login-code, /forgot, /reset, /logout, /security/2fa/*,
+/acknowledge); `POST_ROUTES` is their union and the table must equal it.
+The gate (`_may_change`) sits between route lookup and handler: a login
+that is primary nowhere is refused every primary-only route whatever it
+names (so a nonexistent account id gets the identical 403 page);
+account-scoped routes resolve their target (account_id, or alert_id
+inside the member's own scope) and require the login to be THAT
+account's alert_email; member-scoped routes require primary somewhere;
+an account outside the login's scope keeps the handler's 404, as before.
+The refusal page names what happened, what an emergency contact can do,
+and whom to ask; "Nothing was changed".
+
+Interpretation to flag: /security/2fa/* and the sign-in/recovery routes
+are on the allowlist because they touch the login credential, not any
+account - refusing a secondary the right to add a second factor to
+their own login would weaken exactly the thing we want strong. Telegram
+linking is primary-only: it is a delivery setting.
+
+tests/test_member_roles.py (23): completeness (two disjoint sets whose
+union is the table; every literal in do_POST is in the table; no
+`path ==` branch beside it; the gate line is present), registration
+(every classified route answers non-404; /account, /settings,
+/accounts/1/delete, /account/remove answer 404 - a 404 is not an
+authorization result), refusal parametrised over all 11 primary-only
+routes (primary reaches the handler, secondary gets 403 + the page,
+state unchanged), no-leak (real vs ghost account id: identical
+response), the mixed login judged per account, out-of-scope stays 404
+for a primary, secondary ack attributed to the secondary, 2FA/logout
+allowed, unknown path 404 not 403. The stale test that POSTed to paths
+that never existed is gone from test_secondary_contact_portal.py, with a
+note; CONTRIBUTING gained "A test that posts to a path that does not
+exist always passes". Three probes (gate skipped; per-account judgement
+dropped; primary-nowhere check dropped), all killed.
+
+Blast radius, measured on production read-only (2026-08-28): 15
+accounts (13 active); 4 carry a secondary email (john-great,
+john-great-2, jimrox-odezi, paula-garavillas); on 2 of them
+(john-great, john-great-2) the secondary address has a portal login -
+and it is the same one person. Production is pre-#61, so no grants
+exist yet. That login has acknowledged 0 alerts and appears as actor on
+2 events (its own login/password events). Nobody has used the gap.
+
+Attribution: acknowledge_alert_as_member writes the session email into
+alerts.acknowledged_by, so a secondary's acknowledgement is recorded
+under the secondary's own address, distinct from the primary - pinned by
+test_a_secondary_can_acknowledge_and_the_acknowledgement_is_attributed_to_them.
+#99's co-ack copies that same identity onto the siblings, so the
+distinction carries through.

@@ -613,6 +613,35 @@ invisible precisely because the first guard is green.
 tree *without* your fix. One that passes both ways is testing the registry
 again, in more lines.
 
+## A test that posts to a path that does not exist always passes
+
+**Assert the route is registered before asserting who may use it.** A 404 is
+not an authorization result: it is what every path nobody serves answers to
+everyone, refused or not.
+
+The defect that named this: #25's closing test proved that a secondary
+contact "cannot change settings or remove accounts" by POSTing to `/account`,
+`/settings`, `/accounts/1/delete` and `/account/remove` and asserting the
+status was 403, 404 or 405. None of those paths ever existed. The test was
+green for six weeks while `/key`, `/erase`, `/preferences`, `/pause/request`
+and `/snooze` were added underneath it, every one reachable by the emergency
+contact. The test could not fail, because nothing it asserted against was
+real.
+
+The shape to copy (`tests/test_member_roles.py`):
+
+- a **completeness test** over an explicit registry of routes, each
+  classified in exactly one of `PRIMARY_ONLY` / `NON_PRIMARY_ALLOWED`, so a
+  new route breaks the build until somebody decides - an allowlist, never a
+  denylist, because a denylist reproduces the bug the next time a route is
+  added;
+- a **registration test** that every classified route answers something
+  other than 404, and that a made-up path answers 404;
+- only then the **refusal tests**, parametrised over the registry, each
+  showing the primary reaches the handler and the non-primary gets the
+  refusal on the *same* path with the *same* body, and that state did not
+  change.
+
 ## Mutation testing
 
 ```bash
