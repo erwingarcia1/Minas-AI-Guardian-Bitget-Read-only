@@ -52,6 +52,12 @@ container")._
 
 ### Fixed
 
+- **A renamed config key no longer rejects the file (2026-08-20's shape).**
+  `retention.sms_deliveries_days` is still accepted, with a warning naming
+  `retention.deliveries_days`, for at least one release; setting both is
+  an error rather than a silent winner. The deploy no longer depends on
+  editing rules.yaml in the same minute as the switchover.
+
 - **An unreachable account reaches a human directly, whatever its level
   (#103 item 3).** `account_unreachable` and `monitoring_key_tamper_
   suspected` mean the product has gone blind on a customer. 41 of them on

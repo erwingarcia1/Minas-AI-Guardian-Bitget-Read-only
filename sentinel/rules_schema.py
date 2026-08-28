@@ -354,6 +354,52 @@ def prune_invalid(data, spec=SPEC):
     return clean
 
 
+# Keys that were renamed. A running build meeting a key it does not know
+# rejects the whole file (2026-08-20: `escalation_unacknowledged_minutes_high`
+# at the v1.6.0 switchover), and a deploy must not depend on somebody
+# editing the config in the same minute. So an old spelling is accepted for
+# at least one release, with a warning naming the new one; BOTH spellings at
+# once is an error, never a silent winner.
+DEPRECATED_KEYS: dict[tuple[str, ...], tuple[str, ...]] = {
+    ("retention", "sms_deliveries_days"): ("retention", "deliveries_days"),  # #103 item 2, renamed 2026-08-28
+}
+
+
+def apply_deprecations(data) -> tuple[list[str], list[str]]:
+    """Rewrite deprecated keys IN PLACE to their new spelling. Returns
+    (warnings, problems): a warning per old key used, a problem when both
+    the old and the new key are present."""
+    warnings: list[str] = []
+    problems: list[str] = []
+    if not isinstance(data, dict):
+        return warnings, problems
+    for old, new in DEPRECATED_KEYS.items():
+        node = data
+        for part in old[:-1]:
+            node = node.get(part) if isinstance(node, dict) else None
+            if node is None:
+                break
+        if not isinstance(node, dict) or old[-1] not in node:
+            continue
+        target = data
+        for part in new[:-1]:
+            target = target.get(part) if isinstance(target, dict) else None
+        if isinstance(target, dict) and new[-1] in target:
+            problems.append(
+                f"{'.'.join(old)} and {'.'.join(new)} are both set - they are the same setting "
+                f"({'.'.join(old)} is the old name); keep one")
+            continue
+        value = node.pop(old[-1])
+        if isinstance(target, dict):
+            target[new[-1]] = value
+        else:
+            node[new[-1]] = value
+        warnings.append(
+            f"{'.'.join(old)} is deprecated and will stop being accepted in a later release - "
+            f"rename it to {'.'.join(new)} (same value, same meaning)")
+    return warnings, problems
+
+
 def validate(data, spec=SPEC, path=()) -> list[str]:
     """Returns a list of human-readable problems; empty means valid.
 

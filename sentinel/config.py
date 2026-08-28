@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from sentinel.rules_schema import default_for, prune_invalid, validate
+from sentinel.rules_schema import apply_deprecations, default_for, prune_invalid, validate
 
 
 def env_setting(name: str, default: str | None = None) -> str | None:
@@ -171,7 +171,12 @@ class RulesConfig:
                 return
 
             converted = _to_decimal_leaves(raw)
-            problems = validate(converted)
+            # Renamed keys: the old spelling is accepted with a warning for
+            # at least one release; both spellings at once is rejected.
+            warnings, problems = apply_deprecations(converted)
+            for warning in warnings:
+                logger.warning("%s: %s", self._path, warning)
+            problems.extend(validate(converted))
             if problems:
                 self._reject(mtime, problems, parsed=converted)
                 return

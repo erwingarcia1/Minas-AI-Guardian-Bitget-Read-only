@@ -5669,3 +5669,16 @@ Telegrams; test_no_guaranteed_report_path_is_a_declared_mechanism fails
 if a report path ever appears in the declaration or a best-effort leg
 stops being declared; test_the_member_and_ops_telegram_share_one_bot_
 token pins the fact the reasoning rests on.
+
+# 2026-08-28 · Pre-release batch, item 2: the renamed key cannot repeat 2026-08-20
+
+rules_schema.DEPRECATED_KEYS maps retention.sms_deliveries_days to
+retention.deliveries_days; apply_deprecations() rewrites the old spelling
+in place before validation and returns a warning naming the new one, or
+a problem when both are set ("both set ... keep one"). RulesConfig.reload
+logs the warning and treats the problem as a rejection. Six tests: old
+key accepted with the warning and its value reaching the new key; new
+key silent; both → rejected naming both; pure on data with neither; every
+deprecation points at a key the schema knows and not at one still in it;
+a hot reload from the old spelling to the new is not a rejection. One
+probe (alias dropped), killed.

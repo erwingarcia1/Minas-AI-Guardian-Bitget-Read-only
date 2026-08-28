@@ -1687,5 +1687,15 @@
    "tests/test_liveness_gate.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "#103 batch: the deprecated retention key stops being accepted (2026-08-20 again)",
+  "file": "sentinel/config.py",
+  "old": "            warnings, problems = apply_deprecations(converted)\n",
+  "new": "            warnings, problems = [], []\n",
+  "tests": [
+   "tests/test_config_key_deprecation.py"
+  ],
+  "expect": "killed"
  }
 ]
