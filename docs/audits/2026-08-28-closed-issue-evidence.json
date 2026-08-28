@@ -1,0 +1,3171 @@
+{
+ "date": "2026-08-28",
+ "tree": "f734c51",
+ "tracking_issue": 102,
+ "tiers": {
+  "T1": "a test in tests/ whose assertion pins the criterion, plus a commit on main",
+  "T2": "code exists and is reached (file:line) but no test pins that criterion",
+  "T3": "only a claim (comment, closing comment, session report, AUTONOMOUS-LOG) - inadmissible - or the code contradicts the criterion"
+ },
+ "issues": [
+  {
+   "n": 5,
+   "title": "G-7 · Unexplained balance drops are detected",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Balances are checked every 45 seconds",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "sentinel/rules_schema.py:223 (default fast_loop_seconds=45); sentinel/engine.py:228-231; config/rules.yaml:5",
+     "note": "No test asserts the 45s default or that the fast loop fires on that cadence; tests only write '45' into fixture configs."
+    },
+    {
+     "text": "Drops explained by own trades/withdrawals don't alert",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_detectors_quantity_drop.py::test_drop_explained_by_withdrawal_does_not_trigger, ::test_fill_inside_window_still_explains_drop (assert detections == []); tests/test_integration.py::test_recent_sale_still_explains_a_drop; commit fcece20",
+     "note": "Commit references 'G-7', not '#5' literally — git log --grep '#5' returns nothing."
+    },
+    {
+     "text": "Only activity in the same time window counts as an explanation",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_detectors_quantity_drop.py::test_fill_before_window_does_not_explain_drop (asserts 1 detection, explained_outflow=='0'), ::test_withdrawal_before_window_does_not_explain_drop, ::test_untimestamped_fill_does_not_explain_drop; commit fcece20",
+     "note": "Assertions pin window_start_ms filtering inside the detector."
+    },
+    {
+     "text": "Test proves a week-old sale can't explain a last-minute drop",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_integration.py::test_stale_sale_does_not_explain_a_fresh_drop (asserts 'unexplained_quantity_decrease' fires through the real poller with a 7-day-old fill); commits fcece20, c39066e",
+     "note": "End-to-end through AccountPoller.run_fast_loop; restart cases in ::test_theft_during_a_restart_is_detected_on_the_first_poll_after_startup."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "A test pinning the 45s default/cadence; commits cite G-7 rather than #5."
+  },
+  {
+   "n": 6,
+   "title": "G-1 · Customer signs up",
+   "label": "status: not-built",
+   "criteria": [],
+   "verdict": "closed-as-not-built",
+   "shortfall": "Closed as moot by owner 2026-08-27: \"Guardian is a benefit of Minas Academy enrolment, not a product sold to strangers, so self-serve signup has no one to serve.\" Criteria not tiered. (Commit fdaed0b mentions #6 only in passing — CLI onboarding, not signup.)"
+  },
+  {
+   "n": 7,
+   "title": "G-2 · Operator adds a customer manually",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Create a customer with email and contact details",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_add_customer.py::test_post_add_readonly_key_onboards (asserts 200, 'Verified read-only and added', stored label/exchange/alert_email/telegram_handle); ::test_post_missing_required_fields_shows_error; sentinel/dashboard.py:1296-1320; commit fdaed0b",
+     "note": "Dashboard POST /add end-to-end with stored contact fields pinned."
+    },
+    {
+     "text": "The customer receives login details",
+     "ticked": true,
+     "tier": "T3",
+     "evidence": "sentinel/dashboard.py:1400-1456 'Reset portal password' renders a one-time password to the OPERATOR only ('shown only once'); set_member_password called with no notify; tests/test_member_account_grants.py:257 asserts only the operator page shows 'Member portal password'",
+     "note": "Contradicted as written: nothing is sent to the customer; onboard_account issues no login at all. Ticked box not earned by the code."
+    },
+    {
+     "text": "Action recorded against operator identity, not anonymously",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_onboard_attribution.py::test_an_attributed_onboard_carries_the_name_into_the_founding_event (assert row['actor']=='erwin'); ::test_once_operators_exist_an_unattributed_onboard_is_refused (rc 2, zero accounts); tests/test_operator_identity.py::test_adding_a_customer_records_who; sentinel/dashboard.py:1309 actor=self._operator(); sentinel/cli.py --as gate; commit fdaed0b",
+     "note": "Built and pinned on both paths but the body box was never ticked."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Criterion 2 needs a delivery path (email/SMS of login details to the customer) plus a test asserting the customer receives it; today the operator relays a one-time password by hand. Closing comment argues only criterion 3 and is silent on criterion 2."
+  },
+  {
+   "n": 8,
+   "title": "G-3 · Customer connects an exchange account",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Connect Bitget/Bybit/OKX/Binance",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_bybit_onboarding.py::test_onboard_bybit_read_only_persists_with_exchange_and_contact; tests/test_okx_binance_onboarding.py::test_okx_read_only_accepted / test_binance_read_only_accepted; commit 192ea45",
+     "note": "Per-exchange verify + persist asserted."
+    },
+    {
+     "text": "Paste API key and secret",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_onboarding.py:96 onboard_account(api_key,secret,passphrase) asserts result.label; cli.py:1201 --label; commit 192ea45",
+     "note": "CLI/dashboard path exercised."
+    },
+    {
+     "text": "Key checked before saving",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_onboarding.py::test_onboard_account_rejects_write_scope_and_persists_nothing; tests/test_bybit_onboarding.py::test_onboard_bybit_trade_key_rejected_and_persists_nothing; sentinel/onboarding.py:289; commit 192ea45",
+     "note": "Asserts nothing persisted on refusal."
+    },
+    {
+     "text": "Plain-English per-exchange instructions with screenshots",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_key_instructions.py::test_the_key_page_shows_this_exchanges_steps_with_the_dated_line (asserts 'Written against the Bybit web app', '2026-08', not Bitget) and ::test_steps_never_mention_screenshots_or_images; sentinel/keyinstructions.py; commit 192ea45",
+     "note": "Screenshots deliberately NOT built per owner decision 14; text-only is what is tested. Box unticked though built."
+    },
+    {
+     "text": "Rejection names the permission and how to fix",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_key_instructions.py::test_a_rejected_key_names_the_permission_the_fix_and_the_drift_question (asserts \"'withdraw'\", 'How to fix it', drift question in outcome.message); sentinel/keyreplacement.py:168; commit 192ea45",
+     "note": "Pinned only on the replace-key path, not first onboarding. Box unticked though built."
+    },
+    {
+     "text": "Name each connection distinguishably",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_add_customer.py::test_generate_unique_label; tests/test_onboarding.py:96-98 label persisted; sentinel/onboarding.py:13; commit 192ea45 (closing commit; feature predates)",
+     "note": "Pre-existing; closing comment says 'verified rather than rebuilt'. Box unticked."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Body checkboxes 4-6 never ticked; a test that first-time onboarding (not only key replacement) names the permission would close the residual gap."
+  },
+  {
+   "n": 9,
+   "title": "G-4 · The read-only guarantee is enforced, not promised",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Key with trade permission is rejected outright",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_onboarding.py::test_key_with_trade_write_scope_is_rejected (assert not ok) + test_onboard_account_rejects_write_scope_and_persists_nothing (0 rows); commit 8cf5a32",
+     "note": "sentinel/onboarding.py:74-81 refuses write keywords / 'w' suffix"
+    },
+    {
+     "text": "Key with withdrawal permission is rejected",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_onboarding.py::test_key_with_withdraw_keyword_is_rejected (assert not ok); commit 8cf5a32",
+     "note": "_WRITE_KEYWORDS match at onboarding.py:76"
+    },
+    {
+     "text": "Cannot tell what a key can do -> reject (fail closed)",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_onboarding.py::test_missing_authorities_field_fails_closed, ::test_balance_call_failure_rejects; commit 8cf5a32",
+     "note": "onboarding.py:61-72,188-197 return False on missing/odd payload or any exception"
+    },
+    {
+     "text": "Unrecognised new permissions cause rejection",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_okx_binance_onboarding.py::test_okx_unknown_token_fails_closed (assert not ok and 'unrecognized' in reason); commit 8cf5a32",
+     "note": "Bitget branch onboarding.py:82 (token neither ...r nor ...w) has no direct test; only OKX/Binance unknown-flag paths are pinned"
+    },
+    {
+     "text": "Plain summary 'This key can read balances and history. It cannot trade or withdraw.' after connecting",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_key_permission_summary.py::test_the_account_page_states_the_plain_summary (exact string in _render_member_account output), ::test_no_snapshot_is_said_plainly_not_papered_over; commit 8cf5a32",
+     "note": "Built though checkbox left unticked; closing comment matches what the tests pin"
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "A Bitget-specific test for an unrecognised non-r/non-w authority token (onboarding.py:82)"
+  },
+  {
+   "n": 10,
+   "title": "G-5 · Customer connects several accounts",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "I can add multiple exchange accounts",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "sentinel/onboarding.py onboard_account (label-keyed, N rows); tests/test_portal.py::test_member_accounts_are_isolated_and_case_insensitive shows two accounts on one member via a helper insert, not onboarding",
+     "note": "No test onboards two accounts for one member through onboard_account and shows both are watched; commits 7e4d6a8/4ed96d4 reference #10 but for criteria 2-3."
+    },
+    {
+     "text": "Each account shows its own status: watching / paused / trouble",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_portal_home_watch.py::test_a_fresh_account_reads_watching, ::test_a_disabled_account_reads_paused_not_trouble, ::test_a_stale_account_reads_trouble_with_the_reason_in_the_card (assert 'Watching'/'Paused'/'Trouble' in page); commit 7e4d6a8",
+     "note": "Pinned."
+    },
+    {
+     "text": "Pause request takes effect after a 24h cancellable countdown, never immediately",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_pause_countdown.py::test_a_request_starts_a_real_24_hour_countdown_and_emails_every_contact (execute_at == NOW+24h, every contact emailed), ::test_rerequesting_restarts_a_full_24_hours_and_never_shortens, ::test_a_due_pause_executes_disables_and_records, ::test_a_deadline_that_passed_while_the_process_was_down_executes_on_startup, ::test_cancel_by_member_and_by_minas_both_work_and_say_who; commit 4ed96d4",
+     "note": "Checkbox left unticked in the body although closing comment says built; tests support the claim."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "A test onboarding several accounts for one member end-to-end; tick criterion 3 to match the record."
+  },
+  {
+   "n": 11,
+   "title": "G-6 · Customer is warned when a connection breaks",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Key stops working -> alerted within 15 min",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_connection_broken.py::test_an_unwatched_account_is_not_a_digest_item (account_unreachable reaches CRITICAL/HIGH channels, not digest) + ::test_five_failed_polls_is_well_inside_fifteen_minutes (threshold*interval <= 900s); commit a6d0b27",
+     "note": "Also ::test_a_rejected_key_produces_the_actionable_coverage_alert covers the auth-failure path the issue is about."
+    },
+    {
+     "text": "Alert says what to do",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_connection_broken.py::test_the_alert_tells_the_customer_what_to_do (asserts 're-issue' or 'nothing is needed') + ::test_an_auth_failure_says_something_different_from_a_network_failure; commit a6d0b27",
+     "note": ""
+    },
+    {
+     "text": "Account shows as 'not being watched' everywhere",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_connection_broken.py::test_the_dashboard_shows_the_account_as_not_watched + ::test_the_member_portal_shows_the_account_as_not_watched (assert 'not being watched' in rendered page); tests/test_portal_home_watch.py::test_one_dark_account_among_watched_raises_the_banner; commit a6d0b27",
+     "note": ""
+    },
+    {
+     "text": "Alert repeats daily until fixed",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_connection_broken.py::test_it_repeats_while_the_connection_is_still_broken (backdated 2h -> still suppressed by 1440-min rule cooldown), ::test_the_repeat_cadence_is_daily_not_the_severity_default (config == 1440), ::test_the_poller_applies_the_daily_cadence; commit a6d0b27",
+     "note": "Tests pin that repeat is NOT more often than daily and that daily cadence is configured; no test advances 24h+ and asserts a re-send actually occurs."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 12,
+   "title": "G-8 · Suspicious trades are detected",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Off-market trades raise an alert, incl. undated fills",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_detectors_phase2.py::test_off_market_fill_triggers_high / ::test_at_market_fill_does_not_trigger; tests/test_undated_fills.py::test_undated_fill_is_judged_once_not_every_cycle (assert len(off_market)==1 via run_fast_loop with timestamp=None); sentinel/poller.py:468-506; commit bd62fcb",
+     "note": "End-to-end alert on an undated fill asserted."
+    },
+    {
+     "text": "Only activity in the relevant window is considered (judged once by identity; ticker as evidence only for dated fills)",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_undated_fills.py::test_undated_fill_is_judged_once_not_every_cycle (assert batches==[['f-1']] across three cycles); ::test_undated_fill_fee_enters_the_baseline_once (EMA seeded 100, assert 82 after first and unchanged after 5 more cycles); sentinel/poller.py:442-479; commit bd62fcb",
+     "note": "Assertions are meaningful (immune to dispatch cooldown and EMA fixed point). Literal wording deliberately relaxed for undated fills; disclosed in comment."
+    },
+    {
+     "text": "Unusual fee patterns flagged",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_detectors_phase2.py::test_fee_spike_over_baseline_triggers_medium / ::test_fee_within_baseline_does_not_trigger / ::test_fee_below_floor_is_suppressed_even_if_many_multiples; sentinel/poller.py:509-514; commit bd62fcb",
+     "note": "Detector pinned at unit level; poller wiring exercised by the baseline-once test."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 13,
+   "title": "G-9 · Permission changes are detected",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Permissions re-checked every 10 minutes",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_db_concurrency.py::test_the_slow_interval_is_still_respected_after_the_first_poll (asserts 'slow' not re-run inside 600s); sentinel/poller.py:682 slow_loop_seconds default 600, :606-610; config/rules.yaml:6; commit de3ce10 (issue-ref commit only for criterion 3)",
+     "note": "Interval test predates #13's commit; no test asserts the value is exactly 10 min beyond config."
+    },
+    {
+     "text": "Any change from approved state raises alert",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_detectors_new_api_key.py::test_changed_authorities_triggers_proxy_alert / ::test_an_allowlist_change_is_named_even_when_authorities_are_unchanged; commit de3ce10",
+     "note": "Compares to previous snapshot, not literally 'what was approved at signup'."
+    },
+    {
+     "text": "Alert states exactly what changed, plain words",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_detectors_new_api_key.py::test_a_gained_authority_is_named_and_leads (asserts \"The key GAINED the 'withdraw' authority.\"), ::test_a_lost_authority_and_an_allowlist_gain_are_both_named; sentinel/detectors/new_api_key.py:73; commit de3ce10",
+     "note": "Built and pinned; box left unticked."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 14,
+   "title": "G-10 · Losing sight of an account is itself an alert",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Auth failures treated as possible attack",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_detector_wiring.py::test_tamper_is_wired (2 TamperSignal polls -> 'monitoring_key_tamper_suspected' in channel.rules); commit 0609fb1",
+     "note": ""
+    },
+    {
+     "text": "Alerted rather than silently logged",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_detector_wiring.py::test_unreachable_is_wired ('account_unreachable' after 5 failures); tests/test_cycle_success_honesty.py::test_repeated_crashes_eventually_alert_the_customer; commit 0609fb1",
+     "note": "Closing comment explicitly scopes out process/host death (#63); claims match tests"
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 15,
+   "title": "G-11 · Every withdrawal is noticed",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "New withdrawals raise an alert",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_detectors_withdrawal.py::test_new_withdrawal_triggers_critical; tests/test_withdrawal_no_reference_id.py::test_identified_withdrawals_are_unaffected; commit b036a68",
+     "note": "Pinned."
+    },
+    {
+     "text": "Withdrawals without a reference ID are still alerted",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_withdrawal_no_reference_id.py::test_withdrawal_without_a_reference_id_still_alerts (assert 'withdrawal_initiated' in fired rules via run_fast_loop), ::test_two_distinct_id_less_withdrawals_both_alert, ::test_status_change_on_an_id_less_withdrawal_does_not_refire; commit b036a68",
+     "note": "Covers both the seen-gate and the dedup-gate described in the closing comment."
+    },
+    {
+     "text": "Withdrawals to a never-used destination are marked higher risk",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_withdrawal_no_reference_id.py::test_id_less_withdrawal_to_an_unseen_address_is_still_flagged (asserts 'withdrawal_to_unseen_address' with severity CRITICAL); tests/test_detectors_unseen_address.py; commit b036a68",
+     "note": "Pinned."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 16,
+   "title": "G-12 · Detection thresholds can be tuned without a deploy",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Thresholds in a config file that reloads automatically",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_rules_validation.py::test_fixing_the_file_recovers_without_a_restart (rewrite file with new mtime -> get_decimal returns 0.8 without reconstructing RulesConfig); sentinel/config.py:159-183 mtime-based reload; commits 606e8eb, 2ca18f6",
+     "note": ""
+    },
+    {
+     "text": "Typo in a threshold rejected loudly, not silently disabling the rule",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_rules_validation.py::test_a_bad_threshold_is_rejected_when_the_file_is_read (is_valid False, error names 'tolerance_pct' and '0,5'), ::test_a_rejected_reload_is_logged_as_an_error, ::test_the_rejection_is_visible_on_the_dashboard, ::test_the_rejection_is_exported_as_a_metric, ::test_detection_keeps_running_after_a_bad_edit (withdrawal alert still fires); commit 606e8eb",
+     "note": ""
+    },
+    {
+     "text": "Threshold changes recorded: who/what/when",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_config_change_log.py::test_set_threshold_writes_the_value_and_records_who (config_changes row setting/old/new), ::test_set_threshold_requires_a_name_once_operators_exist (actor == 'erwin'), ::test_an_edit_on_disk_is_recorded_with_no_actor (actor is None), ::test_the_running_service_passes_a_recorder_to_its_config; commit a4c7dfb",
+     "note": "Box left unticked though built; disk edits deliberately record no actor (documented in closing comment)."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 17,
+   "title": "G-13 · Thresholds can differ per customer",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Any threshold overridable for one customer",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_account_overrides.py::test_an_override_wins_and_its_absence_falls_through (assert AccountRules.get_int==9 after set_override); ::test_only_schema_declared_scalars_are_overridable; ::test_the_cli_reaches_the_same_path_attributed; ::test_changes_are_evented_per_diff_and_clearing_is_recorded; ::test_an_override_changes_detection_for_that_account_only; sentinel/overrides.py; sentinel/cli.py:640 cmd_set_threshold; commit d8e7466",
+     "note": "'Any' = any schema-declared scalar leaf, pinned by schema test."
+    },
+    {
+     "text": "Customers without an override use the defaults",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_account_overrides.py::test_an_override_wins_and_its_absence_falls_through (untouched account get_int == global); ::test_a_corrupt_override_falls_back_to_the_global_value_not_to_nothing; ::test_every_poller_threshold_read_goes_through_the_overlay (no self._rules.get* left in poller.py); commit d8e7466",
+     "note": "Registration test guards all poller reads."
+    },
+    {
+     "text": "Settings screen shows effective sensitivity in plain terms",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_account_overrides.py::test_the_limits_page_shows_effective_values_with_the_custom_marker (assert 'Your alert sensitivity', 'more than 2.5% away', 'set for this account', 'standard' in _render_limits output); sentinel/portal.py:2144; commit d8e7466",
+     "note": "Tested at render-function level, not via HTTP route."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Body checkboxes were never ticked despite all three being built and tested; closing comment matches the tests."
+  },
+  {
+   "n": 18,
+   "title": "G-14 · Alerts arrive by Telegram",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Alerts delivered to Telegram",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_telegram_self_serve.py::test_connected_chats_get_customer_copy_never_the_operator_format; tests/test_telegram_env.py::test_a_clean_token_still_posts_to_the_connected_chat; commit 9c58c11",
+     "note": ""
+    },
+    {
+     "text": "Connect Telegram myself from settings, guided",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_telegram_self_serve.py::test_the_security_page_walks_through_the_three_states, ::test_the_deep_link_appears_once_the_bot_username_is_known (asserts '/start {code}' in page), ::test_a_valid_code_binds_the_chat_and_sends_the_test_message; commit 9c58c11",
+     "note": "Built; box unticked."
+    },
+    {
+     "text": "Test message confirms it works",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_telegram_self_serve.py::test_a_valid_code_binds_the_chat_and_sends_the_test_message (asserts 'test message' in payload text); commit 9c58c11",
+     "note": "Only the handshake message; no re-sendable test button."
+    },
+    {
+     "text": "If delivery fails, tries another channel",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_telegram_self_serve.py::test_a_telegram_failure_does_not_cost_the_email (asserts mailed == [(EMAIL,)] after telegram raise); commit 9c58c11",
+     "note": "Reinterpreted: parallel channels, no fallback triggered. The criterion as worded (retry on another channel) is not built; the test pins non-interference only."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Criterion 4 as written (fallback triggered by failure) is not implemented; either amend the criterion or add a failover path with a test."
+  },
+  {
+   "n": 20,
+   "title": "G-16 · Alerts arrive by email",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Email alerts are delivered",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_contact_router.py::test_sends_to_primary_and_secondary_email (recording EmailChannel receives both) + tests/test_no_live_traffic.py::test_smtp_refuses (EmailChannel.send reaches smtplib via net.py); commit 9619f29",
+     "note": "Actual SMTP delivery is by construction untestable in-suite; the transport is substituted"
+    },
+    {
+     "text": "Readable on a phone, essentials in first line",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_customer_email_template.py::test_first_line_carries_situation_account_and_the_action (situation, account label, portal URL all in splitlines()[0]); commit 9619f29",
+     "note": ""
+    },
+    {
+     "text": "Non-clickable incident reference in every email; portal home pins newest unacknowledged incident",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_home_watch.py::test_the_pinned_number_is_what_the_email_reference_names ('This is incident #N.' in body, 'http' not in body, same N on home), ::test_the_newest_unacknowledged_incident_is_pinned_above_the_fold, ::test_an_acknowledged_incident_is_not_pinned; commit 9619f29",
+     "note": "Built; checkbox unticked. Closing comment's claims are all pinned"
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 21,
+   "title": "G-17 · A regular digest confirms all is well",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "A digest is sent on a schedule",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_customer_digest.py::test_daily_is_the_default_and_sends (n==1, sent to EMAIL), ::test_weekly_sends_only_on_mondays, ::test_a_second_run_on_the_same_day_does_not_double_send; wiring sentinel/cli.py:512-516 (cmd_digest); commit b3faade",
+     "note": "The cron itself is host config; the in-process schedule logic is pinned."
+    },
+    {
+     "text": "States plainly: accounts watched, checks performed, issues found",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_customer_digest.py::test_the_digest_states_watched_checks_and_issues_plainly (asserts 'Accounts watched: 1 of 1.', 'Checks performed since monitoring began: 120.', 'Issues found: none'), ::test_checks_performed_is_the_measured_delta_not_a_cadence_estimate (': 55.'); commit b3faade",
+     "note": "Checkbox unticked in body though built and tested."
+    },
+    {
+     "text": "I can choose daily, weekly, or off",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_customer_digest.py::test_the_security_page_offers_the_three_choices (value=daily/weekly/off, action=/digest/frequency), ::test_off_sends_nothing, ::test_weekly_sends_only_on_mondays, ::test_a_corrupt_stored_preference_reads_as_daily_not_off; commit b3faade",
+     "note": "Checkbox unticked in body though built and tested."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Tick criteria 2-3 to match the evidence."
+  },
+  {
+   "n": 22,
+   "title": "G-18 · Repeat alerts don't become spam",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Duplicate alerts are suppressed",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_dispatch.py::test_alert_is_sent_once_and_deduped_within_cooldown; tests/test_alert_repeat_suppression.py::test_a_suppressed_repeat_is_counted_on_the_alert_it_repeated (2nd/3rd dispatch return None, channel.sent == 1); commit 1799b36",
+     "note": ""
+    },
+    {
+     "text": "Cooldown prevents rapid repeats",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_alert_repeat_suppression.py::test_a_repeat_after_the_cooldown_is_a_new_alert_with_a_fresh_count + test_dispatch.py::test_alert_is_sent_once_and_deduped_within_cooldown; commit 1799b36",
+     "note": ""
+    },
+    {
+     "text": "Two simultaneous checks can't both slip an alert through",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_alert_repeat_suppression.py::test_two_simultaneous_checks_produce_one_alert_and_one_send (N-thread barrier: len(rows)==1, len(channel.sent)==1, repeat_count == n-1); commit 1799b36",
+     "note": "Box unticked; built and pinned."
+    },
+    {
+     "text": "Suppressed alerts still appear in the portal",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_alert_repeat_suppression.py::test_the_home_and_history_pages_say_the_alert_is_still_firing (assert 'repeated 3×' and 'still firing' in home and /alerts pages); commit 1799b36",
+     "note": "Box unticked; built and pinned."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 23,
+   "title": "G-19 · Push notifications",
+   "label": "status: not-built",
+   "criteria": [],
+   "verdict": "closed-as-not-built",
+   "shortfall": "Closed won't-do by owner decision 2026-08-21 (DECISIONS-NEEDED §13, commit bbac7f9): \"browser push only reaches someone whose browser is already open — which is not the case this product exists for ... push would buy that non-coverage by adding a JavaScript surface to a product whose central claim is that it cannot touch anyone's money\". Reopen condition: a deliberate change of the no-JS posture for some other reason."
+  },
+  {
+   "n": 24,
+   "title": "G-20 · I choose what reaches me, and how",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Grid to pick channels per severity",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_alert_preferences.py::test_the_grid_turns_a_channel_off_for_a_severity_and_leaves_the_others, ::test_email_off_for_a_severity_still_lets_sms_through, ::test_the_security_page_offers_preferences_with_the_floor_locked (asserts grid_CRITICAL_email input); sentinel/portal.py:3036 _preferences_section; commit 8f1baca",
+     "note": "Rendering + effect tested; HTTP POST /preferences handler (portal.py:3582) itself untested."
+    },
+    {
+     "text": "Critical cannot be fully switched off",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_alert_preferences.py::test_critical_email_cannot_be_switched_off, ::test_a_critical_is_never_held, ::test_a_corrupt_stored_grid_reads_as_on_not_off; commit 8f1baca",
+     "note": ""
+    },
+    {
+     "text": "Quiet hours for non-critical only",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_alert_preferences.py::test_a_non_critical_in_quiet_hours_is_held_not_sent_and_lands_in_the_digest, ::test_a_critical_is_never_held, ::test_an_unknown_timezone_cannot_enable_quiet_hours; commit 8f1baca",
+     "note": ""
+    },
+    {
+     "text": "Changes take effect immediately, confirmed on screen",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "sentinel/portal.py:3582-3610 _preferences handler re-renders security page with notice 'Alert preferences saved - they apply from the next alert.'",
+     "note": "No test drives the POST or asserts the confirmation notice."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "An HTTP-level test posting /preferences and asserting the saved notice and the new prefs are read back on the next send. All four boxes unticked."
+  },
+  {
+   "n": 25,
+   "title": "G-21 · A second contact can be alerted",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "A secondary alert email can be recorded",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_contact_router.py::test_sends_to_primary_and_secondary_email; tests/test_contact_email_normalization.py::test_set_contact_stores_canonical_for_both_destinations; commit 67a43b4",
+     "note": ""
+    },
+    {
+     "text": "Secondary contact can sign in to the portal",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_secondary_contact_portal.py::test_the_secondary_contact_can_sign_in_and_see_their_account (check_member_login True; member_accounts == ['acct-1']), ::test_a_secondary_only_contact_is_not_given_the_primarys_other_accounts; commit 67a43b4",
+     "note": "portal.py:292 OR-clause on alert_email_secondary"
+    },
+    {
+     "text": "Secondary can view alerts but NOT change settings or remove accounts",
+     "ticked": true,
+     "tier": "T3",
+     "evidence": "tests/test_secondary_contact_portal.py::test_the_portal_offers_no_way_to_change_settings_or_remove_accounts only POSTs 7 guessed paths (/account,/settings,...); at HEAD sentinel/portal.py do_POST serves /key (3420,4069), /erase (4037), /preferences (4031), /pause/request, /snooze, /acknowledge with no primary/secondary distinction (member_accounts portal.py:278-292 grants identical rights)",
+     "note": "CONTRADICTED: a secondary contact can now replace the key, erase data, change preferences and pause monitoring; the test passes for the wrong reason (it probes paths that never existed)"
+    }
+   ],
+   "verdict": "contradicted",
+   "shortfall": "Either a role gate on mutating routes for secondary contacts with a test that signs in as the secondary and POSTs to the real routes (/key,/erase,/preferences,/pause/request), or the criterion re-scoped and the stale test rewritten"
+  },
+  {
+   "n": 26,
+   "title": "G-22 · I can acknowledge an alert",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Alert links to the portal; after sign-in one tap from the alert row acknowledges (no tokenised link)",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_customer_email_template.py::test_portal_link_is_included_when_the_url_is_set, ::test_without_a_url_the_alert_still_says_where_to_go ('http' not in body); tests/test_portal_acknowledge.py::test_an_unacknowledged_alert_offers_a_button_and_an_acknowledged_one_does_not, ::test_an_unauthenticated_post_acknowledges_nothing, ::test_a_tampered_cookie_acknowledges_nothing; commit f1abccb",
+     "note": "No test asserts the email body specifically lacks an acknowledge URL, but the portal-only path and unauthenticated refusal are pinned."
+    },
+    {
+     "text": "Portal shows who acknowledged and when",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_portal_acknowledge.py::test_the_portal_shows_who_acknowledged_and_how_long_it_took (asserts email and '10m' in body); commit f1abccb",
+     "note": "Pinned."
+    },
+    {
+     "text": "Acknowledging stops escalation",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_portal_acknowledge.py::test_acknowledging_from_the_portal_stops_escalation (Escalator.check == 0 after ack, == 1 for an identical unacked alert); commit f1abccb",
+     "note": "Negative control included."
+    },
+    {
+     "text": "Time from alert to acknowledgement recorded",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_portal_acknowledge.py::test_acknowledging_records_the_member_and_the_time (acknowledged_by, acknowledged_at not None), ::test_the_portal_shows_who_acknowledged_and_how_long_it_took; commit f1abccb",
+     "note": "Elapsed time is derived from sent_at/acknowledged_at and rendered."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 27,
+   "title": "G-23 · Unacknowledged critical alerts escalate",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Unacknowledged critical re-sends on a louder channel after a set time",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_escalation_reach.py::test_an_account_with_no_contacts_does_not_break_escalation (30-min-old unacked CRITICAL -> escalated==1, channel.sent==1); sentinel/alerts/escalation.py:64-128; sentinel/cli.py:484 Escalator(channels.get('CRITICAL')...); commits f3cfeee, ebb1bdc",
+     "note": "Re-send after window is pinned, but the re-fire goes down the SAME global CRITICAL channels plus the customer's contacts; 'louder' is never defined or tested — the closing comment's 'louder channel' wording is stronger than the code (same channels + secondary)."
+    },
+    {
+     "text": "Escalation reaches secondary contact",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_escalation_reach.py::test_escalation_reaches_the_secondary_contact ('+15550002' in secondary phones, separate send); tests/test_secondary_contact_escalation.py::test_an_unacknowledged_high_reaches_the_secondary_after_the_hour, ::test_low_and_medium_never_reach_a_secondary_no_matter_how_stale; commits f3cfeee, ebb1bdc",
+     "note": ""
+    },
+    {
+     "text": "A Minas operator is paged too",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_escalation_reach.py::test_every_escalation_pages_the_operator ('critical_alert_escalated' in paged rules, evidence.original_alert_id), ::test_a_failed_escalation_pages_both; ::test_the_escalator_is_constructed_with_both (cmd_run passes operator_alerter); commit f3cfeee",
+     "note": "HIGH escalations deliberately do not page (documented)."
+    },
+    {
+     "text": "Escalation stops when anyone acknowledges",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_escalation_reach.py::test_acknowledging_still_stops_everything ((escalated, router.calls, alerter.calls, channel.sent) == (0,[],[],[])); tests/test_secondary_contact_escalation.py::test_an_acknowledged_high_never_escalates; escalation.py:74 'acknowledged_at IS NULL AND escalated_at IS NULL'; commit f3cfeee",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "No test defines or pins 'louder' — criterion 1 is evidenced as 're-sends after the window', not as 'louder channel'. All four boxes remain unticked despite the closing comment."
+  },
+  {
+   "n": 28,
+   "title": "G-24 · I can say \"that was me\"",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Mark an alert as expected activity, with optional note",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_expected_activity.py::test_marking_records_who_when_and_the_note (assert note=='paying my builder'); ::test_a_member_can_mark_from_the_portal; ::test_marking_requires_a_session; ::test_marking_another_members_alert_is_not_found; ::test_marking_does_not_suppress_anything; sentinel/expected.py:46 mark_expected; commit 2a83b31 (G-24 in message, no '#28'); 3298065 is log-only",
+     "note": "Implementation commit references the story code, not the issue number."
+    },
+    {
+     "text": "Marked alerts excluded from precision metrics as false positives",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "tests/test_expected_activity.py::test_judged_counts_report_the_denominator_not_a_precision_figure (asserts marked_expected==1, alerts_total==3, and 'precision' NOT in counts); ::test_the_metric_counts_a_marking_once_per_person; sentinel/metrics.py:47 sentinel_alerts_marked_expected_total; sentinel/expected.py:125 judged_counts",
+     "note": "Criterion redefined: no precision metric exists to exclude from; what exists is a false-positive counter plus denominator. Literal criterion not built, disclosed in comment."
+    },
+    {
+     "text": "Operators see patterns of what customers keep marking",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_expected_activity.py::test_patterns_group_by_rule_and_account_with_their_denominator; ::test_patterns_put_the_most_marked_first; ::test_the_operator_dashboard_shows_the_patterns (assert '3 of 3', 'mostly marked' in section html); sentinel/expected.py:99 patterns; sentinel/dashboard.py:530",
+     "note": "Section-render level."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Criterion 2 was reinterpreted rather than met and the body was neither amended nor ticked; the implementing commit does not cite #28."
+  },
+  {
+   "n": 29,
+   "title": "G-25 · I can see the full story of an incident",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Page per incident: what/when/account/balances",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_incident_page.py::test_the_page_says_what_was_detected_and_on_which_account, ::test_the_page_shows_the_balances_as_they_were_not_as_they_are, ::test_a_member_cannot_read_another_members_incident; commits beb8921, a2e41bd",
+     "note": ""
+    },
+    {
+     "text": "Timeline detection→notification→acknowledgement",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_incident_page.py::test_the_timeline_shows_all_three_stages, ::test_the_timeline_is_in_chronological_order, ::test_an_undelivered_alert_is_never_rendered_as_notified; commit beb8921",
+     "note": ""
+    },
+    {
+     "text": "Plain words what to do next",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_incident_advice.py::test_the_three_steps_in_the_decided_order, ::test_the_incident_page_carries_exactly_the_same_steps, ::test_the_page_and_the_email_share_one_function_not_two_copies; sentinel/alerts/base.py advice_steps; commit a2e41bd",
+     "note": "Decided order differs from issue's example list (no 'move funds' step) by owner decision 3/9."
+    },
+    {
+     "text": "Export as PDF",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_incident_page.py::test_the_page_carries_print_styles_so_it_exports_cleanly (asserts '@media print' in body); commit beb8921",
+     "note": "Browser print-to-PDF only; no generated PDF. Test pins only CSS presence."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Boxes in body never ticked (only in a comment). PDF criterion is met by print stylesheet, per decision 5."
+  },
+  {
+   "n": 30,
+   "title": "G-26 · I can snooze a known issue",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Snooze a specific alert for a chosen duration",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_snooze.py::test_the_snoozed_alert_itself_is_silenced, ::test_a_duration_within_the_cap_is_honoured_exactly; tests/test_portal_snooze.py::test_snoozing_records_the_member_who_asked (POST /snooze hours=4); commit 67698ed",
+     "note": ""
+    },
+    {
+     "text": "Snoozes always expire, no permanent mute",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_snooze.py::test_a_snooze_cannot_be_asked_for_indefinitely (expires_at <= now+MAX cap), ::test_the_cap_is_per_severity; commit a18b049",
+     "note": ""
+    },
+    {
+     "text": "Snoozed alerts stay visible in the portal",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_snooze.py::test_a_snoozed_alert_is_still_listed_and_says_so (rule still in /account page and 'Snoozed' label); tests/test_snooze.py::test_a_snoozed_alert_is_still_detected_and_recorded; commit 67698ed",
+     "note": ""
+    },
+    {
+     "text": "Snooze on one alert type never silences another",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_snooze.py::test_a_snooze_on_one_rule_never_silences_another, ::test_a_second_different_occurrence_of_the_same_rule_still_fires (sent[1].address == attacker-wallet), ::test_a_snooze_never_crosses_to_another_account; commit 67698ed",
+     "note": "All four checkboxes left unticked despite being built"
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 31,
+   "title": "G-27 · I can log in securely",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Password sign-in with securely stored passwords",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_portal.py::test_password_hash_roundtrip, ::test_password_hashes_are_salted, ::test_malformed_hash_fails_closed; commit 530c3ca references #31 (for other criteria)",
+     "note": "Tests predate #31; the #31 commit does not touch this criterion but the tier requirement is met."
+    },
+    {
+     "text": "Sessions protected against tampering",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_portal.py::test_tampered_token_rejected, ::test_tampered_cookie_lands_on_login; tests/test_login_lockout.py::test_pre_upgrade_four_field_tokens_are_refused; commit 530c3ca",
+     "note": "Pinned."
+    },
+    {
+     "text": "Repeated failed attempts are throttled",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_portal.py::test_login_throttled_after_repeated_failures (429); tests/test_login_lockout.py::test_repeated_failures_from_one_source_still_get_429; commit 530c3ca",
+     "note": "Pinned."
+    },
+    {
+     "text": "Someone guessing my email can't lock me out",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_login_lockout.py::test_an_attackers_failures_do_not_block_the_victims_own_pair (victim pair not blocked), ::test_the_login_route_never_throttles_on_the_bare_email (spy asserts ALICE not in throttle keys); commit 530c3ca",
+     "note": "Unticked in body although built and tested."
+    },
+    {
+     "text": "Sessions expire after inactivity",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_login_lockout.py::test_a_session_left_alone_expires_after_the_idle_window (None at IDLE+1), ::test_no_refresh_extends_past_the_absolute_deadline, ::test_activity_re_issues_the_cookie_with_the_same_hard_deadline; sentinel/portal.py:50,505-538; commit 530c3ca",
+     "note": "Unticked in body although built and tested."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Tick criteria 4-5 to match the evidence."
+  },
+  {
+   "n": 32,
+   "title": "G-28 · Two-factor on my Guardian account",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Enable app-based 2FA",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_two_factor_login.py::test_a_member_can_enrol_and_is_shown_recovery_codes_once (is_enabled True after /security enrolment), ::test_a_correct_code_completes_the_sign_in; tests/test_twofactor.py::test_confirming_enables_it_and_issues_recovery_codes; commits bdab1c7, cfb85e8",
+     "note": ""
+    },
+    {
+     "text": "Given recovery codes, told to store them safely",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_two_factor_login.py::test_a_member_can_enrol_and_is_shown_recovery_codes_once (asserts 'recovery codes' and 'only time they can be shown'); tests/test_twofactor.py::test_a_recovery_code_works_once; commit cfb85e8",
+     "note": ""
+    },
+    {
+     "text": "Disabling requires current code and sends an email",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_twofactor.py::test_disabling_requires_a_current_code (wrong code -> still enabled), ::test_disabling_with_a_current_code_works_and_notifies (told == [ALICE] via notify callback); tests/test_portal_two_factor_login.py::test_disabling_from_the_page_requires_a_working_code; commit bdab1c7",
+     "note": "Unit test pins a notify callback is invoked with the member's email, not that SMTP mail is composed."
+    },
+    {
+     "text": "Operator accounts must have 2FA",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_twofactor.py::test_an_operator_cannot_disable_two_factor, ::test_an_operator_without_two_factor_cannot_complete_a_sign_in (operator_login_requires_code True); tests/test_operator_two_factor.py::test_an_unenrolled_operator_must_enrol_before_any_session, ::test_without_a_master_key_the_sign_in_is_refused_not_downgraded; commits bdab1c7, e1547b1",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Boxes never ticked in the body though the closing comment ticks all four."
+  },
+  {
+   "n": 33,
+   "title": "G-29 · I can reset a forgotten password",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Reset link by email, single-use, expires within an hour",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_password_reset.py::test_a_token_works_once (second consume is None); ::test_submitting_the_reset_changes_the_password_and_burns_the_token; ::test_an_expired_token_is_refused; ::test_the_lifetime_is_capped_at_an_hour (expires <= before+1h5s even with ttl=30d); tests/test_account_notices.py::test_the_reset_email_is_a_notice_and_carries_the_link; sentinel/portal.py:2624 _send_reset_email, :3763-3802 _forgot; commit 3329c70",
+     "note": "No test drives POST /forgot and asserts the email leaves; send pinned one layer down."
+    },
+    {
+     "text": "Response identical whether or not the email exists",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_password_reset.py::test_the_forgot_response_is_identical_for_known_and_unknown_addresses (assert known==unknown bodies via live route); ::test_every_forgot_response_waits_for_the_floor; ::test_the_forgot_endpoint_takes_the_same_time_either_way; sentinel/portal.py:3780-3802; commit 3329c70",
+     "note": "Wording and timing floor pinned at the endpoint."
+    },
+    {
+     "text": "Resetting signs out all other sessions",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_password_reset.py::test_resetting_invalidates_every_existing_session (old cookie verifies before; verify_session_token is None after); ::test_an_operator_issued_reset_also_signs_out_old_sessions; ::test_one_members_reset_does_not_sign_out_another; sentinel/portal.py:196 session_epoch; commit 3329c70",
+     "note": "Epoch pinned at function level; route-level pass-through of epoch not tested."
+    },
+    {
+     "text": "Emailed whenever my password changes",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "tests/test_password_reset.py::test_every_password_change_notifies_the_owner asserts only an INJECTED notify callback fires; notify defaults to None (sentinel/portal.py:176); portal /reset wires it (portal.py:3823); sentinel/dashboard.py:1415 calls set_member_password with NO notify",
+     "note": "Contradicted for the operator-issued path: a dashboard 'Reset portal password' changes the password without emailing the owner; the one wired path is untested at route level."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Pass notify on the dashboard reset (dashboard.py:1415) and add a route-level test that a password change on each path sends the owner an email. Closing comment ticks all four and states 'Every change emails the owner' — overclaims."
+  },
+  {
+   "n": 34,
+   "title": "G-30 · I can see everything at a glance",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Portal shows accounts and alerts",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_portal_home_watch.py::test_a_fresh_account_reads_watching; tests/test_portal_alert_history.py::test_severity_filter; commit 7e4d6a8",
+     "note": ""
+    },
+    {
+     "text": "Per account: watching/paused/trouble + last checked",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_home_watch.py::test_a_disabled_account_reads_paused_not_trouble, ::test_a_stale_account_reads_trouble_with_the_reason_in_the_card, ::test_the_state_is_member_statuss_judgement_not_a_recomputation; sentinel/portal.py:1311-1312 'Last successful check'; commit 7e4d6a8",
+     "note": "Tri-state pinned; the 'last checked' cell is rendered (portal.py:1312) but no test asserts it."
+    },
+    {
+     "text": "Recent alerts with severity and ack state",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "sentinel/portal.py:1117 _ack_cell; tests/test_portal_home_watch.py::test_the_newest_unacknowledged_incident_is_pinned_above_the_fold / ::test_an_acknowledged_incident_is_not_pinned",
+     "note": "Home-page tests pin pinned-incident logic, not the recent-alerts list's severity/ack rendering; closing comment says it 'was already there'."
+    },
+    {
+     "text": "Prominent banner if any account not watched",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_home_watch.py::test_one_dark_account_among_watched_raises_the_banner, ::test_no_accounts_watched_raises_the_danger_banner, ::test_a_paused_account_still_counts_as_not_watched_in_the_banner; commit 7e4d6a8",
+     "note": ""
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "A home-page render test asserting the recent-alert rows carry severity badge and acknowledgement state, and the 'Last successful check' value."
+  },
+  {
+   "n": 35,
+   "title": "G-31 · I can see my alert history",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "All alerts listed, newest first",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_alert_history.py::test_history_is_newest_first_and_complete (35 rows, stamps sorted desc); implementing commit 619f18e (G-31, no '#35' token) / 3298065 references #35",
+     "note": "Only a log commit carries the '#35' literal; code commit names G-31"
+    },
+    {
+     "text": "Filter by account, severity, date",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_severity_filter, ::test_date_filters_are_inclusive_of_the_to_day, ::test_account_filter_outside_the_member_scope_selects_nothing, ::test_garbage_date_selects_nothing_not_everything; commit 3298065/619f18e",
+     "note": ""
+    },
+    {
+     "text": "Each entry links to its incident page",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_history_page_lists_alerts_and_links_incidents (f'/incident?id={alert_id}' in body); commit 3298065/619f18e",
+     "note": ""
+    },
+    {
+     "text": "Exportable as a spreadsheet",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_csv_export_contains_every_row_not_a_page (text/csv, 251 lines), ::test_csv_honours_the_same_filters_as_the_page, ::test_csv_defangs_formula_cells; commit 3298065/619f18e",
+     "note": "Checkboxes all unticked though built"
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 36,
+   "title": "G-32 · I can see who has touched my account",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Every settings change recorded with who and when",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_activity.py::test_contact_change_appears_on_the_activity_page ('Alert destination changed', old→new), ::test_setting_a_password_records_it_without_being_asked, ::test_two_factor_disable_is_recorded, ::test_a_login_change_is_recorded_against_every_account_it_opens; commit a501aea (cites 'G-32'; only 3298065 cites '#36' and is a log commit)",
+     "note": "'Every' is not provable by tests; the enumerated change types are pinned. Body checkboxes never ticked."
+    },
+    {
+     "text": "Operator actions on my account are visible to me",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_activity.py::test_operator_issuing_a_portal_password_is_visible_to_the_customer (asserts 'Portal password issued by Minas' and actor 'alice' in body); commit a501aea",
+     "note": "Unticked in body."
+    },
+    {
+     "text": "The record cannot be edited or deleted",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_activity.py::test_no_update_or_delete_against_events_outside_retention (source grep: no UPDATE/DELETE on events except retention.py); commit a501aea",
+     "note": "Static guard, not a runtime immutability guarantee (retention.py prunes whole aged rows, and any DB admin can edit). Closing comment states this limit honestly."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Body checkboxes all unticked; the feature commit cites G-32 not #36."
+  },
+  {
+   "n": 37,
+   "title": "G-33 · Automatic fire drills",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Scheduled simulated theft against a test account",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_drill.py::test_the_scheduled_drill_runs_only_against_the_dedicated_account, ::test_the_schedule_is_due_when_there_was_never_a_drill_and_after_the_interval (7-day cadence), ::test_the_engine_ticks_the_schedule; commit 902fb7c",
+     "note": ""
+    },
+    {
+     "text": "Drill travels detection -> alerting -> delivery to my phone",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "tests/test_drill.py::test_a_drill_travels_the_path_and_records_passed_with_latency (delivered_to==2: global channel + contact EMAIL); sentinel/drill.py:132-190 run_drill sends via contact_router with phones and counts sms_deliveries",
+     "note": "Per decision 2 option A the weekly drill targets a Minas drill account, so customers do NOT receive drill texts — criterion as written is deliberately not met; no test asserts SMS/phone delivery of a drill."
+    },
+    {
+     "text": "Drill alert clearly labelled as a drill",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_drill.py::test_the_drill_alert_is_labelled_on_every_surface_and_carries_no_runbook (render startswith '🛡 MINAS AI GUARDIAN - DRILL', '[DRILL]' in subjects, body startswith 'THIS IS A DRILL'); commit 902fb7c",
+     "note": ""
+    },
+    {
+     "text": "Failed drill immediately pages an operator as an outage",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_drill.py::test_a_failed_drill_pages_minas_as_an_outage (page rule 'drill_failed', severity CRITICAL), ::test_no_drill_account_is_a_failed_drill_and_a_page_not_a_silent_skip; commit 902fb7c",
+     "note": ""
+    },
+    {
+     "text": "Portal shows last drill, result, detection-to-delivery time",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_drill.py::test_the_status_page_shows_the_last_drill_and_offers_a_test ('Last scheduled drill', 'Passed'); ::test_a_drill_travels_the_path_and_records_passed_with_latency (latency_ms recorded); commit 902fb7c",
+     "note": "Test asserts drill+result on the page; latency is asserted in the record, not asserted as rendered."
+    },
+    {
+     "text": "I can trigger a drill myself on demand",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "sentinel/portal.py:1805 form action=/drill, :4034 POST handler, :3547 _drill(); tests/test_drill.py::test_the_status_page_shows_the_last_drill_and_offers_a_test only asserts the button HTML ('action=\"/drill\"', 'Test my alerts now')",
+     "note": "No test POSTs /drill as a member and asserts a drill ran; the CLI path (cmd_drill) is tested only for the --as requirement."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "A test that POSTs /drill as a signed-in member and asserts a drill row + delivery; a test asserting phone/SMS delivery of a drill (or the criterion re-worded to decision 2's scope)."
+  },
+  {
+   "n": 38,
+   "title": "G-34 · System status is visible",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Status page shows whether monitoring runs normally",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_member_status.py::test_a_freshly_polled_account_is_watched (overall=='watching'); ::test_some_watched_and_some_not_is_degraded_not_healthy; ::test_a_member_with_no_accounts_is_not_told_everything_is_fine; ::test_the_staleness_window_matches_the_detector_not_a_literal; sentinel/portal.py:1618-1633, 1645-1747; commit d45a767",
+     "note": "Window derived from heartbeat threshold x poll interval as claimed."
+    },
+    {
+     "text": "Shows when each account was last successfully checked",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "sentinel/portal.py:1723 (last_success_at per account), :1901-1903 ('Last successful check' cell, 'Never' fallback); commit d45a767",
+     "note": "No assertion pins last_success_at in the dict or the rendered cell."
+    },
+    {
+     "text": "Ongoing problems stated plainly, not hidden",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_member_status.py::test_a_tamper_flagged_account_is_reported_as_unwatched_in_plain_words ('tamper_suspected' not in reason; 'suspected interference' in reason); ::test_a_rejected_key_is_reported_as_the_customer_s_to_fix; ::test_the_page_names_the_accounts_that_are_dark; ::test_the_page_states_the_limit_of_what_it_proves; sentinel/portal.py:1636-1642, 1683-1703; commits d45a767, 542ee99",
+     "note": "Well pinned."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Add a test asserting the per-account last-check timestamp appears in member_status()/the page. Closing comment says 17 tests (file has 19); no overclaim beyond listing the untested display."
+  },
+  {
+   "n": 39,
+   "title": "G-35 · Operator dashboard",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "All customers, accounts, recent alerts in one view",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "sentinel/dashboard.py (fleet table); tests/test_dashboard_problem_filter.py exercises the table indirectly",
+     "note": "Pre-existing; no #39-referenced test pins the 'one view' criterion specifically."
+    },
+    {
+     "text": "Add and manage customers",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "sentinel/dashboard.py:1304-1307 add form → onboard_account; tests/test_add_customer.py (no #39 ref)",
+     "note": "Tested but under other issues; commits referencing #39 do not cover it."
+    },
+    {
+     "text": "Sort and filter by problem state, trouble first",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_dashboard_problem_filter.py::test_the_default_order_puts_trouble_first_and_paused_last, ::test_filtering_to_trouble_shows_only_trouble, ::test_an_unrecognised_filter_selects_nothing_never_everything, ::test_problem_state_mirrors_the_pages_own_judgements; commit 891952b",
+     "note": "Built; box unticked."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Criteria 1-2 rely on pre-existing tests not tied to #39 commits; box 3 not ticked."
+  },
+  {
+   "n": 40,
+   "title": "G-36 · The operator dashboard is protected — sign-in and attribution",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Restricted to private network in production",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_bind_address.py::test_default_dashboard_refuses_connections_from_off_box, ::test_composes_wide_bind_declares_its_gate_and_the_publish_is_real; commit 8b658bf",
+     "note": "Production restriction is a compose port-mapping; test pins the compose file"
+    },
+    {
+     "text": "Doesn't expose itself on all interfaces by default",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_bind_address.py::test_dashboard_binds_loopback_by_default, ::test_portal_binds_loopback_by_default, ::test_metrics_binds_loopback_by_default; commit 8b658bf / 7155be8",
+     "note": ""
+    },
+    {
+     "text": "Operator sign-in with 2FA even on the private network",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_operator_two_factor.py::test_a_correct_password_mints_no_session_only_a_code_prompt, ::test_an_unenrolled_operator_must_enrol_before_any_session; tests/test_twofactor.py::test_an_operator_without_two_factor_cannot_complete_a_sign_in, ::test_an_operator_cannot_disable_two_factor; commits reference #54/#32, not #40 (only 8b658bf/7155be8 reference #40)",
+     "note": "Built and pinned; checkbox left unticked; implementing commits cite #32/#54 rather than this issue"
+    },
+    {
+     "text": "Every operator action recorded against a named person",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_identity.py::test_an_event_records_its_actor, ::test_acknowledging_an_alert_records_who (acknowledged_by=='erwin'), ::test_adding_a_customer_records_who, ::test_generating_a_member_password_records_who; commit e1547b1 (G-50, cites #54)",
+     "note": "'Every' action is asserted for ack/add-customer/password/2FA-reset only"
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Commit referencing #40 for the 2FA/attribution criteria (they cite #32/#54); a sweep test that every dashboard POST writes an actor"
+  },
+  {
+   "n": 41,
+   "title": "G-37 · Operator alert triage",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Queue of unacknowledged alerts across all customers",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_alert_triage.py::test_the_queue_spans_customers_and_orders_by_consequence (ordered list across alice/bob), ::test_an_acknowledged_alert_leaves_the_queue; commit b60c65d",
+     "note": "Pinned."
+    },
+    {
+     "text": "Add a note and mark handled",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_alert_triage.py::test_triage_writes_the_forensic_event (note, handled, actor 'erwin'), ::test_marking_handled_does_not_acknowledge, ::test_the_triage_post_names_the_signed_in_operator; commit b60c65d",
+     "note": "Pinned."
+    },
+    {
+     "text": "Alerts older than a threshold are highlighted",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_alert_triage.py::test_overdue_matches_the_escalation_threshold_not_a_literal (overdue True/False either side of threshold); commit b60c65d",
+     "note": "Pinned."
+    },
+    {
+     "text": "See which customers are muting channels",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_alert_triage.py::test_live_snoozes_and_sms_optouts_are_surfaced (snoozed_rules, sms_off), ::test_an_expired_snooze_is_not_a_grievance; commit b60c65d",
+     "note": "Pinned."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 42,
+   "title": "G-38 · Technical health monitoring",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Metrics published for monitoring tools",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_bind_address.py::test_metrics_binds_loopback_by_default / ::test_metrics_bind_address_is_configurable (metrics HTTP server); tests/test_rules_validation.py::test_the_rejection_is_exported_as_a_metric (registry sample); commit 8d2637d references #42",
+     "note": "Pre-existing; tests exercise the exporter rather than a specific scrape."
+    },
+    {
+     "text": "Alarms fire when checks fall behind schedule",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_watch_alarms.py::test_everything_behind_is_one_page_not_one_per_account (one page, rule 'checks_behind_schedule', HIGH), ::test_the_scheduler_actually_evaluates_the_alarms (spy.calls == 1); commit 8d2637d",
+     "note": ""
+    },
+    {
+     "text": "Alarms fire when an account unwatchable too long",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_watch_alarms.py::test_one_dark_account_among_working_ones_is_named (rule 'account_unwatchable_too_long', account_id, '88 consecutive'), ::test_a_never_checked_account_ages_from_onboarding, ::test_disabled_accounts_are_not_paged_about; commit 8d2637d",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 43,
+   "title": "G-39 · Customer subscribes and pays",
+   "label": "status: not-built",
+   "criteria": [],
+   "verdict": "closed-as-not-built",
+   "shortfall": "Closed as not applicable by owner 2026-08-27: \"Guardian is a benefit of Minas Academy enrolment, not a product sold to strangers — there is no subscription to sell. The implementation plan in this issue stays as a record; decision 11 is moot for the same reason.\" Only commit b6ca5c2 (plans, no code)."
+  },
+  {
+   "n": 44,
+   "title": "G-40 · Lapsed payment is handled honestly",
+   "label": "status: not-built",
+   "criteria": [],
+   "verdict": "closed-as-not-built",
+   "shortfall": "Closed as not applicable (owner, 2026-08-27): \"no subscription, no lapse.\" Only commit b6ca5c2 (plan, no code)."
+  },
+  {
+   "n": 45,
+   "title": "G-41 · My credentials are stored safely",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Keys are stored encrypted",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_onboarding.py::test_onboard_account_persists_encrypted_on_success (row != 'k'; cipher.decrypt == 'k'); commit 25263b8 references #45 (docs); code commit 588daeb does not carry '#45'",
+     "note": ""
+    },
+    {
+     "text": "Keys never appear in error messages or logs",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_exchange.py::test_secrets_are_redacted_from_error_messages; tests/test_add_customer.py::test_post_never_echoes_secret_on_error; commit 25263b8",
+     "note": "Pinned on the exchange-error and dashboard-form paths; no global log-scrubber test"
+    },
+    {
+     "text": "See when each key was last used, and revoke it from the portal",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_key_permission_summary.py::test_the_page_says_when_the_key_was_last_used, ::test_a_key_never_used_is_said_plainly, ::test_revocation_points_at_the_exchange_not_at_a_minas_button ('action=\"/revoke\"' not in page); commit 25263b8 / 588daeb",
+     "note": "Revoke half deliberately NOT built (decision 15, owner); the test pins its absence. Last-used half built. Closing comment is candid about this"
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Portal revoke dropped by owner decision 15 — criterion text still reads 'revoke it from the portal'; a commit citing #45 for 588daeb"
+  },
+  {
+   "n": 46,
+   "title": "G-42 · I can delete my data",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "I can delete my account from the portal",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_erasure.py::test_the_portal_requires_the_password_then_deletes_and_ends_the_session (POST /erase 401 on wrong password, 200 'Your data has been deleted', session dead); sentinel/portal.py:4037; commit 7927f2b",
+     "note": "Unticked in body."
+    },
+    {
+     "text": "Deletion removes credentials immediately and everything else within a stated period",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_erasure.py::test_erasure_removes_credentials_and_every_record_immediately (encrypted_api_key=='', alerts==0, login==0, tombstone); sentinel/erasure.py:6-7; commit 7927f2b",
+     "note": "Built stronger than written: everything is hard-deleted immediately, not 'within a stated period'. Interim decision 6; lawyer sign-off pending per the only comment."
+    },
+    {
+     "text": "I can download my data first",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_erasure.py::test_export_carries_the_persons_own_accounts_and_never_credentials; portal GET /export.json asserted 200 in ::test_the_portal_requires_the_password_then_deletes_and_ends_the_session; commit 7927f2b",
+     "note": "Unticked in body."
+    },
+    {
+     "text": "I receive written confirmation",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_erasure.py::test_the_customer_is_told_in_writing_with_what_went_and_what_remains, portal test asserts sent[0]==[ALICE] with 'has been deleted'; commit 7927f2b",
+     "note": "The confirmation-text assertion uses `A and B and C or D`, so it can pass on 'reconstructed' alone — weak but the portal test also pins delivery."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Body checkboxes all unticked; the 'stated period' wording is superseded by immediate hard-delete (should be reworded). Tighten the or-precedence assertion."
+  },
+  {
+   "n": 48,
+   "title": "G-44 · Customers understand the limits",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Signup states plainly it cannot stop an attack",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "No signup surface exists (#6 closed as moot); closing comment redirects the criterion to the /limits page",
+     "note": "Not built as written — the criterion's surface does not exist; substitute evidence is the /limits page (next row)."
+    },
+    {
+     "text": "Read-only presented as a safety feature, with the reason",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_no_prevention_claims.py::test_the_limits_page_says_the_thing_that_matters ('read-only' in page, 'cannot be used to rescue it'); sentinel/portal.py:2050-2085; commit 4656243",
+     "note": ""
+    },
+    {
+     "text": "Alerting time target stated honestly",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "sentinel/portal.py:2068-2071 renders check intervals from the running config and 'within a minute or so of the exchange showing it'",
+     "note": "No test asserts the timing text or that it derives from config."
+    },
+    {
+     "text": "No claim of prevention anywhere",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_no_prevention_claims.py::test_no_prevention_claim_reaches_a_customer (parametrised over customer-facing sources, offences == []), ::test_every_pattern_catches_the_claim_it_is_for; commit 4656243",
+     "note": "Guard covers customer-facing source modules only, not external marketing."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "A test pinning the /limits timing text against config values; criterion 1 has no surface to satisfy it."
+  },
+  {
+   "n": 49,
+   "title": "G-45 · The system handles many customers",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Exchange rate limits respected per account and system-wide",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_ratelimit_circuit.py::test_rate_limiters_isolate_accounts_but_share_ip (acquire_for_call(1),(2) True; ip_bucket.try_acquire() False); ::test_token_bucket_allows_burst_then_throttles; sentinel/ratelimit.py:53-70; sentinel/engine.py:135-138; sentinel/poller.py:297-299; commit 609fe1d references G-45 (built earlier in b529237 initial import)",
+     "note": "Ticked before closure; pinned, but built by the initial import, not by an issue-referencing commit."
+    },
+    {
+     "text": "One broken account can't take down others",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_engine.py::test_one_bad_account_never_stalls_the_fleet (all good ids have last_success_at; bad consecutive_failures==1); ::test_breaker_opens_for_repeatedly_failing_account; sentinel/engine.py:396-426; commit 609fe1d",
+     "note": "Pre-existing behavioural test through run_one_cycle."
+    },
+    {
+     "text": "DB handles many simultaneous checks without contention",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_db_concurrency.py::test_the_database_runs_in_wal_mode; ::test_a_busy_timeout_is_set; ::test_concurrent_readers_and_writers_all_succeed (16 threads x 20; errors==[], count==320); ::test_each_thread_gets_its_own_connection; ::test_an_in_memory_database_still_shares_one_connection; sentinel/db.py:46-82; commit 609fe1d",
+     "note": "Write lock retained by design, stated."
+    },
+    {
+     "text": "Same account never checked twice at once",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_db_concurrency.py::test_a_second_scheduling_pass_does_not_requeue_a_pending_account; ::test_the_account_is_schedulable_again_once_its_task_completes; ::test_fast_and_slow_loops_for_one_account_do_not_block_each_other; ::test_a_failed_task_still_releases_the_account; ::test_the_worker_releases_the_account_even_when_the_poll_raises; sentinel/engine.py:122-123, 361-377, 422-426; commit 609fe1d",
+     "note": "Claim covers queued and running; release-in-finally pinned."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Closing comment scopes itself to criteria 3-4 and matches the code (incl. the admitted 2-minute red main fixed in 8c76e24)."
+  },
+  {
+   "n": 50,
+   "title": "G-46 · Code quality is enforced automatically",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Tests run automatically on every change",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": ".github/workflows/*.yml line 40 pytest step; commit b6c3a4f",
+     "note": "CI config, not a test in tests/."
+    },
+    {
+     "text": "Code style checked automatically",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": ".github/workflows line 31 'ruff check sentinel tests'; pyproject.toml ruff config; commit b6c3a4f",
+     "note": "CI config only."
+    },
+    {
+     "text": "Coverage doesn't silently decline",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": ".github/workflows line 40 '--cov-fail-under=78'; commit b6c3a4f",
+     "note": "Floor is a CI flag; no test pins the floor."
+    },
+    {
+     "text": "Dependencies scanned for vulnerabilities",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": ".github/workflows line 48 'pip-audit .'; commit b6c3a4f",
+     "note": "CI config only."
+    },
+    {
+     "text": "Version numbers agree",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_project_consistency.py::test_the_package_version_matches_the_changelog, ::test_the_importable_version_matches_the_package; commit b6c3a4f",
+     "note": ""
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Criteria 1-4 are CI wiring by nature; T1 would need a test that parses the workflow and asserts the ruff/cov-fail-under/pip-audit steps exist."
+  },
+  {
+   "n": 51,
+   "title": "G-47 · Every fill is price-checked, including undated ones",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Undated/unparseable-timestamp fill still checked for off-market and fee anomaly",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_undated_fills.py::test_undated_off_market_fill_still_raises_the_alert, ::test_unparseable_timestamp_is_treated_as_undated_not_as_zero ('off_market_execution' in sent rules), ::test_undated_fill_fee_enters_the_baseline_once (EMA == 82); commit 9083551",
+     "note": ""
+    },
+    {
+     "text": "Checked once, not re-alerted/re-counted each cycle",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "::test_undated_fill_is_judged_once_not_every_cycle (batches == [['f-1']], len(off_market)==1), ::test_undated_fill_fee_enters_the_baseline_once (after_repeats == after_first); commit 9083551",
+     "note": ""
+    },
+    {
+     "text": "Undated fills counted and surfaced to an operator",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "::test_undated_fill_is_counted_on_the_untimestamped_metric_exactly_once_per_pass (len(fill_counts)==1); commit 163021e / 9083551",
+     "note": "Metric only; the paging alarm is #52's scope"
+    },
+    {
+     "text": "Test proves an undated off-market fill raises the alert",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "::test_undated_off_market_fill_still_raises_the_alert; commit bd62fcb",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 52,
+   "title": "G-48 · An operator is paged when exchange records lose their timestamps",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Sustained non-zero counter pages an operator",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_untimestamped_alarm.py::test_a_sustained_rise_pages_an_operator (1 page after 2 consecutive windows), ::test_a_single_stray_record_does_not_page, ::test_the_scheduler_actually_evaluates_the_alarm; commit b356730",
+     "note": "Built in-process (option 2), not Prometheus/Alertmanager (option 1) — closing comment discloses this."
+    },
+    {
+     "text": "Page names the exchange and record kind",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_untimestamped_alarm.py::test_the_page_names_the_exchange_and_the_record_kind (message and evidence contain 'binance'/'fill'), ::test_each_exchange_and_kind_is_tracked_separately; commit b356730",
+     "note": "Pinned."
+    },
+    {
+     "text": "Alarm path exercised by a test or fire drill",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_untimestamped_alarm.py (11 tests incl. ::test_the_alarm_is_wired_into_the_engine, ::test_the_page_is_recorded_and_stays_off_the_customers_history); commit b356730",
+     "note": "Self-satisfying by construction; test wiring into Engine is the meaningful part."
+    },
+    {
+     "text": "Mechanism is reusable for G-38's alarms",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "sentinel/alarms.py:14,107 and OperatorAlerter.page reused at sentinel/alerts/escalation.py:211,242, sentinel/cli.py:418,430, sentinel/onboarding.py:340; tests/test_operator_page_sweep.py::test_an_escalation_that_reaches_nobody_pages_the_operator; commit 9fd2b25",
+     "note": "Reuse demonstrated by #58; #42 is closed 'status: built'."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 53,
+   "title": "G-49 · Operator alerting channel",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Operator page can be raised with no account_id",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_alerting.py::test_a_page_can_be_raised_with_no_account, ::test_a_page_with_no_account_is_stored_with_a_null_account; commit 9fd2b25",
+     "note": ""
+    },
+    {
+     "text": "Raising an operator page never notifies a customer",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_alerting.py::test_raising_a_page_never_notifies_a_customer (router.send.call_count == 0 and no _contact_router attribute), ::test_a_page_about_an_account_does_not_write_a_customer_alert; commit 9fd2b25",
+     "note": ""
+    },
+    {
+     "text": "Own destinations and own cooldowns, independent of alerting.routing",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_alerting.py::test_operator_cooldowns_are_independent_of_customer_severity_cooldowns, ::test_operator_routing_is_resolved_separately_from_customer_routing (build_operator_channels vs build_channels); commit 9fd2b25",
+     "note": ""
+    },
+    {
+     "text": "Recorded and queryable like customer alerts",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_alerting.py::test_pages_are_queryable_after_the_fact, ::test_pages_are_shown_on_the_dashboard_apart_from_customer_alerts, ::test_a_page_with_no_configured_channel_is_still_recorded; commit 9fd2b25",
+     "note": ""
+    },
+    {
+     "text": "Page about an account without alerting that customer",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_alerting.py::test_a_page_can_be_about_an_account (account_id + label), ::test_a_page_about_an_account_does_not_write_a_customer_alert, ::test_the_same_rule_on_different_accounts_pages_separately; commit 9fd2b25",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 54,
+   "title": "G-50 · Operator identity",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Operators are named accounts distinct from portal_members",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_identity.py::test_an_operator_is_not_a_customer (cross-login both False; portal_members count 0); ::test_the_password_is_not_stored_in_the_clear ('scrypt$'); ::test_usernames_are_unique; sentinel/schema.sql:238-254; sentinel/operators.py:46-63; commit e1547b1",
+     "note": "Separate table and session secret."
+    },
+    {
+     "text": "Ops dashboard requires operator sign-in",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_identity.py::test_the_dashboard_requires_a_sign_in_once_an_operator_exists; ::test_signing_in_gives_access; ::test_a_bad_password_gives_no_session; ::test_with_no_operators_the_dashboard_still_works (unprotected banner); sentinel/dashboard.py:280-299, 358-371, 502; commit e1547b1",
+     "note": "Enforced only once an operator exists (documented design call, unprotected state tested visible)."
+    },
+    {
+     "text": "Actions carry an actor (add customer, store key, member password, ack)",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_identity.py::test_adding_a_customer_records_who (actor=='erwin'); ::test_generating_a_member_password_records_who; ::test_acknowledging_an_alert_records_who; tests/test_key_replacement.py::test_the_replacement_is_recorded_against_the_member_who_made_it; sentinel/dashboard.py:1309, 1361, 1415; commit e1547b1",
+     "note": "Dashboard operator key-store path (dashboard.py:1309) has no test asserting the operator name lands; key attribution pinned only via member path."
+    },
+    {
+     "text": "events/alerts answer 'who', including shell sentinel ack",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_identity.py::test_shell_ack_records_the_named_operator (acknowledged_by=='erwin'); ::test_shell_ack_requires_a_name_once_operators_exist (exit 2, '--as'); ::test_shell_ack_refuses_an_unknown_or_disabled_operator; sentinel/db.py:109 (acknowledged_by migration); sentinel/cli.py:523-550; commit e1547b1",
+     "note": ""
+    },
+    {
+     "text": "Operators can be disabled without touching the DB by hand",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_identity.py::test_a_disabled_operator_cannot_sign_in; ::test_a_disabled_operator_loses_dashboard_access (live session revoked); ::test_disabling_keeps_the_account_for_attribution; ::test_a_disabled_operator_can_be_re_enabled; sentinel/cli.py:759-834; sentinel/operators.py:85-95, 234-249; commit e1547b1",
+     "note": "CLI wrapper itself not directly tested; library functions and session revocation are."
+    },
+    {
+     "text": "Rows without an actor stay readable, not backfilled",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_operator_identity.py::test_an_event_with_no_actor_is_still_readable (actor is None); ::test_shell_ack_still_works_before_any_operator_exists (acknowledged_by is None); tests/test_onboard_attribution.py::test_before_operators_exist_the_unattributed_path_still_works; sentinel/schema.sql:516; commit e1547b1",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Only gap: no assertion that an operator's dashboard key-store action carries the operator name."
+  },
+  {
+   "n": 55,
+   "title": "Undated-record metric is labelled with the account, not the exchange",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "exchange label carries the exchange",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_metric_labels.py::test_the_exchange_label_carries_the_exchange, ::test_the_poller_passes_the_accounts_exchange; sentinel/poller.py:578 exchange=_account_exchange(account_row); commit a20325d",
+     "note": ""
+    },
+    {
+     "text": "Log lines still name the account",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_metric_labels.py::test_the_log_line_still_names_the_account; sentinel/detectors/quantity_drop.py:44,57,183; commit a20325d",
+     "note": ""
+    },
+    {
+     "text": "Test against private CollectorRegistry",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_metric_labels.py (3 tests, private registry); commit a20325d",
+     "note": ""
+    },
+    {
+     "text": "Other exchange-labelled metrics checked",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "sentinel/metrics.py:62,74 — only untimestamped_records and (later, #67) unidentifiable_withdrawals carry 'exchange'; poller.py:71 passes _account_exchange",
+     "note": "Checking is a one-off review; no test enumerates exchange-labelled metrics."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 57,
+   "title": "One failing alert channel loses the alert entirely, on every channel",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "One failing channel does not stop the others",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_dispatch_delivery_failure.py::test_a_failing_channel_does_not_stop_the_others (first.sent==1, second.sent==1), ::test_a_failing_channel_does_not_raise; commit c60e00f",
+     "note": ""
+    },
+    {
+     "text": "Detected alert recorded even if undelivered, and distinguishable",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "::test_the_alert_is_recorded_even_when_every_channel_fails (row exists, delivered_to==0), ::test_a_delivered_alert_records_how_many_channels_took_it (==2); commit c60e00f",
+     "note": ""
+    },
+    {
+     "text": "Delivery failure does not abandon the rest of the poll cycle",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "::test_a_delivery_failure_does_not_abandon_the_rest_of_the_poll (later detector rule present), ::test_the_per_account_contact_router_is_still_reached; commit c60e00f",
+     "note": ""
+    },
+    {
+     "text": "Every channel failing for a severity raises an operator page",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "::test_every_channel_failing_raises_an_operator_page (len(pages)==1), ::test_a_partly_delivered_alert_does_not_page, ::test_no_configured_channel_at_all_also_pages; commit c60e00f",
+     "note": ""
+    },
+    {
+     "text": "A test drives a raising channel and asserts others receive, row exists, later detectors run",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "same file, the three tests above; commit c60e00f",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 58,
+   "title": "Revisit what was logged-and-swallowed because there was nowhere to page an operator",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Each entry triaged (page / metric+alarm / log) with reason recorded",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "Site comments: sentinel/alerts/contact.py:61,234,403; sentinel/triage.py:44; sentinel/db.py:22,184; sentinel/engine.py:150; the decision table lives only in the closing comment",
+     "note": "Group B entries (engine/poller/ws_monitor) carry no #58 comment in code — they were routed to #42 by comment only."
+    },
+    {
+     "text": "Group A decided first",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "commit order 9fdecc8 (group A) before a4fd008 (C, D)",
+     "note": "Process criterion; commit order is the only trace. Not testable."
+    },
+    {
+     "text": "Anything paged has a deliberate dedup scope",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "sentinel/alerts/escalation.py:253 dedup_scope='escalation'; cli.py:427,440; contact.py:88; onboarding.py:351; tests/test_operator_page_sweep.py::test_two_different_contact_channels_page_separately, ::test_a_contact_channel_with_no_provider_pages_once; commit 9fdecc8",
+     "note": "Scopes exist and two are pinned by test; escalation/routing scopes are not individually asserted."
+    },
+    {
+     "text": "Anything staying a log line says so in a comment",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "sentinel/alerts/contact.py:234,403; sentinel/triage.py:44",
+     "note": "metrics.py entry not checked for a comment; no test enforces this."
+    },
+    {
+     "text": "No entry paged without a test that the page fires",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_operator_page_sweep.py::test_an_escalation_that_reaches_nobody_pages_the_operator (escalation_delivered_to_nobody, CRITICAL), ::test_a_routed_but_unconfigured_channel_is_reported_to_the_caller, ::test_the_startup_routing_pages_are_wired_into_cmd_run, ::test_a_contact_channel_with_no_provider_pages_once, ::test_onboarding_with_a_partial_baseline_pages_and_records_it; commits 9fdecc8, a4fd008",
+     "note": "All four new pages have a firing test."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Body checkboxes never ticked (only the comment's copy is). Group B is deferred to #42 rather than built here; 'reason recorded' for B exists only in the comment."
+  },
+  {
+   "n": 59,
+   "title": "last_success_at is stamped before the detectors run",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "last_success_at only written when the cycle completed",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_cycle_success_honesty.py::test_a_crash_after_the_fetches_does_not_record_a_success (after == before), ::test_a_completed_cycle_records_a_success; commit 0609fb1",
+     "note": ""
+    },
+    {
+     "text": "Exception after fetches leaves consecutive_failures incremented",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_cycle_success_honesty.py::test_a_crash_after_the_fetches_counts_as_a_failure (consecutive_failures == 1); commit 0609fb1",
+     "note": ""
+    },
+    {
+     "text": "detect_unreachable fires for cycles that keep dying partway",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_cycle_success_honesty.py::test_repeated_crashes_eventually_alert_the_customer ('account_unreachable' in channel.rules); commit 0609fb1",
+     "note": ""
+    },
+    {
+     "text": "Dashboard does not show the account healthy on a dead cycle",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_cycle_success_honesty.py::test_the_account_does_not_look_freshly_polled_on_the_dashboard (last_success_at None, consecutive_failures 3, account listed); commit 0609fb1",
+     "note": "Dashboard assertion is weak ('honest' in page proves listing, not the health colour)."
+    },
+    {
+     "text": "A test raises from a detector mid-cycle and asserts not-successful",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_cycle_success_honesty.py (all 7 tests monkeypatch a detector to raise); commit 0609fb1",
+     "note": "Boxes ticked retrospectively, as the comment admits."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 60,
+   "title": "Six tables grow forever at fast-loop cadence; only balance snapshots are pruned",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Every unbounded table has a configurable, declared retention period",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_retention.py::test_every_growing_table_is_covered (actual tables - covered == set()); ::test_every_retention_decision_names_a_real_table; ::test_every_prunable_table_actually_prunes; ::test_baseline_tables_are_never_pruned; sentinel/retention.py:49-160; sentinel/rules_schema.py:173-186, 287-300; config/rules.yaml:145-155; commits ca22bda, 67698ed, 232528d",
+     "note": "Coverage asserted both directions against live schema."
+    },
+    {
+     "text": "Pruning runs automatically",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_retention.py::test_the_scheduler_actually_prunes (events count==0 after _scheduler_tick); ::test_pruning_does_not_run_on_every_cycle; ::test_never_run_is_none_not_zero; sentinel/engine.py:286-323; commit ca22bda",
+     "note": ""
+    },
+    {
+     "text": "seen_* periods DERIVED from the exchange history window",
+     "ticked": true,
+     "tier": "T3",
+     "evidence": "config/rules.yaml:151 dedup_days: \"365\" is a hand-typed constant with a rationale comment (rules.yaml:133-142); rules_schema.py:295 DEFAULTS dedup_days=365; no history-window setting exists in sentinel/ or config/; tests/test_retention.py::test_the_dedup_window_is_generously_long asserts only >= 365",
+     "note": "Contradicted as worded: not derived from anything; closing comment reframes 'derived' as 'bounded below by correctness'."
+    },
+    {
+     "text": "Table sizes visible as a metric",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_retention.py::test_table_sizes_are_exported_as_a_metric (sentinel_table_rows{table=events}==1); ::test_row_counts_are_reported; sentinel/metrics.py:92-109; sentinel/engine.py:317-321; commit ca22bda",
+     "note": ""
+    },
+    {
+     "text": "Nothing prunes the forensic log below what incident reconstruction needs",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "config/rules.yaml:146 events_days: \"730\"; sentinel/rules_schema.py:174 events_days is NON_NEGATIVE (accepts 1); sentinel/retention.py:166-210",
+     "note": "Satisfied only by the default; no floor enforced or tested (events not in NEVER_PRUNE)."
+    },
+    {
+     "text": "Periods live in config so #47's answer changes a number",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_retention.py::test_the_dedup_window_is_generously_long; ::test_every_prunable_table_actually_prunes; ::test_old_rows_go_and_recent_ones_stay (prune_all driven by RulesConfig); sentinel/retention.py:166-176; commit ca22bda",
+     "note": ""
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Criterion 3 would need an actual history-window setting the dedup period is computed from (or the criterion reworded); criterion 5 needs a schema floor/test on events_days. Closing comment overclaims 'derived'."
+  },
+  {
+   "n": 61,
+   "title": "Portal password is scoped to an email, not the account whose page issues it",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Operator sees exactly which accounts credential grants",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_portal_access_scope.py::test_the_card_names_every_account_the_credential_will_open, ::test_the_button_says_how_much_it_opens; commits 555255e, 35fe5c0",
+     "note": ""
+    },
+    {
+     "text": "Wording and placement match actual scope",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_portal_access_scope.py::test_a_single_account_contact_is_not_warned_about_nothing, ::test_the_button_stays_plain_when_it_opens_only_this_account; tests/test_portal.py::test_the_recorded_grant_does_not_drift_when_contacts_change; commit 35fe5c0",
+     "note": ""
+    },
+    {
+     "text": "If per-account scoping chosen, existing email-scoped logins keep working",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_member_account_grants.py::test_a_login_nobody_scoped_keeps_the_contact_rule, ::test_resetting_an_existing_legacy_login_from_one_page_keeps_what_it_opened, ::test_revoking_a_legacy_login_never_widens; commit c91e0d9",
+     "note": "Per-account grants (decision 10) were built after close; box unticked, last comment only records the decision."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Tick box 3 and note commit c91e0d9 on the issue."
+  },
+  {
+   "n": 62,
+   "title": "Pre-commit hook running ruff and the suite",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Ruff and the test suite run before a commit is created",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_git_hooks.py::test_the_hooks_run_what_ci_runs (both 'check sentinel tests' and '-q' appear in hooks and CI text); scripts/hooks/pre-commit, pre-push; commit 53de8f5",
+     "note": "Departure: suite runs on pre-PUSH not pre-commit (issue anticipated this). Test is a text-presence check, not an execution of the hook"
+    },
+    {
+     "text": "Installable in one documented command",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_the_installer_installs_both_hooks; scripts/install-hooks.sh; CONTRIBUTING.md:387; commit 53de8f5",
+     "note": ""
+    },
+    {
+     "text": "Bypass possible and obvious, not silent",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_bypassing_is_documented_rather_than_secret ('--no-verify' in installer and pre-push); commit 53de8f5",
+     "note": "Text-presence assertion"
+    },
+    {
+     "text": "Hook tests what is committed, or says clearly it doesn't",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_the_pre_commit_hook_says_what_it_actually_checks ('unstaged','WORKING TREE' in hook); scripts/hooks/pre-commit:19-22; commit 53de8f5",
+     "note": ""
+    },
+    {
+     "text": "CONTRIBUTING.md says how to install it next to the check-CI rule",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "CONTRIBUTING.md:387,408-411",
+     "note": "No test pins the CONTRIBUTING placement; checkboxes all unticked though built"
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "A test that actually executes the hooks against a fixture repo rather than grepping their text"
+  },
+  {
+   "n": 64,
+   "title": "Falsy sentinels: 'I don't have this value' silently becoming a specific wrong one",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Sweep or 0 / or '' / .get(k, falsy) across sentinel/ with a verdict per site",
+     "ticked": true,
+     "tier": "T3",
+     "evidence": "Issue body table only; no artefact in-tree records the 65-site verdict list",
+     "note": "The sweep is a snapshot recorded in the issue; nothing executable pins it."
+    },
+    {
+     "text": "Fix every site feeding a comparison/dict key/dedup key",
+     "ticked": true,
+     "tier": "T1",
+     "evidence": "tests/test_falsy_sentinels.py::test_a_transfer_with_no_id_is_not_treated_as_already_seen, ::test_two_off_market_fills_on_different_symbols_both_alert (2 sent), ::test_a_detection_with_no_identifying_evidence_still_dedups_by_rule; commit 4f86f85 cited in body but only 922599d/768cb62 grep '#64'",
+     "note": "ClickSend empty-messages guard (sentinel/alerts/clicksend.py:58-62) is built but has NO test — tests/test_clicksend_sms.py has no empty-`messages` case. That fix is T2."
+    },
+    {
+     "text": "Record why the harmless ones are harmless",
+     "ticked": true,
+     "tier": "T3",
+     "evidence": "Issue body table only",
+     "note": "Not in code or docs beyond CONTRIBUTING's general pattern."
+    },
+    {
+     "text": "Re-sweep code added since",
+     "ticked": true,
+     "tier": "T3",
+     "evidence": "Issue body statement 'no new instances'",
+     "note": "Claim only; no lint/grep test guards against a sixth instance (body admits this)."
+    },
+    {
+     "text": "Write the pattern down where review will see it",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "CONTRIBUTING.md:497-524 '## Falsy sentinels'; commit 922599d",
+     "note": "Documentation exists; not test-shaped by nature."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "A test for ClickSend SUCCESS-with-empty-messages; a lint/guard test for new falsy-sentinel sites so the sweep is not a one-off claim."
+  },
+  {
+   "n": 65,
+   "title": "withdrawal.py needs a manual test pass",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Each downstream-read evidence key asserted by name",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_withdrawal_evidence.py::test_every_evidence_field_carries_the_records_own_value (order_id, coin, amount, status, address, timestamp), ::test_order_id_is_never_none_or_empty, ::test_the_exchange_reference_is_used_verbatim_when_there_is_one; commit d9e2c16",
+     "note": ""
+    },
+    {
+     "text": "Two withdrawals differing only in identity field -> two alerts",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_withdrawal_evidence.py::test_two_withdrawals_with_different_exchange_ids_are_two_alerts, ::test_two_id_less_withdrawals_differing_only_in_amount_are_two_alerts, ::test_two_id_less_withdrawals_to_different_addresses_are_two_alerts (_dedup_key differs); commit d9e2c16",
+     "note": ""
+    },
+    {
+     "text": "Message contains amount, coin and destination address",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "sentinel/detectors/withdrawal.py:28-31 message = 'Withdrawal of {amount} {currency} initiated, status={status}' — no address; tests/test_withdrawal_evidence.py::test_the_message_names_the_amount_the_coin_and_the_status asserts amount/coin/status only",
+     "note": "Contradicted: the destination address is in evidence but NOT in the message, and the test was written to a weaker claim than the criterion."
+    },
+    {
+     "text": "Unrestricted mutmut over withdrawal.py <= 44.5% survival, verified",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "scripts/mutation-module.sh exists; the 59->0 survivors figure is only the closing comment",
+     "note": "No committed artefact or test records the score; claim only."
+    },
+    {
+     "text": "mutation-check.sh blind-spot note points here",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "scripts/mutation-check.sh:18-23 header names detectors/withdrawal.py and 'tracked as issue #65'",
+     "note": "Documentation line; nothing tests it."
+    }
+   ],
+   "verdict": "contradicted",
+   "shortfall": "Message criterion is not met (no address in the message text) — either add the address to the message and pin it, or amend the criterion; record the unrestricted mutation score somewhere verifiable."
+  },
+  {
+   "n": 66,
+   "title": "The suite tested that detectors fire, not the conditions under which they don't",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Every non-equivalent decision point in detectors/alerts pinned; score 60% -> 92%",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "tests/test_outflow_attribution.py::test_a_sell_of_a_different_coin_does_not_explain_this_coins_drop (outflow==0); tests/test_skip_does_not_stop.py::test_off_market_keeps_checking_after_a_fill_with_no_reference_price (order_ids==['b']); tests/test_thresholds_and_evidence.py::test_a_zero_baseline_seeds_rather_than_alerting; commits 54e91c5, e5d5c24 cite #61 (wrong), 9a98ceb only notes",
+     "note": "Individual pins are real tests, but '92%' is a commit-message figure with no checked-in artifact, and 494e789 (after close) found the gate mis-selecting four test files and lowered the floor 90 -> 88."
+    },
+    {
+     "text": "Tests grouped by consequence, not module",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "tests/test_outflow_attribution.py section headers ('over-crediting: a theft that looks explained' / 'false alarms'); tests/test_skip_does_not_stop.py; tests/test_thresholds_and_evidence.py; commit 54e91c5",
+     "note": "Structural, verifiable by reading; nothing tests it."
+    },
+    {
+     "text": "Survivors without a distinguishing input documented as equivalent, not killed",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "scripts/mutation-check.sh:62-89; scripts/mutation-known-survivors.txt rows b2a4372b, 97452414; scripts/mutation_survivors.py --check (added later, #70); commit e5d5c24",
+     "note": "Two equivalents documented/ledgered; the 'six or-chain' survivors were later pinned, so the 'three survivors' framing is stale."
+    },
+    {
+     "text": "Floor in scripts/mutation-floor.txt raised to 90",
+     "ticked": true,
+     "tier": "T2",
+     "evidence": "git show e5d5c24:scripts/mutation-floor.txt == 90; worktree value now 97 (lowered to 88 in 494e789, then ratcheted up)",
+     "note": "True at close; no test pins the number."
+    },
+    {
+     "text": "Reachability of continue/break cluster confirmed in poller before writing tests",
+     "ticked": true,
+     "tier": "T3",
+     "evidence": "docs/AUTONOMOUS-LOG.md:2462 ('I confirmed reachability'); docstrings in tests/test_skip_does_not_stop.py:12,38 ('off_market is the one that is provably reachable rather than theoretical')",
+     "note": "Only the off_market case is argued reachable; the other seven are unit-level and the log concedes 'theoretical'. Prose only."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "A checked-in mutation-score artifact tied to the issue and a poller-level reachability test; the two real commits cite #61 not #66 (acknowledged in the body). Closing comment itself is modest; the ticked '92%' and 'reachability confirmed' are the overclaims."
+  },
+  {
+   "n": 67,
+   "title": "Two withdrawals with no reference and no timestamp become one alert, silently",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Raises operator page, not just log",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_unidentifiable_withdrawal.py::test_the_poller_pages_the_operator_and_counts_it, ::test_the_page_names_the_account_and_says_what_was_lost; commits 3ef20ab, dd27b3d",
+     "note": ""
+    },
+    {
+     "text": "Occurrence counted in a metric",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_unidentifiable_withdrawal.py::test_the_condition_is_counted_on_every_poll_not_only_while_records_are_new; sentinel/metrics.py:72; commit 3ef20ab",
+     "note": ""
+    },
+    {
+     "text": "Two such withdrawals distinguishable (or operator told)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_withdrawal_evidence.py::test_two_identical_undated_reference_less_withdrawals_in_one_response_are_distinguishable (asserts identities differ), ::test_across_responses_the_residual_collision_remains_and_is_the_paged_case; commit dd27b3d",
+     "note": "Distinguishable within one response only; cross-response collision remains and is paged (documented residual)."
+    },
+    {
+     "text": "Strict xfail in test_withdrawal_evidence.py until fixed",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "No xfail remains in tests/test_withdrawal_evidence.py (grep empty) — replaced by real tests per commit dd27b3d",
+     "note": "Criterion's end state (marker deleted on fix) reached."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "All four boxes unticked in the body despite being built."
+  },
+  {
+   "n": 68,
+   "title": "Running the test suite loads the operator's real .env and sends real traffic",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Stop the credential leak at the source (autouse fixture)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/conftest.py:78 only_allowlisted_environment (autouse, ENV_ALLOWLIST at :45); tests/test_no_live_traffic.py::test_the_suite_runs_with_the_marker_set; commit 688d61e",
+     "note": "Allowlist rather than the proposed denylist"
+    },
+    {
+     "text": "load_dotenv() out of paths tests can reach",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_cli_entrypoint.py::test_main_does_not_load_the_environment, ::test_cli_entry_loads_the_environment_before_dispatching, ::test_the_installed_command_points_at_the_entry_that_loads_it, ::test_nothing_else_in_the_package_loads_dotenv; sentinel/cli.py:1334 cli_entry, pyproject.toml:32; commit 688d61e",
+     "note": ""
+    },
+    {
+     "text": "Refuse to send under a test marker (defence in depth)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_no_live_traffic.py::test_every_channel_refuses_to_deliver_under_test, ::test_a_real_ccxt_client_is_refused_under_test, ::test_only_sentinel_net_may_import_a_network_library; sentinel/net.py:60-62; commit 688d61e",
+     "note": ""
+    },
+    {
+     "text": ".gitignore widened so .env.save cannot be committed",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "closing comment cites eb460b7 ('.env.*' with !.env.example); not verified by a test",
+     "note": "Config-only change"
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 69,
+   "title": "Customer cannot replace a revoked Guardian key without an operator",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Authenticated member can submit a new read-only key that replaces the stored credential",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_key_replacement.py::test_a_member_replaces_their_own_key_end_to_end (stored key == 'brand-new-key'); tests/test_key_replacement.py::test_a_matching_read_only_key_replaces_the_stored_one; commit 1605ccf",
+     "note": "No checkboxes in body; criteria taken from 'What has to be got right'."
+    },
+    {
+     "text": "Validation same as onboarding incl. read-only check; write keys refused not stored",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_key_replacement.py::test_a_key_that_can_trade_or_withdraw_is_refused (reason_code 'not_read_only', stored key unchanged), ::test_a_key_that_cannot_read_the_balance_is_refused; commit 1605ccf",
+     "note": "Pinned; plus same-account binding ::test_a_read_only_key_for_a_different_account_is_refused."
+    },
+    {
+     "text": "Replacement recorded in the customer-readable audit, attributed",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_key_replacement.py::test_the_replacement_is_recorded_against_the_member_who_made_it (event actor == member, type in ADMIN_EVENT_TYPES); commit 1605ccf",
+     "note": "Pinned."
+    },
+    {
+     "text": "Operator is told",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_key_replacement.py::test_an_operator_is_told_about_a_successful_replacement (alerter.rules()==['monitoring_key_replaced']), ::test_an_account_with_no_recorded_identity_is_refused_and_paged; commit 1605ccf",
+     "note": "Pinned."
+    },
+    {
+     "text": "Not a phishing shape: signed-in session only, never a link from email",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_portal_key_replacement.py::test_the_form_needs_a_session, ::test_an_unauthenticated_post_reaches_no_exchange, ::test_the_form_states_the_two_rules_and_the_phishing_one ('never email you a link'); sentinel/alerts/base.py:69; commit 1605ccf",
+     "note": "Pinned; scope guard ::test_a_member_cannot_replace_the_key_on_somebody_elses_account."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 70,
+   "title": "Name the 11 mutation survivors: 3 real gaps, 6 log-only, 2 equivalent",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "build_sms_channel None when only one ClickSend credential is set",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_clicksend_sms.py::test_half_a_clicksend_credential_is_not_a_provider (parametrised present/missing, returns None); commit a632691",
+     "note": ""
+    },
+    {
+     "text": "Half-configured ClickSend does not shadow working Twilio",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_clicksend_sms.py::test_a_half_configured_clicksend_does_not_shadow_a_working_twilio (isinstance TwilioSmsChannel); commit a632691",
+     "note": ""
+    },
+    {
+     "text": "build_sms_channel None when any Twilio credential missing",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_clicksend_sms.py::test_twilio_needs_all_three_credentials (parametrised over the three, returns None); commit a632691",
+     "note": ""
+    },
+    {
+     "text": "_in_window log identifier explicitly decided (test or header note)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_detectors_quantity_drop.py::test_an_undated_record_is_named_by_its_id, ::test_an_undated_record_with_no_id_is_named_by_its_symbol, ::test_an_undated_record_with_neither_says_so_explicitly ('<unidentified>' in log), ::test_the_same_holds_for_an_unparseable_timestamp; commit a632691",
+     "note": ""
+    },
+    {
+     "text": "Two equivalent mutants remain documented, not chased",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "scripts/mutation-check.sh:67-72 documents off_market '<=' and quantity_drop 'drop <= 0' as equivalent; :94 'As of #70 those two equivalents are the only survivors'",
+     "note": "Documentation-only by nature."
+    },
+    {
+     "text": "Gate re-run, ratchet moves floor to score-2",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "commit a632691 changes scripts/mutation-floor.txt to 96 (117/119=98 - 2); current floor 97",
+     "note": "The score itself (117/119) is only asserted in the comment; the floor file is the committed artefact."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Boxes never ticked; the 98% score is a claim, though the floor commit is consistent with it."
+  },
+  {
+   "n": 71,
+   "title": "The issue-status audit called every commit's CI a failure, so --apply could never act",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Skipped conditional job alongside a passing one reads as success",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_issue_status_audit.py::test_a_skipped_conditional_job_is_not_a_red_ci (ci_for('skipped,success')=='success'); ::test_a_neutral_check_is_not_a_red_ci_either; scripts/audit_issue_status.py:245-248; commit 0dcc39f",
+     "note": ""
+    },
+    {
+     "text": "Failure / cancelled / timed_out / action_required / startup_failure read as failure",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_issue_status_audit.py::test_a_real_failure_is_still_a_red_ci; ::test_the_other_ways_a_check_goes_red_all_count (parametrized over the four); scripts/audit_issue_status.py RED_CONCLUSIONS, :245; commit 0dcc39f",
+     "note": ""
+    },
+    {
+     "text": "All-skipped reads as unknown, not success",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_issue_status_audit.py::test_nothing_actually_ran_is_unknown_not_success (ci_for('skipped,skipped') is None); ::test_no_check_runs_at_all_is_unknown; scripts/audit_issue_status.py:243-249; commit 0dcc39f",
+     "note": "Caveat: ::test_unknown_ci_is_noted_but_does_not_block asserts unknown CI is still actionable — it is not 'handed to a person' as the body says."
+    },
+    {
+     "text": "Audit reports success for the recent commits, verified against gh run list",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "commit 0dcc39f message ('I checked four and they are identical'); docs/AUTONOMOUS-LOG.md",
+     "note": "Live-verification claim; no artifact in tree."
+    },
+    {
+     "text": "Design-guard probes pin all three arms",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "scripts/probes/design-guards.json:981-1008 (three probes referencing tests/test_issue_status_audit.py); commit 0dcc39f",
+     "note": "Probes exist; their kill is proven only by the scheduled probe runner, not by a test in tests/; probes do not name #71."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "All five checkboxes unticked despite 'status: built'; the gh cross-check needs a recorded artifact; no closing comment."
+  },
+  {
+   "n": 72,
+   "title": "The 2FA unconfirmed-enrolment pin can pass for the wrong reason",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Unconfirmed test kills probe with clock pinned",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/conftest.py:103-126 pinned_totp_clock monkeypatches twofactor._clock; sentinel/twofactor.py:184 verify_code(at=_clock()); tests/test_twofactor.py::test_an_unconfirmed_enrolment_does_not_satisfy_the_second_factor; commit 40e2f94",
+     "note": "Actual probe kill is a health-check run result (claim), but the mechanism is pinned."
+    },
+    {
+     "text": "Test proves the guard is what rejects",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_twofactor.py::test_the_same_code_is_accepted_once_that_enrolment_is_confirmed (same secret, same instant: False unconfirmed, True after confirm); commit 40e2f94",
+     "note": ""
+    },
+    {
+     "text": "Remaining TOTP tests use one clock",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_twofactor.py:37-45 _now() returns PINNED_TOTP_NOW, _code() built from it; conftest autouse fixture; commit 40e2f94",
+     "note": ""
+    },
+    {
+     "text": "Probe still lands and is killed",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "scripts/probes/design-guards.json:584 '#32 ATTACK sign in with an unconfirmed enrolment' present",
+     "note": "Kill result only in health-check logs; not re-run here."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Boxes unticked; probe-kill evidence is a gate run, not a test."
+  },
+  {
+   "n": 73,
+   "title": "A retention failure is invisible: the hourly prune swallows its exception...",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Failing prune_all pages an operator, deduped",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_retention_failure_visibility.py::test_a_failing_prune_pages_the_operator (('retention_prune_failed','HIGH') in pages), ::test_a_persistent_failure_does_not_page_every_interval (count==1); sentinel/engine.py:299; commit a66259f",
+     "note": ""
+    },
+    {
+     "text": "_last_prune advances only after a successful run",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "sentinel/engine.py:288-290 sets self._last_prune = now BEFORE prune runs; ::test_a_failing_prune_retries_on_its_interval_not_every_tick asserts the opposite policy (retry on interval, not per tick)",
+     "note": "CONTRADICTED as written: implementation deliberately keeps the timer advancing on failure; substitute observability is the retention_ok gauge (::test_the_retention_gauge_drops_on_failure_and_recovers)"
+    },
+    {
+     "text": "Table-rows metric published even when pruning fails",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_a_failing_prune_still_publishes_table_counts (sentinel_table_rows{events}==0.0); engine.py:319; commit a66259f",
+     "note": ""
+    },
+    {
+     "text": "_untimestamped_alarm.evaluate not skipped by a prune failure",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_a_failing_prune_does_not_skip_the_untimestamped_alarm (calls non-empty); engine.py:259; commit a66259f",
+     "note": ""
+    },
+    {
+     "text": "Test proves the page fires (negatively verified)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_a_failing_prune_pages_the_operator; commit a66259f",
+     "note": "Negative verification is a claim in the commit/log only"
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Criterion 2 was replaced by a different design (interval retry + retention_ok gauge) without the issue text being amended; the checkbox list is entirely unticked"
+  },
+  {
+   "n": 74,
+   "title": "paula-garavillas is a test account: disable it",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Disable the test account in production so the poll-failure warning stream stops",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "Closing comment ('measured over tailnet SSH': status disabled, event 31661); commits 5a79093/fffea68/c2118a7/2f37871 are docs/DEPLOYMENTS.md entries only",
+     "note": "An operational action on the server; nothing in the repo can evidence it beyond the log. The mechanism used (#80) is separately T1."
+    }
+   ],
+   "verdict": "claim-only",
+   "shortfall": "Not reachable by tests by nature; the only admissible trace would be the production event row, which is outside the repo."
+  },
+  {
+   "n": 76,
+   "title": "Ops dashboard is bound to 0.0.0.0 with no login",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Confirm loopback publish / declare the boundary; bind warning stops firing on correctly-secured deployments",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_bind_address.py::test_loopback_bind_needs_no_disclosure, ::test_wide_bind_with_a_declared_gate_is_info_naming_gate_and_check ('ss -tlnp', 'cannot verify'), ::test_wide_bind_with_no_declared_gate_is_still_the_warning, ::test_composes_wide_bind_declares_its_gate_and_the_publish_is_real (SENTINEL_BIND_GATE set AND ports start with '127.0.0.1:8390:'); sentinel/cli.py:558 bind_disclosure; docker-compose.yml:41; commit 7155be8",
+     "note": "Issue was re-scoped by owner: the defect became the misleading warning, not exposure."
+    },
+    {
+     "text": "Operator sign-in (with 2FA) in front of the dashboard regardless of network",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_operator_two_factor.py::test_a_correct_password_mints_no_session_only_a_code_prompt, ::test_an_unenrolled_operator_must_enrol_before_any_session; tests/test_bind_address.py::test_default_dashboard_refuses_connections_from_off_box; commits e1547b1 (#54), later dashboard 2FA",
+     "note": "Closing comment said dashboard 2FA was filed separately; it has since landed (test_operator_two_factor.py) but that commit does not cite #76."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "The 'host publish is loopback-only, tailscaled does not serve it' finding is owner-measured on the server, not reproducible from the repo."
+  },
+  {
+   "n": 77,
+   "title": "scripts/ is not in the Docker image, so retention-boundary.py cannot run the way v1.4.1's release note says",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "retention-boundary.py runnable in the image (COPY) OR record corrected in release notes",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_docker_ops_scripts.py::test_the_boundary_report_ships_in_the_image (assert 'scripts/retention-boundary.py' in COPY lines parsed from Dockerfile); ::test_every_copied_script_is_readmitted_past_dockerignore; ::test_every_copied_script_exists; Dockerfile:13; CHANGELOG.md:920-930 corrects the v1.4.1 note; commit b9c07fe ('Fixes #77')",
+     "note": "Both halves done; tests parse Dockerfile text, no built-image check (CI does not docker build), stated in docstring."
+    },
+    {
+     "text": "The retention boundary reading was taken",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "docs/DEPLOYMENTS.md:148-155; closing comment; commit 28fa381 (log only)",
+     "note": "An operational record by nature; taken with the script mounted before the fix."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Closing comment predates the fix and claims only the workaround; b9c07fe then delivered both fixes."
+  },
+  {
+   "n": 78,
+   "title": "retention-boundary reports PAST 0d minutes after a successful prune",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Verify then fix whichever half is wrong (report tolerance / hours; test at boundary)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_retention_boundary_report.py::test_overshoot_within_one_prune_interval_is_not_a_boundary_crossing, ::test_overshoot_beyond_one_prune_interval_is_flagged, ::test_subday_overshoot_prints_hours_not_zero_days; scripts/retention-boundary.py:148,187; commit ba8af4e",
+     "note": "The 'production re-run confirms oldest date advanced' closing condition is only asserted in comments/DEPLOYMENTS.md (T3); report fix itself is T1."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "The production discriminator reading that the issue said 'still closes this issue' is claim-only; nothing in the repo records it beyond docs."
+  },
+  {
+   "n": 79,
+   "title": "FD exhaustion: every dashboard request leaks a descriptor...",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Close per-thread DB connections in every request path (dashboard and portal)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_fd_leak.py::test_dashboard_requests_do_not_leak_file_descriptors, ::test_portal_requests_do_not_leak_file_descriptors (200 real socket requests; fd count <= baseline+SLACK), ::test_dead_request_threads_leave_no_connection_behind, ::test_a_released_thread_reconnects_on_next_use; commit f8e8541",
+     "note": ""
+    },
+    {
+     "text": "Raise nofile in compose as mitigation",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "docker-compose.yml:62-64 nofile soft/hard 8192",
+     "note": "Config-only"
+    },
+    {
+     "text": "Socket-level test through the real handler and the healthcheck target",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_fd_leak.py::test_dashboard_requests_do_not_leak_file_descriptors (_get(port)==200 on the real root); commit f8e8541",
+     "note": ""
+    },
+    {
+     "text": "Something acts on 'unhealthy' (self-recovery)",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "closing comment: 'Left open on this issue... nothing acts on unhealthy'; no code, no test",
+     "note": "Not built; explicitly left as an owner/VM decision. Post-deploy fd readings are a comment claim (5h flat), not evidence in repo tests"
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "The 'act on unhealthy' remainder was left open in the closing comment yet the issue was closed as built; needs its own issue or a restart/autoheal mechanism"
+  },
+  {
+   "n": 80,
+   "title": "No mechanism exists to disable an account",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "sentinel disable-account / enable-account writes status and an attributed event",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_disable_account.py::test_cli_disable_and_reenable, ::test_disable_writes_an_attributed_event (('account_disabled','erwin')), ::test_cli_requires_a_name_once_operators_exist (rc 2 unattributed); commit d2c6d64",
+     "note": "Pinned."
+    },
+    {
+     "text": "Disabled account leaves the fast/slow loops (execution guard) and returns on re-enable",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_disable_account.py::test_disable_stops_the_loops_visiting_the_account (engine queue size 0), ::test_reenable_restores_polling; commit d2c6d64",
+     "note": "Checks the scheduler queue, as the issue asked."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 81,
+   "title": "Nothing acts on an unhealthy container",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Unhealthy container restarted by a host systemd timer (not docker.sock sidecar)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_restart_on_unhealthy.py::test_an_unhealthy_container_is_restarted_once_with_the_health_state_logged (drives scripts/host/restart-on-unhealthy.sh against a stubbed docker; _restarts == 1), ::test_a_healthy_container_is_left_alone; scripts/host/minas-restart-on-unhealthy.{service,timer}; commit ca05aa7",
+     "note": ""
+    },
+    {
+     "text": "Every restart recorded and visible (journald + host log with health state)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_restart_on_unhealthy.py::test_an_unhealthy_container_is_restarted_once_with_the_health_state_logged ('FailingStreak' in log), ::test_every_line_reaches_journald_as_well; commit ca05aa7",
+     "note": ""
+    },
+    {
+     "text": "Reaching the restart cap is LOUD",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_restart_on_unhealthy.py::test_a_second_unhealthy_inside_the_window_goes_loud_once_and_stops_restarting ('RESTART CAP REACHED', 'A human is needed', motd marker), ::test_recovery_resets_the_ladder_but_keeps_the_motd_evidence, ::test_a_failed_restart_is_loud_but_does_not_burn_the_cap; commit ca05aa7",
+     "note": "Systemd unit installation on the real host is a pending-ops action, untested by nature."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "The #79 carry-over (do the 217 poll failures correlate with descriptor exhaustion) is explicitly still owed and not part of the closure."
+  },
+  {
+   "n": 82,
+   "title": "Member portal UI should look distinct from the ops dashboard, and both need a design pass",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Portal and dashboard never share a stylesheet (guard test)",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_surface_styles.py::test_the_two_surfaces_own_separate_stylesheets (assert _PORTAL_STYLE != _STYLE and neither contains the other); ::test_the_portal_imports_no_style_pill_or_mark_from_the_dashboard; ::test_the_dashboard_does_not_import_the_portals_stylesheet; sentinel/portal.py:24; commits f95fcb6, 21811ec",
+     "note": "Guarded both directions."
+    },
+    {
+     "text": "Portal branded with Minas identity",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_surface_styles.py::test_the_brand_lives_in_brand_py_and_the_portal_draws_from_it (MARK_SVG, GOLD in _PORTAL_STYLE); ::test_the_surfaces_keep_their_distinguishing_marks ('Member portal' tag/title); sentinel/brand.py; commits f95fcb6, 21811ec",
+     "note": ""
+    },
+    {
+     "text": "Ops dashboard plain, dense, unbranded, no logo",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_surface_styles.py::test_the_dashboard_wears_no_brand (no GOLD/VIOLET/gradient/box-shadow, no MARK_SVG, 'Minas staff only'); ::test_the_dashboard_says_what_it_is_on_every_page ('Ops dashboard — internal' title); sentinel/dashboard.py:34-53, 200-203; commit 7127625",
+     "note": "Landed 2026-08-27 after the 'stays open' comment, per decision 19 ordering."
+    },
+    {
+     "text": "No-JS posture preserved (only _LOCAL_TIME_SCRIPT exception)",
+     "ticked": null,
+     "tier": "T2",
+     "evidence": "sentinel/portal.py has no '<script' literal; _LOCAL_TIME_SCRIPT appended at portal.py:982; second inline JS exists: portal.py:2604 onclick=\"window.print()\" (documented docs/portal-design.md:19); no test pins script count or forbids inline handlers",
+     "note": "Posture holds in code but is unguarded, and the window.print() exception is not recorded on the issue's decision."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "A guard test on the portal's JS surface (script count / no inline handlers) and recording the window.print() exception on the decision."
+  },
+  {
+   "n": 83,
+   "title": "/status gives a disabled account the auth-failure reason",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Disabled + nonzero auth counter → disabled reason",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_member_status.py::test_a_disabled_account_with_a_frozen_auth_counter_gets_the_disabled_reason (asserts 'switched off' in reason, 'replace' not in); sentinel/portal.py:1693 status check before :1703 auth_failing; commit 1abeed9",
+     "note": ""
+    },
+    {
+     "text": "tamper_suspected + auth counter → tamper reason",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_member_status.py::test_a_tamper_flagged_account_gets_the_tamper_reason_not_key_advice; commit 1abeed9",
+     "note": ""
+    },
+    {
+     "text": "Active + auth failures keeps replace-key reason",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_member_status.py::test_a_rejected_key_is_reported_as_the_customer_s_to_fix, ::test_the_page_offers_the_key_replacement_only_where_it_is_the_answer; commit 1abeed9",
+     "note": "Pre-existing non-trigger test."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 84,
+   "title": "Every accounts.status value shipped as a declaration first: guard that each CHECK value has a writer...",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Every CHECK value has a writer or is on INTENTIONALLY_UNREACHABLE with a reason",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_account_status_writers.py::test_every_constraint_value_has_a_writer_or_a_recorded_reason, ::test_no_value_is_claimed_both_ways; commit 5a84c74",
+     "note": ""
+    },
+    {
+     "text": "Constraint parsed from schema.sql, not retyped",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_the_code_mirror_matches_the_constraint (ACCOUNT_STATUSES vs parsed CHECK); commit 5a84c74",
+     "note": ""
+    },
+    {
+     "text": "Both containment directions (stale allowlist entries fail)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_every_claim_names_a_real_constraint_value; commit 5a84c74",
+     "note": ""
+    },
+    {
+     "text": "Writer demonstrated by execution and by a real caller passing the literal",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_every_written_value_round_trips_through_the_writer, ::test_every_written_value_is_passed_by_its_named_caller; commit 5a84c74",
+     "note": "tamper_suspected sits on the allowlist by design"
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 85,
+   "title": "The backup runbook and the dirty-tree refusal disagree",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Docs name /var/backups/minas-guardian as the backup destination, outside the checkout",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "docs/deployment.md:363,442-457; commit 9fad8a2",
+     "note": "Docs change; no test reads the doc (none reasonable)."
+    },
+    {
+     "text": "deploy.sh refusal for untracked files names where they belong",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_docker_ops_scripts.py::test_an_untracked_backup_is_refused_with_where_it_belongs (rc!=0, filename, '/var/backups/minas-guardian', 'not a storage location' in stderr); scripts/deploy.sh:113; commit 9fad8a2",
+     "note": "Pinned."
+    },
+    {
+     "text": "Untracked files stay a hard refusal",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "same test asserts returncode != 0; ::test_a_dirty_tree_is_refused_naming_the_files; commit 9fad8a2",
+     "note": "Pinned."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Moving the existing backup on the VM is an operator action (claim in body, not verified here)."
+  },
+  {
+   "n": 86,
+   "title": "Move the design-guard probes and the mutation floor into scheduled CI",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Scheduled CI workflow runs probes + mutation floor",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_scheduled_gates.py::test_the_workflow_wires_both_gates_and_the_classifier ('scheduled-gates:', 'mutation-probe.py ... design-guards.json', 'mutation-check.sh --check' in .github/workflows/ci.yml); ci.yml:13 cron, :115 scheduled-gates job; commit 0c372aa",
+     "note": "Test asserts YAML strings; actual execution evidence is the run link in the comment (not admissible)."
+    },
+    {
+     "text": "Failure titles distinguish real regression from gate-could-not-run",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_scheduled_gates.py::test_a_surviving_probe_is_a_regression_not_a_broken_gate, ::test_no_mutants_ran_is_a_broken_gate_not_a_dropped_score, ::test_a_mixed_probe_run_files_both_kinds_under_their_own_titles (run scripts/scheduled-gates-report.sh in DRY_RUN); commit 0c372aa",
+     "note": ""
+    },
+    {
+     "text": "Silence is not success: alert on the job's own absence",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_scheduled_gates.py::test_the_local_health_check_watches_the_schedules_own_pulse ('scheduled-gates-freshness.sh' in health-check.sh); scripts/health-check.sh:149 gate 'scheduled gates ran (8d)'; commit 0c372aa",
+     "note": "Freshness is a local release-gate, not an external dead-man's switch; the test pins wiring, not the freshness script's logic."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 87,
+   "title": "Dashboard sign-in has no second factor — the portal got #32's 2FA, the ops dashboard did not",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Dashboard login requires TOTP second factor, mandatory",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_operator_two_factor.py::test_a_correct_password_mints_no_session_only_a_code_prompt (no ops_session cookie; 'Second factor' form); ::test_a_code_completes_the_sign_in; ::test_an_unenrolled_operator_must_enrol_before_any_session; ::test_without_a_master_key_the_sign_in_is_refused_not_downgraded (503); sentinel/dashboard.py:1510-1607; commit cd0f2e7",
+     "note": "Mandatory pinned from both sides."
+    },
+    {
+     "text": "Enrolment via sentinel operator add / first-login step",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_operator_two_factor.py::test_confirming_enrolment_shows_recovery_codes_and_signs_in (POST /login/enrol -> cookie, is_enabled, two_factor_enrolled event); ::test_operator_add_without_a_tty_defers_enrolment_to_first_sign_in; sentinel/cli.py:819, 841-876; commit cd0f2e7",
+     "note": "Interactive tty branch of operator add (cli.py:857-870) untested; first-login path pinned."
+    },
+    {
+     "text": "Recovery codes at enrolment",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_operator_two_factor.py::test_confirming_enrolment_shows_recovery_codes_and_signs_in ('recovery codes' in page); ::test_a_recovery_code_signs_in_once (reuse -> 401); sentinel/twofactor.py OPERATOR kind; commit cd0f2e7",
+     "note": ""
+    },
+    {
+     "text": "Host-only last-operator reset, attributed and event-logged",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_operator_two_factor.py::test_the_host_reset_removes_the_second_factor_and_records_who (two_factor_reset event with actor, 'break-glass'); ::test_the_cli_reset_requires_as; ::test_no_dashboard_route_can_disable_operator_two_factor; sentinel/cli.py:785-799, 1259; sentinel/operators.py reset_second_factor; sentinel/retention.py:94-98 operator_events NEVER_PRUNE; commit cd0f2e7",
+     "note": "'Host-only' enforced by absence of any dashboard route (guarded), not a network check."
+    },
+    {
+     "text": "Same LoginThrottle applies to the 2FA step",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_operator_two_factor.py::test_a_wrong_code_is_refused_and_counted (401 then 429 after 12 more); sentinel/dashboard.py:1111 single _login_throttle used at :1510-1525 and :1591-1607; commit cd0f2e7",
+     "note": "Shared instance visible in code, not asserted directly."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Comments say 'Build item 1' rather than claiming completion; cd0f2e7 delivers it."
+  },
+  {
+   "n": 89,
+   "title": "A new secondary contact should be told they are one",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "One-time note from every writer, once per new address, stating windows, no balances/links, failure doesn't fail edit",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_secondary_contact_welcome.py::test_adding_a_secondary_via_set_contact_sends_the_note_to_them, ::test_onboarding_with_a_secondary_sends_the_note, ::test_rerunning_the_same_secondary_sends_no_second_note, ::test_the_note_says_why_states_the_windows_and_carries_no_link (asserts 'hear nothing', '60 minutes', '15 minutes', no 'http'), ::test_a_send_failure_does_not_fail_the_edit (rc==0); sentinel/events.py:185; commit 20d11f3",
+     "note": "Phone-only secondaries get no note (stated residue)."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 90,
+   "title": "Contact emails are stored as-typed while portal identity is the email...",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Normalise at the write boundary (onboard_account, set-contact, dashboard writes)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_contact_email_normalization.py::test_every_writer_of_the_contact_columns_canonicalizes (source scan), ::test_onboarding_stores_canonical_email_and_null_for_blank, ::test_set_contact_stores_canonical_for_both_destinations, ::test_setting_an_empty_string_stores_null; commit bb841b9",
+     "note": ""
+    },
+    {
+     "text": "One-time lowercasing migration",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_reopening_the_database_canonicalizes_existing_rows, ::test_the_migration_is_idempotent, ::test_the_migration_statements_exist_for_every_contact_column; commit bb841b9",
+     "note": ""
+    },
+    {
+     "text": "ContactRouter.send duplicate-drop case-insensitive",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_router_drops_duplicate_emails_case_insensitively; commit bb841b9",
+     "note": ""
+    },
+    {
+     "text": "Keep read-side lower() compares as belt-and-braces",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "sentinel/portal.py:292 lower() on both columns; tests/test_secondary_contact_portal.py::test_the_match_is_case_insensitive_on_both_contacts; commit bb841b9",
+     "note": ""
+    },
+    {
+     "text": "Re-typing same address in a different case is not a change",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_retyping_the_same_address_in_a_different_case_is_not_a_change; commit bb841b9",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 91,
+   "title": "Secondary contacts are add-only",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "set-contact gains --alert-email-secondary / --alert-phone-secondary / --clear-secondary",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_set_contact.py::test_secondary_contact_can_be_set_and_is_recorded, ::test_clearing_the_secondary_records_who_was_removed, ::test_a_secondary_change_cannot_disturb_the_primary; commit dc88782",
+     "note": "Pinned."
+    },
+    {
+     "text": "Attributed via --as gate once operators exist",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_set_contact.py::test_once_operators_exist_the_change_requires_a_name (rc 2, row untouched, then actor 'erwin' on event); commit dc88782",
+     "note": "Pinned."
+    },
+    {
+     "text": "Event-recorded per actual diff, no-op safe, visible on /activity",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_set_contact.py::test_rerunning_the_same_secondary_records_nothing, ::test_secondary_events_reach_the_portal_activity_page ('Emergency contact changed'); commit dc88782",
+     "note": "Pinned."
+    },
+    {
+     "text": "Normalize addresses on write while in there",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "Closing comment: 'deliberately not in this commit', deferred to #90",
+     "note": "Not built here — explicitly deferred; the body asked for it."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Normalization-on-write deferred to #90; confirm #90 delivers it."
+  },
+  {
+   "n": 92,
+   "title": "The portal's CSRF gate rejected every browser POST",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Observed Chrome shape (Origin: null + Sec-Fetch-Site: same-origin) accepted; Sec-Fetch-Site primary",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_csrf_origin.py::test_the_exact_observed_chrome_request_is_no_longer_rejected (status != 403), ::test_a_cross_site_post_with_a_matching_origin_is_still_rejected; commit 2e9b6b8",
+     "note": ""
+    },
+    {
+     "text": "Bare Origin: null never accepted; cross-site null refused",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_csrf_origin.py::test_bare_null_origin_with_no_fetch_metadata_is_rejected, ::test_null_origin_from_a_cross_site_page_is_still_rejected (403); commit 2e9b6b8",
+     "note": ""
+    },
+    {
+     "text": "Root cause removed: Referrer-Policy same-origin on both surfaces",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_csrf_origin.py::test_the_portal_no_longer_asks_browsers_to_nullify_origin, ::test_the_dashboard_now_sets_the_same_policy_explicitly (header == 'same-origin'); commit 2e9b6b8",
+     "note": ""
+    },
+    {
+     "text": "Dashboard gates every POST incl. /login",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_csrf_origin.py::test_the_dashboard_refuses_cross_site_too (403); commit 2e9b6b8",
+     "note": "Only one dashboard route is asserted; the '/login included' claim is not pinned by a test named for /login — check the test body's path before relying on it."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 93,
+   "title": "release.sh re-runs the slow gates locally, duplicating scheduled CI — assert the scheduled run covers the release commit instead",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "(a) release.sh asserts last green scheduled run's headSha is an ancestor of the release commit",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_scheduled_gates_cover.py::test_a_green_run_on_this_exact_commit_covers (rc 0); ::test_a_run_on_an_unrelated_line_falls_back (rc 1); ::test_an_unknown_commit_falls_back; scripts/scheduled-gates-cover.sh:41-43, 57-59 (merge-base --is-ancestor); scripts/release.sh:150-165; commit 0d68bc3",
+     "note": ""
+    },
+    {
+     "text": "(b) AND no gate-relevant paths changed since",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_scheduled_gates_cover.py::test_a_gate_relevant_change_since_the_run_falls_back (rc 1, 'locally'); ::test_a_green_run_on_an_ancestor_with_only_doc_changes_since_covers (rc 0); scripts/scheduled-gates-cover.sh:31 GATE_PATHS, :62-63; commit 0d68bc3",
+     "note": "Path set is a superset of the proposal."
+    },
+    {
+     "text": "(c) Otherwise fall back to local gates (gh missing / unauthenticated / no runs)",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_release_process.py::test_unproven_coverage_runs_the_full_gates; ::test_proven_coverage_runs_only_the_fast_gates ('--fast'); ::test_a_missing_cover_script_runs_the_full_gates; tests/test_scheduled_gates_cover.py::test_gh_missing_falls_back (bare PATH); ::test_gh_unauthenticated_falls_back; ::test_no_scheduled_runs_at_all_falls_back; ::test_garbage_from_gh_falls_back; commit 0d68bc3",
+     "note": "Fail-closed pinned on every enumerated path."
+    },
+    {
+     "text": "Covered-but-red refuses the release with its own exit code",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_scheduled_gates_cover.py::test_a_red_covering_run_refuses_with_its_own_exit (rc 3); ::test_a_newer_red_outvotes_an_older_green_on_the_same_code; tests/test_release_process.py::test_red_scheduled_gates_refuse_the_release_before_any_health_check; scripts/scheduled-gates-cover.sh:64-69; commit 0d68bc3",
+     "note": "Exit 3 reachable only after (a) and (b) pass — fires on effectively unchanged trees only, as 56e17a6's correction states."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Original close-out overstated covered-red as frequency-independent; the follow-up comment and 56e17a6 correct it from code."
+  },
+  {
+   "n": 94,
+   "title": "Git tags exist but GitHub Releases stop at v1.0.0",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Backfill Release objects for listed tags, v1.5.0 never-deployed note, no re-tag",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "gh release list (read-only, today): v1.1.0–v1.6.2 all have Releases, Latest=v1.10.0; v1.5.0 body opens 'tagged and CI-green, never deployed'; commit 18df80f",
+     "note": "Verified against GitHub state, not a test (not testable in tests/)."
+    },
+    {
+     "text": "release.sh creates the Release, fail closed on missing/unauth gh",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_release_process.py::test_release_refuses_without_gh_before_anything_is_written, ::test_release_refuses_unauthenticated_gh_before_pushing_a_tag, ::test_a_cut_pushes_the_tag_and_publishes_its_release, ::test_an_existing_release_is_skipped_not_an_error; scripts/release.sh:97-100,274; commits 18df80f, eeb3390",
+     "note": ""
+    },
+    {
+     "text": "Scheduled gate lists tags without Release, non-zero on unanswered",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_release_objects.py::test_a_tag_with_no_release_fails_and_names_it, ::test_gh_failing_to_answer_is_nonzero_not_zero, ::test_gh_missing_entirely_is_nonzero, ::test_a_repo_with_no_version_tags_is_nonzero; scripts/release-objects.sh; scripts/health-check.sh:154; commit 18df80f",
+     "note": ""
+    },
+    {
+     "text": "No release cut; note under [Unreleased]",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "commits 18df80f/eeb3390 touch CHANGELOG [Unreleased]; no tag created by those commits",
+     "note": "Process constraint, not testable."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 95,
+   "title": "#93's fast path rarely fires under the weekly cron — add dispatch-CI-and-wait...",
+   "label": "status: not-built",
+   "criteria": [],
+   "verdict": "closed-as-not-built",
+   "shortfall": "Closing comment: \"Closed as a pessimization, measured — not built.\" Dispatch-and-wait measured 47m21s vs 14m27s full local health check (~3.3x slower); only commit is the log entry 56e17a6"
+  },
+  {
+   "n": 96,
+   "title": "Run design-guard probes in parallel",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Probes fan out across N workers with per-worker tree isolation; working tree never written",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_mutation_probe_workers.py::test_workers_keep_every_semantic_and_never_write_the_real_tree (sha unchanged, DID NOT LAND still hard failure, per-probe names in output), ::test_the_copy_is_the_tree_without_the_things_that_must_not_be_shared; commit 5befd59",
+     "note": "Pinned."
+    },
+    {
+     "text": "Lock story preserved per-tree / modes exclude each other",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_mutation_probe_workers.py::test_the_lock_is_held_in_worker_mode_too (status 2, 'holds .mutation-probe.lock'); commit 5befd59",
+     "note": "Pinned."
+    },
+    {
+     "text": "Health check and CI use the parallel mode",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_mutation_probe_workers.py::test_the_health_check_and_ci_fan_the_probes_out ('--workers auto' in health-check.sh and ci.yml); commit 5befd59",
+     "note": "Pinned. The 4.6x timing in the closing comment is a claim (T3) and not a criterion."
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 97,
+   "title": "Mutation cache is not persisted anywhere durable",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Local durable cache outside the tree, keyed on inputs",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_mutant_cache.py::test_save_then_restore_round_trips_outside_the_tree, ::test_the_cache_keeps_only_the_newest_three, ::test_mutation_check_wires_restore_before_generation_and_save_after_score; scripts/mutant-cache.sh; commit 1e78c39",
+     "note": ""
+    },
+    {
+     "text": "CI restores the cache with validation",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_scheduled_gates.py::test_the_workflow_wires_both_gates_and_the_classifier ('actions/cache', 'cmp -s mutants/.source-manifest', 'rm -rf mutants' in ci.yml); ci.yml:147; commit 1e78c39",
+     "note": "String assertions on the workflow file."
+    },
+    {
+     "text": "Restored cache validated against current sources; a wrong cache is discarded",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_mutant_cache.py::test_a_restore_that_does_not_match_current_sources_is_refused_and_destroyed (exit 3, extraction and archive removed), ::test_a_manifest_less_mutants_dir_cannot_be_saved, ::test_a_corrupt_archive_is_deleted_and_falls_through; commit 1e78c39",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "The '2m07s live' timing is a claim only; correctness is pinned."
+  },
+  {
+   "n": 98,
+   "title": "Member-requested pause: a 24-hour cancellable countdown, never immediate",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "(1) Real countdown, auto-executes at T+24h from scheduler, survives restarts",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_pause_countdown.py::test_a_request_starts_a_real_24_hour_countdown_and_emails_every_contact (execute_at == NOW+24h); ::test_a_due_pause_executes_disables_and_records; ::test_a_deadline_that_passed_while_the_process_was_down_executes_on_startup (fresh PauseMaintenance, 3 days late -> executed); ::test_the_scheduler_actually_evaluates_the_countdown; sentinel/pause.py:172-222; sentinel/engine.py:77-79, 262-263; commit 4ed96d4",
+     "note": ""
+    },
+    {
+     "text": "(2) Cancellable by member (portal) and by Minas (attributed CLI)",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_pause_countdown.py::test_cancel_by_member_and_by_minas_both_work_and_say_who; ::test_the_operator_cli_cancel_is_gated_and_attributed (rc 2 without --as); ::test_the_account_page_walks_request_pending_and_cancel (/pause/cancel form rendered); sentinel/pause.py:104-135; sentinel/portal.py:3468-3476; commit 4ed96d4",
+     "note": "POST /pause/cancel not driven over HTTP; function level + form presence."
+    },
+    {
+     "text": "(3) Email carries NO link, says contact Minas",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_pause_countdown.py::test_the_notification_is_linkless_and_says_contact_minas ('http' not in message; 'contact Minas' in message); also asserted in reminder, cancellation, execution tests; sentinel/pause.py:88-100; commit 4ed96d4",
+     "note": ""
+    },
+    {
+     "text": "(4) Emails every contact at request and near expiry",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_pause_countdown.py::test_a_request_starts_a_real_24_hour_countdown_and_emails_every_contact (set(emails)=={EMAIL,'kin@example.com'}); ::test_near_expiry_sends_one_reminder_exactly_once; sentinel/pause.py:139-170, 224-225; commit 4ed96d4",
+     "note": "Reminder recipients not asserted as every contact (shared _notify_contacts path)."
+    },
+    {
+     "text": "(5) Visible everywhere while pending (home banner, digest line)",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_pause_countdown.py::test_the_home_banner_says_about_to_not_be_watched ('Monitoring is about to stop', role=alert); ::test_the_digest_carries_the_pending_pause_line ('PAUSE PENDING: acct-p1'); sentinel/alerts/digest.py; sentinel/portal.py; commits 4ed96d4, b205030 (exists, tests-only)",
+     "note": ""
+    },
+    {
+     "text": "(6) Re-request restarts full 24h, never shortens",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_pause_countdown.py::test_rerequesting_restarts_a_full_24_hours_and_never_shortens (second == later+24h; statuses ['cancelled','pending']); ::test_a_superseding_rerequest_sends_no_confusing_cancellation; sentinel/pause.py:68-100; commits 4ed96d4, 4719b8e",
+     "note": ""
+    },
+    {
+     "text": "(7) Fast path stays human via disable-account",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_pause_countdown.py::test_the_account_page_walks_request_pending_and_cancel ('Call Minas; a person can do it immediately'); disable-account pinned in tests/test_disable_account.py (#80); commit 4ed96d4",
+     "note": "Only page copy pinned here; operator path inherited from #80."
+    },
+    {
+     "text": "Every state change is an /activity event",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_pause_countdown.py::test_a_request_starts_a_real_24_hour_countdown_and_emails_every_contact ('pause_requested' in events); ::test_a_due_pause_executes_disables_and_records ('pause_executed'); sentinel/pause.py:88, 125, 211; commit 4ed96d4",
+     "note": "'pause_cancelled' event (pause.py:125) is not asserted in the log; cancellation pinned via cancelled_by column."
+    },
+    {
+     "text": "pause_requests never pruned",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "sentinel/retention.py:126 NEVER_PRUNE; tests/test_retention.py:74,100 coverage tests (every table must be in exactly one class); commit 4ed96d4",
+     "note": "Pinned indirectly by the retention coverage test."
+    },
+    {
+     "text": "Registration + execution guard for the executor",
+     "ticked": null,
+     "tier": "T1",
+     "evidence": "tests/test_pause_countdown.py::test_the_scheduler_actually_evaluates_the_countdown (Spy.calls==1); ::test_a_cancelled_pause_never_executes_however_late_the_tick; sentinel/engine.py:77-79, 262-263; scripts/mutation-check.sh:204; commit 4ed96d4",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Minor: POST /pause/cancel not driven over HTTP; pause_cancelled event not asserted; reminder recipients not asserted as all contacts. Closing claims (19 tests, three commits) match the tree."
+  },
+  {
+   "n": 99,
+   "title": "Acknowledging an alert leaves its siblings from the same customer action open",
+   "label": "status: built",
+   "criteria": [
+    {
+     "text": "Siblings = same account, same non-empty order_id, within 24h; acking via same writer acks siblings (portal + operator)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_sibling_acknowledgement.py::test_the_jaypee_shape_acknowledges_both_views_of_one_withdrawal, ::test_another_accounts_alert_is_untouchable_even_with_the_same_order_id, ::test_outside_the_24h_window_is_not_a_sibling, ::test_exactly_24h_apart_is_still_inside_the_window, ::test_no_order_reference_claims_no_sameness, ::test_member_acknowledgement_carries_the_siblings_in_scope, ::test_an_already_acknowledged_sibling_keeps_its_first_claim; sentinel/alerts/siblings.py:31-69; sentinel/operators.py:278-282; sentinel/portal.py:1041; commits 71349fe, 3b7dc36",
+     "note": ""
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": ""
+  },
+  {
+   "n": 100,
+   "title": "A whitespace SMTP_HOST reads as configured: every customer email fails, the not-configured warning never fires",
+   "label": "(no status label)",
+   "criteria": [
+    {
+     "text": "Shared env_setting() in sentinel/config.py used by _smtp_config, cli email builder, sms.py",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_env_setting.py::test_blank_and_whitespace_are_unset, ::test_a_padded_value_comes_back_stripped, ::test_the_ops_email_channel_is_not_built_on_a_whitespace_host; sentinel/config.py:16, sentinel/alerts/contact.py:48-53, sentinel/cli.py:92-98, sentinel/alerts/sms.py:50-56 (private _env gone); commit 5923e6c",
+     "note": ""
+    },
+    {
+     "text": "cli._env (non-stripping) no longer shares a name with the helper that strips",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_env_setting.py::test_there_is_one_helper_that_strips_and_the_raw_one_says_so; sentinel/cli.py:49 _env_raw; commit 5923e6c",
+     "note": ""
+    },
+    {
+     "text": "Router-level test: whitespace SMTP_HOST leaves 'SMTP is not configured' in the log and sends nothing",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_env_setting.py::test_a_whitespace_smtp_host_leaves_the_not_configured_warning_not_a_silent_failure, ::test_a_whitespace_smtp_sender_is_the_same_story; commit 5923e6c",
+     "note": ""
+    },
+    {
+     "text": "Correctly configured SMTP behaves byte-identically (snapshot-diffed)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "::test_a_clean_smtp_config_builds_the_same_dict_as_before, ::test_the_ops_email_channel_is_built_from_clean_values_unchanged, ::test_a_clean_value_is_returned_byte_identical; commit 5923e6c",
+     "note": ""
+    },
+    {
+     "text": "Probe pinning the 'host and sender' guard; health check; CI green",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "scripts/probes/design-guards.json:1352 ('#100 a half-filled SMTP pair must not configure email'); CI/health-check outcome is not recorded on the issue",
+     "note": "Issue closed with no comment and no status label; no closing claim to compare against"
+    }
+   ],
+   "verdict": "fully-evidenced",
+   "shortfall": "Add 'status: built' label and a closing note; probe is outside tests/ so its criterion sits at T2"
+  },
+  {
+   "n": 101,
+   "title": "A whitespace TELEGRAM_BOT_TOKEN reads as configured",
+   "label": "(no status label)",
+   "criteria": [
+    {
+     "text": "Every Telegram read goes through env_setting",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_telegram_env.py::test_no_telegram_read_is_left_on_the_raw_helper (source scan of cli/contact), ::test_neither_ops_channel_is_built_on_a_whitespace_token, ::test_a_whitespace_chat_id_builds_no_channel_either; commit ed3a83b",
+     "note": "Source-scan covers cli.py and contact.py only; telegram_link.py not scanned (check whether it reads the token)."
+    },
+    {
+     "text": "Router-level: whitespace token + linked chat leaves 'TELEGRAM_BOT_TOKEN is not set' warning and posts nothing",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_telegram_env.py::test_a_whitespace_token_leaves_the_not_set_warning_and_posts_nothing (caplog message, posts == [], tripwire on sentinel.net.post); commit ed3a83b",
+     "note": "Pinned as the property."
+    },
+    {
+     "text": "Correctly configured Telegram behaves identically before/after (snapshot-diffed)",
+     "ticked": false,
+     "tier": "T1",
+     "evidence": "tests/test_telegram_env.py::test_clean_values_build_the_same_channels_as_before, ::test_a_clean_token_still_posts_to_the_connected_chat, ::test_padded_values_reach_the_channel_stripped; commit ed3a83b",
+     "note": "Asserts built-channel fields, not a literal before/after snapshot diff."
+    },
+    {
+     "text": "Probe pinning the token guard; health check; CI green",
+     "ticked": false,
+     "tier": "T2",
+     "evidence": "scripts/probes/design-guards.json:1362 '#101 a half-filled Telegram pair must not build the ops channel'",
+     "note": "Probe exists; 'full health check' and 'CI green' are unverifiable here (no closing comment at all on this issue)."
+    },
+    {
+     "text": "Done after the SMTP issue is green, one commit each",
+     "ticked": false,
+     "tier": "T3",
+     "evidence": "single commit ed3a83b; SMTP ordering not verified",
+     "note": "Process criterion."
+    }
+   ],
+   "verdict": "partly-evidenced",
+   "shortfall": "Issue closed with no comment and no 'status: built' label; process criteria (ordering, CI) have no admissible trace."
+  }
+ ]
+}

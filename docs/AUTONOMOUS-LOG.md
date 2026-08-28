@@ -5383,3 +5383,45 @@ comment plus a value-binding UPDATE is refused; erasure.py itself is
 refused the moment it binds a value. Found and fixed while writing it: a
 backtracking `\s*=\s*(?!NULL)` matched " = NULL" by leaving the space to
 the lookahead - the regex is `=(?!\s*NULL\b)`.
+
+# 2026-08-28 · Closed-issue evidence audit → #102
+
+All 91 closed issues, per acceptance criterion, three tiers: T1 a test
+whose assertion pins the criterion plus a commit on main; T2 code that
+exists and is reached but no test pins it; T3 a claim only (comments,
+closing comments, session reports, this log) - inadmissible - or the
+code contradicts the criterion. Five independent readers, one per group
+of ~18 issues, reading tests and source from a detached worktree so the
+running mutation gate could not skew what they saw; each asserted the
+assertion, not the commit message. Full per-criterion output:
+docs/audits/2026-08-28-closed-issue-evidence.json. Tracking issue: #102.
+Nothing reopened, relabelled or edited on any closed issue.
+
+Totals: 5 closed-as-not-built by owner decision (#6, #23, #43, #44,
+#95); 56 fully evidenced; 27 partly evidenced; 2 contradicted; 1
+claim-only (#74, an ops action - not evidenceable from the repo).
+
+The two contradictions. #25 (G-21): "secondary can view alerts but NOT
+change settings or remove accounts" - a secondary contact signs in via
+the same member_accounts rule and reaches /key, /erase, /preferences,
+/pause/request, /snooze, /acknowledge; no primary/secondary distinction
+exists in do_POST. The test that "proves" it POSTs to /account,
+/settings, /accounts/1/delete, /account/remove - paths that never
+existed - and passes for the wrong reason. Verified in the tree myself
+before filing: this is the one finding where the gap is a capability
+someone has today (an emergency contact can erase the member's data or
+swap the monitored key), not a missing test. It needs a decision on the
+secondary's role before a gate is built. #65: the withdrawal message
+carries amount/coin/status, never the destination address the criterion
+names; the test was written to the weaker claim.
+
+The pattern across the 27 partly-evidenced: criteria reinterpreted at
+build time without the issue being amended (#18 fallback, #28 precision
+metric, #45 revoke, #60 "derived", #73 prune timer), operator-side paths
+without the notify the member-side path has (#7 login details, #33
+dashboard reset), HTTP handlers tested one layer down (#24 /preferences,
+#37 /drill, #34/#38 last-check cell), and process claims (scores,
+"verified against gh") with no committed artefact. Bookkeeping: ~34
+issues have body checkboxes never ticked though built; eight
+implementing commits cite the G-number rather than #N so a literal grep
+misses them; #100/#101 carry no status label.
