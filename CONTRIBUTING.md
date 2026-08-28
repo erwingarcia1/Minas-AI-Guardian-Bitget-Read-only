@@ -613,6 +613,24 @@ invisible precisely because the first guard is green.
 tree *without* your fix. One that passes both ways is testing the registry
 again, in more lines.
 
+## Retired criteria are amended in the issue, in the same commit
+
+**When a decision retires a criterion, the ISSUE TEXT is amended in the same
+commit as the decision** - struck through, with the decision named and
+dated, and the box ticked so the audit does not read it as unfinished. An
+unamended criterion becomes a defect report against a choice we made on
+purpose - as it did twice in audit #103: #45's "revoke it from the portal"
+(dropped by decision 15, kill switch at the exchange) and #65's "the message
+contains ... destination address" (barred by the no-amounts-no-addresses
+rule and decision 16) were both graded as contradictions, because the issue
+still promised them.
+
+The shape: `~~old words~~ - **retired by decision N (date):** why, in one
+line. Amended <date>.` A criterion that a later DESIGN retired rather than an
+owner decision (#18's "tries another channel" against #57's try-every-
+channel; #73's prune timer) is amended the same way, naming the commit, and
+stays open to the owner to overrule.
+
 ## A test that posts to a path that does not exist always passes
 
 **Assert the route is registered before asserting who may use it.** A 404 is

@@ -5700,3 +5700,24 @@ to judge), NON_PRIMARY_ALLOWED (/logout, /security/2fa/*, /acknowledge),
 PRIMARY_ONLY (unchanged). The completeness test asserts pairwise
 disjointness and that the union is the route table; the ruling test
 pins NON_PRIMARY_ALLOWED to exactly own-login plumbing plus acknowledge.
+
+# 2026-08-28 · Pre-release batch, item 4: retired criteria amended in the issues (no code)
+
+Amended in the issue text, struck through with the decision named:
+#45 "revoke it from the portal" → decision 15 (kill switch at the
+exchange); #65 "the message contains amount, coin and destination
+address" → the no-amounts-no-addresses rule for customer-facing text
+(#27/#29) and decision 16. The four remaining partials, checked the
+same way - every one is a promise a later choice retired, not a missing
+build: #18 "tries another channel" → #57's try-every-channel design
+(parallel, never fallback); #28 "excluded from precision metrics" → no
+precision metric exists, the counter + denominator recorded on #28
+2026-08-13 is the design; #60 "derived from the exchange history window"
+→ bounded below by correctness, not derived (rules.yaml note); #73
+"_last_prune advances only after success" → the interval-retry design in
+a66259f, pinned by test. #18 and #73 were retired by a DESIGN rather
+than an owner decision; both amendments say so and stay open to
+overrule. CONTRIBUTING: "Retired criteria are amended in the issue, in
+the same commit". One thing noticed and NOT changed (no code in this
+item): the operator-format withdrawal message does carry the amount
+("Withdrawal of {amount} {currency}"); customer copy does not.
