@@ -5682,3 +5682,21 @@ key silent; both → rejected naming both; pure on data with neither; every
 deprecation points at a key the schema knows and not at one still in it;
 a hot reload from the old spelling to the new is not a rejection. One
 probe (alias dropped), killed.
+
+# 2026-08-28 · Pre-release batch, item 3: the #25 residue
+
+(a) Every GET path the portal serves - /, /alerts, /limits, /status,
+/activity, /export.json, /alerts.csv, /incident, /security, /key,
+/account, /forgot, /reset, /favicon.ico - was fetched signed in as a
+member and unauthenticated with the whole database dumped before and
+after: NOTHING writes. No exception found. tests/test_get_is_read_only.py
+now proves it by execution on every run and reads the route list out of
+do_GET's source, so a new GET route is covered the day it appears. (The
+sliding session re-issue is a cookie header, not a row.)
+
+(b) The allowlist conflated pre-auth routes with a role decision. Three
+buckets now: PRE_AUTH (/login, /login-code, /forgot, /reset - no session
+to judge), NON_PRIMARY_ALLOWED (/logout, /security/2fa/*, /acknowledge),
+PRIMARY_ONLY (unchanged). The completeness test asserts pairwise
+disjointness and that the union is the route table; the ruling test
+pins NON_PRIMARY_ALLOWED to exactly own-login plumbing plus acknowledge.

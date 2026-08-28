@@ -343,18 +343,22 @@ def member_accounts(db: Database, email: str) -> list:
 # are judged against the account the request names, member-scoped routes
 # against whether the login is primary anywhere at all.
 #
-# Every POST route must sit in exactly ONE of the two sets below. A route in
-# neither is a build failure (tests/test_member_roles.py), because the first
+# Every POST route must sit in exactly ONE of the three sets below. A route
+# in none is a build failure (tests/test_member_roles.py), because the first
 # version of this boundary was a test that POSTed to paths which had never
 # existed and passed for six weeks while /key, /erase and /pause grew
 # underneath it.
 
-# What a non-primary contact may reach. These touch the login itself (sign
-# in/out, recover a forgotten password, harden the login with a second
-# factor) or acknowledge an alert - the one account-facing act an emergency
-# contact exists to perform.
+# Routes with NO session to judge: sign-in and its recovery. Not a role
+# decision at all - there is nobody yet to be primary or secondary - so they
+# are a bucket of their own, not a line in the allowlist.
+PRE_AUTH = frozenset({"/login", "/login-code", "/forgot", "/reset"})
+
+# What a signed-in NON-PRIMARY contact may reach: leave, harden their own
+# login with a second factor, and acknowledge an alert - the one
+# account-facing act an emergency contact exists to perform.
 NON_PRIMARY_ALLOWED = frozenset({
-    "/login", "/login-code", "/forgot", "/reset", "/logout",
+    "/logout",
     "/security/2fa/start", "/security/2fa/confirm", "/security/2fa/disable",
     "/acknowledge",
 })
@@ -371,8 +375,8 @@ PRIMARY_ONLY = frozenset({
 # whether it is an account id or an alert id (resolved to its account inside
 # the member's own scope - never outside it).
 # Every POST route the portal serves. The dispatch table in do_POST must equal
-# this set, and this set must be exactly PRIMARY_ONLY | NON_PRIMARY_ALLOWED.
-POST_ROUTES = PRIMARY_ONLY | NON_PRIMARY_ALLOWED
+# this set, and this set must be exactly the three disjoint buckets.
+POST_ROUTES = PRE_AUTH | NON_PRIMARY_ALLOWED | PRIMARY_ONLY
 
 ACCOUNT_SCOPED = {
     "/key": ("account_id", "account"),

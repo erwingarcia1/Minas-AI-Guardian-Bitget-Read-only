@@ -23,6 +23,7 @@ from sentinel.portal import (
     ACCOUNT_SCOPED,
     NON_PRIMARY_ALLOWED,
     POST_ROUTES,
+    PRE_AUTH,
     PRIMARY_ONLY,
     member_role,
     primary_anywhere,
@@ -133,11 +134,16 @@ def _state(db, account_id):
 # --- completeness: every route classified, exactly once ----------------------
 
 def test_every_post_route_is_classified_exactly_once():
-    """A new route must break the build until someone decides which side of
-    the line it sits on. Two sets, disjoint, whose union is every route."""
-    assert not (PRIMARY_ONLY & NON_PRIMARY_ALLOWED), "a route cannot be both"
-    assert PRIMARY_ONLY | NON_PRIMARY_ALLOWED == POST_ROUTES
+    """A new route must break the build until someone decides which bucket
+    it sits in. Three sets, pairwise disjoint, whose union is every route:
+    PRE_AUTH (no session to judge), NON_PRIMARY_ALLOWED, PRIMARY_ONLY."""
+    buckets = (PRE_AUTH, NON_PRIMARY_ALLOWED, PRIMARY_ONLY)
+    for i, a in enumerate(buckets):
+        for b in buckets[i + 1:]:
+            assert not (a & b), f"a route cannot be in two buckets: {a & b}"
+    assert PRE_AUTH | NON_PRIMARY_ALLOWED | PRIMARY_ONLY == POST_ROUTES
     assert POST_ROUTES, "no routes at all is not a classification"
+    assert PRE_AUTH and NON_PRIMARY_ALLOWED and PRIMARY_ONLY, "an empty bucket is a classification nobody made"
 
 
 def test_the_dispatch_table_and_the_classification_name_the_same_routes():
@@ -164,16 +170,22 @@ def test_every_account_scoped_route_is_primary_only():
     assert set(ACCOUNT_SCOPED) <= PRIMARY_ONLY
 
 
-def test_the_allowlist_is_reading_login_plumbing_and_acknowledging_only():
-    """The owner's ruling, as a set: sign in/out, recover or harden the
-    login, acknowledge. Anything else appearing here is a decision that
-    has to be made out loud, not by editing a constant."""
-    ruling = {
-        "/login", "/login-code", "/forgot", "/reset", "/logout",
-        "/security/2fa/start", "/security/2fa/confirm", "/security/2fa/disable",
-        "/acknowledge",
-    }
+def test_the_allowlist_is_own_login_plumbing_and_acknowledging_only():
+    """The owner's ruling, as a set: a signed-in non-primary may leave,
+    harden their own login, and acknowledge. Anything else appearing here
+    is a decision that has to be made out loud, not by editing a constant."""
+    ruling = {"/logout", "/security/2fa/start", "/security/2fa/confirm", "/security/2fa/disable", "/acknowledge"}
     assert ruling == NON_PRIMARY_ALLOWED
+
+
+def test_pre_auth_is_exactly_the_routes_with_no_session_to_judge():
+    """Sign-in and its recovery. These are not role decisions - nobody is
+    primary or secondary before a session exists - and a role bucket that
+    contained them would conflate two ideas."""
+    assert {"/login", "/login-code", "/forgot", "/reset"} == PRE_AUTH
+    src = inspect.getsource(portal_module.serve_portal)
+    for path in PRE_AUTH:
+        assert path in src
 
 
 # --- registration: every asserted route exists -------------------------------
