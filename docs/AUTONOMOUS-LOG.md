@@ -5482,3 +5482,47 @@ under the secondary's own address, distinct from the primary - pinned by
 test_a_secondary_can_acknowledge_and_the_acknowledgement_is_attributed_to_them.
 #99's co-ack copies that same identity onto the siblings, so the
 distinction carries through.
+
+# 2026-08-28 · Closed-issue audit 2026-08-27 → #103
+
+All 91 closed issues graded against their own text for what the deployed
+v1.10.0 does for the person who asked. Tiers: T1 observed on production
+(read-only: live DB via the container's Python in mode=ro, env var NAMES
+only, host timers, :9109 metrics, 7-day container log), T2 a test that
+executes the behaviour end to end, T3 code reachable, T4 documents -
+inadmissible, including this log. Five readers, issue text first, then
+code, then evidence; a sixth pass cross-checked every non-WORKING
+verdict against the code. Record: docs/audits/2026-08-27-closed-issue-
+audit.{json,md}. Tracking issue #103; a two-line comment on each of the
+26 non-WORKING issues; nothing reopened; nothing under sentinel/ touched.
+
+Totals: WORKING 65 (T1 27, T2 38) · PARTIAL 7 (#8 #14 #29 #32 #45 #65
+#85) · BUILT BUT INERT 6 (#7 #17 #21 #40 #54 #76) · BUILT, NOT LIVE 7
+(#24 #37 #46 #82 #87 #100 #101) · CLOSED, NOT BUILT 5 (#6 #23 #43 #44
+#95) · WRONGLY CLOSED 1 (#25).
+
+The production facts that decided most of it: operators table has ZERO
+rows, so the dashboard has no sign-in and every operator action is
+actor NULL (#7 #40 #54 #76 wait on one `sentinel operator add`); no
+crontab exists on the host, so `sentinel digest` has never run - five
+members set to daily have never received one, and every MEDIUM/LOW
+alert routed to 'digest' (41+26+1) has reached nobody (#21, and the
+delivery half of #14); no SMS provider is configured (37 sms rows all
+'skipped', 11 contact_channel_has_no_provider pages); /var/backups/
+minas-guardian does not exist (#85). What IS live and observed: CRITICAL
+alerts on 2026-08-27 delivered to 3 channels and escalated ~16 min
+later with operator pages delivered (#5 #15 #27 #53 #57); member
+acknowledgements, a used password reset, 2FA enable/disable, Telegram
+connect/disconnect, "that was me", triage, account_disabled (#26 #33
+#32 #18 #28 #41 #74 #80); the restart timer active since 08-24 (#81);
+metrics and retention (#42 #60 #73); permission snapshots at the 10-min
+cadence (#13).
+
+Two auditor verdicts I changed after reading the code: #25 from PARTIAL
+to WRONGLY CLOSED (closed 08-12 on a test against nonexistent paths;
+v1.10.0 still lets a secondary POST /key and /pause/request; the fix is
+post-tag); #45 from CLOSED-NOT-BUILT to PARTIAL (two of three criteria
+are executed by tests; only the revoke half was dropped by decision
+15). And #14's "the customer was never told" softened: delivered_to
+counts global channels only; the member-email leg is not recorded in
+v1.10.0, so it is unverifiable, not disproven.
