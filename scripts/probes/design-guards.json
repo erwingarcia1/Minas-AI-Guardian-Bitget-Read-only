@@ -1537,5 +1537,25 @@
       "tests/test_erasure.py"
     ],
     "expect": "killed"
+  },
+  {
+    "name": "#63 a gap on start is never recorded (threshold made unreachable)",
+    "file": "sentinel/heartbeat.py",
+    "old": "        if last is None or now - last <= 2 * self._interval:\n",
+    "new": "        if last is None or now - last <= 200 * self._interval:\n",
+    "tests": [
+      "tests/test_heartbeat.py"
+    ],
+    "expect": "killed"
+  },
+  {
+    "name": "#63 an unreachable monitor pages nobody (the page dropped)",
+    "file": "sentinel/heartbeat.py",
+    "old": "            if self._alerter is not None:\n                self._alerter.page(rule=\"heartbeat_unreachable\"",
+    "new": "            if False:\n                self._alerter.page(rule=\"heartbeat_unreachable\"",
+    "tests": [
+      "tests/test_heartbeat.py"
+    ],
+    "expect": "killed"
   }
 ]

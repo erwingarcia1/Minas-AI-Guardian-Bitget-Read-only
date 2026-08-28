@@ -348,6 +348,17 @@ CREATE TABLE IF NOT EXISTS contact_deliveries (
 );
 CREATE INDEX IF NOT EXISTS idx_contact_deliveries_email ON contact_deliveries(email, channel, delivered_at);
 
+-- Monitoring gaps (#63, decision 7): windows in which the Guardian was not
+-- running, reconstructed on restart from the last heartbeat it pushed.
+-- Product-level, no account: customers hear about them in the digest.
+CREATE TABLE IF NOT EXISTS monitoring_gaps (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    started_at TEXT NOT NULL,
+    ended_at TEXT NOT NULL,
+    seconds INTEGER NOT NULL,
+    detected_by TEXT NOT NULL
+);
+
 -- Alerts held back from a member during their quiet hours (#24): queued,
 -- never dropped, and released into their next digest. One row per (member,
 -- alert); released_at marks the digest that carried it.

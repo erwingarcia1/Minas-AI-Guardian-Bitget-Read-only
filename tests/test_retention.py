@@ -525,6 +525,9 @@ _ROW_FACTORIES = {
     "contact_deliveries": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO contact_deliveries (email, channel, alert_id, delivered_at) VALUES ('a@b.test', 'email', ?, ?)",
         (alert, ts)),
+    "monitoring_gaps": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO monitoring_gaps (started_at, ended_at, seconds, detected_by) VALUES (?, ?, 60, 'restart')",
+        (ts, ts)),
     "config_changes": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO config_changes (setting, old_value, new_value, actor, changed_at) "
         "VALUES ('polling.fast_loop_seconds', '45', '60', 'john', ?)", (ts,)),

@@ -57,6 +57,7 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     "alert_triage": ("updated_at", "alerts_days"),
     "held_alerts": ("held_at", "alerts_days"),  # #24: follows the alert it holds
     "drills": ("started_at", "drills_days"),  # #37: the evidence the portal shows
+    "monitoring_gaps": ("ended_at", "events_days"),  # #63: same window as the event log
     "contact_deliveries": ("delivered_at", "alerts_days"),  # #37: per-contact delivery record
     # Threshold changes (#16). History of what this product was tuned to
     # notice, on the same long window as `events` - an incident review asks

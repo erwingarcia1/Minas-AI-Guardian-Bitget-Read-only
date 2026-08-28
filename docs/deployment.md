@@ -563,6 +563,29 @@ next sign-in. Host access over the tailnet is the root of trust here, as it
 is for deploys. `sentinel operator disable` still ends every session
 immediately.
 
+## Dead-man's switch (#63, decision 7)
+
+Nothing inside the Guardian can report the Guardian dying, so it pushes a
+heartbeat OUT to an external monitor and that monitor alerts when the pushes
+stop. Our side is one setting:
+
+```
+SENTINEL_HEARTBEAT_URL=https://<your monitor>/<check-id>   # in .env on the host
+```
+
+Pushed every `uptime.heartbeat_interval_seconds` (300 s); set the monitor's
+grace to about 15 minutes (three missed beats). A wedged process stops
+pushing too - that is the point. If the monitor itself cannot be reached the
+Guardian pages HIGH (`heartbeat_unreachable`); on restart, if the last beat is
+older than two intervals, it records the window as a monitoring gap, pages
+HIGH (`monitoring_gap`), and the next member digest tells customers plainly
+that their accounts were not being checked in that window.
+
+The vendor is the owner's choice (decision 7 recommends any dead-man's-switch
+service that pages a phone: the destination must not route through the
+Guardian). What is NOT covered by code: a drill of the vendor's alert path -
+#63's criterion - which needs the vendor to exist first.
+
 ## Operations quick reference
 
 All commands below assume the default EC2 posture (the `ubuntu` user is

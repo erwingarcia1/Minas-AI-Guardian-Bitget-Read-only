@@ -162,6 +162,12 @@ drills:
   enabled: true
   interval_days: "7"
 
+# Dead-man's switch (#63, decision 7): the Guardian pushes a heartbeat to
+# SENTINEL_HEARTBEAT_URL this often; the external monitor alerts on silence.
+# 300 s = a 15-minute detection window at three missed beats.
+uptime:
+  heartbeat_interval_seconds: "300"
+
 triage:
   enabled: false               # AI triage narrative on incidents; additive only,
                                # deterministic rules remain authoritative

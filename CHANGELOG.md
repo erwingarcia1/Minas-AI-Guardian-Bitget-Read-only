@@ -96,6 +96,17 @@ deliberate ways:
 
 ### Added
 
+- **The dead-man's switch, our side** (#63, decision 7). Set
+  `SENTINEL_HEARTBEAT_URL` to an uptime monitor's check-in address and
+  the Guardian pushes a heartbeat every five minutes; the monitor alerts
+  when the pushes stop, which covers a dead host, a crash loop and a
+  wedged process alike. If the monitor cannot be reached the Guardian
+  pages HIGH. On restart it reconstructs the window it was not running
+  from its last beat, records it as a monitoring gap, pages HIGH, and the
+  next proof-of-life digest tells customers their accounts were not being
+  checked in that window — in the digest, not as an alert, by decision.
+  The vendor is still the owner's choice; until the URL is set nothing is
+  pushed and nothing changes.
 - **Failed SMS deliveries are shown to operators** (#19). The rows have
   been recorded since #53; the ops dashboard now carries a card with the
   latest twenty refused texts and the provider's reason, so a dead SMS

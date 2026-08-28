@@ -5319,3 +5319,16 @@ would override a decision two days old; leaving it contradicts the
 issue. Written up on #19 for the owner. The other two unticked criteria
 (phone verification by code; costs per customer) need a provider and
 credentials.
+
+# 2026-08-28 · #63 mechanism: heartbeat push, gap on restart, gaps in the digest
+
+sentinel/heartbeat.py: Heartbeat(url from SENTINEL_HEARTBEAT_URL,
+interval from uptime.heartbeat_interval_seconds=300) pushes via net.post
+on the engine tick, persists the last beat in portal_meta, pages HIGH
+heartbeat_unreachable on failure; detect_gap_on_start records a
+monitoring_gaps row and pages HIGH monitoring_gap when the last beat is
+older than 2x the interval; build_member_digest lists gaps since the
+last digest (decision 7c). Retention: monitoring_gaps on events_days.
+7 tests, 2 probes, deployment.md section, .env.example line. What the
+vendor still gates: all four of #63's acceptance criteria are about the
+external half, and the drill of the vendor's alert path.

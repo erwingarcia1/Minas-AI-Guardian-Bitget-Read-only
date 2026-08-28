@@ -80,7 +80,21 @@ class Engine:
         # #37's weekly fire drill, table-driven like the pause countdown: the
         # first tick after a restart reads the last drill from the table and
         # resumes the cadence. Runs against the dedicated drill account.
+        # #63's dead-man's switch: push side. Detects the gap it slept
+        # through on startup, then beats on the tick.
+        from sentinel.config import env_setting
         from sentinel.drill import DrillSchedule, run_drill
+        from sentinel.heartbeat import Heartbeat
+
+        self._heartbeat = Heartbeat(
+            db, env_setting("SENTINEL_HEARTBEAT_URL"),
+            rules.get_int("uptime", "heartbeat_interval_seconds", default=300),
+            operator_alerter=operator_alerter,
+        )
+        try:
+            self._heartbeat.detect_gap_on_start()
+        except Exception as exc:  # noqa: BLE001 - a gap record must not stop the start
+            logger.error("gap detection on start failed: %s", exc)
 
         self._drill_schedule = DrillSchedule(
             db, rules,
@@ -249,6 +263,8 @@ class Engine:
                 self._pause_maintenance.evaluate()
             if self._drill_schedule is not None:
                 self._drill_schedule.evaluate()
+            if self._heartbeat is not None:
+                self._heartbeat.evaluate()
         except Exception as exc:  # noqa: BLE001 - scheduler must survive anything
             logger.error("scheduler cycle failed: %s", exc)
 

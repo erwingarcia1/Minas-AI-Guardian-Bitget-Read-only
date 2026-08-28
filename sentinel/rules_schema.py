@@ -191,6 +191,8 @@ SPEC: dict = {
         "enabled": _boolean(),
         "interval_days": POSITIVE,
     },
+    # #63: how often the dead-man's switch is pushed (the URL is env).
+    "uptime": {"heartbeat_interval_seconds": POSITIVE},
     "triage": {
         "enabled": _boolean(),
         "model": _text(),
@@ -298,6 +300,7 @@ DEFAULTS: dict = {
         "prune_interval_minutes": 60,
     },
     "drills": {"enabled": True, "interval_days": 7},
+    "uptime": {"heartbeat_interval_seconds": 300},
     "triage": {"enabled": False, "model": "claude-opus-4-8", "max_events": 50},
 }
 

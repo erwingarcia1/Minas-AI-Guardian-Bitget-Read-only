@@ -188,6 +188,15 @@ def build_member_digest(db: Database, email: str, rules=None,
         if routine:
             parts.append(f"{routine} routine notice(s)")
         lines.append("Issues found: " + "; ".join(parts) + ".")
+    # #63 / decision 7: a window in which the Guardian was not running is
+    # told here, in the digest, not as an alert - and never hidden.
+    from sentinel.heartbeat import gaps_since
+
+    for gap in gaps_since(db, since):
+        lines.append("")
+        lines.append(f"Monitoring was interrupted from {gap['started_at'][:16].replace('T', ' ')} to "
+                     f"{gap['ended_at'][:16].replace('T', ' ')} UTC ({gap['seconds'] // 60} minutes). Your "
+                     "accounts were not being checked in that window. Minas was alerted.")
     # #24: alerts held during the member's quiet hours are released here -
     # queued, never dropped. Customer copy: label, severity word, time; no
     # rule names, no evidence.
