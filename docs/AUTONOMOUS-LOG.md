@@ -5332,3 +5332,54 @@ last digest (decision 7c). Retention: monitoring_gaps on events_days.
 7 tests, 2 probes, deployment.md section, .env.example line. What the
 vendor still gates: all four of #63's acceptance criteria are about the
 external half, and the drill of the vendor's alert path.
+
+# 2026-08-28 · Production integrity settled; where the #63 chain stopped; the #90 guard narrowed
+
+Integrity (read-only, inside the running container's Python, `mode=ro`):
+`PRAGMA quick_check` = ok (2.5 s), `PRAGMA integrity_check` = ok (12.4 s),
+SQLite 3.46.1, journal_mode wal, 56,285 pages, WAL 6.7 MB. The host has no
+sqlite3 binary and the volume is root-only, which is why the earlier
+session's "checked on the host" never produced output. Production data
+has no defect.
+
+The copy's complaints were all in tree 10 = `balance_snapshots` (rowids
+7454967 / 7474824 / 7495667 "out of order", "invalid page number 56264",
+~20 pages never used, rows missing from idx_balance_account_time/_coin).
+Mechanism: `sudo cat` of a live WAL database is not atomic. The main file
+was read page by page over ~2 minutes while the engine kept writing and
+checkpointing; balance_snapshots is the one table that churns every slow
+loop (1.28 M rows, 7-day retention, rowids 7..8.7 M), so its table and
+index pages were captured at different instants. The page_count in the
+copied header (56,263) is smaller than a page a later-copied cell points
+at (56,264) - the file grew during the copy - which is the direct
+signature. Rowid 7454967 does not exist in the table at all in the copy
+(pruned between the two reads). Same artefact, three faces. Rule for the
+next copy: do not cat the file. Take a consistent snapshot with the
+backup API from inside the container (`sqlite3.connect(src).backup(dst)`
+to the container's /tmp, then stream it out and delete it) - a read of
+production, a write only to scratch - or run `PRAGMA integrity_check`
+on production first and treat copy-side complaints in churning tables as
+copy noise. An out-of-order rowid in a cat-copy is not a production
+alarm; an integrity_check failure on production itself is.
+
+Where the previous session stopped: the chain "probes; health check;
+commit; push; CI; comment #63" exited 0 because its guard did its job -
+the health check was RED on the release-objects gate (GitHub unreachable
+for ~40 s; "unanswered is not a pass") and the chain printed "HC RED -
+NOT committing". Nothing landed: origin/main was bc0d0ab, the tree held
+all of #63 uncommitted. Re-ran the full check: green (9/9, mutation
+98%, ledger 3 accepted); committed 8772798, CI 33132544412 green,
+comment on #63 posted. The exit-0-on-red is by design (the chain, not
+the check, returns 0) but reads as success in a task summary; lesson
+recorded: read the chain's last line, not its exit code.
+
+#90 guard: `or "alert_email = NULL" in text` had made the canonicalizer
+check pass for any file containing that literal anywhere. Replaced with
+`contact_write_problem(relpath, text)`: writers must canonicalize;
+`NULL_ONLY_WRITERS = {sentinel/erasure.py}` is exempt by name AND held
+to shape (regex: no `alert_email[_secondary] =` followed by anything but
+NULL). Two tests: a hypothetical new writer containing the literal in a
+comment plus a value-binding UPDATE is refused; erasure.py itself is
+refused the moment it binds a value. Found and fixed while writing it: a
+backtracking `\s*=\s*(?!NULL)` matched " = NULL" by leaving the space to
+the lookahead - the regex is `=(?!\s*NULL\b)`.

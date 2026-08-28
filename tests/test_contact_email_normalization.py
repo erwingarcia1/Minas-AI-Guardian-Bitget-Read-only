@@ -60,31 +60,73 @@ def _row(db, label):
 
 # --- registration: every writer goes through the canonicalizer ----------------
 
+# db.py is listed because its migration UPDATEs match the writer shape - and
+# they ARE canonicalization (NULLIF(lower(trim(...)))), checked below.
+KNOWN_WRITERS = {"sentinel/onboarding.py", "sentinel/cli.py", "sentinel/db.py", "sentinel/erasure.py"}
+# A writer that only ever sets a contact email column to NULL has nothing to
+# canonicalize: #46's tombstone. The exemption is by name AND by shape - a
+# file here is held to binding no value into those columns, so it cannot
+# become a general escape hatch by containing the right words.
+NULL_ONLY_WRITERS = {"sentinel/erasure.py"}
+WRITE_STMT = re.compile(r"(INSERT INTO accounts|UPDATE accounts SET)[^\"]*alert_email", re.S)
+BINDS_A_VALUE = re.compile(r"alert_email(?:_secondary)?\s*=(?!\s*NULL\b)")
+
+
+def contact_write_problem(relpath: str, text: str) -> str | None:
+    """Why `text` (product source at `relpath`) fails #90's guard, or None."""
+    if not WRITE_STMT.search(text):
+        return None  # not a writer of the contact columns
+    if relpath in NULL_ONLY_WRITERS:
+        if BINDS_A_VALUE.search(text):
+            return (f"{relpath} is exempt as a NULL-only writer but binds a value "
+                    "into a contact email column - canonicalize, and drop the exemption")
+        return None
+    if "canonical_contact_email" in text or "NULLIF(lower(trim(" in text:
+        return None
+    return (f"{relpath} writes a contact email column without the "
+            "canonicalizer - the compare-side-only trap #90 closed")
+
+
 def test_every_writer_of_the_contact_columns_canonicalizes():
     """Mechanical, so the NEXT writer cannot ship without it: any product
     file whose SQL writes a contact email column must call
     canonical_contact_email, and must be one this test already knows about -
     a new writer fails here until it normalizes and is listed."""
-    # db.py is listed because its migration UPDATEs match the writer shape -
-    # and they ARE canonicalization (NULLIF(lower(trim(...)))), checked below.
-    # erasure.py is listed because its tombstone UPDATE matches the writer
-    # shape - and it only ever writes NULL (#46), which needs no normalizing.
-    KNOWN_WRITERS = {"sentinel/onboarding.py", "sentinel/cli.py", "sentinel/db.py", "sentinel/erasure.py"}
-    write_stmt = re.compile(
-        r"(INSERT INTO accounts|UPDATE accounts SET)[^\"]*alert_email", re.S)
-
     found = set()
     for path in (ROOT / "sentinel").rglob("*.py"):
         text = path.read_text()
-        if write_stmt.search(text):
-            found.add(str(path.relative_to(ROOT)))
-            assert ("canonical_contact_email" in text or "NULLIF(lower(trim(" in text
-                    or "alert_email = NULL" in text), (
-                f"{path.name} writes a contact email column without the "
-                f"canonicalizer - the compare-side-only trap #90 closed")
+        if WRITE_STMT.search(text):
+            relpath = str(path.relative_to(ROOT))
+            found.add(relpath)
+            assert contact_write_problem(relpath, text) is None, contact_write_problem(relpath, text)
     assert found == KNOWN_WRITERS, (
         "the set of contact-column writers changed - normalize in the new "
         f"writer and update this list. Found: {sorted(found)}")
+
+
+def test_a_writer_that_merely_contains_the_null_literal_still_fails():
+    """The guard once accepted any file containing "alert_email = NULL"
+    anywhere. A hypothetical new writer with that literal in a comment and a
+    value-binding UPDATE without the canonicalizer must still be refused."""
+    text = (
+        '# unlike the tombstone, which does "alert_email = NULL"\n'
+        'cur.execute("UPDATE accounts SET alert_email = ? WHERE id = ?", (email, aid))\n'
+    )
+    problem = contact_write_problem("sentinel/new_writer.py", text)
+    assert problem is not None and "without the canonicalizer" in problem
+
+
+def test_the_null_only_exemption_is_by_shape_not_only_by_name():
+    """erasure.py's exemption lasts exactly as long as it binds nothing: the
+    same file gaining a value write is refused until it canonicalizes."""
+    text = 'cur.execute("UPDATE accounts SET alert_email = ?, alert_phone = NULL WHERE id = ?", (email, aid))\n'
+    problem = contact_write_problem("sentinel/erasure.py", text)
+    assert problem is not None and "NULL-only" in problem
+    # and the real tombstone shape passes, because it binds nothing
+    assert contact_write_problem(
+        "sentinel/erasure.py",
+        'cur.execute("UPDATE accounts SET alert_email = NULL, alert_email_secondary = NULL WHERE id = ?", (aid,))',
+    ) is None
 
 
 def test_the_migration_statements_exist_for_every_contact_column():
