@@ -1627,5 +1627,35 @@
    "tests/test_delivery_record.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "#103 item 3: coverage alerts route by their level again (the digest trap)",
+  "file": "sentinel/alerts/meaning.py",
+  "old": "    return DIRECT_TIER if is_coverage_rule(rule) else severity\n\n\ndef preference_tier",
+  "new": "    return severity\n\n\ndef preference_tier",
+  "tests": [
+   "tests/test_coverage_routing.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#103 item 3: a coverage alert no longer escalates at the CRITICAL window",
+  "file": "sentinel/alerts/escalation.py",
+  "old": "                f\"  OR (a.rule IN ({_COVERAGE_MARKS}) AND a.sent_at < ?) \"\n",
+  "new": "                f\"  OR (a.rule IN ({_COVERAGE_MARKS}) AND a.sent_at < ? AND 0) \"\n",
+  "tests": [
+   "tests/test_coverage_routing.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#103 item 3: a member's quiet hours can hold a coverage alert",
+  "file": "sentinel/alerts/meaning.py",
+  "old": "def preference_tier(rule: str | None, severity: str) -> str:\n    \"\"\"Which severity's member preferences apply: a coverage alert is judged\n    as a CRITICAL - never held for quiet hours, email is the floor.\"\"\"\n    return DIRECT_TIER if is_coverage_rule(rule) else severity\n",
+  "new": "def preference_tier(rule: str | None, severity: str) -> str:\n    \"\"\"Which severity's member preferences apply: a coverage alert is judged\n    as a CRITICAL - never held for quiet hours, email is the floor.\"\"\"\n    return severity\n",
+  "tests": [
+   "tests/test_coverage_routing.py"
+  ],
+  "expect": "killed"
  }
 ]

@@ -4,6 +4,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from sentinel.alerts.base import AlertChannel, AlertMessage
+from sentinel.alerts.meaning import COVERAGE_RULES, is_coverage_rule
 from sentinel.db import Database
 
 logger = logging.getLogger("sentinel.escalation")
@@ -25,6 +26,9 @@ class _EscalationDetection:
         self.confidence = alert.confidence
         self.message = alert.message
         self.evidence = alert.evidence
+
+
+_COVERAGE_MARKS = ", ".join("?" for _ in COVERAGE_RULES)
 
 
 class Escalator:
@@ -77,7 +81,11 @@ class Escalator:
                 # ever failed, escalating a simulated theft to an emergency
                 # contact would be the drill causing the harm it tests for.
                 "AND a.rule != 'drill' "
+                # #103 item 3: a coverage alert (we are blind on this
+                # account) escalates at the CRITICAL window whatever its
+                # severity - the meaning decides, not the level.
                 "AND ((a.severity = 'CRITICAL' AND a.sent_at < ?) "
+                f"  OR (a.rule IN ({_COVERAGE_MARKS}) AND a.sent_at < ?) "
                 "  OR (a.severity = 'HIGH' AND a.sent_at < ?)) "
                 # A live snooze holds escalation too (G-26, #30). Escalating
                 # past a snooze would page the customer anyway and make the
@@ -86,13 +94,13 @@ class Escalator:
                 # then it lets go - which is what snoozes expiring is for.
                 "AND NOT EXISTS (SELECT 1 FROM snoozes s WHERE s.account_id = a.account_id "
                 "AND s.dedup_key = a.dedup_key AND s.expires_at > ?)",
-                (cutoff_critical, cutoff_high, now.isoformat()),
+                (cutoff_critical, *sorted(COVERAGE_RULES), cutoff_critical, cutoff_high, now.isoformat()),
             )
             stale = cur.fetchall()
 
         escalated = 0
         for row in stale:
-            if row["severity"] == "CRITICAL":
+            if row["severity"] == "CRITICAL" or is_coverage_rule(row["rule"]):
                 self._escalate_critical(row)
             else:
                 self._reach_the_secondary_contact(row, window=self._high_window)
@@ -117,13 +125,17 @@ class Escalator:
                             account_id=row["account_id"], rule=row["rule"], detail=detail)
 
     def _escalate_critical(self, row) -> None:
+        # A coverage alert escalates on this path whatever its level (#103
+        # item 3); the words say what it is rather than borrowing "CRITICAL".
+        what = ("CRITICAL alert" if row["severity"] == "CRITICAL"
+                else f"{row['severity']} coverage alert (monitoring is blind on {row['label']})")
         alert = AlertMessage(
             account_label=row["label"],
             rule=f"ESCALATION-unacknowledged: {row['rule']}",
             severity="CRITICAL",
             confidence=row["confidence"],
             message=(
-                f"CRITICAL alert #{row['id']} has not been acknowledged. "
+                f"{what} #{row['id']} has not been acknowledged. "
                 f"Original: {row['message']} -- acknowledge with: sentinel ack {row['id']}"
             ),
             evidence={"original_alert_id": row["id"]},

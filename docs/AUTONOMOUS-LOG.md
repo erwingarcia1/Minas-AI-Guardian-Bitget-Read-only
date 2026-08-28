@@ -5594,3 +5594,21 @@ predates this record:
   one of those 83 pages was itself undelivered (delivered_to=0); the 41
   MEDIUM raised no page at all and were routed to a digest that has never
   run. From this commit on, the same question is answered per leg.
+
+# 2026-08-28 · Item 3 of the #103 batch: coverage alerts route on meaning
+
+sentinel/alerts/meaning.py: COVERAGE_RULES = {account_unreachable,
+monitoring_key_tamper_suspected}; routing_tier() hands dispatch the
+CRITICAL channel set for them whatever the level; preference_tier()
+makes the member's #24 preferences judge them as CRITICAL (never held,
+email floor); the escalator's query adds `rule IN (coverage) AND sent_at
+< critical_cutoff` and sends them down the critical path (secondary
+contact + operator page), with the words "HIGH coverage alert
+(monitoring is blind on <label>)" instead of borrowing "CRITICAL". The
+severity column is untouched. Not changed: the digest still lists
+MEDIUM/LOW routine alerts; a coverage alert never waits for it. 10
+tests (a MEDIUM unreachable with MEDIUM routed to [digest] alone reaches
+all three direct channels and keeps severity MEDIUM; a routine MEDIUM
+still waits; escalation at 20 min reaches kin + pages, at 10 min waits;
+a routine MEDIUM never escalates; quiet hours + email-off cannot hold
+or mute it), 3 probes, curated selection updated.

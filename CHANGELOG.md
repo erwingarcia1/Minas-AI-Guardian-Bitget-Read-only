@@ -31,6 +31,17 @@ container")._
 
 ### Fixed
 
+- **An unreachable account reaches a human directly, whatever its level
+  (#103 item 3).** `account_unreachable` and `monitoring_key_tamper_
+  suspected` mean the product has gone blind on a customer. 41 of them on
+  production were routed, by severity, to a digest that had never run.
+  Routing is now decided by MEANING (`sentinel/alerts/meaning.py`): a
+  coverage alert is delivered on the CRITICAL channel set, is judged as a
+  CRITICAL by the member's preferences (never held for quiet hours, email
+  is the floor), and escalates at the CRITICAL window to the emergency
+  contact with an operator page. The severity is not changed - a HIGH
+  stays a HIGH - so severity keeps meaning "how urgent".
+
 - **Every delivery is recorded per recipient per channel (#103 item 2).**
   "Was this customer actually told" was unanswerable for every alert in
   the database: `alerts.delivered_to` counted the global channels only and

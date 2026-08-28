@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, timezone
 
 from sentinel.alerts.base import AlertMessage
 from sentinel.alerts.email import EmailChannel
+from sentinel.alerts.meaning import preference_tier
 from sentinel.alerts.sms import build_sms_channel
 from sentinel.config import env_setting
 
@@ -293,7 +294,9 @@ class ContactRouter:
             return emails, phones, []
         from sentinel.alerts.preferences import channel_allowed, hold_alert, in_quiet_hours, member_prefs
 
-        severity = detection.severity
+        # #103 item 3: a coverage alert is judged as a CRITICAL here - never
+        # held for quiet hours, email is the floor - whatever level it carries.
+        severity = preference_tier(getattr(detection, "rule", None), detection.severity)
         owner_of_phone = self._phone_owners(account_id)
         kept_emails, held_for, telegram = [], [], []
         muted = set()

@@ -6,6 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from sentinel.alerts.base import AlertChannel, AlertMessage
+from sentinel.alerts.meaning import routing_tier
 from sentinel.db import Database
 from sentinel.detectors.base import Detection
 from sentinel.snooze import active_snooze
@@ -163,8 +164,12 @@ def dispatch(
     # channel after it (including the ones configured as backups), left no
     # `alerts` row at all, and threw far enough to abandon the rest of that
     # account's poll cycle (#57).
+    # Route on the meaning, not the level (#103 item 3): a coverage alert
+    # takes the CRITICAL channel set whatever its severity says, so "we are
+    # blind on your account" never waits for a digest.
+    routed = channels.get(routing_tier(detection.rule, detection.severity), [])
     delivered = 0
-    for channel in ([] if snoozed_until else channels.get(detection.severity, [])):
+    for channel in ([] if snoozed_until else routed):
         try:
             channel.send(alert)
             delivered += 1
@@ -176,7 +181,7 @@ def dispatch(
             )
             _record_global(db, channel, "failed", detection, account_id, alert_id, detail=str(exc))
     if snoozed_until:
-        for channel in channels.get(detection.severity, []):
+        for channel in routed:
             _record_global(db, channel, "skipped", detection, account_id, alert_id,
                            detail=f"snoozed until {snoozed_until}")
 
