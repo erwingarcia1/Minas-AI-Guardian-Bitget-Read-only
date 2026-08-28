@@ -5652,3 +5652,20 @@ and would have paged. Wiring: a separate hourly timer rather than a
 hook inside #81's two-minute one - one timer fires one unit, the two
 have different cadences and different loud-once state; both install
 the same way.
+
+# 2026-08-28 · Pre-release batch, item 1: the liveness gate's reporter
+
+Fact: the declared `telegram` entry is the BOT TOKEN; member Telegram
+(#18, contact.py) and the ops chats (#53, cli.py) read the same
+TELEGRAM_BOT_TOKEN and are one bot with different chat ids. So the
+operator page's Telegram leg shares its death with what it reports on,
+and so does its email leg (`smtp` is declared). Both are now named
+BEST_EFFORT_LEGS. The guaranteed paths, REPORT_PATHS, are the ones that
+cannot be declared mechanisms: the operator_pages row (written whether
+or not any channel delivered; on the dashboard's pages card), journald
++ /etc/motd from the host script (no network, no credential), and the
+timer unit's non-zero exit. The docstring says all of this naming both
+Telegrams; test_no_guaranteed_report_path_is_a_declared_mechanism fails
+if a report path ever appears in the declaration or a best-effort leg
+stops being declared; test_the_member_and_ops_telegram_share_one_bot_
+token pins the fact the reasoning rests on.

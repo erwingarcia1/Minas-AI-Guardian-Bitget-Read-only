@@ -25,17 +25,33 @@ config/liveness-holds.yaml with a reason, and is not a failure. An
 UNDECLARED hold is exactly the failure this gate exists to catch.
 
 How the verdict travels - the design constraint: it must not travel by
-any channel this gate is checking. The digest is checked here, so a
-report through the digest could never say the digest is dead; SMS is
-checked here. The verdict therefore goes out as an OPERATOR PAGE, whose
-path (Telegram ops chat + ops email, via OperatorAlerter) is proven live
-independently - production's 50 `critical_alert_escalated` pages were
-delivered on it - and is not itself a declared mechanism. As a second,
-network-free path the host script (scripts/host/liveness.sh) writes the
-verdict to journald and /etc/motd in #81's loud-once style, so a dead
-Telegram cannot hide a dead everything-else. The page is deduped by the
-operator alerter's HIGH cooldown, so a persistently dead mechanism pages
-once per interval, not once per tick.
+any channel this gate is checking, because a checker that reports
+through the digest can never say the digest is dead.
+
+Resolved factually (2026-08-28): the declared `telegram` entry is the
+BOT TOKEN, and the member Telegram linking mechanism (#18) and the ops
+team chat (#53) are the SAME bot with different chat ids - one token,
+one Telegram API, one way to die. So the operator page's Telegram leg is
+NOT an independent path, and neither is its email leg (`smtp` is
+declared too). Both are kept as BEST-EFFORT legs - useful while they
+work - and the guaranteed paths are the ones that are not, and cannot
+be, mechanisms in this declaration:
+
+  1. the `operator_pages` ROW. OperatorAlerter writes it whether or not
+     any channel delivered (#57's rule), and the ops dashboard's pages
+     card shows it - the same surface an operator already reads.
+  2. journald at err and /etc/motd, written by the host script
+     (scripts/host/liveness.sh) once per red transition in #81's
+     loud-once style - no network, no credential, no bot.
+  3. the timer unit's non-zero exit: `systemctl --failed` on the host
+     names minas-liveness.service.
+
+`REPORT_PATHS` names those three; `BEST_EFFORT_LEGS` names the two
+declared mechanisms the page also travels by. tests/test_liveness_gate.py
+FAILS if a report path ever appears in the declaration, or if a
+best-effort leg stops being declared (it would then be a hidden
+dependency). The page is deduped by the operator alerter's HIGH
+cooldown, so a persistently dead mechanism pages once per interval.
 """
 from __future__ import annotations
 
@@ -53,6 +69,13 @@ FRESH = timedelta(hours=48)
 PAGE_RULE = "liveness_failed"
 
 LIVE, HELD, DEAD, UNKNOWN = "live", "held", "dead", "unknown"
+
+# Where the verdict is GUARANTEED to land. None of these may ever be a
+# declared mechanism - see the module docstring and the test that enforces it.
+REPORT_PATHS = ("operator_pages", "journald", "motd", "systemd")
+# Declared mechanisms the operator page ALSO travels by, best effort: they
+# share their failure with what they report on, so they are not relied on.
+BEST_EFFORT_LEGS = ("telegram", "smtp")
 
 
 @dataclass

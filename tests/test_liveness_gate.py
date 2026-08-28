@@ -205,6 +205,39 @@ def test_the_shipped_holds_file_parses_and_names_only_holdable_entries():
 
 # --- the report path: not through anything it checks -----------------------------------------
 
+def test_no_guaranteed_report_path_is_a_declared_mechanism():
+    """The constraint, enforced: the digest cannot report the digest dead,
+    and the Telegram bot cannot report the Telegram bot dead. Every path
+    the verdict is guaranteed to reach must be absent from the declaration
+    - as a key, a switch, or a title - and the two best-effort legs must
+    stay declared, so the shared failure is on record rather than hidden."""
+    from sentinel.liveness import BEST_EFFORT_LEGS, REPORT_PATHS
+
+    declared_words = set()
+    for e in ENTRIES:
+        declared_words.add(e.key.lower())
+        declared_words.update(s.lower() for s in e.switches)
+        declared_words.update(e.title.lower().split())
+    for path in REPORT_PATHS:
+        assert path.lower() not in declared_words, f"the verdict travels by {path}, which is a declared mechanism"
+        assert not any(path.lower() in w for w in declared_words), f"{path} is entangled with a declared mechanism"
+    assert set(BEST_EFFORT_LEGS) <= {e.key for e in ENTRIES}
+    assert "telegram" in BEST_EFFORT_LEGS and "smtp" in BEST_EFFORT_LEGS, "the shared-bot fact must stay on record"
+    # and the guaranteed paths are real: the row is written even when no channel delivered
+    src = (ROOT / "sentinel/alerts/operator.py").read_text()
+    assert "INSERT INTO operator_pages" in src
+    host = (ROOT / "scripts/host/liveness.sh").read_text()
+    assert "logger -t minas-liveness" in host and "MOTD_FILE" in host
+
+
+def test_the_member_and_ops_telegram_share_one_bot_token():
+    """The fact the docstring rests on, pinned: if these ever diverge the
+    docstring is wrong and the best-effort leg might have become independent."""
+    contact = (ROOT / "sentinel/alerts/contact.py").read_text()
+    cli = (ROOT / "sentinel/cli.py").read_text()
+    assert 'env_setting("TELEGRAM_BOT_TOKEN")' in contact, "member Telegram (#18) reads TELEGRAM_BOT_TOKEN"
+    assert 'env_setting("TELEGRAM_BOT_TOKEN")' in cli, "the ops channels (#53) read TELEGRAM_BOT_TOKEN"
+
 def test_the_verdict_pages_the_operator_once_per_interval_and_never_through_digest_or_sms(db):
     from sentinel.alerts.operator import OperatorAlerter
     from sentinel.config import RulesConfig
