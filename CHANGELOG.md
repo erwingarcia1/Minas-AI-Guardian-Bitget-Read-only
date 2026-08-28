@@ -96,6 +96,10 @@ deliberate ways:
 
 ### Added
 
+- **Failed SMS deliveries are shown to operators** (#19). The rows have
+  been recorded since #53; the ops dashboard now carries a card with the
+  latest twenty refused texts and the provider's reason, so a dead SMS
+  account is seen rather than discovered.
 - **Delete my data — now, with the gap on record** (#46, decision 6's
   interim). From the portal's security page (password, and the second
   factor when on) or by Minas on a phoned request (`sentinel erase

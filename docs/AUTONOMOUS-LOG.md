@@ -5306,3 +5306,16 @@ touches HIGH/CRITICAL only. Carrying this as "still to verify" from data
 would wait for an event that may never happen; the code path is pinned.
 Also found: contact_deliveries (#37) does not exist on production yet -
 expected, unreleased.
+
+# 2026-08-28 · #19 slice: failed SMS deliveries surfaced; the critical-only criterion sent back as a decision
+
+Built: `_sms_failures_section` on the dashboard home (latest 20
+sms_deliveries rows with status='failed', provider and reason), pinned
+by test. NOT built, deliberately: #19's criterion "SMS is reserved for
+critical alerts only" - today the per-account SMS leg texts every
+severity the member's #24 grid allows (default: all), and decision 4
+(2026-08-27) gave members an SMS toggle per level. Enforcing critical-only
+would override a decision two days old; leaving it contradicts the
+issue. Written up on #19 for the owner. The other two unticked criteria
+(phone verification by code; costs per customer) need a provider and
+credentials.

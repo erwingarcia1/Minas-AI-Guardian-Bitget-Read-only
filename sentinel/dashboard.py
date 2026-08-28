@@ -521,7 +521,7 @@ def _render(db: Database, rules=None, qs=None) -> str:
         '<section><div class="card"><div class="card-head"><h2>Recent alerts</h2>'
         '<span class="count">latest 50</span></div><table><thead><tr><th>Time</th><th>Account</th>'
         f"<th>Severity</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
-        + _drills_section(db) + _operator_pages_section(db)
+        + _sms_failures_section(db) + _drills_section(db) + _operator_pages_section(db)
         + _expected_activity_section(db)
     )
     return _page(nav, body)
@@ -561,6 +561,31 @@ def _expected_activity_section(db: Database) -> str:
         '<span class="count">what customers keep saying was them · top 20</span></div>'
         '<table><thead><tr><th>Rule</th><th>Account</th><th>Marked</th><th>Last</th>'
         f"</tr></thead><tbody>{body}</tbody></table></div></section>"
+    )
+
+
+def _sms_failures_section(db: Database) -> str:
+    """#19: delivery failures surfaced to an operator. The rows have been
+    recorded since #53 (`sms_deliveries.status = 'failed'`); until this card
+    they were queryable and unread. Latest 20, with the provider's reason."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT s.created_at, s.phone, s.rule, s.provider, s.detail, a.label FROM sms_deliveries s "
+            "LEFT JOIN accounts a ON a.id = s.account_id WHERE s.status = 'failed' "
+            "ORDER BY s.created_at DESC LIMIT 20")
+        rows = cur.fetchall()
+    if not rows:
+        return ""
+    body = "".join(
+        f'<tr><td class="mono">{_ts(r["created_at"])}</td><td>{_dd(r["label"])}</td>'
+        f'<td class="mono">{_dd(r["phone"])}</td><td class="rule">{html.escape(str(r["rule"] or ""))}</td>'
+        f'<td>{_dd(r["provider"])}</td><td>{html.escape(str(r["detail"] or ""))}</td></tr>'
+        for r in rows)
+    return (
+        '<section><div class="card"><div class="card-head"><h2>Failed SMS deliveries</h2>'
+        '<span class="count">the provider refused these · latest 20</span></div>'
+        '<table><thead><tr><th>Time</th><th>Account</th><th>Phone</th><th>Rule</th><th>Provider</th>'
+        f"<th>Reason</th></tr></thead><tbody>{body}</tbody></table></div></section>"
     )
 
 

@@ -370,3 +370,25 @@ def test_the_not_configured_warning_fires_on_a_half_filled_env(db, rules, monkey
     assert any("no SMS provider is configured" in r.message for r in caplog.records)
     assert not any("SMS to" in r.message and "failed" in r.message for r in caplog.records)
     assert [r["status"] for r in _deliveries(db, account_id) if r["status"] == "failed"] == []
+
+
+
+# --- #19: delivery failures reach an operator's eyes ----------------------------------
+
+def test_failed_sms_deliveries_are_surfaced_on_the_dashboard(db):
+    """The rows existed since #53; a failure nobody looks at is a failure
+    nobody knows about. The card shows the provider's reason."""
+    from sentinel.dashboard import _sms_failures_section
+
+    assert _sms_failures_section(db) == ""
+    account_id = make_account(db)
+    with db.cursor() as cur:
+        cur.execute("INSERT INTO sms_deliveries (account_id, alert_id, rule, phone, provider, status, detail, created_at) "
+                    "VALUES (?, NULL, 'withdrawal_initiated', '+15550001111', 'ClickSendSmsChannel', 'failed', "
+                    "'HTTP 401 from ClickSend', '2026-08-27T10:00:00+00:00')", (account_id,))
+        cur.execute("INSERT INTO sms_deliveries (account_id, alert_id, rule, phone, provider, status, detail, created_at) "
+                    "VALUES (?, NULL, 'withdrawal_initiated', '+15550001111', NULL, 'sent', NULL, "
+                    "'2026-08-27T11:00:00+00:00')", (account_id,))
+    card = _sms_failures_section(db)
+    assert "Failed SMS deliveries" in card and "HTTP 401 from ClickSend" in card and "+15550001111" in card
+    assert card.count("<tr>") == 2, "only the failed row, plus the header"
