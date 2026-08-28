@@ -178,6 +178,15 @@ class AlertMessage:
     # as one - so it is said first, on every surface, and the runbook is
     # withheld (the "explicitly excluded" this file's gate anticipated).
     drill: bool = False
+    # #8: the member's own name for the connection, used wherever a PERSON
+    # reads the account: subject, customer body, digest. The operator format
+    # keeps `account_label`, the slug - that is the identity operators and
+    # the CLI work with. Never a key.
+    display_label: str | None = None
+
+    @property
+    def customer_label(self) -> str:
+        return (self.display_label or "").strip() or self.account_label
 
     def render(self) -> str:
         """Operator format: rule names, confidence and raw evidence, all of
@@ -216,8 +225,8 @@ class AlertMessage:
         if self.notice:
             return _NOTICE_SUBJECTS.get(self.rule, "A change was made to your Minas AI Guardian account")
         if self.drill:
-            return f"[DRILL] A test of your Minas AI Guardian alerts - {self.account_label}"
-        return f"{_SUBJECT_PREFIX.get(self.severity, '')}{self.headline()} - {self.account_label}"
+            return f"[DRILL] A test of your Minas AI Guardian alerts - {self.customer_label}"
+        return f"{_SUBJECT_PREFIX.get(self.severity, '')}{self.headline()} - {self.customer_label}"
 
     def render_customer(self) -> str:
         """Read on a phone, in a hurry, possibly by someone frightened.
@@ -229,7 +238,7 @@ class AlertMessage:
             return f"{self.message}\n\n--\n{_FOOTER}"
         if self.drill:
             return (
-                f"THIS IS A DRILL. {self.account_label} - a test of your Minas AI Guardian alerts. "
+                f"THIS IS A DRILL. {self.customer_label} - a test of your Minas AI Guardian alerts. "
                 "Nothing has happened on your account and no action is needed. If this message "
                 "reached you, the path from our detection to your phone works.\n\n"
                 f"{portal_action_line()}\n\n--\n{_FOOTER}"
@@ -241,7 +250,7 @@ class AlertMessage:
         # nested brackets on top of that. Leading with the account also reads
         # better for a customer holding more than one.
         headline = self.headline()
-        opener = f"{self.account_label} - {headline[0].lower()}{headline[1:]}."
+        opener = f"{self.customer_label} - {headline[0].lower()}{headline[1:]}."
         # Plain text on purpose (decision 16): a reference the customer can
         # quote and find at the top of the portal home, never a link -
         # training the click is what a phisher's "view your incident" needs.

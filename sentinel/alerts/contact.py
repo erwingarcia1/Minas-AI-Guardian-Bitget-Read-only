@@ -237,6 +237,7 @@ class ContactRouter:
             notice=getattr(detection, "is_notice", False),
             incident_id=alert_id,
             drill=getattr(detection, "is_drill", False),
+            display_label=getattr(detection, "display_label", None),
         )
 
         emails_for_email = [e for e in emails if e not in self._email_muted]

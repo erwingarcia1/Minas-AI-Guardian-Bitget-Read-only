@@ -28,6 +28,7 @@ from sentinel.dashboard import (
 )
 from sentinel.db import Database
 from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
+from sentinel.naming import display_label
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
 from sentinel.passwords import LoginThrottle
 from sentinel.rules_schema import default_for
@@ -366,6 +367,7 @@ NON_PRIMARY_ALLOWED = frozenset({
 # Everything that changes what is watched, how, or where alerts go.
 # Account-scoped routes name the account they act on (see `_post_target`).
 PRIMARY_ONLY = frozenset({
+    "/account/name",  # #8: the member's name for a connection
     "/key", "/erase", "/preferences", "/digest/frequency", "/drill",
     "/telegram/link", "/telegram/unlink",
     "/pause/request", "/pause/cancel", "/snooze", "/expected",
@@ -379,6 +381,7 @@ PRIMARY_ONLY = frozenset({
 POST_ROUTES = PRE_AUTH | NON_PRIMARY_ALLOWED | PRIMARY_ONLY
 
 ACCOUNT_SCOPED = {
+    "/account/name": ("account_id", "account"),
     "/key": ("account_id", "account"),
     "/pause/request": ("account_id", "account"),
     "/pause/cancel": ("account_id", "account"),
@@ -1377,7 +1380,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
         marks = ",".join("?" for _ in ids)
         with db.cursor() as cur:
             cur.execute(
-                f"SELECT al.id, al.sent_at, al.severity, al.rule, al.acknowledged_at, al.acknowledged_by, al.dedup_key, al.repeat_count, al.last_repeat_at, ac.label "
+                f"SELECT al.id, al.sent_at, al.severity, al.rule, al.acknowledged_at, al.acknowledged_by, al.dedup_key, al.repeat_count, al.last_repeat_at, ac.label , ac.member_name "
                 f"FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
                 f"WHERE al.account_id IN ({marks}) ORDER BY al.sent_at DESC LIMIT 30",
                 ids,
@@ -1400,7 +1403,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
         return (
             '<article class="acct"><div class="acct__head"><div>'
             f"<p class=\"acct__label\"><a class='acctlink' href='/account?id={r['id']}'>"
-            f"{html.escape(r['label'])} ›</a></p>"
+            f"{html.escape(display_label(r))} ›</a></p>"
             f"<p class=\"acct__exchange\">{html.escape((r['exchange'] or 'bitget').title())}"
             f" · {_account_type_label(r['topology'])}</p>"
             f"</div>{badge}</div>"
@@ -1462,7 +1465,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
         '<div class="alert-item"><div class="alert-item__head">'
         f"{_sev_badge(r['severity'])}"
         f"<a class='acctlink' href='/incident?id={int(r['id'])}'>{html.escape(r['rule'])} ›</a>"
-        f"<span class='meta'>{html.escape(r['label'])} · {_ts(r['sent_at'])}</span>"
+        f"<span class='meta'>{html.escape(display_label(r))} · {_ts(r['sent_at'])}</span>"
         f"{_repeat_note(r)}</div>"
         f"{_ack_cell(r, snoozed.get(r['dedup_key']), rules, int(r['id']) in marked)}"
         "</div>"
@@ -1514,7 +1517,27 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     return _page(body, email, "/")
 
 
-def _render_member_account(db: Database, email: str, account_id: int, rules=None) -> str | None:
+def _name_form(acct, error: str | None = None) -> str:
+    """#8: name this connection. Shown to everyone who can see the page;
+    the POST is primary-only (the gate refuses a secondary with the
+    standard page), so a secondary sees the name but cannot change it."""
+    current = html.escape((acct["member_name"] or "") if "member_name" in acct.keys() else "")
+    err = f'<div class="state state--warn" role="alert">{html.escape(error)}</div>' if error else ""
+    return (
+        '<section class="panel" aria-labelledby="name-title"><h2 id="name-title">Name this connection</h2>'
+        '<p class="muted">Your own name for this account - it appears on every alert, in your digest '
+        f'and across this portal, so you can tell your accounts apart. Minas keeps the reference '
+        f'<code>{html.escape(str(acct["label"]))}</code> for its own records.</p>'
+        f'{err}<form class="form" method="post" action="/account/name">'
+        f'<input type="hidden" name="account_id" value="{int(acct["id"])}">'
+        '<div class="field"><label for="conn-name">Name</label>'
+        f'<input class="input" id="conn-name" name="name" maxlength="40" value="{current}" '
+        'placeholder="e.g. Binance - savings"></div>'
+        '<button class="btn btn--secondary" type="submit">Save name</button></form></section>'
+    )
+
+
+def _render_member_account(db: Database, email: str, account_id: int, rules=None, *, name_error: str | None = None) -> str | None:
     """Account detail, only if this account belongs to the member. Returns
     None (rendered as not-found) otherwise - existence is never revealed."""
     rows = {r["id"]: r for r in member_accounts(db, email)}
@@ -1632,7 +1655,7 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
 
     body = (
         '<article class="acct"><div class="acct__head"><div>'
-        f'<p class="acct__label">{html.escape(acct["label"])}</p>'
+        f'<p class="acct__label">{html.escape(display_label(acct))}</p>'
         f'<p class="acct__exchange">{html.escape((acct["exchange"] or "bitget").title())}'
         f" · {_account_type_label(acct['topology'])}</p>"
         f"</div>{_status_pill(acct['status'])}</div>"
@@ -1640,6 +1663,7 @@ def _render_member_account(db: Database, email: str, account_id: int, rules=None
         f'<div class="kv__row"><dt>Monitored since</dt><dd>{_ts(acct["onboarded_at"])}</dd></div>'
         f'<div class="kv__row"><dt>Last successful check</dt><dd>{_ts(last_ok, "Never")}</dd></div>'
         "</dl></article>"
+        + _name_form(acct, name_error)
         + posture
         + _pause_section(db, int(account_id), acct["status"]) +
         '<section class="panel" aria-labelledby="events-title"><h2 id="events-title">Events</h2>'
@@ -1769,7 +1793,7 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
             except ValueError:
                 age = None
 
-        label = str(r["label"])
+        label = display_label(r)
         fresh = age is not None and age < window and r["status"] == "active"
         auth_failing = (r["consecutive_auth_failures"] or 0) > 0
 
@@ -1815,7 +1839,8 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
 
         accounts.append({
             "account_id": int(r["id"]),
-            "label": label,
+            "label": label,  # what the person reads (#8); the slug is `slug`
+            "slug": str(r["label"]),
             "last_success_at": last_ok,
             "watched": bool(fresh and not auth_failing),
             "reason": reason,
@@ -1994,7 +2019,7 @@ def _render_status(db: Database, email: str, rules=None, drill_notice: str | Non
 
     cards = "".join(
         '<article class="acct"><div class="acct__head"><div>'
-        f'<p class="acct__label">{html.escape(a["label"])}</p></div>{_watch_badge(a)}</div>'
+        f'<p class="acct__label">{html.escape(display_label(a))}</p></div>{_watch_badge(a)}</div>'
         '<dl class="kv"><div class="kv__row"><dt>Last successful check</dt>'
         f"<dd{'' if a['watched'] else ' class=muted'}>{_ts(a['last_success_at'], 'Never')}</dd>"
         "</div></dl>"
@@ -2233,7 +2258,7 @@ def _sensitivity_section(db: Database, email: str, rules=None) -> str:
                           f"<dd>{html.escape(phrase(value, overrides))} {chip}</dd></div>")
         cards += (
             f'<article class="acct"><div class="acct__head"><div>'
-            f'<p class="acct__label">{html.escape(acct["label"])}</p></div></div>'
+            f'<p class="acct__label">{html.escape(display_label(acct))}</p></div></div>'
             f'<dl class="kv">{rows_html}</dl></article>'
         )
     return (
@@ -2271,7 +2296,7 @@ def _render_activity(db: Database, email: str) -> str:
     items = "".join(
         '<div class="alert-item"><div class="alert-item__head">'
         f"<strong>{html.escape(ADMIN_EVENT_LABELS.get(r['event_type'], r['event_type']))}</strong>"
-        f"<span class='meta'>{html.escape(r['label'])} · {_ts(r['created_at'])}</span></div>"
+        f"<span class='meta'>{html.escape(display_label(r))} · {_ts(r['created_at'])}</span></div>"
         '<dl class="kv">'
         f'<div class="kv__row"><dt>Detail</dt><dd class="muted">'
         f"{_activity_detail(r['event_type'], _payload(r['payload_json']))}</dd></div>"
@@ -2346,7 +2371,7 @@ def alert_history_rows(db: Database, account_ids: list[int], *,
         total = cur.fetchone()["n"]
         sql = (
             "SELECT al.id, al.sent_at, al.severity, al.rule, al.message, al.confidence, "
-            "al.delivered_to, al.acknowledged_at, al.acknowledged_by, "
+            "al.delivered_to, al.acknowledged_at, al.acknowledged_by, ac.member_name, "
             "al.repeat_count, al.last_repeat_at, ac.label "
             "FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
             # id breaks ties: two alerts in the same second must not swap
@@ -2413,7 +2438,7 @@ def _render_alert_history(db: Database, email: str, qs) -> str:
 
     account_options = '<option value="">All accounts</option>' + "".join(
         f'<option value="{r["id"]}"{" selected" if f["account"] == r["id"] else ""}>'
-        f'{html.escape(r["label"])}</option>'
+        f'{html.escape(display_label(r))}</option>'
         for r in accounts
     )
     severity_options = '<option value="">All severities</option>' + "".join(
@@ -2446,7 +2471,7 @@ def _render_alert_history(db: Database, email: str, qs) -> str:
         '<div class="alert-item"><div class="alert-item__head">'
         f"{_sev_badge(r['severity'])}"
         f"<a class='acctlink' href='/incident?id={int(r['id'])}'>{html.escape(r['rule'])} ›</a>"
-        f"<span class='meta'>{html.escape(r['label'])} · {_ts(r['sent_at'])}</span>"
+        f"<span class='meta'>{html.escape(display_label(r))} · {_ts(r['sent_at'])}</span>"
         f"{_repeat_note(r)}"
         f"{_ack_text(r)}</div></div>"
         for r in rows
@@ -2507,7 +2532,7 @@ def _alert_history_csv(db: Database, email: str, qs) -> bytes:
     ])
     for r in rows:
         writer.writerow([
-            r["id"], r["sent_at"], _csv_defang(r["label"]), r["severity"],
+            r["id"], r["sent_at"], _csv_defang(display_label(r)), r["severity"],
             _csv_defang(r["rule"]), _csv_defang(r["message"]),
             _csv_defang(r["confidence"]), r["delivered_to"],
             r["acknowledged_at"] or "", _csv_defang(r["acknowledged_by"]),
@@ -2565,7 +2590,7 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
     marks = ",".join("?" for _ in account_ids)
     with db.cursor() as cur:
         cur.execute(
-            f"SELECT a.*, ac.label, ac.exchange FROM alerts a "
+            f"SELECT a.*, ac.label, ac.member_name, ac.exchange FROM alerts a "
             f"JOIN accounts ac ON ac.id = a.account_id "
             f"WHERE a.id = ? AND a.account_id IN ({marks})",
             [alert_id, *account_ids],
@@ -2674,7 +2699,7 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         '<div class="alert-meta">'
         f'<p><strong style="color:var(--text)">Detected:</strong> {_ts(alert["sent_at"])}</p>'
         f'<p><strong style="color:var(--text)">Account:</strong> '
-        f"{html.escape((alert['exchange'] or 'bitget').title())} — {html.escape(alert['label'])}</p>"
+        f"{html.escape((alert['exchange'] or 'bitget').title())} — {html.escape(display_label(alert))}</p>"
         f'<p><strong style="color:var(--text)">Incident:</strong> #{int(alert["id"])} · '
         f"{html.escape(alert['rule'])} · confidence {html.escape(alert['confidence'] or '—')}</p>"
         "</div></section>"
@@ -2949,7 +2974,7 @@ def _render_replace_key(db: Database, email: str, account_id: int, *,
 
     body = (
         '<div class="page-head"><h1>Replace the monitoring key</h1>'
-        f'<p class="muted">{html.escape(acct["label"])}</p></div>'
+        f'<p class="muted">{html.escape(display_label(acct))}</p></div>'
         + banner +
         '<section class="panel"><ul class="feature-list">'
         + _tick_li("yes", "Read-only keys only.",
@@ -3091,8 +3116,8 @@ def _erasure_section(db: Database, email: str) -> str:
     from sentinel.twofactor import is_enabled
 
     scope = erasure_scope(db, email)
-    primary = ", ".join(html.escape(a["label"]) for a in scope["primary"]) or "none"
-    secondary = ", ".join(html.escape(a["label"]) for a in scope["secondary"])
+    primary = ", ".join(html.escape(display_label(a)) for a in scope["primary"]) or "none"
+    secondary = ", ".join(html.escape(display_label(a)) for a in scope["secondary"])
     code_field = ""
     if is_enabled(db, _MEMBER, email):
         code_field = ('<div class="field"><label for="er-code">Code from your authenticator</label>'
@@ -4130,6 +4155,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 "/snooze": self._snooze,
                 "/expected": self._expected,
                 "/key": self._replace_key,
+                "/account/name": self._name_account,
             }
             assert set(routes) == POST_ROUTES, "POST_ROUTES must mirror the dispatch table"
             handler = routes.get(path)
@@ -4189,6 +4215,32 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
         def _refuse(self, email):
             logger.info("portal: non-primary contact %s refused a primary-only change", email)
             self._send(_render_refused(email).encode(), 403)
+
+        def _name_account(self, form):
+            """#8: the member names a connection. Primary-only and
+            account-scoped by the gate; the account is looked up BY ID inside
+            the member's own scope, never by any name."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            try:
+                account_id = int((form.get("account_id") or [""])[0])
+            except (TypeError, ValueError):
+                self._send(_render_not_found().encode(), 404)
+                return
+            if account_id not in {int(r["id"]) for r in member_accounts(db, email)}:
+                self._send(_render_not_found().encode(), 404)
+                return
+            from sentinel.naming import set_member_name
+
+            try:
+                set_member_name(db, account_id, (form.get("name") or [""])[0], actor=email)
+            except ValueError as exc:
+                page = _render_member_account(db, email, account_id, rules, name_error=str(exc))
+                self._send((page or _render_not_found()).encode(), 400)
+                return
+            self._redirect(f"/account?id={account_id}")
 
         def _logout(self, form):
             self._redirect("/", [(

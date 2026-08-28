@@ -31,6 +31,15 @@ container")._
 
 ### Added
 
+- **A member can name each connection (#8).** "Binance - savings" instead
+  of `binance-jaypee-2`, set from the account page by the primary contact
+  and used everywhere a person reads the account: alert subject and body,
+  the digest, the portal, the incident page, the CSV export, the note to
+  the emergency contact. The operator slug stays the internal identity -
+  operators, the operator-format alert, the CLI and every lookup keep it;
+  the name is display only and is never a key. Renames appear on the
+  member's activity page.
+
 - **The liveness gate (#103 item 4).** Every mechanism that needs a human
   switch-on step is declared in `sentinel/liveness.py` with the act that
   switches it on and the signal that proves it is running: operator

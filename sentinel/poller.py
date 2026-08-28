@@ -43,6 +43,7 @@ from sentinel.detectors.withdrawal import detect_new_withdrawals
 from sentinel.events import append_event
 from sentinel.exchange import ExchangeClient, TamperSignal, exchange_account_uid, make_client
 from sentinel.identity import annotate_batch_occurrences, is_unidentifiable
+from sentinel.naming import display_label
 from sentinel.numeric import to_decimal
 
 logger = logging.getLogger("sentinel.poller")
@@ -227,6 +228,9 @@ class AccountPoller:
         return [e for e in emails if e], [p for p in phones if p]
 
     def _emit(self, account_id: int, label: str, detection) -> None:
+        # #8: the member's name for this connection rides on the detection;
+        # dispatch and the router put it where a person reads it.
+        detection.display_label = getattr(self, "_display", None) or label
         append_event(self._db, account_id, detection.rule, detection.severity, detection.evidence)
         if self._metrics is not None:
             self._metrics.detection_fired(detection.rule, detection.severity)
@@ -301,6 +305,7 @@ class AccountPoller:
     def run_fast_loop(self, account_row) -> None:
         account_id = account_row["id"]
         label = account_row["label"]
+        self._display = display_label(account_row)
         state = _get_poll_state(self._db, account_id)
 
         # Hints for per-symbol exchanges (Binance): pairs this account is known
@@ -586,6 +591,7 @@ class AccountPoller:
     def run_slow_loop(self, account_row) -> None:
         account_id = account_row["id"]
         label = account_row["label"]
+        self._display = display_label(account_row)
         try:
             client = _load_client(self._cipher, account_row)
             self._acquire(account_id, 1)

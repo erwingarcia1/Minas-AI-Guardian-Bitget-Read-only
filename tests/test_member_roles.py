@@ -105,6 +105,7 @@ def _form_for(path, account_id, alert_id):
     role refusal, and never as not-found)."""
     return {
         "/key": {"account_id": account_id, "api_key": "new-k", "secret": "new-s", "passphrase": "new-p"},
+        "/account/name": {"account_id": account_id, "name": "Binance - savings"},
         "/erase": {"password": "wrong-password", "confirm": "yes"},
         "/preferences": {},
         "/digest/frequency": {"frequency": "weekly"},

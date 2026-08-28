@@ -6,6 +6,7 @@ from datetime import datetime, timedelta, timezone
 from sentinel.alerts.base import AlertChannel, AlertMessage
 from sentinel.alerts.meaning import COVERAGE_RULES, is_coverage_rule
 from sentinel.db import Database
+from sentinel.naming import display_label
 
 logger = logging.getLogger("sentinel.escalation")
 
@@ -22,6 +23,7 @@ class _EscalationDetection:
 
     def __init__(self, alert: AlertMessage):
         self.rule = alert.rule
+        self.display_label = alert.display_label
         self.severity = alert.severity
         self.confidence = alert.confidence
         self.message = alert.message
@@ -73,7 +75,7 @@ class Escalator:
         with db.cursor() as cur:
             cur.execute(
                 "SELECT a.id, a.rule, a.severity, a.message, a.confidence, a.account_id, "
-                "ac.label, ac.alert_email, ac.alert_phone, ac.alert_email_secondary, "
+                "ac.label, ac.member_name, ac.alert_email, ac.alert_phone, ac.alert_email_secondary, "
                 "ac.alert_phone_secondary "
                 "FROM alerts a JOIN accounts ac ON ac.id = a.account_id "
                 "WHERE a.acknowledged_at IS NULL AND a.escalated_at IS NULL "
@@ -131,6 +133,7 @@ class Escalator:
                 else f"{row['severity']} coverage alert (monitoring is blind on {row['label']})")
         alert = AlertMessage(
             account_label=row["label"],
+            display_label=display_label(row),
             rule=f"ESCALATION-unacknowledged: {row['rule']}",
             severity="CRITICAL",
             confidence=row["confidence"],
@@ -183,7 +186,7 @@ class Escalator:
             confidence=row["confidence"],
             message=(
                 f"You are receiving this because the primary contact for "
-                f"{row['label']} has not responded to a {severity_word} alert in "
+                f"{display_label(row)} has not responded to a {severity_word} alert in "
                 f"{minutes} minutes. You are listed as the emergency contact for "
                 f"this account. Sign in to the Minas AI Guardian member portal to "
                 f"see the incident and what to do next."

@@ -59,6 +59,7 @@ ADMIN_EVENT_TYPES = (
     "member_password_changed",
     "member_two_factor_enabled",
     "member_two_factor_disabled",
+    "account_named",  # #8: the member named or renamed a connection
     "member_telegram_connected",
     "member_telegram_disconnected",
     "digest_frequency_changed",
@@ -81,6 +82,7 @@ ADMIN_EVENT_LABELS = {
     "member_password_changed": "Portal password changed",
     "member_two_factor_enabled": "Two-factor turned on",
     "member_two_factor_disabled": "Two-factor turned off",
+    "account_named": "Connection renamed",
     "member_telegram_connected": "Telegram alerts connected",
     "member_telegram_disconnected": "Telegram alerts disconnected",
     "digest_frequency_changed": "Digest schedule changed",

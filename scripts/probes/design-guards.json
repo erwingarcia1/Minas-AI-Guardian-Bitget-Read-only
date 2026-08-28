@@ -1697,5 +1697,26 @@
    "tests/test_config_key_deprecation.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "#8 the customer copy shows the slug, not the member's name",
+  "file": "sentinel/alerts/base.py",
+  "old": "        return (self.display_label or \"\").strip() or self.account_label\n",
+  "new": "        return self.account_label\n",
+  "tests": [
+   "tests/test_member_names.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#8 renaming a connection is open to the emergency contact (route falls out of PRIMARY_ONLY)",
+  "file": "sentinel/portal.py",
+  "old": "PRIMARY_ONLY = frozenset({\n    \"/account/name\",  # #8: the member's name for a connection\n",
+  "new": "PRIMARY_ONLY = frozenset({\n",
+  "tests": [
+   "tests/test_member_roles.py",
+   "tests/test_member_names.py"
+  ],
+  "expect": "killed"
  }
 ]

@@ -172,6 +172,8 @@ class Database:
             "ALTER TABLE accounts ADD COLUMN is_drill INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE accounts ADD COLUMN erased_at TEXT",
             "ALTER TABLE accounts ADD COLUMN customer_name TEXT",
+            # #8: the member's own name for a connection - display only, never a key
+            "ALTER TABLE accounts ADD COLUMN member_name TEXT",
             "ALTER TABLE accounts ADD COLUMN alert_email_secondary TEXT",
             "ALTER TABLE accounts ADD COLUMN alert_phone_secondary TEXT",
             "ALTER TABLE accounts ADD COLUMN telegram_handle TEXT",

@@ -5721,3 +5721,24 @@ overrule. CONTRIBUTING: "Retired criteria are amended in the issue, in
 the same commit". One thing noticed and NOT changed (no code in this
 item): the operator-format withdrawal message does carry the amount
 ("Withdrawal of {amount} {currency}"); customer copy does not.
+
+# 2026-08-28 · Pre-release batch, item 5: the member names each connection (#8)
+
+accounts.member_name (schema + migration), sentinel/naming.py
+(display_label(row) → the name or the slug; clean_name: ≤40 chars, one
+printable line, no < >; set_member_name looks the account up BY ID,
+writes an `account_named` event the member sees on /activity as
+"Connection renamed"). AlertMessage.display_label + customer_label: the
+subject and customer body use the name, render() (operator format)
+keeps the slug. The poller stamps display_label on every detection it
+emits; dispatch and the router carry it onto the message; the escalator
+selects member_name and names the connection in the emergency contact's
+note. Portal: every account label a member reads (home cards, account
+page, status, history, incident page, CSV) goes through display_label;
+member_status keeps the slug under "slug". Route POST /account/name is
+PRIMARY_ONLY and ACCOUNT_SCOPED (a secondary gets the standard 403; a
+stranger's id is 404); the form sits on the account page and shows the
+slug as "Minas's reference". 13 tests including a grep that member_name
+never appears in a WHERE clause or as a bound lookup outside naming.py;
+2 probes; curated selection updated. Not changed: the ops dashboard and
+the CLI, which keep the slug on purpose.

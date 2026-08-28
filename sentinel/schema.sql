@@ -11,6 +11,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     encrypted_passphrase TEXT NOT NULL,
     -- Customer / contact details captured at onboarding.
     customer_name TEXT,
+    -- #8: the member's own name for this connection (display only, never a key)
+    member_name TEXT,
     -- Optional per-account alert destination (in addition to severity routing).
     alert_email TEXT,
     alert_phone TEXT,
