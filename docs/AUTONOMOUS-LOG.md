@@ -5398,7 +5398,7 @@ docs/audits/2026-08-28-closed-issue-evidence.json. Tracking issue: #102.
 Nothing reopened, relabelled or edited on any closed issue.
 
 Totals: 5 closed-as-not-built by owner decision (#6, #23, #43, #44,
-#95); 56 fully evidenced; 27 partly evidenced; 2 contradicted; 1
+#95); 58 fully evidenced; 25 partly evidenced; 2 contradicted; 1
 claim-only (#74, an ops action - not evidenceable from the repo).
 
 The two contradictions. #25 (G-21): "secondary can view alerts but NOT
@@ -5415,7 +5415,7 @@ secondary's role before a gate is built. #65: the withdrawal message
 carries amount/coin/status, never the destination address the criterion
 names; the test was written to the weaker claim.
 
-The pattern across the 27 partly-evidenced: criteria reinterpreted at
+The pattern across the 25 partly-evidenced: criteria reinterpreted at
 build time without the issue being amended (#18 fallback, #28 precision
 metric, #45 revoke, #60 "derived", #73 prune timer), operator-side paths
 without the notify the member-side path has (#7 login details, #33
