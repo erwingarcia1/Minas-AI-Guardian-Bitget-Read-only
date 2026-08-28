@@ -38,8 +38,9 @@ def _history(db, aid):
                     evidence={"order_id": "o1"})
     alert_id = dispatch(db, {}, aid, "acct", det, {"CRITICAL": 15})
     with db.cursor() as cur:
-        cur.execute("INSERT INTO sms_deliveries (account_id, alert_id, rule, phone, status, created_at) "
-                    "VALUES (?, ?, 'r', '+1', 'sent', '2026-01-01')", (aid, alert_id))
+        cur.execute("INSERT INTO deliveries (account_id, alert_id, rule, channel, recipient, audience, kind, "
+                    "status, created_at) VALUES (?, ?, 'r', 'sms', '+1', 'customer', 'alert', 'accepted', "
+                    "'2026-01-01')", (aid, alert_id))
         cur.execute("INSERT INTO known_addresses (account_id, address, coin, source, first_seen_at) VALUES (?, 'addr', 'BTC', 'withdrawal', '2026-01-01')", (aid,))
     return alert_id
 

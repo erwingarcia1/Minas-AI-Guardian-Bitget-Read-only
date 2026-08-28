@@ -146,7 +146,7 @@ retention:
   events_days: "730"                  # forensic log; #29's incident timeline reads it
   alerts_days: "730"
   operator_pages_days: "730"
-  sms_deliveries_days: "730"
+  deliveries_days: "730"              # every delivery leg, every channel (#103 item 2)
   expected_activity_days: "730"  # "that was me" (#28); same window as the alert it judges
   dedup_days: "365"                   # see above - bounded below by correctness
   balance_snapshots_days: "7"         # only "what changed since the last poll" needs these

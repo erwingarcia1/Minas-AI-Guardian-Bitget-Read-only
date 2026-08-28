@@ -11,6 +11,20 @@ from sentinel.config import env_setting
 logger = logging.getLogger("sentinel.alerts.contact")
 
 
+def _kind_of(detection) -> str:
+    """What kind of message this is, for the delivery record."""
+    if getattr(detection, "is_drill", False):
+        return "drill"
+    rule = getattr(detection, "rule", "") or ""
+    if rule == "proof_of_life_digest":
+        return "digest"
+    if rule.startswith("ESCALATION") or type(detection).__name__ == "_EscalationDetection":
+        return "escalation"
+    if getattr(detection, "is_notice", False):
+        return "notice"
+    return "alert"
+
+
 class ContactRouter:
     """Delivers an account's alerts to the per-account email/phone captured at
     onboarding, in addition to the global severity routing. Transport comes
@@ -102,33 +116,18 @@ class ContactRouter:
         provider_message_id: str | None = None,
         detail: str | None = None,
     ) -> None:
+        """The SMS leg's row (#103 item 2): the same general record every
+        other leg writes; 'sent' is the transport's 'accepted'."""
         if self._db is None or account_id is None:
             return
-        with self._db.cursor() as cur:
-            cur.execute(
-                """
-                INSERT INTO sms_deliveries
-                    (account_id, alert_id, rule, phone, provider, provider_message_id, status, detail, created_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    account_id,
-                    alert_id,
-                    rule,
-                    phone,
-                    provider,
-                    provider_message_id,
-                    status,
-                    detail,
-                    datetime.now(timezone.utc).isoformat(),
-                ),
-            )
+        from sentinel.alerts.delivery import record_delivery
 
-    def _sms_pref_enabled(self, account_id: int) -> bool:
-        with self._db.cursor() as cur:
-            cur.execute("SELECT sms_alerts_enabled FROM accounts WHERE id = ?", (account_id,))
-            row = cur.fetchone()
-        return bool(row["sms_alerts_enabled"]) if row is not None else True
+        leg = getattr(self, "_leg", None) or {}
+        record_delivery(self._db, channel="sms", recipient=phone,
+                        status="accepted" if status == "sent" else status,
+                        audience=leg.get("audience", "customer"), kind=leg.get("kind", "alert"),
+                        alert_id=alert_id, account_id=account_id, rule=rule,
+                        provider=provider, provider_ref=provider_message_id, detail=detail)
 
     def _sms_suppressed(self, account_id: int, rule: str) -> bool:
         """Duplicate-SMS protection: has an SMS for this rule + account already
@@ -150,6 +149,22 @@ class ContactRouter:
         last = datetime.fromisoformat(row["created_at"])
         return datetime.now(timezone.utc) - last < timedelta(minutes=minutes)
 
+    def _sms_pref_enabled(self, account_id: int) -> bool:
+        with self._db.cursor() as cur:
+            cur.execute("SELECT sms_alerts_enabled FROM accounts WHERE id = ?", (account_id,))
+            row = cur.fetchone()
+        return bool(row["sms_alerts_enabled"]) if row is not None else True
+
+    def _emails_for_chat(self, chat, emails) -> list[str]:
+        """The contact addresses this chat belongs to, for the delivery record."""
+        if self._db is None:
+            return []
+        with self._db.cursor() as cur:
+            cur.execute("SELECT member_email FROM telegram_links WHERE chat_id = ? AND status = 'connected'",
+                        (str(chat),))
+            owners = {r["member_email"] for r in cur.fetchall()}
+        return [e for e in emails if e and e.strip().lower() in owners]
+
     def _critical_overrides_optout(self) -> bool:
         if self._rules is None:
             return True
@@ -157,7 +172,8 @@ class ContactRouter:
 
     # --- delivery --------------------------------------------------------------
 
-    def send(self, detection, account_label: str, emails, phones, *, account_id=None, alert_id=None) -> None:
+    def send(self, detection, account_label: str, emails, phones, *, account_id=None, alert_id=None,
+             audience: str = "customer") -> None:
         """Deliver to every configured per-account email + phone (primary and
         secondary). `emails`/`phones` are iterables; None/blank entries and
         duplicates are dropped. Telegram handles are intentionally NOT handled
@@ -172,6 +188,10 @@ class ContactRouter:
                   if e and not (e.lower() in seen or seen.add(e.lower()))]
         phones = list(dict.fromkeys(p for p in (phones or []) if p))
         auditable = self._db is not None and account_id is not None
+        # The delivery record (#103 item 2): every leg below leaves a row -
+        # accepted, failed, skipped, held - per recipient, per channel.
+        self._leg = dict(audience=getattr(detection, "audience", None) or audience, kind=_kind_of(detection), alert_id=alert_id,
+                         account_id=account_id, rule=getattr(detection, "rule", None))
 
         # A CRITICAL alert that has nowhere to text is itself worth surfacing:
         # log it and record it so the dashboard can prompt for a phone number.
@@ -193,10 +213,14 @@ class ContactRouter:
         # digest. Notices and escalations bypass (they must always arrive);
         # a CRITICAL is never held; CRITICAL email is the floor. Only when
         # the router has a db to read preferences from.
+        before_prefs = list(emails)
         emails, phones, held_for = self._apply_preferences(detection, emails, phones, account_id, alert_id)
         for held_email in held_for:
             logger.info("alert %s held for %s during their quiet hours - released in their next digest",
                         alert_id, held_email)
+            self._record("email", held_email, "held", detail="quiet hours - released in the next digest")
+        for muted in [e for e in before_prefs if e not in emails and e not in held_for]:
+            self._record("email", muted, "skipped", detail="member preference: channel off for this severity")
         if not emails and not phones and not self._telegram_targets:
             return
         alert = AlertMessage(
@@ -215,6 +239,8 @@ class ContactRouter:
         )
 
         emails_for_email = [e for e in emails if e not in self._email_muted]
+        for muted in [e for e in emails if e in self._email_muted]:
+            self._record("email", muted, "skipped", detail="member preference: email off for this severity")
         if emails_for_email:
             if self._smtp is None:
                 self._warn_once(
@@ -222,6 +248,8 @@ class ContactRouter:
                     "per-account email set but SMTP is not configured - set SMTP_* env to deliver "
                     "these alerts (Telegram still fires)",
                 )
+                for email in emails_for_email:
+                    self._record("email", email, "skipped", detail="SMTP is not configured")
             else:
                 try:
                     EmailChannel(
@@ -229,14 +257,19 @@ class ContactRouter:
                         self._smtp["password"], self._smtp["sender"], emails_for_email,
                         audience="customer",
                     ).send(alert)
-                    self._record_deliveries("email", emails_for_email, alert_id)
+                    for email in emails_for_email:
+                        self._record("email", email, "accepted", provider="smtp")
                 except Exception as exc:  # noqa: BLE001 - delivery failure must not stall detection
                     # Stays a log line, decided in the #58 sweep. One bounced
                     # email is noise - a wrong address, a full mailbox, a
                     # greylisting retry. A *rising rate* is a broken SMTP
                     # config, and that is metric-and-alarm shaped, not
                     # page-shaped. Do not re-litigate this without the metric.
+                    # It IS recorded per recipient now (#103 item 2), which is
+                    # what makes that rate measurable at all.
                     logger.warning("per-account email to %s failed: %s", emails, exc)
+                    for email in emails_for_email:
+                        self._record("email", email, "failed", provider="smtp", detail=str(exc))
 
         # Guarded on its own like every leg: a Telegram outage must cost
         # neither the email above nor the SMS below.
@@ -339,34 +372,20 @@ class ContactRouter:
                     json={"chat_id": chat, "text": text}, timeout=10.0,
                 )
                 resp.raise_for_status()
-                self._record_deliveries("telegram", self._emails_for_chat(chat, emails),
-                                        getattr(alert, "incident_id", None))
-            except Exception as exc:  # noqa: BLE001 - one dead chat must not cost the rest
-                logger.warning("telegram chat %s for %s failed: %s", chat, account_label, exc)
+                self._record("telegram", str(chat), "accepted", provider="telegram")
+            except Exception as exc:  # noqa: BLE001 - one chat failing must not cost the others
+                logger.warning("member telegram copy to chat %s failed: %s", chat, exc)
+                self._record("telegram", str(chat), "failed", provider="telegram", detail=str(exc))
 
-    def _emails_for_chat(self, chat, emails) -> list[str]:
-        """The contact addresses this chat belongs to, for the delivery record."""
-        if self._db is None:
-            return []
-        with self._db.cursor() as cur:
-            cur.execute("SELECT member_email FROM telegram_links WHERE chat_id = ? AND status = 'connected'",
-                        (str(chat),))
-            owners = {r["member_email"] for r in cur.fetchall()}
-        return [e for e in emails if e and e.strip().lower() in owners]
+    def _record(self, channel: str, recipient, status: str, *, provider=None, provider_ref=None, detail=None) -> None:
+        """One delivery row for one leg (#103 item 2). Never raises."""
+        from sentinel.alerts.delivery import record_delivery
 
-    def _record_deliveries(self, channel: str, emails, alert_id) -> None:
-        """A row per (contact, channel) on success (#37): the evidence behind
-        "last message to you". Guarded - a record failing must not turn a
-        delivered alert into a logged failure."""
-        if self._db is None or not emails:
-            return
-        try:
-            from sentinel.drill import record_contact_delivery
-
-            for email in emails:
-                record_contact_delivery(self._db, email, channel, alert_id)
-        except Exception as exc:  # noqa: BLE001 - the delivery already happened
-            logger.error("could not record %s delivery: %s", channel, exc)
+        leg = getattr(self, "_leg", None) or {}
+        record_delivery(self._db, channel=channel, recipient=recipient, status=status,
+                        audience=leg.get("audience", "customer"), kind=leg.get("kind", "alert"),
+                        alert_id=leg.get("alert_id"), account_id=leg.get("account_id"), rule=leg.get("rule"),
+                        provider=provider, provider_ref=provider_ref, detail=detail)
 
     def _send_sms(self, detection, alert, account_label, phones, account_id, alert_id, auditable) -> None:
         # Member preference: opted-out accounts get no SMS, except CRITICAL
@@ -395,6 +414,9 @@ class ContactRouter:
                 "per-account SMS set but no SMS provider is configured - set CLICKSEND_* or "
                 "TWILIO_* env to deliver these alerts (Telegram still fires)",
             )
+            for phone in phones:
+                self._record_sms(account_id, alert_id, detection.rule, "skipped", phone=phone,
+                                 detail="no SMS provider configured")
             return
         try:
             receipts = channel.send(alert)

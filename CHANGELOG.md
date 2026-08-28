@@ -31,6 +31,21 @@ container")._
 
 ### Fixed
 
+- **Every delivery is recorded per recipient per channel (#103 item 2).**
+  "Was this customer actually told" was unanswerable for every alert in
+  the database: `alerts.delivered_to` counted the global channels only and
+  the per-member email/Telegram/SMS legs left nothing behind. A new
+  `deliveries` table - `sms_deliveries`' shape generalised with a channel,
+  a recipient, an audience (customer / secondary / operator) and a kind
+  (alert / escalation / notice / digest / drill / operator page) - now
+  takes one row per leg: accepted, failed (with the transport's words),
+  skipped (with the reason: no address, no provider, SMTP unset,
+  preference off, snoozed) or held. `sms_deliveries` and
+  `contact_deliveries` live on as views over it, so every existing reader
+  keeps working; `delivered_to` is unchanged. **On upgrade:** the old
+  tables are migrated row for row on first open (idempotent);
+  `retention.sms_deliveries_days` is now `retention.deliveries_days`.
+
 - **An emergency contact can no longer change anything (#25).** A secondary
   contact signed in to the portal could replace the monitoring key, delete
   the member's data, change alert preferences, pause monitoring, snooze

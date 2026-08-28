@@ -252,9 +252,11 @@ def test_recency_is_derived_from_real_deliveries_and_flags_stale_channels(db):
     now = datetime(2026, 8, 27, 12, 0, tzinfo=timezone.utc)
     record_contact_delivery(db, "alice@example.com", "email", None)
     with db.cursor() as cur:
-        cur.execute("UPDATE contact_deliveries SET delivered_at = ?", ((now - timedelta(days=2)).isoformat(),))
-        cur.execute("INSERT INTO sms_deliveries (account_id, alert_id, rule, phone, status, created_at) "
-                    "VALUES (?, NULL, 'r', '+15550001', 'sent', ?)", (a, (now - timedelta(days=45)).isoformat()))
+        cur.execute("UPDATE deliveries SET created_at = ? WHERE channel = 'email'",
+                    ((now - timedelta(days=2)).isoformat(),))
+        cur.execute("INSERT INTO deliveries (account_id, alert_id, rule, channel, recipient, audience, kind, "
+                    "status, created_at) VALUES (?, NULL, 'r', 'sms', '+15550001', 'customer', 'alert', "
+                    "'accepted', ?)", (a, (now - timedelta(days=45)).isoformat()))
     r = delivery_recency(db, "alice@example.com", now=now)
     assert r["email"]["last"] and not r["email"]["stale"]
     assert r["sms"]["last"] and r["sms"]["stale"]

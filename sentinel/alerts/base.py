@@ -262,5 +262,16 @@ class AlertMessage:
 
 
 class AlertChannel(ABC):
+    # Set by the routing builder to the name the channel was routed under
+    # ('telegram', 'telegram_team', 'email', 'sms'), so a delivery record can
+    # say which leg it was (#103 item 2). Falls back to the class name.
+    route_name: str | None = None
+
     @abstractmethod
     def send(self, alert: AlertMessage) -> None: ...
+
+    @property
+    def recipients(self) -> list[str]:
+        """Who this channel delivers to, as the delivery record names them:
+        addresses, phone numbers or a chat id. Empty when unknown."""
+        return []

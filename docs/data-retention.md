@@ -33,7 +33,7 @@ described below cannot stop silently (#73).
 |---|---|---|
 | Forensic event log (withdrawals, trades, logins, config changes) | `events` | 730 days |
 | Alerts and their triage notes | `alerts`, `alert_triage` | 730 days |
-| Operator pages, SMS delivery records | `operator_pages`, `sms_deliveries` | 730 days |
+| Operator pages, delivery records (every recipient, every channel) | `operator_pages`, `deliveries` | 730 days |
 | "That was me" marks, threshold changes, password-reset tokens, snoozes | `expected_activity`, `config_changes`, `password_resets`, `snoozes` | 730 days |
 | Dedup records (seen fills/transfers/withdrawals) | `seen_*` | 365 days — bounded below by correctness: shorter than dedup and a re-polled record re-alerts |
 | Balance snapshots | `balance_snapshots` | 7 days (latest per account kept) |

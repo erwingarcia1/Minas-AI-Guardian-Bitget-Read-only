@@ -94,7 +94,47 @@ class Database:
             self._local.conn = conn
         return conn
 
+    def _migrate_delivery_tables(self) -> None:
+        """#103 item 2: `sms_deliveries` and `contact_deliveries` became views
+        over `deliveries`. A database that still has them as TABLES (every
+        deployment before this shipped) gets its rows copied into the general
+        table and the old tables dropped, BEFORE schema.sql runs - a CREATE
+        VIEW cannot share a name with a live table. Idempotent: a second open
+        finds views and does nothing. Nothing is lost: every column of the
+        old rows has a home in the new shape."""
+        def kind_of(name: str) -> str | None:
+            row = self._conn.execute(
+                "SELECT type FROM sqlite_master WHERE name = ?", (name,)).fetchone()
+            return row[0] if row else None
+
+        if kind_of("sms_deliveries") == "table" or kind_of("contact_deliveries") == "table":
+            self._conn.execute(
+                "CREATE TABLE IF NOT EXISTS deliveries (id INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "alert_id INTEGER REFERENCES alerts(id), account_id INTEGER REFERENCES accounts(id), "
+                "rule TEXT, channel TEXT NOT NULL CHECK (channel IN ('email', 'telegram', 'telegram_team', 'sms', 'digest')), "
+                "recipient TEXT, audience TEXT NOT NULL CHECK (audience IN ('customer', 'secondary', 'operator')), "
+                "kind TEXT NOT NULL CHECK (kind IN ('alert', 'escalation', 'notice', 'digest', 'drill', 'operator_page')), "
+                "status TEXT NOT NULL CHECK (status IN ('accepted', 'failed', 'skipped', 'suppressed', 'held')), "
+                "provider TEXT, provider_ref TEXT, detail TEXT, created_at TEXT NOT NULL)")
+        if kind_of("sms_deliveries") == "table":
+            self._conn.execute(
+                "INSERT INTO deliveries (alert_id, account_id, rule, channel, recipient, audience, kind, status, "
+                "provider, provider_ref, detail, created_at) "
+                "SELECT alert_id, account_id, rule, 'sms', phone, 'customer', "
+                "CASE WHEN rule LIKE 'ESCALATION-%' THEN 'escalation' ELSE 'alert' END, "
+                "CASE status WHEN 'sent' THEN 'accepted' ELSE status END, provider, provider_message_id, "
+                "detail, created_at FROM sms_deliveries ORDER BY id")
+            self._conn.execute("DROP TABLE sms_deliveries")
+        if kind_of("contact_deliveries") == "table":
+            self._conn.execute(
+                "INSERT INTO deliveries (alert_id, account_id, rule, channel, recipient, audience, kind, status, "
+                "created_at) SELECT alert_id, NULL, NULL, channel, email, 'customer', 'alert', 'accepted', "
+                "delivered_at FROM contact_deliveries ORDER BY id")
+            self._conn.execute("DROP TABLE contact_deliveries")
+        self._conn.commit()
+
     def _init_schema(self) -> None:
+        self._migrate_delivery_tables()
         with open(SCHEMA_PATH, "r") as f:
             self._conn.executescript(f.read())
         # Columns added after the MVP schema shipped; ALTER is a no-op error

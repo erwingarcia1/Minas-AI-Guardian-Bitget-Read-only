@@ -213,19 +213,43 @@ CREATE TABLE IF NOT EXISTS fee_baseline (
 -- 'failed' rows carry the provider error for admin review; 'skipped' records
 -- an SMS that was due but had no usable destination or was opted out;
 -- 'suppressed' records duplicate-SMS protection kicking in.
-CREATE TABLE IF NOT EXISTS sms_deliveries (
+-- The delivery record (#103, item 2): one row per recipient per channel per
+-- attempt, for every alert, escalation, notice, digest, drill and operator
+-- page. `alerts.delivered_to` counted the global channels only and the
+-- per-member legs left nothing behind, so "was this customer actually told"
+-- was unanswerable for every alert in the database. This is `sms_deliveries`'
+-- shape generalised - who, provider, provider's reference, status, detail,
+-- when - plus the channel, the audience and what kind of message it was.
+-- `sms_deliveries` and `contact_deliveries` live on below as VIEWS over it.
+CREATE TABLE IF NOT EXISTS deliveries (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    account_id INTEGER NOT NULL REFERENCES accounts(id),
     alert_id INTEGER REFERENCES alerts(id),
-    rule TEXT NOT NULL,
-    phone TEXT,
+    account_id INTEGER REFERENCES accounts(id),
+    rule TEXT,
+    channel TEXT NOT NULL CHECK (channel IN ('email', 'telegram', 'telegram_team', 'sms', 'digest')),
+    recipient TEXT,
+    audience TEXT NOT NULL CHECK (audience IN ('customer', 'secondary', 'operator')),
+    kind TEXT NOT NULL CHECK (kind IN ('alert', 'escalation', 'notice', 'digest', 'drill', 'operator_page')),
+    status TEXT NOT NULL CHECK (status IN ('accepted', 'failed', 'skipped', 'suppressed', 'held')),
     provider TEXT,
-    provider_message_id TEXT,
-    status TEXT NOT NULL CHECK (status IN ('sent', 'failed', 'skipped', 'suppressed')),
+    provider_ref TEXT,
     detail TEXT,
     created_at TEXT NOT NULL
 );
-CREATE INDEX IF NOT EXISTS idx_sms_deliveries_account ON sms_deliveries(account_id, rule, created_at);
+CREATE INDEX IF NOT EXISTS idx_deliveries_alert ON deliveries(alert_id);
+CREATE INDEX IF NOT EXISTS idx_deliveries_account_rule ON deliveries(account_id, rule, created_at);
+CREATE INDEX IF NOT EXISTS idx_deliveries_recipient ON deliveries(recipient, channel, status, created_at);
+CREATE INDEX IF NOT EXISTS idx_deliveries_kind ON deliveries(kind, status, created_at);
+
+-- Compatibility: the SMS-only record every existing reader (the dashboard's
+-- failed-SMS card, the duplicate-SMS window, the drill's recency) was written
+-- against. 'accepted' reads back as the old 'sent'.
+CREATE VIEW IF NOT EXISTS sms_deliveries AS
+    SELECT id, account_id, alert_id, rule, recipient AS phone, provider,
+           provider_ref AS provider_message_id,
+           CASE status WHEN 'accepted' THEN 'sent' ELSE status END AS status,
+           detail, created_at
+    FROM deliveries WHERE channel = 'sms' AND kind != 'operator_page';
 
 -- Operator accounts (G-50). Deliberately a separate table from
 -- `portal_members`, and reached through a separate login: an operator is not a
@@ -339,14 +363,13 @@ CREATE INDEX IF NOT EXISTS idx_drills_time ON drills(kind, started_at);
 -- proves the machinery, not that a given customer's address still accepts
 -- mail. "Last successful delivery per channel per customer" is derived from
 -- REAL traffic - these rows for email and Telegram, sms_deliveries for SMS.
-CREATE TABLE IF NOT EXISTS contact_deliveries (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    email TEXT NOT NULL,
-    channel TEXT NOT NULL CHECK (channel IN ('email', 'telegram')),
-    alert_id INTEGER REFERENCES alerts(id),
-    delivered_at TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_contact_deliveries_email ON contact_deliveries(email, channel, delivered_at);
+-- Compatibility view (#37's per-contact record): accepted email/telegram
+-- legs to a customer or secondary, keyed the way the drill reads them.
+CREATE VIEW IF NOT EXISTS contact_deliveries AS
+    SELECT id, recipient AS email, channel, alert_id, created_at AS delivered_at
+    FROM deliveries
+    WHERE status = 'accepted' AND channel IN ('email', 'telegram')
+      AND audience IN ('customer', 'secondary') AND kind != 'operator_page';
 
 -- Monitoring gaps (#63, decision 7): windows in which the Guardian was not
 -- running, reconstructed on restart from the last heartbeat it pushed.

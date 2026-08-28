@@ -5541,3 +5541,56 @@ return; one probe restoring the waiver, killed. The two test files that
 used the dashboard unauthenticated (add-customer, fd-leak) now sign in
 as an operator first. CHANGELOG carries the on-upgrade note: create the
 first operator BEFORE or DURING the deploy, not after.
+
+# 2026-08-28 · Item 2 of the #103 batch: delivery is observable, and what production can and cannot say
+
+sentinel/alerts/delivery.py + a `deliveries` table: one row per recipient
+per channel per attempt - alert_id, account, rule, channel (email /
+telegram / telegram_team / sms / digest), recipient, audience (customer /
+secondary / operator), kind (alert / escalation / notice / digest / drill
+/ operator_page), status (accepted / failed / skipped / suppressed /
+held), provider, provider_ref, detail, created_at. It is sms_deliveries'
+shape generalised, not a second scheme: sms_deliveries and
+contact_deliveries became VIEWS over it (db.py copies a legacy table's
+rows in and drops it before schema.sql runs; idempotent), every reader
+kept working, delivered_to untouched. Writers: dispatch (global legs,
+audience operator; snoozed → skipped), ContactRouter (email accepted /
+failed with the SMTP words / skipped "SMTP is not configured" / skipped
+by preference / held by quiet hours; Telegram per chat; SMS per phone
+including skipped "no SMS provider configured"), Escalator (global legs
+kind escalation; the secondary note carries audience=secondary on the
+detection), OperatorAlerter (per leg, kind operator_page), the digest
+(kind digest - the liveness gate's "a digest was sent" signal).
+`reached_a_person(db, alert_id)` is tri-state: True / False / None for
+"nothing recorded" - the unknowable case is a value, not an inference.
+12 tests, 3 probes; retention key renamed deliveries_days.
+
+The production questions, answered read-only from v1.10.0's data, which
+predates this record:
+
+- paula-garavillas: 46 account_unreachable alerts (41 MEDIUM 2026-07-23
+  .. 2026-08-12, 5 HIGH 2026-08-12 .. 08-17), every one delivered_to=0;
+  no sms_deliveries row for any of them (SMS rows exist only for
+  CRITICALs, and there was never a provider); no delivered
+  alert_delivered_to_nobody page names any of them (the 5 pages that
+  were delivered - #1, #2, #30, #31, #105 - are about other alerts). The
+  member-email leg to paulagaravillas12@gmail.com was never recorded, and
+  the container logs from that window are gone (the container was
+  recreated on 2026-08-25). So whether ANY notification about her account
+  going unreachable reached ANY human is UNKNOWABLE from the surviving
+  data - not "probably not": the email leg existed (she had an email on
+  file) and left no trace either way. What IS known: no ops channel took
+  any of the 46; no page about them was delivered; a human acted on the
+  account on 2026-08-18 (portal password generated 04:31, disabled
+  15:51), so by then someone knew - from the log stream #74 describes,
+  not from a delivered notification.
+
+- All 124 account_unreachable alerts (83 HIGH, 41 MEDIUM, 14 accounts):
+  shown to have reached a person: 0. Shown NOT to have reached anyone:
+  0 - every one of the 14 accounts had an email on file, so the
+  unrecorded email leg existed for all 124 and cannot be ruled out.
+  Unknowable: 124. Sub-facts that are known: 124/124 delivered_to=0 (no
+  global channel); 83 raised an alert_delivered_to_nobody page and every
+  one of those 83 pages was itself undelivered (delivered_to=0); the 41
+  MEDIUM raised no page at all and were routed to a digest that has never
+  run. From this commit on, the same question is answered per leg.

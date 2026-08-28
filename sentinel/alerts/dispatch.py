@@ -28,6 +28,19 @@ logger = logging.getLogger("sentinel.alerts.dispatch")
 _IDENTITY_FIELDS = ("order_id", "symbol", "coin", "address", "route")
 
 
+def _record_global(db, channel, status, detection, account_id, alert_id, *, detail=None) -> None:
+    """One delivery row per recipient of a GLOBAL channel (#103 item 2).
+    These reach Minas, not the customer - audience 'operator' - which is
+    exactly the distinction `delivered_to` alone could not make."""
+    from sentinel.alerts.delivery import channel_name_of, record_delivery
+
+    name = channel_name_of(channel)
+    for recipient in (list(getattr(channel, "recipients", None) or []) or [None]):
+        record_delivery(db, channel=name, recipient=recipient, status=status, audience="operator",
+                        kind="alert", alert_id=alert_id, account_id=account_id, rule=detection.rule,
+                        detail=detail)
+
+
 def _dedup_key(account_id: int, detection: Detection) -> str:
     """Stable across repeated firings of the 'same' underlying condition
     (same rule + same evidence identity) so a flapping condition doesn't storm
@@ -155,11 +168,17 @@ def dispatch(
         try:
             channel.send(alert)
             delivered += 1
+            _record_global(db, channel, "accepted", detection, account_id, alert_id)
         except Exception as exc:  # noqa: BLE001 - a dead channel must not cost the others
             logger.error(
                 "alert channel failed (%s) for %s on %s: %s",
                 type(channel).__name__, detection.rule, account_label, exc,
             )
+            _record_global(db, channel, "failed", detection, account_id, alert_id, detail=str(exc))
+    if snoozed_until:
+        for channel in channels.get(detection.severity, []):
+            _record_global(db, channel, "skipped", detection, account_id, alert_id,
+                           detail=f"snoozed until {snoozed_until}")
 
     if delivered:
         with db.cursor() as cur:

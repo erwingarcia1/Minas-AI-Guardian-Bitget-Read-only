@@ -100,6 +100,8 @@ def _build_named_channels() -> dict[str, object]:
             sender,
             [r.strip() for r in recipients.split(",")],
         )
+    for name, channel in named.items():
+        channel.route_name = name  # the delivery record names the leg (#103 item 2)
     return named
 
 

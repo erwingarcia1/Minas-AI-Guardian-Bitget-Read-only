@@ -1597,5 +1597,35 @@
    "tests/test_operator_identity.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "#103 item 2: the member email leg leaves no record (accepted row dropped)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                    for email in emails_for_email:\n                        self._record(\"email\", email, \"accepted\", provider=\"smtp\")\n",
+  "new": "                    for email in []:\n                        self._record(\"email\", email, \"accepted\", provider=\"smtp\")\n",
+  "tests": [
+   "tests/test_delivery_record.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#103 item 2: a legacy database keeps its old tables (migration skipped)",
+  "file": "sentinel/db.py",
+  "old": "    def _init_schema(self) -> None:\n        self._migrate_delivery_tables()\n",
+  "new": "    def _init_schema(self) -> None:\n        pass\n",
+  "tests": [
+   "tests/test_delivery_record.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#103 item 2: a failed global leg is recorded as accepted",
+  "file": "sentinel/alerts/dispatch.py",
+  "old": "            _record_global(db, channel, \"failed\", detection, account_id, alert_id, detail=str(exc))\n",
+  "new": "            _record_global(db, channel, \"accepted\", detection, account_id, alert_id, detail=str(exc))\n",
+  "tests": [
+   "tests/test_delivery_record.py"
+  ],
+  "expect": "killed"
  }
 ]

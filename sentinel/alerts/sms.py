@@ -76,6 +76,10 @@ class TwilioSmsChannel(AlertChannel):
         self._to = to_numbers
         self._timeout = timeout
 
+    @property
+    def recipients(self) -> list[str]:
+        return list(self._to)
+
     def send(self, alert: AlertMessage) -> list[dict]:
         """Sends to every recipient; returns one delivery receipt per number:
         {to, provider, provider_message_id, status}."""

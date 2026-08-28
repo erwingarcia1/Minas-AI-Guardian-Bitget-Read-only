@@ -41,7 +41,9 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     "events": ("created_at", "events_days"),
     "alerts": ("sent_at", "alerts_days"),
     "operator_pages": ("sent_at", "operator_pages_days"),
-    "sms_deliveries": ("created_at", "sms_deliveries_days"),
+    # #103 item 2: every delivery leg, every channel, every audience. The old
+    # `sms_deliveries` / `contact_deliveries` are views over this table.
+    "deliveries": ("created_at", "deliveries_days"),
     # Who silenced which alarm and until when (#30). Forensic, like `events`:
     # the silence lasts at most a day, the record of who asked for it lasts as
     # long as the alert it silenced. Keyed on `created_at`, which is safe
@@ -58,7 +60,6 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     "held_alerts": ("held_at", "alerts_days"),  # #24: follows the alert it holds
     "drills": ("started_at", "drills_days"),  # #37: the evidence the portal shows
     "monitoring_gaps": ("ended_at", "events_days"),  # #63: same window as the event log
-    "contact_deliveries": ("delivered_at", "alerts_days"),  # #37: per-contact delivery record
     # Threshold changes (#16). History of what this product was tuned to
     # notice, on the same long window as `events` - an incident review asks
     # what the thresholds were at the time, not what they are now.
@@ -153,9 +154,9 @@ NEVER_PRUNE = frozenset({
 # this list stops a child outliving its parent, while the PRUNABLE entry lets
 # a *shorter* child window still delete a child early. The effective retention
 # of a child is min(its own window, the alert's).
-ALERT_CHILDREN = ("alert_triage", "expected_activity", "sms_deliveries",
+ALERT_CHILDREN = ("alert_triage", "expected_activity", "deliveries",
     "held_alerts",  # #24: a hold references the alert it holds
-    "drills", "contact_deliveries",  # #37: both reference the alert they record
+    "drills",  # #37: references the alert it records
 )
 
 

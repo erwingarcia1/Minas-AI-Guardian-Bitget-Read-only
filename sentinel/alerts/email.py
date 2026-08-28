@@ -27,6 +27,10 @@ class EmailChannel(AlertChannel):
         self._use_tls = use_tls
         self._audience = audience
 
+    @property
+    def recipients(self) -> list[str]:
+        return list(self._recipients)
+
     def send(self, alert: AlertMessage) -> None:
         customer = self._audience == "customer"
         msg = EmailMessage()

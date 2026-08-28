@@ -125,12 +125,15 @@ class OperatorAlerter:
         )
 
         delivered = 0
+        legs = []
         for channel in self._channels.get(severity, []):
             try:
                 channel.send(alert)
                 delivered += 1
+                legs.append((channel, "accepted", None))
             except Exception as exc:  # noqa: BLE001 - one dead channel must not lose the page
                 logger.error("operator page channel failed (%s): %s", type(channel).__name__, exc)
+                legs.append((channel, "failed", str(exc)))
 
         if delivered == 0:
             # Recorded anyway. A page that could not be delivered must not also
@@ -150,7 +153,19 @@ class OperatorAlerter:
                 (account_id, rule, severity, key, message,
                  json.dumps(evidence, default=str), delivered, now.isoformat()),
             )
-            return cur.lastrowid
+            page_id = cur.lastrowid
+        # The record per leg (#103 item 2): who at Minas was paged, on which
+        # channel, and whether the transport took it. Outside the cursor
+        # block above - record_delivery opens its own.
+        from sentinel.alerts.delivery import channel_name_of, record_delivery
+
+        for channel, status, detail in legs:
+            name = channel_name_of(channel)
+            for recipient in (list(getattr(channel, "recipients", None) or []) or [None]):
+                record_delivery(self._db, channel=name, recipient=recipient, status=status,
+                                audience="operator", kind="operator_page", account_id=account_id,
+                                rule=rule, detail=detail if detail else f"operator page #{page_id}")
+        return page_id
 
 
 def recent_operator_pages(db: Database, limit: int = 50) -> list:

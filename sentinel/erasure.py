@@ -36,15 +36,15 @@ logger = logging.getLogger("sentinel.erasure")
 # Rows referencing alerts(id) must go before the alerts; rows referencing
 # accounts(id) before the account is tombstoned. Order matters for the
 # foreign keys and for the honesty of the counts.
-ALERT_CHILDREN = ("alert_triage", "expected_activity", "sms_deliveries", "held_alerts",
-                  "drills", "contact_deliveries")
+ALERT_CHILDREN = ("alert_triage", "expected_activity", "deliveries", "held_alerts",
+                  "drills")
 ACCOUNT_CHILDREN = ("events", "known_addresses", "seen_withdrawals", "balance_snapshots",
                     "permission_snapshots", "poll_state", "traded_pairs", "seen_fills",
                     "seen_transfers", "transfer_routes", "operator_pages", "fee_baseline",
-                    "sms_deliveries", "member_account_grants", "drills", "pause_requests",
+                    "deliveries", "member_account_grants", "drills", "pause_requests",
                     "account_threshold_overrides", "snoozes", "expected_activity")
 MEMBER_TABLES = (("portal_members", "email"), ("member_account_grants", "email"),
-                 ("held_alerts", "email"), ("contact_deliveries", "email"),
+                 ("held_alerts", "email"), ("deliveries", "recipient"),
                  ("telegram_links", "member_email"), ("password_resets", "email"))
 
 

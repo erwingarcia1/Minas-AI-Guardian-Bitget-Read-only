@@ -374,8 +374,8 @@ def _triage(db, alert_id, *, age):
 def _sms(db, account_id, alert_id, *, age):
     with db.cursor() as cur:
         cur.execute(
-            "INSERT INTO sms_deliveries (account_id, alert_id, rule, phone, status, created_at) "
-            "VALUES (?, ?, 'withdrawal_initiated', '+15550000', 'sent', ?)",
+            "INSERT INTO deliveries (account_id, alert_id, rule, channel, recipient, audience, kind, status, created_at) "
+            "VALUES (?, ?, 'withdrawal_initiated', 'sms', '+15550000', 'customer', 'alert', 'accepted', ?)",
             (account_id, alert_id, _ago(age)),
         )
 
@@ -407,7 +407,7 @@ def test_a_pruned_alert_takes_its_annotations_with_it(db, rules):
     prune_all(db, rules)
 
     assert _count(db, "alerts") == 0
-    for child in ("alert_triage", "sms_deliveries", "expected_activity", "held_alerts", "drills", "contact_deliveries"):
+    for child in ("alert_triage", "deliveries", "expected_activity", "held_alerts", "drills"):
         assert _count(db, child) == 0, f"{child} outlived the alert it annotates"
 
 
@@ -508,9 +508,9 @@ _ROW_FACTORIES = {
     "operator_pages": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO operator_pages (account_id, rule, severity, dedup_key, message, "
         "evidence_json, sent_at) VALUES (?, 'r', 'HIGH', 'd', 'm', '{}', ?)", (acct, ts)),
-    "sms_deliveries": lambda cur, acct, alert, ts: cur.execute(
-        "INSERT INTO sms_deliveries (account_id, alert_id, rule, phone, status, created_at) "
-        "VALUES (?, ?, 'r', '+15550000', 'sent', ?)", (acct, alert, ts)),
+    "deliveries": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO deliveries (account_id, alert_id, rule, channel, recipient, audience, kind, status, created_at) "
+        "VALUES (?, ?, 'r', 'sms', '+15550000', 'customer', 'alert', 'accepted', ?)", (acct, alert, ts)),
     "snoozes": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO snoozes (account_id, dedup_key, rule, requested_by, created_at, expires_at) "
         "VALUES (?, 'd', 'r', 'customer', ?, ?)", (acct, ts, ts)),
@@ -522,9 +522,6 @@ _ROW_FACTORIES = {
     "drills": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO drills (account_id, kind, started_at, alert_id, delivered_to, result, detail) "
         "VALUES (?, 'scheduled', ?, ?, 1, 'passed', 'delivered')", (acct, ts, alert)),
-    "contact_deliveries": lambda cur, acct, alert, ts: cur.execute(
-        "INSERT INTO contact_deliveries (email, channel, alert_id, delivered_at) VALUES ('a@b.test', 'email', ?, ?)",
-        (alert, ts)),
     "monitoring_gaps": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO monitoring_gaps (started_at, ended_at, seconds, detected_by) VALUES (?, ?, 60, 'restart')",
         (ts, ts)),

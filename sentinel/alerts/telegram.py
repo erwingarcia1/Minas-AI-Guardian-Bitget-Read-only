@@ -10,6 +10,10 @@ class TelegramChannel(AlertChannel):
         self._chat_id = chat_id
         self._timeout = timeout
 
+    @property
+    def recipients(self) -> list[str]:
+        return [str(self._chat_id)]
+
     def send(self, alert: AlertMessage) -> None:
         url = f"https://api.telegram.org/bot{self._bot_token}/sendMessage"
         resp = net.post(

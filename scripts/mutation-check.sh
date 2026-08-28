@@ -198,6 +198,7 @@ pytest_add_cli_args_test_selection=
     tests/test_escalation_reach.py
     tests/test_secondary_contact_escalation.py
     tests/test_telegram_self_serve.py
+    tests/test_delivery_record.py
     tests/test_alert_repeat_suppression.py
     tests/test_customer_digest.py
     tests/test_watch_alarms.py

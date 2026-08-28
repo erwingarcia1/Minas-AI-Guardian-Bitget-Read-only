@@ -72,7 +72,7 @@ def test_every_pruned_table_is_represented_in_customer_terms():
     # page together.
     disclosed_settings = {
         "events_days", "alerts_days", "operator_pages_days",
-        "sms_deliveries_days", "expected_activity_days", "config_changes_days",
+        "deliveries_days", "expected_activity_days", "config_changes_days",
         "password_resets_days", "snoozes_days",       # activity records line
         "balance_snapshots_days", "permission_snapshots_days",  # snapshots line
         "dedup_days",                                  # dedup line

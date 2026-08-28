@@ -62,6 +62,7 @@ class Escalator:
         self._contact_router = contact_router
 
     def check(self, db: Database) -> int:
+        self._db_for_record = db
         now = datetime.now(timezone.utc)
         cutoff_critical = (now - self._window).isoformat()
         cutoff_high = (now - self._high_window).isoformat()
@@ -103,6 +104,18 @@ class Escalator:
             escalated += 1
         return escalated
 
+    def _record_global_leg(self, channel, status, row, *, detail=None) -> None:
+        """A delivery row per recipient of a global escalation leg (#103
+        item 2), audience 'operator': the re-send reaches Minas' own
+        channels; the customer's legs are recorded by the router."""
+        from sentinel.alerts.delivery import channel_name_of, record_delivery
+
+        name = channel_name_of(channel)
+        for recipient in (list(getattr(channel, "recipients", None) or []) or [None]):
+            record_delivery(self._db_for_record, channel=name, recipient=recipient, status=status,
+                            audience="operator", kind="escalation", alert_id=row["id"],
+                            account_id=row["account_id"], rule=row["rule"], detail=detail)
+
     def _escalate_critical(self, row) -> None:
         alert = AlertMessage(
             account_label=row["label"],
@@ -120,8 +133,10 @@ class Escalator:
             try:
                 channel.send(alert)
                 delivered += 1
+                self._record_global_leg(channel, "accepted", row)
             except Exception as exc:  # noqa: BLE001 - escalation must try every channel
                 logger.error("escalation channel failed: %s", exc)
+                self._record_global_leg(channel, "failed", row, detail=str(exc))
         self._reach_the_customers_own_contacts(row, alert)
         self._reach_the_secondary_contact(row, window=self._window)
         self._page_escalated(row)
@@ -164,6 +179,7 @@ class Escalator:
             evidence={"original_alert_id": row["id"]},
         )
         note.is_notice = True  # the message IS the content; render it verbatim
+        note.audience = "secondary"  # the delivery record names who this reached (#103 item 2)
         try:
             self._contact_router.send(
                 note, row["label"], emails, phones,
