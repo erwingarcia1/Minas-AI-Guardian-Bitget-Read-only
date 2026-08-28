@@ -277,10 +277,16 @@ def _problem_state(row, threshold: int) -> str:
     return "watching"
 
 
-def _render_operator_login(error: str | None = None) -> str:
+def _render_operator_login(error: str | None = None, *, no_operators: bool = False) -> str:
     """The ops sign-in. Deliberately says nothing about which usernames exist -
-    one message for a bad username and a bad password alike."""
+    one message for a bad username and a bad password alike. The one thing it
+    does say: when NO operator exists at all, that the only way in is the
+    host CLI - the recovery path decision 19 chose over any fail-open."""
     banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
+    if no_operators:
+        banner += ('<div class="banner err">✕ No operator accounts exist, so nobody can sign in. '
+                   'Create the first one on the host: <code>sentinel operator add &lt;username&gt;</code> '
+                   '(decision 19: recovery is host access, never an open dashboard).</div>')
     body = (
         banner
         + '<section><div class="card"><div class="card-head"><h2>Operator sign-in</h2>'
@@ -1173,17 +1179,20 @@ def serve_dashboard(
             return None
 
         def _gate(self) -> bool:
-            """True when the request may proceed.
+            """True when the request may proceed: a signed-in operator, and
+            nothing else.
 
-            Sign-in is required only once an operator account exists. That is
-            the upgrade path: shipping this must not lock an existing
-            deployment out of its own dashboard, which is the same mistake as
-            refusing to start on a config a previous build accepted. Until
-            somebody creates an account the page behaves as it always has, and
-            says loudly that it is unprotected."""
-            if operator_count(db) == 0 or self._operator() is not None:
+            There is no waiver for an empty operator table. There used to be
+            one - "sign-in is required only once an operator exists", meant
+            as an upgrade path - and it was fail-open by code path: audit
+            #103 found production had run for six weeks with zero operators
+            and therefore no dashboard sign-in at all. No operators means no
+            dashboard access, full stop. Recovery is host access (decision
+            19): `sentinel operator add` from the CLI works with an empty
+            table and no session, and the login page says so."""
+            if self._operator() is not None:
                 return True
-            self._send(_render_operator_login().encode(), 401)
+            self._send(_render_operator_login(no_operators=operator_count(db) == 0).encode(), 401)
             return False
 
         def do_GET(self):

@@ -328,13 +328,15 @@ def test_onboarding_from_the_cli_requires_an_email(db, capsys):
 
 def test_the_dashboard_add_form_requires_an_email(db, cipher):
     from sentinel.dashboard import serve_dashboard
+    from tests.test_member_account_grants import _sign_in_ops
 
     srv = serve_dashboard(db, cipher, 0)
     port = srv.server_address[1]
     try:
+        cookie = _sign_in_ops(db, cipher, port)
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         conn.request("POST", "/add", urllib.parse.urlencode({"name": "n", "api_key": "k", "secret": "s"}),
-                     {"Content-Type": "application/x-www-form-urlencoded"})
+                     {"Content-Type": "application/x-www-form-urlencoded", "Cookie": cookie})
         resp = conn.getresponse()
         body = resp.read().decode()
     finally:

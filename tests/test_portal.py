@@ -50,11 +50,21 @@ def portal(db):
     srv.shutdown()
 
 
-def _request(host_port, method, path, body=None, cookie=None):
-    """Raw request without redirect-following so Set-Cookie is observable."""
+def _sign_in_ops(db, cipher, port):
+    from tests.test_member_account_grants import _sign_in_ops as _s
+
+    return _s(db, cipher, port)
+
+
+def _request(host_port, method, path, body=None, cookie=None, raw_cookie=None):
+    """Raw request without redirect-following so Set-Cookie is observable.
+    `raw_cookie` is a full Cookie header value (the ops dashboard's session,
+    which admits nobody without one since #103)."""
     host, port = host_port
     conn = http.client.HTTPConnection(host, port, timeout=5)
     headers = {}
+    if raw_cookie:
+        headers["Cookie"] = raw_cookie
     payload = None
     if body is not None:
         payload = urllib.parse.urlencode(body)
@@ -274,8 +284,9 @@ def test_ops_portal_access_generates_working_login(db, cipher):
     aid = _member_account(db, "alice-1", "alice@example.com")
     ops_port = _free_port()
     ops = serve_dashboard(db, cipher, ops_port)
+    ck = _sign_in_ops(db, cipher, ops_port)
     try:
-        status, body, _ = _request(("127.0.0.1", ops_port), "POST", "/portal-access", {"account_id": aid})
+        status, body, _ = _request(("127.0.0.1", ops_port), "POST", "/portal-access", {"account_id": aid}, raw_cookie=ck)
         assert status == 200 and "alice@example.com" in body
         # extract the one-time password from the banner
         import re
@@ -296,8 +307,9 @@ def test_ops_portal_access_missing_email_is_404(db, cipher):
     aid = make_account(db, "no-email")  # no alert_email
     ops_port = _free_port()
     ops = serve_dashboard(db, cipher, ops_port)
+    ck = _sign_in_ops(db, cipher, ops_port)
     try:
-        status, _, _ = _request(("127.0.0.1", ops_port), "POST", "/portal-access", {"account_id": aid})
+        status, _, _ = _request(("127.0.0.1", ops_port), "POST", "/portal-access", {"account_id": aid}, raw_cookie=ck)
         assert status == 404
     finally:
         ops.shutdown()
@@ -317,9 +329,10 @@ def test_the_confirmation_names_every_account_the_password_opens(db, cipher):
 
     ops_port = _free_port()
     ops = serve_dashboard(db, cipher, ops_port)
+    ck = _sign_in_ops(db, cipher, ops_port)
     try:
         status, body, _ = _request(("127.0.0.1", ops_port), "POST", "/portal-access",
-                                   {"account_id": here})
+                                   {"account_id": here}, raw_cookie=ck)
     finally:
         ops.shutdown()
 
@@ -337,9 +350,10 @@ def test_a_single_account_confirmation_does_not_manufacture_a_warning(db, cipher
 
     ops_port = _free_port()
     ops = serve_dashboard(db, cipher, ops_port)
+    ck = _sign_in_ops(db, cipher, ops_port)
     try:
         _, body, _ = _request(("127.0.0.1", ops_port), "POST", "/portal-access",
-                              {"account_id": here})
+                              {"account_id": here}, raw_cookie=ck)
     finally:
         ops.shutdown()
 
@@ -360,8 +374,9 @@ def test_the_event_records_what_the_credential_opened(db, cipher):
 
     ops_port = _free_port()
     ops = serve_dashboard(db, cipher, ops_port)
+    ck = _sign_in_ops(db, cipher, ops_port)
     try:
-        _request(("127.0.0.1", ops_port), "POST", "/portal-access", {"account_id": here})
+        _request(("127.0.0.1", ops_port), "POST", "/portal-access", {"account_id": here}, raw_cookie=ck)
     finally:
         ops.shutdown()
 
@@ -391,8 +406,9 @@ def test_the_recorded_grant_does_not_drift_when_contacts_change(db, cipher):
 
     ops_port = _free_port()
     ops = serve_dashboard(db, cipher, ops_port)
+    ck = _sign_in_ops(db, cipher, ops_port)
     try:
-        _request(("127.0.0.1", ops_port), "POST", "/portal-access", {"account_id": here})
+        _request(("127.0.0.1", ops_port), "POST", "/portal-access", {"account_id": here}, raw_cookie=ck)
     finally:
         ops.shutdown()
 

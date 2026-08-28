@@ -16,6 +16,7 @@ an identity to attribute to, and 2FA needs an account to protect.
 from __future__ import annotations
 
 import http.client
+import re
 import urllib.parse
 
 import pytest
@@ -337,23 +338,57 @@ def test_a_disabled_operator_loses_dashboard_access(db, cipher):
     assert "Accounts" not in body, "a disabled operator kept an existing session"
 
 
-def test_with_no_operators_the_dashboard_still_works(db, cipher):
-    """The upgrade path, and the lesson from the config reversal applied
-    directly: shipping this must not lock an existing deployment out of its own
-    dashboard. Before any operator exists the page behaves as it always has -
-    and says loudly that it is unprotected."""
+def test_with_no_operators_the_dashboard_refuses_everyone(db, cipher):
+    """No waiver. The old upgrade path ("sign-in is required only once an
+    operator exists") was fail-open by code path - audit #103 found
+    production had run six weeks with zero operators and no sign-in. An
+    empty table now means nobody gets in, and the login page says how the
+    first operator is created: on the host, never through the page."""
     assert operator_count(db) == 0
     server, port = _serve(db, cipher)
     try:
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         conn.request("GET", "/")
-        body = conn.getresponse().read().decode()
+        resp = conn.getresponse()
+        body = resp.read().decode()
     finally:
         server.shutdown()
         server.server_close()
 
-    assert "Accounts" in body
-    assert "no operator accounts" in body.lower(), "the unprotected state must be visible"
+    assert resp.status == 401
+    assert "Accounts" not in body, "the fleet table leaked past the gate"
+    assert "No operator accounts exist" in body
+    assert "sentinel operator add" in body
+
+
+def test_the_empty_table_waiver_cannot_come_back():
+    """The guard for the guard: the literal that waived sign-in must not
+    reappear in the gate, however it is spelled."""
+    import inspect
+
+    from sentinel import dashboard as dashboard_module
+
+    src = inspect.getsource(dashboard_module.serve_dashboard)
+    gate = src[src.index("def _gate"):src.index("def do_GET")]
+    assert not re.search(r"operator_count\(db\)\s*==\s*0\s*or", gate), "the fail-open waiver is back"
+    assert "operator_count(db) == 0 or self._operator()" not in src
+
+
+def test_the_first_operator_is_created_from_the_host_with_an_empty_table_and_no_session(db, monkeypatch):
+    """Recovery is host access (decision 19): the CLI creates the first
+    operator with nothing to authenticate against - no operator, no
+    session, no --as - and the dashboard then admits that person."""
+    import argparse
+
+    from sentinel.cli import cmd_operator
+
+    assert operator_count(db) == 0
+    monkeypatch.setenv("SENTINEL_DB_PATH", str(db._path))
+    ns = argparse.Namespace(operator_command="add", username="first", password="a-long-enough-password",
+                            name="First Operator", enrol_later=True, as_operator=None)
+    assert cmd_operator(ns) == 0
+    assert operator_count(db) == 1
+    assert check_operator_login(db, "first", "a-long-enough-password")
 
 
 # --- the four named actions carry a name --------------------------------------

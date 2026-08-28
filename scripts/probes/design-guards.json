@@ -1587,5 +1587,15 @@
    "tests/test_member_roles.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "#103 the dashboard's empty-table waiver comes back (fail-open restored)",
+  "file": "sentinel/dashboard.py",
+  "old": "            if self._operator() is not None:\n                return True\n            self._send(_render_operator_login(no_operators=operator_count(db) == 0).encode(), 401)",
+  "new": "            if operator_count(db) == 0 or self._operator() is not None:\n                return True\n            self._send(_render_operator_login(no_operators=operator_count(db) == 0).encode(), 401)",
+  "tests": [
+   "tests/test_operator_identity.py"
+  ],
+  "expect": "killed"
  }
 ]

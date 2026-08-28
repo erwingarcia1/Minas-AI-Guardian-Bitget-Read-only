@@ -25,9 +25,20 @@ def _free_port():
 
 @pytest.fixture
 def server(db, cipher):
+    """A dashboard with one operator signed in. The gate admits nobody
+    without a session (#103), so every urlopen below carries the session
+    cookie through a module-wide opener - the requests under test are the
+    add/detail routes, not the sign-in."""
+    from tests.test_member_account_grants import _sign_in_ops
+
     port = _free_port()
     srv = serve_dashboard(db, cipher, port)
+    cookie = _sign_in_ops(db, cipher, port)
+    opener = urllib.request.build_opener()
+    opener.addheaders = [("Cookie", cookie)]
+    urllib.request.install_opener(opener)
     yield f"http://127.0.0.1:{port}", port
+    urllib.request.install_opener(urllib.request.build_opener())
     srv.shutdown()
 
 

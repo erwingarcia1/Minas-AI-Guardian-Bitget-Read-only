@@ -5526,3 +5526,18 @@ are executed by tests; only the revoke half was dropped by decision
 15). And #14's "the customer was never told" softened: delivered_to
 counts global channels only; the member-email leg is not recorded in
 v1.10.0, so it is unverifiable, not disproven.
+
+# 2026-08-28 · Item 1 of the #103 batch: the dashboard's fail-open branch is gone
+
+`_gate` no longer waives sign-in while the operator table is empty. The
+waiver was the upgrade path written for #54 and it was fail-open by code
+path: production ran six weeks with zero operators and no dashboard
+sign-in. Now no operators = 401 for everyone, and the login page says
+the only way in is `sentinel operator add` on the host (decision 19).
+Tests: empty table + no session → 401 with the recovery text and no
+fleet table; empty table + CLI add → succeeds and the person can sign
+in; a source guard that the `operator_count(db) == 0 or` literal cannot
+return; one probe restoring the waiver, killed. The two test files that
+used the dashboard unauthenticated (add-customer, fd-leak) now sign in
+as an operator first. CHANGELOG carries the on-upgrade note: create the
+first operator BEFORE or DURING the deploy, not after.

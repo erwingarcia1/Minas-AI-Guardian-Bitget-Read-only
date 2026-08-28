@@ -101,16 +101,19 @@ SLACK = 25
 
 
 def test_dashboard_requests_do_not_leak_file_descriptors(db, cipher, stop):
+    from tests.test_member_account_grants import _sign_in_ops
+
     server = serve_dashboard(db, cipher, 0)
     stop(server)
     port = server.server_address[1]
+    cookie = _sign_in_ops(db, cipher, port)  # the gate admits nobody else (#103)
 
     for _ in range(10):  # warm-up: let steady-state allocations happen
-        _get(port)
+        _get(port, cookie=cookie)
     baseline = _settled_fd_count(_open_fds(), 0, deadline_s=1.0)
 
     for _ in range(REQUESTS):
-        assert _get(port) == 200  # the REAL root through the REAL handler
+        assert _get(port, cookie=cookie) == 200  # the REAL root through the REAL handler
 
     assert _settled_fd_count(baseline, SLACK) <= baseline + SLACK
 

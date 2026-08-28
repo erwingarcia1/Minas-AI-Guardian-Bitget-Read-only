@@ -15,6 +15,20 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+### Changed — on upgrade
+
+- **The ops dashboard no longer opens itself when no operator exists.**
+  The empty-operator-table waiver ("sign-in is required only once an
+  operator exists") was fail-open by code path: production ran six weeks
+  with zero operators and therefore no dashboard sign-in at all (#103).
+  Now no operators means no dashboard access, full stop. **On upgrade:**
+  deploying this to a production with zero operators makes the dashboard
+  unreachable until the first operator is created, which is intended -
+  create the operator BEFORE or DURING the deploy (`sentinel operator add
+  <username>` from the host; it needs no session and no existing
+  operator), not after. The login page says exactly this when the table
+  is empty.
+
 ### Fixed
 
 - **An emergency contact can no longer change anything (#25).** A secondary

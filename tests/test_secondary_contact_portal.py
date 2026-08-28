@@ -30,6 +30,12 @@ SECONDARY = "trusted.friend@example.com"
 STRANGER = "nobody@example.com"
 
 
+def _sign_in_ops(db, cipher, port):
+    from tests.test_member_account_grants import _sign_in_ops as _s
+
+    return _s(db, cipher, port)
+
+
 def _account(db, label="acct-1", primary=PRIMARY, secondary=SECONDARY):
     with db.cursor() as cur:
         cur.execute(
@@ -115,10 +121,11 @@ def test_the_operator_can_generate_a_password_for_the_secondary_contact(db, ciph
     server = serve_dashboard(db, cipher, 0)
     port = server.server_address[1]
     try:
+        cookie = _sign_in_ops(db, cipher, port)  # the gate admits nobody else (#103)
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         body = urllib.parse.urlencode({"account_id": account_id, "contact": "secondary"})
         conn.request("POST", "/portal-access", body,
-                     {"Content-Type": "application/x-www-form-urlencoded"})
+                     {"Content-Type": "application/x-www-form-urlencoded", "Cookie": cookie})
         response = conn.getresponse()
         page = response.read().decode()
         assert response.status == 200, page[:400]
@@ -141,10 +148,11 @@ def test_generating_for_one_contact_does_not_create_a_login_for_the_other(db, ci
     server = serve_dashboard(db, cipher, 0)
     port = server.server_address[1]
     try:
+        cookie = _sign_in_ops(db, cipher, port)  # the gate admits nobody else (#103)
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         body = urllib.parse.urlencode({"account_id": account_id, "contact": "secondary"})
         conn.request("POST", "/portal-access", body,
-                     {"Content-Type": "application/x-www-form-urlencoded"})
+                     {"Content-Type": "application/x-www-form-urlencoded", "Cookie": cookie})
         conn.getresponse().read()
     finally:
         server.shutdown()
@@ -166,10 +174,11 @@ def test_an_unknown_contact_selector_is_rejected_not_guessed(db, cipher, contact
     server = serve_dashboard(db, cipher, 0)
     port = server.server_address[1]
     try:
+        cookie = _sign_in_ops(db, cipher, port)  # the gate admits nobody else (#103)
         conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
         body = urllib.parse.urlencode({"account_id": account_id, "contact": contact})
         conn.request("POST", "/portal-access", body,
-                     {"Content-Type": "application/x-www-form-urlencoded"})
+                     {"Content-Type": "application/x-www-form-urlencoded", "Cookie": cookie})
         status = conn.getresponse().status
     finally:
         server.shutdown()
