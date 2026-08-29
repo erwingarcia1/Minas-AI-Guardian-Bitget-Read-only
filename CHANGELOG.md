@@ -17,6 +17,25 @@ container")._
 
 ### Changed — on upgrade
 
+**This is a MAJOR release. Three things the operator does, in this order,
+before or during the deploy:**
+
+1. **Create the first operator account before the container switches over**
+   - `sudo docker compose exec -T sentinel sentinel operator add <username>`
+   (works with an empty table and no session; on this build the person
+   then enrols a second factor at their first dashboard sign-in). With
+   zero operators the ops dashboard admits NOBODY. That is intended.
+2. **The database migration is one-way.** On first start the old
+   `sms_deliveries` and `contact_deliveries` tables are copied row for row
+   into the new `deliveries` table and become views. A rollback to 1.10.0
+   afterwards still reads everything, but its SMS bookkeeping writes into
+   what is now a view and is refused (logged, never fatal). Take the usual
+   pre-deploy backup; do not plan on rolling back.
+3. **Rename `retention.sms_deliveries_days` to `retention.deliveries_days`
+   in `rules.yaml` at your convenience.** The old name is still accepted
+   for this release with a warning; setting both is rejected. Nothing
+   breaks if you leave it.
+
 - **The ops dashboard no longer opens itself when no operator exists.**
   The empty-operator-table waiver ("sign-in is required only once an
   operator exists") was fail-open by code path: production ran six weeks
@@ -28,6 +47,26 @@ container")._
   <username>` from the host; it needs no session and no existing
   operator), not after. The login page says exactly this when the table
   is empty.
+
+### Changed detection behaviour
+
+Which alerts *fire* is untouched. Who hears about them changes in two
+ways:
+
+- **An unreachable account now reaches you like a CRITICAL, whatever its
+  level.** `account_unreachable` and `monitoring_key_tamper_suspected`
+  mean the product has gone blind on a customer. They are delivered on
+  the CRITICAL channel set, cannot be held by a member's quiet hours or
+  muted by their channel grid, and **escalate after 15 minutes
+  unacknowledged (the CRITICAL window, not HIGH's 60)** to the emergency
+  contact with an operator page, worded "coverage alert". The severity
+  shown is unchanged. Before this, a MEDIUM unreachable went only to a
+  digest - which on production has never run - and a HIGH one waited an
+  hour.
+- **Every alert leg is now recorded per recipient** (who, which channel,
+  accepted / failed / skipped and why). Nothing about delivery itself
+  changes; what changes is that "was this customer told" now has an
+  answer on the dashboard and in the database.
 
 ### Added
 
@@ -54,9 +93,12 @@ container")._
   `config/liveness-holds.yaml` with a reason and report as `held`.
   `scripts/host/liveness.sh` + `minas-liveness.timer` run it hourly,
   gather the three host-only facts, and go loud once per red transition
-  (journald + /etc/motd). The verdict pages an operator on the Telegram
-  ops path - proven live independently and not one of the checked
-  mechanisms - never through the digest or SMS. First run on production
+  (journald + /etc/motd). The verdict is guaranteed to land where no
+  checked mechanism can hide it - the `operator_pages` row on the
+  dashboard, journald and /etc/motd from the host script, the timer's
+  failed unit - and also, best effort, on the operator page's Telegram and
+  email legs (which share their bot and SMTP with the mechanisms being
+  judged, and are declared as such); never through the digest or SMS. First run on production
   (read-only, 2026-08-28): 8 of 11 mechanisms DEAD, its own timer among them.
 
 ### Fixed
