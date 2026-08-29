@@ -79,6 +79,10 @@ class Escalator:
                 "ac.alert_phone_secondary "
                 "FROM alerts a JOIN accounts ac ON ac.id = a.account_id "
                 "WHERE a.acknowledged_at IS NULL AND a.escalated_at IS NULL "
+                # A coverage repeat (repeat_of set) already escalated as the
+                # first alert of its incident; the emergency contact and Minas
+                # are not told the same thing every day.
+                "AND a.repeat_of IS NULL "
                 # #37: a drill is acknowledged by the drill itself; if that
                 # ever failed, escalating a simulated theft to an emergency
                 # contact would be the drill causing the harm it tests for.

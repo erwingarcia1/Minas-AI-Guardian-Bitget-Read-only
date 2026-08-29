@@ -25,14 +25,30 @@ COVERAGE_RULES = frozenset({"account_unreachable", "monitoring_key_tamper_suspec
 DIRECT_TIER = "CRITICAL"
 
 
+# How long a coverage condition stays "the same incident". A key that broke
+# on Monday and is still broken on Friday is one incident; the customer is
+# reminded daily by email (unreachable_repeat_minutes), Minas and the
+# emergency contact heard about it LOUDLY once and are not paged again for
+# it. Measured before this existed (v1.11.0 as tagged): one broken key cost
+# the customer 2 emails a day, the emergency contact a note a day and Minas
+# 9 messages a day, for as long as the key stayed broken - Paula's did for
+# 31 days.
+REPEAT_WINDOW_DAYS = 30
+
+
 def is_coverage_rule(rule: str | None) -> bool:
     return (rule or "") in COVERAGE_RULES
 
 
-def routing_tier(rule: str | None, severity: str) -> str:
+def routing_tier(rule: str | None, severity: str, *, repeat: bool = False) -> str | None:
     """Which severity's channel set an alert is delivered on: its own, or
-    the direct tier when its meaning demands a human now."""
-    return DIRECT_TIER if is_coverage_rule(rule) else severity
+    the direct tier when its meaning demands a human now - or NONE of the
+    global channels when it is a coverage REPEAT: the customer still gets
+    their daily email through the contact router, but Minas heard the
+    first one loudly and does not need the same news every day."""
+    if is_coverage_rule(rule):
+        return None if repeat else DIRECT_TIER
+    return severity
 
 
 def preference_tier(rule: str | None, severity: str) -> str:

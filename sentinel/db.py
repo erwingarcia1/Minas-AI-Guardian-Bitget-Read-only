@@ -151,6 +151,10 @@ class Database:
             # recorded but deliberately not delivered. Distinct from
             # delivered_to = 0, which means we tried and reached nobody (#57).
             "ALTER TABLE alerts ADD COLUMN snoozed_until TEXT",
+            # Part B of the 1.11.0 verification: a coverage alert that re-fires
+            # for a condition already alerted on points at the first alert and
+            # travels quietly - customer email only, no escalation, no page.
+            "ALTER TABLE alerts ADD COLUMN repeat_of INTEGER",
             # Bumped whenever a member's password changes. Baked into every
             # session cookie and checked on every request, so raising it
             # retires every cookie ever issued to that member - the only way to

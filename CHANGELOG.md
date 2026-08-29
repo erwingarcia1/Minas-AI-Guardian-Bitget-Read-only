@@ -15,6 +15,35 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+### Changed detection behaviour
+
+**The detectors and severities themselves are unchanged.** One change to
+who hears what, and how often:
+
+- **A broken key no longer pages everyone every day.** Measured against
+  1.11.0 as tagged: a key that broke and stayed broken cost the customer
+  2 emails a day, the emergency contact a note a day, and Minas 9
+  messages a day (3 direct, 3 escalation, 3 page) for as long as it
+  stayed broken - one customer's did for 31 days. Now the FIRST coverage
+  alert of an incident (`account_unreachable`,
+  `monitoring_key_tamper_suspected`) is exactly as loud as 1.11.0 made
+  it: every direct channel, escalation after 15 minutes, the emergency
+  contact, an operator page. Every re-fire inside the next 30 days is a
+  REPEAT of that incident: it reaches the customer's own email once a
+  day (the reminder that silence is not safety) and nobody else - no
+  global channel, no SMS, no escalation, no emergency-contact note, no
+  page. After 30 days a still-broken key is a new incident and is loud
+  again. In the first 24 hours a customer now receives 2 emails (the
+  alert and its escalation), the emergency contact 1 note, Minas 9
+  messages; on every following day the customer 1 email and nobody
+  else anything.
+
+### Fixed
+
+- **Repeats of a coverage alert point at the alert they repeat**
+  (`alerts.repeat_of`, additive migration), never escalate, never page
+  "delivered to nobody" for reaching no global channel on purpose.
+
 ## [1.11.0] — 2026-08-29
 
 ### Changed — on upgrade

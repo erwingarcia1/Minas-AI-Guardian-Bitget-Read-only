@@ -130,7 +130,12 @@ CREATE TABLE IF NOT EXISTS alerts (
     -- must stay visible as such (#57).
     delivered_to INTEGER NOT NULL DEFAULT 0,
     sent_at TEXT NOT NULL,
-    acknowledged_at TEXT
+    acknowledged_at TEXT,
+    -- a coverage alert that re-fired for a condition already alerted on: the
+    -- first alert's id. Repeats travel quietly (see alerts/meaning.py).
+    -- a plain pointer, not a foreign key: retention prunes the first alert of an
+    -- incident before its repeats, and a repeat outliving its original is fine.
+    repeat_of INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_alerts_dedup ON alerts(account_id, dedup_key, sent_at);
 

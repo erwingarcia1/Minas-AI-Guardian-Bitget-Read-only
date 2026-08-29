@@ -6,7 +6,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 
 from sentinel.alerts.base import AlertChannel, AlertMessage
-from sentinel.alerts.meaning import routing_tier
+from sentinel.alerts.meaning import REPEAT_WINDOW_DAYS, is_coverage_rule, routing_tier
 from sentinel.db import Database
 from sentinel.detectors.base import Detection
 from sentinel.snooze import active_snooze
@@ -109,11 +109,19 @@ def dispatch(
     # rather than nothing at all.
     with db.cursor() as cur:
         cur.execute(
-            "SELECT id, sent_at FROM alerts WHERE account_id = ? AND dedup_key = ? "
+            "SELECT id, sent_at, repeat_of FROM alerts WHERE account_id = ? AND dedup_key = ? "
             "ORDER BY sent_at DESC LIMIT 1",
             (account_id, dedup_key),
         )
         row = cur.fetchone()
+        # A coverage alert re-firing for a condition alerted on inside the
+        # repeat window is a REPEAT of that incident: it points at the first
+        # alert and travels quietly. Any other rule keeps today's behaviour.
+        repeat_of = None
+        if row is not None and is_coverage_rule(detection.rule):
+            last_sent = datetime.fromisoformat(row["sent_at"])
+            if now - last_sent <= timedelta(days=REPEAT_WINDOW_DAYS):
+                repeat_of = row["repeat_of"] or row["id"]
         if row is not None:
             last_sent = datetime.fromisoformat(row["sent_at"])
             if now - last_sent < cooldown:
@@ -131,8 +139,8 @@ def dispatch(
             """
             INSERT INTO alerts
                 (account_id, rule, severity, dedup_key, message, evidence_json, confidence,
-                 sent_at, delivered_to, snoozed_until)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 sent_at, delivered_to, snoozed_until, repeat_of)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 account_id,
@@ -145,6 +153,7 @@ def dispatch(
                 now.isoformat(),
                 0,
                 snoozed_until,
+                repeat_of,
             ),
         )
         alert_id = cur.lastrowid
@@ -168,7 +177,9 @@ def dispatch(
     # Route on the meaning, not the level (#103 item 3): a coverage alert
     # takes the CRITICAL channel set whatever its severity says, so "we are
     # blind on your account" never waits for a digest.
-    routed = channels.get(routing_tier(detection.rule, detection.severity), [])
+    tier = routing_tier(detection.rule, detection.severity, repeat=repeat_of is not None)
+    routed = [] if tier is None else channels.get(tier, [])
+    detection.coverage_repeat = repeat_of is not None  # the router reads this (quiet legs)
     delivered = 0
     for channel in ([] if snoozed_until else routed):
         try:

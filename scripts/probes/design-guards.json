@@ -65,8 +65,8 @@
  {
   "name": "snooze: a snoozed detection is dropped instead of recorded",
   "file": "sentinel/alerts/dispatch.py",
-  "old": "    with db.cursor() as cur:\n        cur.execute(\n            \"SELECT id, sent_at FROM alerts WHERE account_id = ? AND dedup_key = ? \"",
-  "new": "    if snoozed_until:\n        return None\n\n    with db.cursor() as cur:\n        cur.execute(\n            \"SELECT id, sent_at FROM alerts WHERE account_id = ? AND dedup_key = ? \"",
+  "old": "    with db.cursor() as cur:\n        cur.execute(\n            \"SELECT id, sent_at, repeat_of FROM alerts WHERE account_id = ? AND dedup_key = ? \"",
+  "new": "    if snoozed_until:\n        return None\n\n    with db.cursor() as cur:\n        cur.execute(\n            \"SELECT id, sent_at, repeat_of FROM alerts WHERE account_id = ? AND dedup_key = ? \"",
   "tests": [
    "tests/test_snooze.py"
   ]
@@ -1631,8 +1631,8 @@
  {
   "name": "#103 item 3: coverage alerts route by their level again (the digest trap)",
   "file": "sentinel/alerts/meaning.py",
-  "old": "    return DIRECT_TIER if is_coverage_rule(rule) else severity\n\n\ndef preference_tier",
-  "new": "    return severity\n\n\ndef preference_tier",
+  "old": "    if is_coverage_rule(rule):\n        return None if repeat else DIRECT_TIER\n    return severity\n",
+  "new": "    if is_coverage_rule(rule):\n        return severity\n    return severity\n",
   "tests": [
    "tests/test_coverage_routing.py"
   ],
@@ -1716,6 +1716,36 @@
   "tests": [
    "tests/test_member_roles.py",
    "tests/test_member_names.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "1.11.1 a coverage repeat is routed loudly again (the daily page returns)",
+  "file": "sentinel/alerts/meaning.py",
+  "old": "        return None if repeat else DIRECT_TIER\n",
+  "new": "        return DIRECT_TIER\n",
+  "tests": [
+   "tests/test_coverage_repeats.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "1.11.1 a coverage repeat escalates to the emergency contact again",
+  "file": "sentinel/alerts/escalation.py",
+  "old": "                \"AND a.repeat_of IS NULL \"",
+  "new": "                \"AND 1 \"",
+  "tests": [
+   "tests/test_coverage_repeats.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "1.11.1 a coverage repeat texts the customer again",
+  "file": "sentinel/alerts/contact.py",
+  "old": "            phones = []\n            self._telegram_targets = []\n",
+  "new": "            self._telegram_targets = []\n",
+  "tests": [
+   "tests/test_coverage_repeats.py"
   ],
   "expect": "killed"
  }

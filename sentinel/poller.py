@@ -276,10 +276,12 @@ class AccountPoller:
         if self._operator_alerter is None:
             return
         with self._db.cursor() as cur:
-            cur.execute("SELECT delivered_to FROM alerts WHERE id = ?", (alert_id,))
+            cur.execute("SELECT delivered_to, repeat_of FROM alerts WHERE id = ?", (alert_id,))
             row = cur.fetchone()
         if row is None or row["delivered_to"] > 0:
             return
+        if row["repeat_of"] is not None:
+            return  # a quiet coverage repeat reaches no global channel on purpose
         self._operator_alerter.page(
             rule="alert_delivered_to_nobody",
             severity="CRITICAL",

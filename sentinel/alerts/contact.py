@@ -240,6 +240,14 @@ class ContactRouter:
             display_label=getattr(detection, "display_label", None),
         )
 
+        if getattr(detection, "coverage_repeat", False):
+            # A coverage REPEAT: the daily "still not being watched" reminder.
+            # Email only - no SMS, no Telegram copy - so a broken key costs
+            # the customer one email a day, not a page a day (Part B of the
+            # 1.11.0 verification: 2 emails + 9 Minas messages + a note to
+            # the emergency contact, daily, for as long as it stayed broken).
+            phones = []
+            self._telegram_targets = []
         emails_for_email = [e for e in emails if e not in self._email_muted]
         for muted in [e for e in emails if e in self._email_muted]:
             self._record("email", muted, "skipped", detail="member preference: email off for this severity")

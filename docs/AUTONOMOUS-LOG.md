@@ -5776,3 +5776,28 @@ section now states all of it with the "on upgrade" phrase the composer
 lifts; and the composer defect - a hard wrap inside an identifier or a
 backtick span was rejoined with a space - is fixed in
 scripts/github-release.sh with a test in the bug's shape.
+
+# 2026-08-29 · Part B: the coverage-alert cadence, measured on v1.11.0 and fixed for 1.11.1
+
+Measured against the code in the v1.11.0 tag: detect_unreachable fires
+every 45 s poll once consecutive_failures >= 5; dispatch dedups on
+account + rule (no identity field in the evidence) with
+unreachable_repeat_minutes = 1440, so one alert row per day; each row
+goes out on the CRITICAL set (telegram, telegram_team, email: 3 Minas
+messages; SMS has no provider) and to the customer's own email (1) plus
+a Telegram copy if linked (none is); 15 minutes unacknowledged it
+escalates: the same 3 Minas channels again, the customer's email again,
+the emergency contact's note, and a critical_alert_escalated page on the
+3 ops channels. Per 24 h: customer 2 emails, emergency contact 1 note,
+Minas 9 messages - and the SAME again every day the key stays broken,
+because each daily repeat is a fresh row that escalates afresh. Over
+Paula's 31 days that is 62 customer emails, 31 notes to her emergency
+contact and 279 messages to Minas for one expired key. Verdict:
+punishing. Fixed on main, one commit: alerts.repeat_of; a coverage
+alert re-firing inside REPEAT_WINDOW_DAYS = 30 of an alert with the same
+dedup key is a repeat of that first alert - routed to no global channel,
+customer email only (no SMS, no Telegram copy), excluded from the
+escalator, exempt from the delivered-to-nobody page; the first alert of
+an incident is unchanged. After 30 days a still-broken key is a new,
+loud incident. 8 tests including the 24-hour count, 3 probes. To be cut
+as v1.11.1 - the version to deploy instead of 1.11.0.
