@@ -22,8 +22,18 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
 WINDOW_DAYS="${1:-8}"
 
-LAST=$(gh run list --workflow CI --limit 50 --json createdAt,event,status \
-  --jq 'first(.[] | select((.event == "schedule" or .event == "workflow_dispatch") and .status == "completed")) | .createdAt // empty')
+# Filtered by EVENT on the server, one query per event, newest wins. The
+# first version paged through the last 50 runs of any event and picked the
+# first scheduled one - and on 2026-08-29 exactly 50 push runs had landed
+# since the last scheduled run, so it fell off the page and a release was
+# refused for a gate that had run five days earlier. A freshness check
+# whose answer depends on how busy the week was is not a freshness check.
+LAST=""
+for EVENT in schedule workflow_dispatch; do
+  ONE=$(gh run list --workflow CI --event "$EVENT" --limit 5 --json createdAt,status \
+    --jq 'first(.[] | select(.status == "completed")) | .createdAt // empty')
+  if [ -n "$ONE" ] && { [ -z "$LAST" ] || [[ "$ONE" > "$LAST" ]]; }; then LAST="$ONE"; fi
+done
 
 if [ -z "$LAST" ]; then
   echo "no completed scheduled or dispatched CI run found at all - the slow gates have never run in CI, or Actions cannot be queried" >&2

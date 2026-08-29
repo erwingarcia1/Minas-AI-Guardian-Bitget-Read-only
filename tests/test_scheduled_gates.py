@@ -259,3 +259,37 @@ def test_the_report_greps_the_line_the_gate_actually_prints():
     tool = (ROOT / "scripts" / "mutation_survivors.py").read_text()
     assert 'f"  Survivor ledger: {len(ledger)} accepted"' in tool
     assert "Survivor ledger: [0-9]+ accepted" in REPORT.read_text()
+
+
+def test_freshness_is_not_a_function_of_how_busy_the_week_was(tmp_path):
+    """2026-08-29: fifty push runs had landed since the last scheduled run,
+    the freshness gate paged through the last fifty runs of ANY event, the
+    scheduled run fell off the page, and a release was refused for a gate
+    that had run five days earlier. The query must ask the server for the
+    scheduled/dispatched runs themselves. A stub gh that answers the
+    unfiltered page with pushes only, and the --event query with the real
+    scheduled run, tells the two shapes apart."""
+    import json
+    import os
+    import subprocess
+    from datetime import datetime, timedelta, timezone
+
+    stubs = tmp_path / "bin"
+    stubs.mkdir()
+    recent = (datetime.now(timezone.utc) - timedelta(days=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # The stub answers the way GitHub does when the page is full of pushes:
+    # an unfiltered listing yields no scheduled run (the old query's shape),
+    # a listing filtered to --event schedule yields the real one.
+    (stubs / "gh").write_text(
+        "#!/usr/bin/env bash\n"
+        "case \"$*\" in\n"
+        f"  *'--event schedule'*) printf '%s\\n' '{recent}' ;;\n"
+        "  *) printf '' ;;\n"
+        "esac\n")
+    (stubs / "gh").chmod(0o755)
+    assert json.dumps(recent)  # the stamp is what the script parses
+    env = dict(os.environ, PATH=f"{stubs}:{os.environ['PATH']}")
+    result = subprocess.run(["bash", str(ROOT / "scripts" / "scheduled-gates-freshness.sh")],
+                            env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "5d ago" in result.stdout

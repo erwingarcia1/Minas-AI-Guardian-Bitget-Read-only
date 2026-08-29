@@ -5742,3 +5742,19 @@ slug as "Minas's reference". 13 tests including a grep that member_name
 never appears in a WHERE clause or as a bound lookup outside naming.py;
 2 probes; curated selection updated. Not changed: the ops dashboard and
 the CLI, which keep the slug on purpose.
+
+# 2026-08-29 · The 2.0.0 cut, and the freshness gate that refused it wrongly
+
+release.sh 2.0.0 refused on "scheduled gates ran (8d)": the gate paged
+the last 50 CI runs of any event and picked the first scheduled one;
+exactly 50 push runs had landed since the 2026-08-24 scheduled run, so
+it fell off the page and the gate reported "no completed scheduled run
+found at all" for a run five days old. Fixed: one server-side query per
+event (--event schedule, --event workflow_dispatch), newest completed
+wins. Pinned by a stub-gh test where the unfiltered listing is all
+pushes and only the event-filtered one carries the scheduled run. Every
+other gate was green on the refused run (tests 365s, probes 342s,
+mutation 105s). 2.0.0 is MAJOR: the dashboard admits nobody until an
+operator exists; the deliveries migration drops the two old tables into
+views; the retention key was renamed (aliased for this release). The
+notes open with the three operator acts.
