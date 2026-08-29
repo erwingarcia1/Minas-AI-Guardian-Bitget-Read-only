@@ -17,8 +17,10 @@ container")._
 
 ### Changed — on upgrade
 
-**This is a MAJOR release. Three things the operator does, in this order,
-before or during the deploy:**
+**Three things the operator does, in this order, before or during the
+deploy.** (By CONTRIBUTING's letter the first two are MAJOR-shaped - an
+act before upgrading, a one-way migration; the owner named this release
+1.11.0 on 2026-08-29 knowing that. The acts are the same either way.)
 
 1. **Create the first operator account before the container switches over**
    - `sudo docker compose exec -T sentinel sentinel operator add <username>`

@@ -5754,7 +5754,8 @@ event (--event schedule, --event workflow_dispatch), newest completed
 wins. Pinned by a stub-gh test where the unfiltered listing is all
 pushes and only the event-filtered one carries the scheduled run. Every
 other gate was green on the refused run (tests 365s, probes 342s,
-mutation 105s). 2.0.0 is MAJOR: the dashboard admits nobody until an
-operator exists; the deliveries migration drops the two old tables into
+mutation 105s). The owner named the release 1.11.0 (the acts are
+MAJOR-shaped by CONTRIBUTING's letter; recorded in the notes): the
+dashboard admits nobody until an operator exists; the deliveries migration drops the two old tables into
 views; the retention key was renamed (aliased for this release). The
 notes open with the three operator acts.
