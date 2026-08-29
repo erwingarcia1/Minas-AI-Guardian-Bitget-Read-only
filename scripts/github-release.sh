@@ -128,7 +128,18 @@ def entries(sub_lines):
         # with nothing, not a space: v1.11.0's body read "monitoring_key_tamper_
         # suspected" because the seam below joined the two halves with " ".
         body = re.sub(r"_\n\s*(?=\w)", "_", body)
-        body = re.sub(r"(`[^`\n]*)\n\s*([^`\n]*`)", r"\1\2", body)
+        # Inside an OPEN backtick span only: an odd number of backticks
+        # before the wrap means the wrap is inside a span. v1.11.1's body
+        # lost the space in "`a`, `b`" to a rule that matched between two
+        # closed spans.
+        joined, open_span = [], False
+        for i, line in enumerate(body.split("\n")):
+            if i and open_span:
+                joined[-1] += line.lstrip()
+            else:
+                joined.append(line)
+            open_span = (joined[-1].count("`") % 2) == 1
+        body = "\n".join(joined)
         # The lead may end its sentence with a period or hand over with a
         # colon ("**lead** (#99): detail"); either way the detail starts a
         # paragraph of its own, so a colon-led detail is capitalised - a

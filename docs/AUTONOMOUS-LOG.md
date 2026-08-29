@@ -5801,3 +5801,17 @@ escalator, exempt from the delivered-to-nobody page; the first alert of
 an incident is unchanged. After 30 days a still-broken key is a new,
 loud incident. 8 tests including the 24-hour count, 3 probes. To be cut
 as v1.11.1 - the version to deploy instead of 1.11.0.
+
+# 2026-08-29 · v1.11.1 cut; its body read; the composer's span rule corrected
+
+v1.11.1 = tag 54189093 → commit 5f68976, identical on the remote, Latest
+(v1.11.0 demoted); CI 33248233140 green. Body read against the contract:
+no "What you need to do" (correct - the migration is additive and nothing
+is "on upgrade"); "Changed detection behaviour" states the cadence change
+and that detectors and severities are unchanged. One artefact: the
+backtick-span rejoin added in 587ee82 matched a wrap BETWEEN two closed
+spans and ate the space in "`account_unreachable`, `monitoring_key_
+tamper_suspected`". Body corrected with gh release edit (tag hash
+unchanged before and after); the rule now joins only inside an OPEN span
+(odd backtick count before the wrap), with the test extended in that
+shape. v1.11.1 is the version to deploy instead of v1.11.0.

@@ -632,8 +632,9 @@ def test_an_identifier_wrapped_across_lines_is_rejoined_without_a_space(repo):
         "- **A thing that happened.** With a body.",
         "- **A rule was renamed** (#3). `account_unreachable` and `monitoring_key_tamper_\n"
         "  suspected` mean the product has gone blind, and `retention.deliveries_\n"
-        "  days` is the window. The detail goes on for enough words to pass the\n"
-        "  orphan check."))
+        "  days` is the window (`account_unreachable`,\n"
+        "  `monitoring_key_tamper_suspected`). The detail goes on for enough words\n"
+        "  to pass the orphan check."))
     _git(repo, "commit", "-qam", "a wrapped identifier")
 
     result = _run(repo, "release.sh", "1.1.0")
@@ -641,3 +642,5 @@ def test_an_identifier_wrapped_across_lines_is_rejoined_without_a_space(repo):
     notes = (repo.parent / "gh-notes.txt").read_text()
     assert "`monitoring_key_tamper_suspected`" in notes and "`retention.deliveries_days`" in notes
     assert "tamper_ suspected" not in notes and "deliveries_ days" not in notes
+    assert "(`account_unreachable`, `monitoring_key_tamper_suspected`)" in notes.replace("\n", " "), (
+        "a wrap BETWEEN two spans keeps its space - v1.11.1 lost it")
