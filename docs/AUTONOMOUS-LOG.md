@@ -5759,3 +5759,20 @@ MAJOR-shaped by CONTRIBUTING's letter; recorded in the notes): the
 dashboard admits nobody until an operator exists; the deliveries migration drops the two old tables into
 views; the retention key was renamed (aliased for this release). The
 notes open with the three operator acts.
+
+# 2026-08-29 · v1.11.0 verified; the body corrected; the composer's seam fixed
+
+Tag v1.11.0 = 1753979d (annotated) → commit 9e31219, identical on the
+remote, on main; GitHub Release published and Latest (v1.10.0 demoted);
+CI on the release commit 33243028291 green. Read the published body
+against docs/RELEASE-NOTES.md: "Changed detection behaviour" was missing
+quiet hours (#24), the weekly drill (#37) and the explicit "detectors and
+severities unchanged"; "What you need to do" carried only the operator
+act and a bare rename sentence - no drill decision, no liveness timer,
+no "deprecated, still accepted"; and the body read
+"monitoring_key_tamper_ suspected". Body corrected with `gh release
+edit` (tag hash identical before and after). At source: the CHANGELOG
+section now states all of it with the "on upgrade" phrase the composer
+lifts; and the composer defect - a hard wrap inside an identifier or a
+backtick span was rejoined with a space - is fixed in
+scripts/github-release.sh with a test in the bug's shape.

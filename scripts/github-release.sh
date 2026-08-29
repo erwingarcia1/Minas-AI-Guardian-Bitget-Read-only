@@ -123,6 +123,12 @@ def entries(sub_lines):
         blocks.append(joined_stray)
     for b in bullets:
         body = "\n".join(trimmed(b))
+        # A hard wrap INSIDE an identifier - `monitoring_key_tamper_` / `suspected`,
+        # or anywhere between one backtick and its partner - must be rejoined
+        # with nothing, not a space: v1.11.0's body read "monitoring_key_tamper_
+        # suspected" because the seam below joined the two halves with " ".
+        body = re.sub(r"_\n\s*(?=\w)", "_", body)
+        body = re.sub(r"(`[^`\n]*)\n\s*([^`\n]*`)", r"\1\2", body)
         # The lead may end its sentence with a period or hand over with a
         # colon ("**lead** (#99): detail"); either way the detail starts a
         # paragraph of its own, so a colon-led detail is capitalised - a

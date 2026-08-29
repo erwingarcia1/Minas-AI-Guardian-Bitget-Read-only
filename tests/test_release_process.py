@@ -620,3 +620,24 @@ def test_a_lead_that_hands_over_with_a_colon_opens_its_detail_cleanly(repo):
     notes = (repo.parent / "gh-notes.txt").read_text()
     assert "**Acknowledging one alert now closes its siblings** (#99)\n\nAn unacknowledged alert" in notes
     assert "\n\n: " not in notes and "\n\n:" not in notes
+
+
+def test_an_identifier_wrapped_across_lines_is_rejoined_without_a_space(repo):
+    """The v1.11.0 body defect: `monitoring_key_tamper_` / `suspected` was
+    hard-wrapped in the changelog and the composer's seam join put a space
+    inside the identifier. A wrap ending in `_`, or anywhere inside a
+    backtick span, is rejoined with nothing."""
+    text = (repo / "CHANGELOG.md").read_text()
+    (repo / "CHANGELOG.md").write_text(text.replace(
+        "- **A thing that happened.** With a body.",
+        "- **A rule was renamed** (#3). `account_unreachable` and `monitoring_key_tamper_\n"
+        "  suspected` mean the product has gone blind, and `retention.deliveries_\n"
+        "  days` is the window. The detail goes on for enough words to pass the\n"
+        "  orphan check."))
+    _git(repo, "commit", "-qam", "a wrapped identifier")
+
+    result = _run(repo, "release.sh", "1.1.0")
+    assert result.returncode == 0, result.stderr
+    notes = (repo.parent / "gh-notes.txt").read_text()
+    assert "`monitoring_key_tamper_suspected`" in notes and "`retention.deliveries_days`" in notes
+    assert "tamper_ suspected" not in notes and "deliveries_ days" not in notes

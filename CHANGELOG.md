@@ -36,9 +36,14 @@ act before upgrading, a one-way migration; the owner named this release
    what is now a view and is refused (logged, never fatal). Take the usual
    pre-deploy backup; do not plan on rolling back.
 3. **Rename `retention.sms_deliveries_days` to `retention.deliveries_days`
-   in `rules.yaml` at your convenience.** The old name is still accepted
-   for this release with a warning; setting both is rejected. Nothing
-   breaks if you leave it.
+   in `rules.yaml` at your convenience.** On upgrade the old name is
+   deprecated but still accepted, with a warning naming the new one;
+   setting both is rejected. Nothing breaks if you leave it.
+4. **Install the liveness timer on the host after deploying.** On upgrade
+   run `sudo cp scripts/host/minas-liveness.{service,timer}
+   /etc/systemd/system/ && sudo systemctl daemon-reload && sudo systemctl
+   enable --now minas-liveness.timer`; until then `sentinel liveness` runs
+   only by hand and reports itself dead.
 
 - **The ops dashboard no longer opens itself when no operator exists.**
   The empty-operator-table waiver ("sign-in is required only once an
@@ -54,8 +59,23 @@ act before upgrading, a one-way migration; the owner named this release
 
 ### Changed detection behaviour
 
-Which alerts *fire* is untouched. Who hears about them changes in two
-ways:
+**The detectors and severities themselves are unchanged.** Which alerts
+fire, and at what level, is exactly as in 1.10.0. Who hears about them,
+and when, changes in three ways:
+
+- **Quiet hours begin holding non-critical alerts - off by default.** A
+  member who switches on quiet hours (#24, the portal's security page)
+  has HIGH/MEDIUM/LOW alerts held during those hours and released in
+  their next digest; CRITICAL and coverage alerts are never held, and
+  email for CRITICAL cannot be switched off. Nobody has quiet hours on
+  until they choose them.
+- **The weekly fire drill begins running, and pages when it fails.**
+  Every seven days a simulated theft runs against the dedicated drill
+  account (#37, decision 2) through detection, alerting and delivery; a
+  failed drill - or no drill account to run against - pages Minas HIGH.
+  Customers do not receive drill traffic. On upgrade: decide the drill -
+  onboard a drill account (`sentinel onboard ... --drill`) or set
+  `drills.enabled: false`, or it pages HIGH once per interval.
 
 - **An unreachable account now reaches you like a CRITICAL, whatever its
   level.** `account_unreachable` and `monitoring_key_tamper_suspected`
@@ -114,8 +134,8 @@ ways:
   editing rules.yaml in the same minute as the switchover.
 
 - **An unreachable account reaches a human directly, whatever its level
-  (#103 item 3).** `account_unreachable` and `monitoring_key_tamper_
-  suspected` mean the product has gone blind on a customer. 41 of them on
+  (#103 item 3).** `account_unreachable` and `monitoring_key_tamper_suspected` mean the
+  product has gone blind on a customer. 41 of them on
   production were routed, by severity, to a digest that had never run.
   Routing is now decided by MEANING (`sentinel/alerts/meaning.py`): a
   coverage alert is delivered on the CRITICAL channel set, is judged as a
