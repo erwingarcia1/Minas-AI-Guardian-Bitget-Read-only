@@ -631,6 +631,28 @@ owner decision (#18's "tries another channel" against #57's try-every-
 channel; #73's prune timer) is amended the same way, naming the commit, and
 stays open to the owner to overrule.
 
+## A green check that depended on a hole
+
+**Ask what a passing check is resting on.** The container healthcheck
+fetched the ops dashboard root unauthenticated, and it passed for weeks -
+because `_gate` waived sign-in while the operator table was empty. The
+probe was green *because of* a security hole. Closing the hole (#103
+item 1) turned the container unhealthy the moment the first operator was
+created, and the restart timer had to be stopped by hand: fixing a defect
+broke a check that had been resting on it. This is the inverse of "a fix
+can silently retire its own guard": here a guard silently depended on the
+defect.
+
+The sharper half: that probe also asserted the wrong thing. "An HTTP
+server answered" reads healthy through a wedged poller - the dashboard
+thread kept answering through #79's six dead weeks. A health check must
+assert the thing the service exists to do (the engine completed a cycle:
+`/healthz`), not that a socket accepts connections.
+
+When you close a hole, list what currently passes *through* it - probes,
+tests, cron jobs, dashboards - and repoint them in the same change, or
+the fix ships as an outage.
+
 ## A test that posts to a path that does not exist always passes
 
 **Assert the route is registered before asserting who may use it.** A 404 is

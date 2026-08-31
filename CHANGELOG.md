@@ -17,6 +17,15 @@ container")._
 
 ## [1.11.1] — 2026-08-29
 
+### Changed — on upgrade
+
+- **Re-enable `minas-restart-on-unhealthy.timer` on upgrade** — `sudo
+  systemctl enable --now minas-restart-on-unhealthy.timer`. It was
+  stopped by hand on 2026-08-30 when the healthcheck went red the moment
+  the first operator existed; this release's `/healthz` fix (the probe no
+  longer rests on the dashboard being unauthenticated, and asserts the
+  engine is alive) is what makes switching it back on safe.
+
 ### Changed detection behaviour
 
 **The detectors and severities themselves are unchanged.** One change to

@@ -5915,3 +5915,15 @@ silence. When stdout is a TTY ([-t 1], or MINAS_FORCE_TTY=1 as the
 test's handle, since a captured pipe can never be one) the full report
 is printed; from the timer, stdout stays empty and journald keeps the
 record exactly as before. Both paths tested.
+
+# 2026-08-31 · v1.11.2 batch, item 5: the records
+
+CHANGELOG, with the literal "on upgrade" so the composer lifts it:
+re-enable minas-restart-on-unhealthy.timer on upgrade - stopped by hand
+2026-08-30; this release's /healthz fix is what makes that safe.
+CONTRIBUTING gains "A green check that depended on a hole": the
+healthcheck was green BECAUSE the dashboard was unauthenticated (the
+inverse of a fix silently retiring its own guard), and it also asserted
+the wrong thing - an HTTP answer, which reads healthy through a wedged
+poller. Rule: when you close a hole, list what passes through it and
+repoint in the same change, or the fix ships as an outage.
