@@ -5882,3 +5882,17 @@ three directions: no session and no data on /healthz; /, /metrics,
 /metrics/raw, /triage, /add, /account all still 401; the stamp aging
 past 3 cycles flips the probed URL to 503, a raising-but-handled prune
 still stamps, a tick that never completes does not.
+
+# 2026-08-31 · v1.11.2 batch, item 2: a recreation is not a recovery
+
+Journald 2026-08-30, replayed in the test: restart 02:36:47 → cap
+02:38:59 → the deploy's NEW container reported 'starting' at 02:43:09
+and the old branch cleared the state → second restart 02:45:13 → capped
+again 02:47:47. Two restarts where the design intends one. The state
+file now carries KNOWN_CID; only a HEALTHY verdict clears the ladder;
+'starting'/'unknown' decide nothing; and a changed container id while
+capped logs "container was REPLACED (old → new) - keeping the cap until
+it reports healthy". Tests: the exact sequence (replacement + starting
+keeps the cap, the next unhealthy does NOT restart, healthy clears, a
+new incident gets its one restart), and 'starting' on the same
+container neither clears nor logs.

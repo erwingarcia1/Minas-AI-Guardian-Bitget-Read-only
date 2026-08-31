@@ -45,16 +45,16 @@ log_line() {
 }
 
 read_state() {
-  LAST_RESTART=0; CAPPED=0
+  LAST_RESTART=0; CAPPED=0; KNOWN_CID=""
   if [ -f "$STATE_FILE" ]; then
-    # shellcheck disable=SC1090 - two integers we wrote ourselves
+    # shellcheck disable=SC1090 - values we wrote ourselves
     . "$STATE_FILE"
   fi
 }
 
 write_state() {
   mkdir -p "$(dirname "$STATE_FILE")"
-  printf 'LAST_RESTART=%s\nCAPPED=%s\n' "$1" "$2" > "$STATE_FILE"
+  printf 'LAST_RESTART=%s\nCAPPED=%s\nKNOWN_CID=%s\n' "$1" "$2" "${3:-$CID}" > "$STATE_FILE"
 }
 
 CID=$(docker compose -f "$COMPOSE_FILE" ps -q "$SERVICE" 2>/dev/null || true)
@@ -69,13 +69,22 @@ STATUS=$(docker inspect --format '{{.State.Health.Status}}' "$CID" 2>/dev/null |
 read_state
 
 if [ "$STATUS" != "unhealthy" ]; then
-  # healthy (or starting/unknown): clear the ladder so the NEXT incident
-  # gets its one restart. Recovery from a capped state is worth a line -
-  # the cap event said a human was needed; this says what happened next.
-  if [ "$CAPPED" = "1" ]; then
-    log_line "health is '$STATUS' again after the restart cap - clearing state (motd marker left for review)" notice
+  # Only HEALTHY clears the ladder. On 2026-08-30 a deploy's NEW container
+  # reported 'starting' two minutes after the cap and the old branch read
+  # that as recovery, cleared the state, and bought the flap a second
+  # restart the design refuses. "The container recovered" is a healthy
+  # verdict; "the container was replaced" is a different id - named as
+  # such, and the cap stands until the replacement actually reports
+  # healthy. 'starting' and 'unknown' decide nothing either way.
+  if [ "$STATUS" = "healthy" ]; then
+    if [ "$CAPPED" = "1" ]; then
+      log_line "health is 'healthy' again after the restart cap - clearing state (motd marker left for review)" notice
+    fi
+    { [ "$CAPPED" = "1" ] || [ "$LAST_RESTART" != "0" ]; } && write_state 0 0 "$CID"
+  elif [ -n "$KNOWN_CID" ] && [ "$CID" != "$KNOWN_CID" ] && [ "$CAPPED" = "1" ]; then
+    log_line "container was REPLACED ($KNOWN_CID -> $CID) while capped; health is '$STATUS' - keeping the cap until it reports healthy" notice
+    write_state "$LAST_RESTART" "$CAPPED" "$CID"
   fi
-  [ "$CAPPED" = "1" ] || [ "$LAST_RESTART" != "0" ] && write_state 0 0
   exit 0
 fi
 
@@ -92,7 +101,7 @@ if [ "$LAST_RESTART" != "0" ] && [ $((NOW - LAST_RESTART)) -lt "$CAP_WINDOW" ]; 
   # The restart did not cure it. Mitigation hands off to detection here
   # (decision 12): stop restarting, tell someone - loudly, once. Until #63
   # exists the someone is the next human session, via motd.
-  write_state "$LAST_RESTART" 1
+  write_state "$LAST_RESTART" 1 "$CID"
   log_line "RESTART CAP REACHED: unhealthy again within ${CAP_WINDOW}s of a restart - NOT restarting again. A human is needed. Health: $HEALTH_JSON" err
   {
     printf '\n*** MINAS GUARDIAN: restart cap reached %s ***\n' "$(stamp)"
@@ -105,7 +114,7 @@ fi
 
 log_line "container unhealthy - restarting '$SERVICE'. Health: $HEALTH_JSON" warning
 if docker compose -f "$COMPOSE_FILE" restart "$SERVICE"; then
-  write_state "$NOW" 0
+  write_state "$NOW" 0 "$CID"
   log_line "restart of '$SERVICE' completed" notice
 else
   # A failed restart is worse than an unhealthy container - say so at the
