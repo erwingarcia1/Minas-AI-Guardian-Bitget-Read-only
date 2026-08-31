@@ -299,7 +299,9 @@ DEFAULTS: dict = {
         "drills_days": 730,
         "prune_interval_minutes": 60,
     },
-    "drills": {"enabled": True, "interval_days": 7},
+    # False until the drill-account decision (#37, 2026-08-31): an absent key
+    # must mean the same as the shipped file - no schedule until it exists.
+    "drills": {"enabled": False, "interval_days": 7},
     "uptime": {"heartbeat_interval_seconds": 300},
     "triage": {"enabled": False, "model": "claude-opus-4-8", "max_events": 50},
 }

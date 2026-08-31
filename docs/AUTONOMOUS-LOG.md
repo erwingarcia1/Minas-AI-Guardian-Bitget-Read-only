@@ -5815,3 +5815,45 @@ tamper_suspected`". Body corrected with gh release edit (tag hash
 unchanged before and after); the rule now joins only inside an OPEN span
 (odd backtick count before the wrap), with the test extended in that
 shape. v1.11.1 is the version to deploy instead of v1.11.0.
+
+# 2026-08-31 · The drill account is an owner decision; the schedule is off while it is open
+
+`sentinel onboard --drill` prompted for a Bitget API key on 2026-08-31:
+the drill account is NOT synthetic - onboarding verifies a real
+read-only key. So: config/liveness-holds.yaml gains the drill_account
+hold (entry made holdable in sentinel/liveness.py, with why), and
+config/rules.yaml sets drills.enabled: false IN THE SAME COMMIT so the
+weekly schedule stops recording a failed drill and paging HIGH while
+the decision is open. Both are repo config, never edited on the box.
+From the code, for #37's comment: run_drill INJECTS a synthetic
+Detection (rule=drill, evidence {"drill": true, started_at}) straight
+into dispatch and the contact router - it never calls the exchange, so
+a ZERO-BALANCE account is sufficient; the exchange account exists only
+so onboarding's read-only verification passes (and the poller then
+polls it harmlessly). Drill alerts go to the global ops channels plus
+the contacts ON THE DRILL ACCOUNT'S OWN ROW - set them to Minas
+addresses at onboarding; the scheduled drill targets only is_drill=1
+(pinned by test), so no customer contact receives scheduled drill
+traffic. What it proves: the shared delivery machinery end to end. What
+it does not: that any given customer's address still accepts mail -
+decision 2's caveat; delivery_recency per contact is that answer.
+
+# 2026-08-31 · Amendments: the drill default aligned; red-to-red is no longer silent
+
+The anti-drift guard (test_config_defaults) rightly refused drills.
+enabled false in the file against True in code: DEFAULTS and drill.py's
+inline default now say False too, so an install with the key absent
+behaves like the shipped file - no schedule until the owner's #37
+decision; the engine-tick test runs against a drills-on temp config,
+because it tests the wiring, not the decision.
+
+Item 4(b): scripts/host/liveness.sh kept state as red/green, so
+red-to-red was silent - at 16:28:21 on 2026-08-31 the dead set went
+7 → 6 (the gate's own timer switching on) and journald got only the
+facts line. The state file now holds the FAILING SET itself; any change
+is reported - "newly dead: <line>" at err, "now live: <line>" at info,
+the motd marker refreshed with the new count, still exactly one - and
+an unchanged red set stays quiet. The test drives the transition in
+that exact shape (7-line set → different set → same set). CHANGELOG
+gains the on-upgrade line to clear the two August restart-cap notices
+from /etc/motd.

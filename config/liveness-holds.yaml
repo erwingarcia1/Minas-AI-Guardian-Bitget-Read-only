@@ -5,7 +5,8 @@
 # load-bearing. A hold with no reason is refused: this file is the owner's
 # declaration and must say what was decided.
 #
-# Nothing is held as shipped. Add entries like:
+# Add further entries like:
 #   holds:
 #     sms: "waiting on the ClickSend account; decision pending (#19, #75)"
-holds: {}
+holds:
+  drill_account: "held pending an owner decision - the drill needs a real, dedicated Minas exchange account with a read-only key, and none exists; drills.enabled is false until it does (#37, 2026-08-31)"

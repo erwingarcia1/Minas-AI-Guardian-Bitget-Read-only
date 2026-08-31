@@ -159,7 +159,12 @@ retention:
 # travelling the whole path. A failed drill pages Minas as an outage; so
 # does a schedule with no drill account to run against.
 drills:
-  enabled: true
+  # false while the drill account is an open owner decision (#37, 2026-08-31):
+  # `onboard --drill` needs a REAL exchange account and none exists, so the
+  # weekly schedule would record a failed drill and page HIGH every interval.
+  # The liveness gate carries the matching hold (config/liveness-holds.yaml).
+  # Flip back to true in the same commit that removes that hold.
+  enabled: false
   interval_days: "7"
 
 # Dead-man's switch (#63, decision 7): the Guardian pushes a heartbeat to

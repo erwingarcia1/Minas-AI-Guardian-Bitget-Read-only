@@ -40,6 +40,21 @@ who hears what, and how often:
   messages; on every following day the customer 1 email and nobody
   else anything.
 
+### Changed
+
+- **Clear the two restart-cap notices from `/etc/motd` on upgrade.** The
+  #81 flap evidence from August stays by design until a human removes it;
+  on upgrade run `sudo sed -i '/MINAS RESTART CAP/d' /etc/motd` (or edit
+  by hand) so the banner reflects this deploy, not that incident.
+
+- **The weekly drill is off pending the drill-account decision (#37).**
+  `sentinel onboard --drill` verifies a real exchange key, so the drill
+  account is an owner decision, not a command. `drills.enabled: false`
+  and the liveness gate's matching hold travel in this one commit; with
+  neither, the schedule would page HIGH ("no drill account") once per
+  interval. On-demand drills still work. Flip both back together once
+  the account exists.
+
 ### Fixed
 
 - **Repeats of a coverage alert point at the alert they repeat**

@@ -264,7 +264,12 @@ ENTRIES: tuple[Entry, ...] = (
           "a file in /var/backups/minas-guardian newer than 48h", ("/var/backups/minas-guardian",), _backup),
     Entry("drill_account", "Dedicated drill account", "#37",
           "`sentinel onboard ... --drill` for a Minas-owned account, on production",
-          "an active account with is_drill = 1", ("onboard --drill", "drills.enabled"), _drill_account),
+          "an active account with is_drill = 1", ("onboard --drill", "drills.enabled"), _drill_account,
+          # Holdable since 2026-08-31: `onboard --drill` verifies a REAL
+          # exchange key, so the drill account is an owner decision (which
+          # exchange, who creates it), not a command. The hold and
+          # drills.enabled: false travel together - see #37.
+          holdable=True),
     Entry("sms", "SMS provider", "#19 #75",
           "set CLICKSEND_USERNAME + CLICKSEND_API_KEY (or the TWILIO_* triple) in the host's .env and restart",
           "a provider's credentials are present in the environment",

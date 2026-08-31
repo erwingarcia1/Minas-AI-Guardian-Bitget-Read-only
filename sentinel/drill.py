@@ -278,7 +278,7 @@ class DrillSchedule:
 
     def enabled(self) -> bool:
         try:
-            return bool(self._rules.get("drills", "enabled", default=True))
+            return bool(self._rules.get("drills", "enabled", default=False))
         except Exception:  # noqa: BLE001 - a broken config must not stop the tick
             return True
 

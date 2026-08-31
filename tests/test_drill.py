@@ -233,12 +233,24 @@ def test_a_disabled_schedule_never_runs(db):
     assert sched.evaluate() is None
 
 
-def test_the_engine_ticks_the_schedule(db, cipher, rules, monkeypatch):
+def test_the_engine_ticks_the_schedule(db, cipher, rules, monkeypatch, tmp_path):
+    """The shipped config has drills.enabled: false while the drill account
+    is an open owner decision (#37, 2026-08-31); this test is about the
+    ENGINE WIRING, so it runs against a config with the schedule on."""
+    from pathlib import Path
+
+    import yaml
+
+    from sentinel.config import RulesConfig
     from sentinel.engine import Engine
 
+    shipped = yaml.safe_load(Path("config/rules.yaml").read_text())
+    shipped["drills"]["enabled"] = True
+    path = tmp_path / "rules.yaml"
+    path.write_text(yaml.safe_dump(shipped))
     _drill_acct(db)
     chan = _Chan()
-    engine = Engine(db, cipher, rules, {"CRITICAL": [chan], "HIGH": [], "MEDIUM": [], "LOW": []})
+    engine = Engine(db, cipher, RulesConfig(str(path)), {"CRITICAL": [chan], "HIGH": [], "MEDIUM": [], "LOW": []})
     engine._scheduler_tick()
     assert last_drill(db, kind="scheduled") is not None
 
