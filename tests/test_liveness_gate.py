@@ -292,7 +292,7 @@ def test_the_cli_exits_non_zero_and_prints_the_switch_on_acts(db, monkeypatch, c
     monkeypatch.setenv("SENTINEL_DB_PATH", str(db._path))
     monkeypatch.setenv("SENTINEL_LIVENESS_HOLDS", str(ROOT / "config/liveness-holds.yaml"))
     ns = argparse.Namespace(crontab_has_digest="no", newest_backup_age_seconds=-1, restart_timer_active="yes",
-                            liveness_timer_active="yes", no_page=True, as_json=False)
+                            liveness_timer_active="yes", page=False, as_json=False)
     rc = cmd_liveness(ns)
     out = capsys.readouterr().out
     assert rc == 1
@@ -351,3 +351,44 @@ def test_the_host_script_gathers_the_three_host_facts_and_goes_loud_once(tmp_pat
     subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
     quiet = (tmp_path / "journal").read_text()[len(before):]
     assert "newly dead" not in quiet and "now live" not in quiet
+
+
+def test_a_hand_run_never_pages_and_the_timer_opts_in(db, monkeypatch, capsys):
+    """`sentinel liveness` by hand raised operator page #217 on 2026-08-31.
+    Paging is now the timer's explicit opt-in: the bare command reports and
+    exits 1 with NO page; --page pages; and the host script - the timer's
+    only caller - passes --page."""
+    import argparse
+
+    from sentinel.cli import cmd_liveness
+
+    monkeypatch.setenv("SENTINEL_DB_PATH", str(db._path))
+    monkeypatch.setenv("SENTINEL_LIVENESS_HOLDS", str(ROOT / "config/liveness-holds.yaml"))
+    base = dict(crontab_has_digest="no", newest_backup_age_seconds=-1, restart_timer_active="yes",
+                liveness_timer_active="yes", as_json=False)
+    assert cmd_liveness(argparse.Namespace(**base, page=False)) == 1
+    with db.cursor() as cur:
+        cur.execute("SELECT COUNT(*) c FROM operator_pages")
+        assert cur.fetchone()["c"] == 0, "a diagnostic run by a human paged somebody"
+
+    class _Chan:
+        route_name = "telegram_team"
+        recipients = ["-1"]
+
+        def send(self, alert):
+            pass
+
+    import sentinel.cli as cli_module
+
+    original = cli_module.build_operator_channels
+    cli_module.build_operator_channels = lambda rules: {"HIGH": [_Chan()], "CRITICAL": [_Chan()]}
+    try:
+        assert cmd_liveness(argparse.Namespace(**base, page=True)) == 1
+    finally:
+        cli_module.build_operator_channels = original
+    with db.cursor() as cur:
+        cur.execute("SELECT rule FROM operator_pages")
+        assert [r["rule"] for r in cur.fetchall()] == ["liveness_failed"]
+    host = (ROOT / "scripts/host/liveness.sh").read_text()
+    assert "sentinel liveness --page" in host, "the timer is the one caller that opts in"
+    capsys.readouterr()

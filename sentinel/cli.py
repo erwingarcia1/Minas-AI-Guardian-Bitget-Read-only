@@ -786,7 +786,12 @@ def cmd_liveness(args: argparse.Namespace) -> int:
     else:
         print(render(verdicts))
     bad = failing(verdicts)
-    if bad and not getattr(args, "no_page", False):
+    # Paging belongs to the timer, not the command (a hand run raised
+    # operator page #217 on 2026-08-31): explicit opt-in via --page, which
+    # only scripts/host/liveness.sh passes. A human at a prompt already has
+    # the report; paging them for reading it teaches everyone to ignore
+    # the page.
+    if bad and getattr(args, "page", False):
         rules = RulesConfig(_env_raw("SENTINEL_RULES_PATH", "./config/rules.yaml"))
         page_id = page_verdict(db, rules, verdicts)
         print(f"operator page #{page_id}" if page_id else "operator page suppressed by cooldown (already paged this interval)")
@@ -1321,7 +1326,9 @@ def main() -> None:
                              help="host fact: is minas-restart-on-unhealthy.timer active")
     live_parser.add_argument("--liveness-timer-active", choices=("yes", "no"), default=None,
                              help="host fact: is minas-liveness.timer active (the gate judging itself)")
-    live_parser.add_argument("--no-page", action="store_true", help="print only; do not page an operator")
+    live_parser.add_argument("--page", action="store_true",
+                             help="page an operator on failure - the TIMER's flag; a hand-run "
+                                  "diagnostic reports and exits non-zero without paging")
     live_parser.add_argument("--json", dest="as_json", action="store_true")
     live_parser.set_defaults(func=cmd_liveness)
 

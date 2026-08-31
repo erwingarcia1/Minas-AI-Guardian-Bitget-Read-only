@@ -51,7 +51,7 @@ if systemctl is-active --quiet minas-liveness.timer 2>/dev/null; then SELF=yes; 
 log_line "facts: --crontab-has-digest $CRON --newest-backup-age-seconds $AGE --restart-timer-active $TIMER --liveness-timer-active $SELF"
 
 # --- the gate, inside the container ----------------------------------------------------------
-OUT=$(docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" sentinel liveness \
+OUT=$(docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" sentinel liveness --page \
         --crontab-has-digest "$CRON" --newest-backup-age-seconds "$AGE" --restart-timer-active "$TIMER" \
         --liveness-timer-active "$SELF" 2>&1)
 RC=$?

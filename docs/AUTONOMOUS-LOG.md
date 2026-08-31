@@ -5896,3 +5896,13 @@ it reports healthy". Tests: the exact sequence (replacement + starting
 keeps the cap, the next unhealthy does NOT restart, healthy clears, a
 new incident gets its one restart), and 'starting' on the same
 container neither clears nor logs.
+
+# 2026-08-31 · v1.11.2 batch, item 3: paging belongs to the timer
+
+`sentinel liveness` run by hand raised operator page #217 on
+2026-08-31. The command's --no-page default is inverted to an explicit
+--page opt-in: a bare run reports and exits non-zero without paging (a
+human at a prompt already has the report), and scripts/host/liveness.sh
+- the timer's only caller - passes --page. Test: the bare command on a
+failing gate leaves operator_pages empty; --page leaves exactly one
+liveness_failed row; the host script's invocation carries the flag.
