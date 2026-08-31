@@ -5857,3 +5857,28 @@ an unchanged red set stays quiet. The test drives the transition in
 that exact shape (7-line set → different set → same set). CHANGELOG
 gains the on-upgrade line to clear the two August restart-cap notices
 from /etc/motd.
+
+# 2026-08-31 · v1.11.2 batch, item 1: /healthz means the engine is alive
+
+GitHub reachable again; CI on bc924f5 re-verified green (33418872036)
+before starting, per the batch's gate. The compose healthcheck fetched
+the ops dashboard root unauthenticated and passed only while _gate's
+empty-table waiver held the door open - creating the first operator
+turned the container unhealthy (2026-08-30) and the restart timer has
+been stopped by hand since. And it never asserted the engine was alive.
+
+Built: the engine writes portal_meta['engine:last_cycle'] as the LAST
+act of every completed _scheduler_tick (a wedge anywhere in the tick
+stops the stamp); GET /healthz on the dashboard answers before the
+operator gate BY DESIGN with two words and a status code - "ok" 200
+when the stamp is younger than 3 x polling.fast_loop_seconds, "stale"
+503 otherwise; the compose healthcheck probes /healthz. Threshold
+reasoning (in the code comment): fast_loop_seconds IS the cycle cadence
+(_scheduler_pass sleeps exactly that); one missed beat is a slow pass
+(the same thread runs escalation, pruning, alarms), three is a wedge;
+at the shipped 45 s the boundary is 135 s and the compose probe turns
+the container unhealthy in about four minutes instead of never. Tests,
+three directions: no session and no data on /healthz; /, /metrics,
+/metrics/raw, /triage, /add, /account all still 401; the stamp aging
+past 3 cycles flips the probed URL to 503, a raising-but-handled prune
+still stamps, a tick that never completes does not.

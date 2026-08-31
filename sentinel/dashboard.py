@@ -1178,6 +1178,53 @@ def serve_dashboard(
                     return session_operator(db, value)
             return None
 
+        def _healthz(self) -> str:
+            """Container liveness, exempt from the operator gate BY DESIGN and
+            carrying NO data - two words and a status code, no account names,
+            no counts, no alert content. The old compose healthcheck fetched
+            the dashboard root unauthenticated and only ever passed because
+            _gate waived sign-in on an empty operator table: closing that hole
+            (#103 item 1) broke the probe the moment the first operator
+            existed. And "an HTTP server answered" was never the question -
+            this thread kept answering through #79's six dead weeks. The
+            question is whether the ENGINE completed a cycle recently.
+
+            Threshold: 3 x polling.fast_loop_seconds, read from the running
+            config, never a literal. The scheduler sleeps exactly
+            fast_loop_seconds between cycles (_scheduler_pass), one stamp can
+            be late because the same thread runs escalation, pruning and the
+            alarms, so one missed beat is a slow pass - three is a wedge. At
+            the default 45 s that is 135 s, and with the compose probe's
+            30 s x 3 retries a wedged engine reads unhealthy in about four
+            minutes instead of never."""
+            from sentinel.rules_schema import default_for
+
+            try:
+                seconds = (rules.get_seconds("polling", "fast_loop_seconds")
+                           if rules is not None else float(default_for("polling", "fast_loop_seconds")))
+            except Exception:  # noqa: BLE001 - a broken config must not break liveness
+                seconds = float(default_for("polling", "fast_loop_seconds") or 45)
+            threshold = 3 * seconds
+            with db.cursor() as cur:
+                cur.execute("SELECT value FROM portal_meta WHERE key = 'engine:last_cycle'")
+                row = cur.fetchone()
+            verdict, status = "stale", 503
+            if row and row["value"]:
+                try:
+                    last = datetime.fromisoformat(str(row["value"]))
+                    age = (datetime.now(timezone.utc) - last).total_seconds()
+                    if age <= threshold:
+                        verdict, status = "ok", 200
+                except ValueError:
+                    pass
+            body = f"{verdict}\n".encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+            return verdict
+
         def _gate(self) -> bool:
             """True when the request may proceed: a signed-in operator, and
             nothing else.
@@ -1197,6 +1244,9 @@ def serve_dashboard(
 
         def do_GET(self):
             path = urlparse(self.path).path.rstrip("/") or "/"
+            if path == "/healthz":
+                self._healthz()
+                return
             if path == "/login":
                 self._send(_render_operator_login().encode())
                 return

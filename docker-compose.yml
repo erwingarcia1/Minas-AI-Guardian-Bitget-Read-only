@@ -63,8 +63,12 @@ services:
         soft: 8192
         hard: 8192
     healthcheck:
-      # python-slim has no curl; stdlib does the job
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8390', timeout=5)"]
+      # python-slim has no curl; stdlib does the job. /healthz, not the
+      # dashboard root: the root is behind the operator sign-in (the old
+      # probe passed only while the empty-table waiver held the door open),
+      # and /healthz asserts the ENGINE completed a cycle recently rather
+      # than merely that an HTTP thread answered (#79's shape).
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8390/healthz', timeout=5)"]
       interval: 30s
       timeout: 10s
       retries: 3

@@ -231,6 +231,18 @@ class Engine:
             fast_interval = float(default_for("polling", "fast_loop_seconds") or 45)
         return max(1.0, fast_interval - (time.monotonic() - started))
 
+    def _stamp_cycle(self) -> None:
+        """portal_meta['engine:last_cycle'] = now, at the end of every
+        completed scheduler cycle. /healthz judges the engine by this stamp;
+        the threshold there derives from polling.fast_loop_seconds because
+        that IS the cycle cadence (_scheduler_pass sleeps exactly that)."""
+        from datetime import datetime, timezone
+
+        with self._db.cursor() as cur:
+            cur.execute("INSERT INTO portal_meta (key, value) VALUES ('engine:last_cycle', ?) "
+                        "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                        (datetime.now(timezone.utc).isoformat(),))
+
     def _scheduler_tick(self) -> None:
         """One pass of the scheduler's housekeeping: queue the due work, run
         escalation, and republish the health signals.
@@ -265,6 +277,13 @@ class Engine:
                 self._drill_schedule.evaluate()
             if self._heartbeat is not None:
                 self._heartbeat.evaluate()
+            # The liveness stamp (/healthz, #79's shape): written as the LAST
+            # act of a completed cycle, so a scheduler thread that wedged
+            # anywhere above stops stamping and the container healthcheck
+            # turns unhealthy - instead of the dashboard thread answering
+            # "fine" over a dead engine, which is how six weeks of silence
+            # read as uptime once before.
+            self._stamp_cycle()
         except Exception as exc:  # noqa: BLE001 - scheduler must survive anything
             logger.error("scheduler cycle failed: %s", exc)
 
