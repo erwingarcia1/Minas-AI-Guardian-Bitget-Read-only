@@ -326,8 +326,28 @@ def test_the_host_script_gathers_the_three_host_facts_and_goes_loud_once(tmp_pat
     second = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
     assert first.returncode == 1 and second.returncode == 1
     motd = (tmp_path / "motd").read_text()
-    assert motd.count("LIVENESS") == 1, "loud once, not once per tick"
+    assert motd.count("LIVENESS") == 1, "loud once per state, not once per tick"
     journal = (tmp_path / "journal").read_text()
     assert "liveness" in journal.lower()
     assert "--crontab-has-digest yes" in (tmp_path / "host.log").read_text()
     assert "--liveness-timer-active yes" in (tmp_path / "host.log").read_text()
+
+    # 4(b): red-to-red with a CHANGED dead set must be reported, not silent.
+    # At 16:28:21 on 2026-08-31 the set went 7 -> 6 and journald recorded
+    # only the facts line. The docker stub now reports a different, smaller
+    # dead set: the delta is logged (what came live, what went dead) and the
+    # marker is refreshed, still exactly one.
+    (fake_bin / "docker").write_text(
+        "#!/usr/bin/env bash\nprintf 'DEAD  Database backup  none\\n'\nexit 1\n")
+    before = (tmp_path / "journal").read_text()
+    third = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
+    assert third.returncode == 1
+    delta = (tmp_path / "journal").read_text()[len(before):]
+    assert "now live" in delta and "Member digest" in delta, "a mechanism switching ON is acknowledged"
+    assert "newly dead" in delta and "Database backup" in delta
+    assert (tmp_path / "motd").read_text().count("LIVENESS") == 1, "the marker is refreshed, not duplicated"
+    # and red-to-red with the SAME set stays quiet
+    before = (tmp_path / "journal").read_text()
+    subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
+    quiet = (tmp_path / "journal").read_text()[len(before):]
+    assert "newly dead" not in quiet and "now live" not in quiet

@@ -56,26 +56,35 @@ OUT=$(docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" sentinel liveness \
         --liveness-timer-active "$SELF" 2>&1)
 RC=$?
 
-PREV=green
+# The state file holds the FAILING SET itself (sorted DEAD/???? lines), not
+# just red/green: red-to-red used to be silent, so at 16:28:21 on 2026-08-31
+# the set going 7 -> 6 (this gate's own timer switching on) left nothing in
+# journald but the facts line. Any CHANGE in the set is reported now - what
+# went dead, what came live - because a gate that never acknowledges
+# progress gets ignored.
+PREV=""
 [ -f "$STATE_FILE" ] && PREV=$(cat "$STATE_FILE")
+CUR=$(printf '%s\n' "$OUT" | grep -E '^(DEAD|\?\?\?\?)' | sort || true)
+mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null; printf '%s\n' "$CUR" > "$STATE_FILE"
 
 if [ "$RC" -eq 0 ]; then
-  if [ "$PREV" != "green" ]; then
+  if [ -n "$(printf '%s' "$PREV" | tr -d '[:space:]')" ]; then
     log_line "liveness: every declared mechanism is live or held; clearing the marker"
     if [ -f "$MOTD_FILE" ]; then sed -i "/$MARK/d" "$MOTD_FILE" 2>/dev/null || true; fi
   fi
-  mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null; printf 'green\n' > "$STATE_FILE"
   exit 0
 fi
 
-# Failing. Loud once per transition to red, then quiet until it changes.
-FAILS=$(printf '%s\n' "$OUT" | grep -cE '^(DEAD|\?\?\?\?)')
-if [ "$PREV" != "red" ]; then
-  log_line "LIVENESS: $FAILS mechanism(s) built but not running - run 'sentinel liveness' on this host for the switch-on acts" err
-  printf '%s\n' "$OUT" | grep -E '^(DEAD|\?\?\?\?)' | while read -r line; do log_line "  $line" err; done
+FAILS=$(printf '%s\n' "$CUR" | grep -c . || true)
+if [ "$CUR" != "$PREV" ]; then
+  NEW_DEAD=$(comm -13 <(printf '%s\n' "$PREV") <(printf '%s\n' "$CUR") | grep -c . || true)
+  NOW_LIVE=$(comm -23 <(printf '%s\n' "$PREV") <(printf '%s\n' "$CUR") | grep -c . || true)
+  log_line "LIVENESS: $FAILS mechanism(s) built but not running ($NEW_DEAD newly dead, $NOW_LIVE now live) - run 'sentinel liveness' on this host for the switch-on acts" err
+  comm -13 <(printf '%s\n' "$PREV") <(printf '%s\n' "$CUR") | while read -r line; do [ -n "$line" ] && log_line "  newly dead: $line" err; done
+  comm -23 <(printf '%s\n' "$PREV") <(printf '%s\n' "$CUR") | while read -r line; do [ -n "$line" ] && log_line "  now live:   $line"; done
   mkdir -p "$(dirname "$MOTD_FILE")" 2>/dev/null
+  if [ -f "$MOTD_FILE" ]; then sed -i "/$MARK/d" "$MOTD_FILE" 2>/dev/null || true; fi
   printf '*** %s: %s mechanism(s) built but not running (%s). Run: sentinel liveness ***\n' \
     "$MARK" "$FAILS" "$(stamp)" >> "$MOTD_FILE"
 fi
-mkdir -p "$(dirname "$STATE_FILE")" 2>/dev/null; printf 'red\n' > "$STATE_FILE"
 exit 1
