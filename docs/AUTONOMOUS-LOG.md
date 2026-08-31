@@ -5906,3 +5906,12 @@ human at a prompt already has the report), and scripts/host/liveness.sh
 - the timer's only caller - passes --page. Test: the bare command on a
 failing gate leaves operator_pages empty; --page leaves exactly one
 liveness_failed row; the host script's invocation carries the flag.
+
+# 2026-08-31 · v1.11.2 batch, item 4: the host script speaks to a human
+
+scripts/host/liveness.sh wrote only to journald, so a person running it
+by hand saw nothing - "quiet by design" and "broken" as the same
+silence. When stdout is a TTY ([-t 1], or MINAS_FORCE_TTY=1 as the
+test's handle, since a captured pipe can never be one) the full report
+is printed; from the timer, stdout stays empty and journald keeps the
+record exactly as before. Both paths tested.

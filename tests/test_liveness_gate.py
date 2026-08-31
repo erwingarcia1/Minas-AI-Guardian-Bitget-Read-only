@@ -392,3 +392,35 @@ def test_a_hand_run_never_pages_and_the_timer_opts_in(db, monkeypatch, capsys):
     host = (ROOT / "scripts/host/liveness.sh").read_text()
     assert "sentinel liveness --page" in host, "the timer is the one caller that opts in"
     capsys.readouterr()
+
+
+def test_the_host_script_prints_to_a_tty_and_stays_quiet_for_the_timer(tmp_path):
+    """Item 4: to a human, "quiet by design" and "broken" are identical.
+    Interactive (MINAS_FORCE_TTY=1, standing in for -t 1, which a captured
+    pipe can never be): the report reaches stdout. From the timer (no TTY):
+    stdout is empty and journald carries the record, as before."""
+    import os
+    import subprocess
+
+    script = ROOT / "scripts/host/liveness.sh"
+    src = script.read_text()
+    assert "[ -t 1 ]" in src, "the interactive branch keys on stdout being a TTY"
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    (fake_bin / "docker").write_text("#!/usr/bin/env bash\nprintf 'DEAD  Member digest  no cron\\n'\nexit 1\n")
+    (fake_bin / "systemctl").write_text("#!/usr/bin/env bash\nexit 0\n")
+    (fake_bin / "crontab").write_text("#!/usr/bin/env bash\necho ''\n")
+    (fake_bin / "logger").write_text("#!/usr/bin/env bash\necho \"$@\" >> " + str(tmp_path / "journal") + "\n")
+    (fake_bin / "sudo").write_text("#!/usr/bin/env bash\nexec \"$@\"\n")
+    for p in fake_bin.iterdir():
+        p.chmod(0o755)
+    env = dict(os.environ, PATH=f"{fake_bin}:{os.environ['PATH']}",
+               MINAS_BACKUP_DIR=str(tmp_path / "nobackups"), MINAS_MOTD_FILE=str(tmp_path / "motd"),
+               MINAS_STATE_FILE=str(tmp_path / "state"), MINAS_COMPOSE_FILE=str(tmp_path / "compose.yml"),
+               MINAS_HOST_LOG=str(tmp_path / "host.log"))
+    timer = subprocess.run(["bash", str(script)], env=env, capture_output=True, text=True)
+    assert timer.returncode == 1 and timer.stdout == "", "the timer path stays quiet on stdout"
+    human = subprocess.run(["bash", str(script)], env=dict(env, MINAS_FORCE_TTY="1"),
+                           capture_output=True, text=True)
+    assert human.returncode == 1
+    assert "DEAD" in human.stdout and "Member digest" in human.stdout, "a human sees the report"

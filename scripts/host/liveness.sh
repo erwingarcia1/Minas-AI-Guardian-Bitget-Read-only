@@ -56,6 +56,15 @@ OUT=$(docker compose -f "$COMPOSE_FILE" exec -T "$SERVICE" sentinel liveness --p
         --liveness-timer-active "$SELF" 2>&1)
 RC=$?
 
+# To a human at a prompt, "quiet by design" and "broken" are the same
+# silence - the exact confusion this product exists to prevent. When stdout
+# is a TTY the report is printed; from the timer (no TTY) it stays quiet
+# and journald keeps the record, exactly as before. MINAS_FORCE_TTY=1 is
+# the test's handle on the interactive branch.
+if [ -t 1 ] || [ "${MINAS_FORCE_TTY:-0}" = "1" ]; then
+  printf '%s\n' "$OUT"
+fi
+
 # The state file holds the FAILING SET itself (sorted DEAD/???? lines), not
 # just red/green: red-to-red used to be silent, so at 16:28:21 on 2026-08-31
 # the set going 7 -> 6 (this gate's own timer switching on) left nothing in
