@@ -207,7 +207,12 @@ flat = " ".join(" ".join(line for _, c in subs for line in c).split())
 # v1.10.0's one operator action to "re-run `scripts/install-hooks." and
 # was worked around by rewording once before.
 SENTENCE_BODY = r"(?:[^.!?]|[.!?](?!\s|$))*"
-todo = [m.group(0).strip() for m in
+# A bullet whose FIRST sentence carries the mark ("- **Re-enable the timer
+# on upgrade**: ...") begins, in the flattened section, with its own list
+# marker - the previous sentence's terminator sits just before the dash.
+# The marker is structure, not the sentence; lifted raw it rendered as a
+# stray "- " in the middle of the paragraph.
+todo = [re.sub(r"^(?:[-*+]|\d+[.)])\s+", "", m.group(0).strip()) for m in
         re.finditer(rf"{SENTENCE_BODY}\bon upgrade\b{SENTENCE_BODY}[.!?](?=\s|$)", flat, re.I)]
 if todo:
     # Bold markers are stripped from lifted sentences: a lift that starts or

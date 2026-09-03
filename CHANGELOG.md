@@ -15,16 +15,90 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
-## [1.11.1] — 2026-08-29
-
 ### Changed — on upgrade
 
-- **Re-enable `minas-restart-on-unhealthy.timer` on upgrade** — `sudo
-  systemctl enable --now minas-restart-on-unhealthy.timer`. It was
+- **Re-enable `minas-restart-on-unhealthy.timer` on upgrade**:
+  `sudo systemctl enable --now minas-restart-on-unhealthy.timer`. It was
   stopped by hand on 2026-08-30 when the healthcheck went red the moment
   the first operator existed; this release's `/healthz` fix (the probe no
   longer rests on the dashboard being unauthenticated, and asserts the
   engine is alive) is what makes switching it back on safe.
+
+- **Clear the two restart-cap notices from `/etc/motd` on upgrade.** The
+  #81 flap evidence from August stays by design until a human removes it;
+  on upgrade run `sudo sed -i '/MINAS RESTART CAP/d' /etc/motd` (or edit
+  by hand) so the banner reflects this deploy, not that incident.
+
+### Changed detection behaviour
+
+**The detectors and severities themselves are unchanged.** One change to
+who hears what:
+
+- **A liveness check run by hand no longer pages the operators.** On
+  2026-08-31 a person typing `sentinel liveness` at a prompt raised
+  operator page #217 for a report they were already reading. The bare
+  command now prints its report and exits non-zero without paging; the
+  systemd timer, its one automated caller, passes `--page` and pages
+  exactly as before. Nothing about what the timer detects or how loudly
+  it says so has changed.
+
+### Changed
+
+- **The weekly drill is off pending the drill-account decision (#37).**
+  `sentinel onboard --drill` verifies a real exchange key, so the drill
+  account is an owner decision, not a command. `drills.enabled: false`
+  and the liveness gate's matching hold travel in this one commit; with
+  neither, the schedule would page HIGH ("no drill account") once per
+  interval. On-demand drills still work. Flip both back together once
+  the account exists.
+
+- **The liveness host script talks to a person who runs it.**
+  `scripts/host/liveness.sh` wrote only to journald, so someone running
+  it by hand saw the same silence whether everything was live or the
+  script was broken. When stdout is a terminal the full report is
+  printed; from the timer stdout stays empty and journald keeps the
+  record exactly as before.
+
+### Fixed
+
+- **The container healthcheck now asserts the engine is alive, not that
+  a web server answered.** It fetched the ops dashboard root
+  unauthenticated and passed only while the empty-operator-table waiver
+  held the door open - creating the first operator turned the container
+  unhealthy - and it read healthy straight through a wedged poller. The
+  engine now stamps the end of every completed scheduler cycle and
+  `GET /healthz` (answered before the operator gate by design; two words,
+  no data, every other route still 401) returns 200 only while that stamp
+  is younger than three fast-loop cycles, 503 otherwise. The compose
+  healthcheck probes `/healthz`, so a wedged engine turns the container
+  unhealthy in about four minutes instead of never.
+
+- **A recreated container no longer clears the restart cap.** On
+  2026-08-30 the deploy's new container reported `starting` two minutes
+  after the cap, the restart script read that as recovery, cleared its
+  state, and the flap got a second restart the design refuses. The state
+  now remembers which container it capped: only a `healthy` verdict
+  clears the ladder, `starting` and `unknown` decide nothing, and a
+  changed container id while capped is logged as a replacement and keeps
+  the cap until the replacement actually reports healthy.
+
+- **The liveness gate reports every change in the failing set, not only
+  the moment it turns red.** Red-to-red was silent: on 2026-08-31 the
+  dead set went from seven mechanisms to six - the gate's own timer
+  switching on - and journald recorded only the facts line. The host
+  script's state file now holds the failing set itself; anything newly
+  dead is logged at `err`, anything newly live at `info`, the single
+  `/etc/motd` marker is refreshed with the new count, and an unchanged
+  red set stays quiet.
+
+- **Release notes no longer lose a space between two adjacent code
+  spans.** The composer's line-wrap rejoin matched a wrap between two
+  closed backtick spans and ate the space (v1.11.1's published body had
+  "`account_unreachable`, `monitoring_key_tamper_suspected`" run
+  together; corrected in place). The rule now joins a wrap only inside an
+  open span.
+
+## [1.11.1] — 2026-08-29
 
 ### Changed detection behaviour
 
@@ -48,21 +122,6 @@ who hears what, and how often:
   alert and its escalation), the emergency contact 1 note, Minas 9
   messages; on every following day the customer 1 email and nobody
   else anything.
-
-### Changed
-
-- **Clear the two restart-cap notices from `/etc/motd` on upgrade.** The
-  #81 flap evidence from August stays by design until a human removes it;
-  on upgrade run `sudo sed -i '/MINAS RESTART CAP/d' /etc/motd` (or edit
-  by hand) so the banner reflects this deploy, not that incident.
-
-- **The weekly drill is off pending the drill-account decision (#37).**
-  `sentinel onboard --drill` verifies a real exchange key, so the drill
-  account is an owner decision, not a command. `drills.enabled: false`
-  and the liveness gate's matching hold travel in this one commit; with
-  neither, the schedule would page HIGH ("no drill account") once per
-  interval. On-demand drills still work. Flip both back together once
-  the account exists.
 
 ### Fixed
 

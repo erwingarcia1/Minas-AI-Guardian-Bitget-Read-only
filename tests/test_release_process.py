@@ -580,6 +580,27 @@ def test_lifted_upgrade_sentences_carry_no_unbalanced_bold(repo):
     assert "**" not in section, "no unbalanced bold in the lifted sentence"
 
 
+def test_a_lifted_first_sentence_does_not_carry_its_list_marker(repo):
+    """A bullet whose FIRST sentence is the upgrade effect - '- **Re-enable
+    the timer on upgrade**: ...' - begins, in the flattened section, with
+    its own '- ', because the previous sentence's terminator sits just
+    before the dash. The marker is structure, not the sentence; lifted raw
+    it rendered as a stray dash inside the paragraph."""
+    text = (repo / "CHANGELOG.md").read_text()
+    (repo / "CHANGELOG.md").write_text(text.replace(
+        "- **A thing that happened.** With a body.",
+        "- **Re-enable the timer on upgrade.** With a body."))
+    _git(repo, "commit", "-qam", "an entry whose first sentence is the effect")
+
+    result = _run(repo, "release.sh", "1.1.0")
+    assert result.returncode == 0, result.stderr
+
+    notes = (repo.parent / "gh-notes.txt").read_text()
+    section = notes.split("## What you need to do")[1].split("##")[0]
+    assert "Re-enable the timer on upgrade." in section
+    assert "- Re-enable" not in section, "the list marker is structure, not the sentence"
+
+
 def test_a_lifted_sentence_is_not_cut_at_a_dot_inside_a_filename(repo):
     """The v1.10.0 defect: 'On upgrade, developers re-run `scripts/install-
     hooks.sh` once' lifted as '...re-run `scripts/install-hooks.' - the
