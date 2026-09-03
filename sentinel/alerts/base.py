@@ -174,6 +174,16 @@ def runbook(exchange: str | None = None, *, rule: str | None = ...) -> str:
     return "\n\n".join(steps + [monitoring_note()])
 
 
+def customer_advised_line() -> str:
+    """What the customer's copy of an advice-bearing alert told them, said
+    to an operator in the third person. One line, no imperative to the
+    reader: the operator format is read by Minas, and "revoke any API key
+    you do not recognise" addressed to MINAS-OPS is the wrong audience."""
+    return ("Customer advised: revoke unrecognised API keys (keeping the Guardian key), "
+            "check the exchange's own withdrawal history, contact the exchange's support "
+            "with the incident number.")
+
+
 def monitoring_note() -> str:
     """The consequence of step 1 (revoking every key), sitting below the list.
 
@@ -319,11 +329,15 @@ class AlertMessage:
             f"Confidence: {self.confidence}\n"
             f"Evidence:\n{evidence_lines}"
         )
-        # Only where the rule carries advice (RULE_ADVICE). The liveness page
-        # of 2026-08-31 carried the withdrawal runbook under a missing backup
-        # directory; a rule with no applicable advice gets no block at all.
-        steps = runbook(rule=self.rule)
-        return f"{body}\n\nRunbook:\n{steps}" if steps else body
+        # Only where the rule carries advice (RULE_ADVICE), and in the
+        # operator's voice: what the customer was told, in one line - never
+        # the customer's steps themselves. The page of 2026-08-31 told
+        # MINAS-OPS to "sign in to Minas AI Guardian ... yourself; ask us if
+        # anything there does not work" (monitoring_note, via the runbook);
+        # customer copy on an operator surface is the wrong audience, whether
+        # or not the rule applies. tests/test_customer_channel_guard.py holds
+        # the line in both directions.
+        return f"{body}\n\n{customer_advised_line()}" if advice_kind(self.rule) else body
 
     def operator_subject(self) -> str:
         if self.drill:

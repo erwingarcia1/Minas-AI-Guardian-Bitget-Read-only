@@ -76,6 +76,19 @@ who hears what, and what they are told:
   all - not a generic one. A test enumerates every rule in the source and
   fails on one that has neither advice nor an explicit "none".
 
+- **Operator pages and the ops channels no longer carry the customer's
+  copy.** The same page told MINAS-OPS to "sign in to Minas AI Guardian
+  and open the account to put a new read-only key in place yourself; ask
+  us if anything there does not work" - the customer's note, embedded in
+  the operator format. The operator format (ops email, ops Telegram,
+  every operator page) now carries rule, confidence, evidence and, only
+  where the rule carries advice, one operator-voiced line saying what the
+  customer was advised. The guard in `tests/test_customer_channel_guard.py`
+  now holds both directions: an operator-audience body carries none of
+  the customer's sentences, and a customer-audience body carries no rule
+  name, confidence or evidence - including an
+  operator-page-shaped message pushed through a customer channel.
+
 ### Changed
 
 - **The weekly drill is off pending the drill-account decision (#37).**

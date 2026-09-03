@@ -6007,3 +6007,40 @@ rule literal in sentinel/ - rule=, subject_rule=, X_RULE =, "rule": -
 plus the headline and notice maps is in RULE_ADVICE, and no stale entry),
 plus escalation-prefix lookup and the incident page without the section.
 CONTRIBUTING hard rule 5 gains the registry step.
+
+# 2026-09-03 · URGENT batch, item 3: the operator format speaks to an operator
+
+Finding against the brief: EmailChannel DOES honour its audience argument
+(customer -> render_customer, operator -> render; the ContactRouter builds
+the only customer email with audience="customer", build_channels' global
+email is operator by default with SMTP_RECIPIENTS). The customer copy on
+the MINAS-OPS page came from the OPERATOR FORMAT itself: render()
+appended runbook(), whose last paragraph is monitoring_note() - "Sign in
+to Minas AI Guardian and open the account to put a new read-only key in
+place yourself; ask us if anything there does not work." Built: render()
+carries rule, confidence, evidence and - only where RULE_ADVICE says the
+rule carries advice - customer_advised_line(), one third-person line
+saying what the customer was told; never the customer's steps or note.
+Guard extended in tests/test_customer_channel_guard.py, both directions
+and driven through the real channels: ops email, ops Telegram and
+operator SMS carry none of the customer's sentences (built from the same
+functions that write them: advice_steps, monitoring_note,
+portal_action_line, the footer, "We are telling you because", "What to
+check:") for an advice-bearing alert AND for the liveness page; customer
+email body/subject and customer SMS carry no "Confidence:", "Evidence:",
+"Runbook:", "Customer advised:", rule name or evidence text - including
+an operator-page-shaped message pushed through a customer channel. The
+account label is data, not format, and is not part of the guard.
+
+Renderer question (reported, not fixed): the raw-dict evidence lines are
+render()'s `f"  {k}: {v}"`, and render() feeds ONLY operator-audience
+surfaces - TelegramChannel (constructed solely from TELEGRAM_CHAT_ID /
+TELEGRAM_TEAM_CHAT_ID, pinned OPERATOR_ONLY by the guard), the global
+EmailChannel (operator default, SMTP_RECIPIENTS) and operator pages.
+Every customer path renders render_customer() (customer email, the
+member Telegram leg in ContactRouter, the secondary's escalation note)
+or format_sms_body(), none of which prints evidence at all; the guard's
+POISON evidence address has been asserted absent from every customer
+body since the SMS fix, and the new operator-page-through-customer-
+channel test asserts the liveness page's evidence text absent too. Not a
+fourth item.

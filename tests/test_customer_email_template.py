@@ -257,13 +257,18 @@ def test_an_unmapped_notice_still_gets_a_human_subject():
 
 def test_operator_format_still_carries_everything_it_did():
     """Operators need the rule name, the confidence and the raw evidence, and
-    Telegram/SMS read the same rendering - this is deliberately not gated."""
+    Telegram/SMS read the same rendering - this is deliberately not gated on
+    severity. What it no longer carries (2026-09-03) is the customer's own
+    runbook and note: an operator is told, in one line, what the customer was
+    advised - tests/test_customer_channel_guard.py holds that line."""
+    from sentinel.alerts.base import customer_advised_line
+
     alert = _alert(severity="INFO")
     body = alert.render()
     assert "withdrawal_to_unseen_address" in body
     assert "Confidence: high" in body
     assert "0xDEADBEEF" in body
-    assert runbook() in body
+    assert runbook() not in body and customer_advised_line() in body
     assert alert.operator_subject() == (
         "[Minas AI Guardian INFO] withdrawal_to_unseen_address - Bitget Main"
     )

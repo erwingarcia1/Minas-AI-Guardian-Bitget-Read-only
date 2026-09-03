@@ -1,5 +1,8 @@
 """The structural half of the SMS-body fix: NO customer-facing channel may
 emit raw `alert.message`, and no customer-facing body may contain a URL.
+And the audience split holds in BOTH directions (2026-09-03): an
+operator-audience body carries no customer-voiced instruction, a
+customer-audience body carries no operator-only detail.
 
 Email was fixed with render_customer() while SMS kept shipping the raw
 detector message - amounts, addresses, a link - with nothing catching it,
@@ -211,3 +214,119 @@ def test_the_rendered_customer_sms_is_exactly_the_conservative_copy():
     body = format_sms_body(POISON, audience="customer")
     assert body == ("Minas AI Guardian CRITICAL alert on acct-g. "
                     "Sign in to the Minas portal to review. We never send links by SMS.")
+
+
+# --- the audience split, both directions (2026-09-03) ------------------------
+#
+# The liveness page of 2026-08-31 - subject "[Minas AI Guardian HIGH]
+# liveness_failed - MINAS-OPS" - told its operator reader to "Sign in to
+# Minas AI Guardian and open the account to put a new read-only key in
+# place yourself; ask us if anything there does not work." That is customer
+# copy on a Minas page. The email channel honoured its audience argument;
+# the OPERATOR FORMAT itself embedded the customer's runbook and note. The
+# sentences below are the customer's, by construction from the same
+# functions that write them, so a new customer sentence is caught the day
+# it is written into the operator format.
+
+def _customer_voiced_sentences() -> list[str]:
+    from sentinel.alerts.base import _FOOTER, advice_steps, monitoring_note, portal_action_line
+
+    return [*advice_steps("bitget"), *advice_steps(None), monitoring_note(), portal_action_line(),
+            _FOOTER, "We are telling you because", "What to check:",
+            "Sign in to Minas AI Guardian", "Sign in to the Minas portal", "ask us if"]
+
+
+# Operator-only detail: the vocabulary of the operator format and of a page.
+# (The account label is data, not format: an operator page's "MINAS-OPS"
+# label prints in the label slot of any surface and is not what this holds.)
+_OPERATOR_ONLY_FRAGMENTS = ("Confidence:", "Evidence:", "Customer advised:",
+                            "🛡 MINAS AI GUARDIAN", "Runbook:", "sentinel ack", "{'key'")
+
+ADVICE_BEARING = AlertMessage(
+    account_label="acct-g", rule="withdrawal_initiated", severity="CRITICAL", confidence="high",
+    message=f"{CANARY} withdrawal of 1250.0 USDT to 0xDeadBeefCafe1234", evidence={"address": "0xDeadBeefCafe1234"},
+    incident_id=41,
+)
+OPERATOR_PAGE = AlertMessage(
+    account_label="MINAS-OPS", rule="liveness_failed", severity="HIGH", confidence="operator",
+    message="Liveness: 2 mechanism(s) newly not running: Database backup (dead), Dead-man's switch (dead).",
+    evidence={"failing": [{"key": "backup", "state": "dead", "evidence": "no backup file exists"}]},
+)
+
+
+def _smtp_capture(monkeypatch):
+    sent = {}
+
+    class _Smtp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def starttls(self):
+            pass
+
+        def login(self, *a):
+            pass
+
+        def send_message(self, msg):
+            sent["body"] = msg.get_content()
+            sent["subject"] = msg["Subject"]
+
+    monkeypatch.setattr("sentinel.alerts.email.net.smtp", lambda *a, **k: _Smtp())
+    return sent
+
+
+@pytest.mark.parametrize("alert", [ADVICE_BEARING, OPERATOR_PAGE], ids=["advice-bearing", "operator-page"])
+def test_an_operator_audience_body_carries_no_customer_voiced_instruction(monkeypatch, alert):
+    """Every operator surface - the ops email, the ops Telegram (render()),
+    the operator SMS - is driven and read back: none of the customer's
+    sentences, whether the rule carries advice or not."""
+    from sentinel.alerts.email import EmailChannel
+    from sentinel.alerts.sms import format_sms_body
+    from sentinel.alerts.telegram import TelegramChannel
+
+    sent = _smtp_capture(monkeypatch)
+    EmailChannel("h", 25, "u", "p", "s@x", ["ops@minas"], audience="operator").send(alert)
+    texts = []
+    monkeypatch.setattr("sentinel.net.post", lambda url, **kw: texts.append((kw.get("json") or {}).get("text", "")) or _NoResp())
+    TelegramChannel("tok", "-100").send(alert)
+    bodies = {"ops email": sent["body"], "ops telegram": texts[0],
+              "ops sms": format_sms_body(alert, audience="operator")}
+    for where, body in bodies.items():
+        for sentence in _customer_voiced_sentences():
+            assert sentence not in body, f"{where} carries customer copy: {sentence[:60]!r}"
+        assert "you do not recognise" not in body and "yourself" not in body, where
+    # And the operator's own content is intact: rule, evidence, and - only
+    # where the rule carries advice - what the customer was told, in the
+    # operator's voice.
+    assert alert.rule in bodies["ops email"] and "Evidence:" in bodies["ops email"]
+    if alert is ADVICE_BEARING:
+        assert "Customer advised:" in bodies["ops email"] and "Customer advised:" in bodies["ops telegram"]
+    else:
+        assert "Customer advised:" not in bodies["ops email"]
+
+
+class _NoResp:
+    def raise_for_status(self):
+        pass
+
+
+@pytest.mark.parametrize("alert", [ADVICE_BEARING, OPERATOR_PAGE], ids=["advice-bearing", "operator-page"])
+def test_a_customer_audience_body_carries_no_operator_only_detail(monkeypatch, alert):
+    """The other direction, including an operator-page-shaped message pushed
+    through a customer channel by mistake: no rule name, no confidence, no
+    evidence (the dict repr an operator page carries)."""
+    from sentinel.alerts.email import EmailChannel
+    from sentinel.alerts.sms import format_sms_body
+
+    sent = _smtp_capture(monkeypatch)
+    EmailChannel("h", 25, "u", "p", "s@x", ["c@x"], audience="customer").send(alert)
+    bodies = {"customer email body": sent["body"], "customer email subject": sent["subject"],
+              "customer sms": format_sms_body(alert, audience="customer")}
+    for where, body in bodies.items():
+        for fragment in _OPERATOR_ONLY_FRAGMENTS:
+            assert fragment not in body, f"{where} carries operator detail: {fragment!r}"
+        assert alert.rule not in body, f"{where} carries the rule name"
+        assert "no backup file exists" not in body, f"{where} carries evidence"
