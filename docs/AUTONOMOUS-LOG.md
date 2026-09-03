@@ -5927,3 +5927,44 @@ inverse of a fix silently retiring its own guard), and it also asserted
 the wrong thing - an HTTP answer, which reads healthy through a wedged
 poller. Rule: when you close a hole, list what passes through it and
 repoint in the same change, or the fix ships as an outage.
+
+# 2026-09-03 · Records: the notes since v1.11.1 belong to [Unreleased]
+
+Found on resuming: 465aedd and f37102c had appended their CHANGELOG notes
+under the already-tagged `## [1.11.1]` heading, and six commits since the
+tag had no note at all. The 1.11.1 section is byte-identical to the tag
+again; [Unreleased] carries every change since it. A composer preview
+(the script's Python run against a scratch copy with Unreleased renamed)
+showed two artefacts: a bullet whose FIRST sentence carries "on upgrade"
+lifted with its own "- " list marker (the composer now strips it, test
+in the lift tests' shape), and a code span wrapped mid-command rejoined
+as `sudosystemctl` (authoring rule, not code: never wrap inside a code
+span; the bullet is reworded). CI 33790741154 green. Peer pid 49021 is
+in this tree but stopped (state T, no children) - a suspended session,
+not a worker.
+
+# 2026-09-03 · URGENT batch (owner, 2026-09-03), item 1: the liveness page fires on a change
+
+Owner's evidence: 48 hourly runs in two days, each paging HIGH about the
+same seven mechanisms, each page escalating at 60 unacknowledged minutes
+- a message every ~30 minutes on two channels. minas-liveness.timer
+stopped by hand 2026-09-02; minas-restart-on-unhealthy stopped since
+2026-08-30; both wait on this release (both "on upgrade" lines are in
+CHANGELOG). Scheduler confirmed by the owner; not re-investigated.
+
+Item 1's change is keyed on the SET OF FAILING MECHANISM KEYS (DEAD or
+UNKNOWN; HELD is not failing), kept in portal_meta['liveness:paged_
+failing'] and written only by page_verdict - a hand run never touches
+it. Newly failing key(s) -> one HIGH page naming them (evidence: one
+readable line per failing mechanism with its switch-on act, plus
+newly_failing / recovered / still_failing); unchanged set -> nothing,
+whatever the alerter's cooldown says (the test pushes the last page 3 h
+back and asserts silence); set that only shrank -> one MEDIUM
+`liveness_recovered` report (telegram_team only; escalates nothing); a
+dead->unknown flip is not a change. The failing set is the page's
+dedup_scope, so the cooldown can only suppress a page about the same
+set, never a new failure inside the hour. Tests: the exact observed
+shape (same set twice = one page; +1 member = a second HIGH naming only
+the newcomer; -1 member = MEDIUM, HIGH count still 2), held mechanisms
+never named and dead->held leaves the set as a recovery, all-live after
+failures said once, a bare run leaves no state.

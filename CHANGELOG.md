@@ -24,6 +24,12 @@ container")._
   longer rests on the dashboard being unauthenticated, and asserts the
   engine is alive) is what makes switching it back on safe.
 
+- **Re-enable `minas-liveness.timer` on upgrade**:
+  `sudo systemctl enable --now minas-liveness.timer`. It was stopped by
+  hand on 2026-09-02 because every hourly run paged HIGH about the same
+  seven mechanisms, and each page escalated; the change-based paging in
+  this release (below) is what makes switching it back on safe.
+
 - **Clear the two restart-cap notices from `/etc/motd` on upgrade.** The
   #81 flap evidence from August stays by design until a human removes it;
   on upgrade run `sudo sed -i '/MINAS RESTART CAP/d' /etc/motd` (or edit
@@ -31,8 +37,20 @@ container")._
 
 ### Changed detection behaviour
 
-**The detectors and severities themselves are unchanged.** One change to
+**The detectors and severities themselves are unchanged.** Two changes to
 who hears what:
+
+- **The liveness gate pages on a change, not on a state.** From
+  2026-08-31 the hourly timer paged HIGH on every run about the same seven
+  mechanisms - all off for days, none able to change without a human act -
+  and each page escalated at 60 unacknowledged minutes, so the owner
+  received a message every ~30 minutes on two channels until the timer was
+  stopped by hand. Now a mechanism that NEWLY fails pages HIGH once, naming
+  it; a failing set that has not changed does not page again, however long
+  it stays; a mechanism coming back (or being declared held in
+  `config/liveness-holds.yaml`) is reported once at MEDIUM, which reaches
+  the ops Telegram and escalates nothing; a held mechanism never pages at
+  all. Journald and `/etc/motd` already worked this way.
 
 - **A liveness check run by hand no longer pages the operators.** On
   2026-08-31 a person typing `sentinel liveness` at a prompt raised

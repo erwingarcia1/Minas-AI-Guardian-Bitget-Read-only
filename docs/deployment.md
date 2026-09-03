@@ -334,9 +334,16 @@ sudo systemctl daemon-reload && sudo systemctl enable --now minas-liveness.timer
 
 The verdict pages an operator (Telegram ops chat + ops email - proven live
 by production's escalation pages, and not a path this gate checks; never
-the digest, never SMS) at most once per hour, and the host script writes
-journald + `/etc/motd` once per red transition, so a dead Telegram cannot
-hide a dead everything-else.
+the digest, never SMS) **on a change in the failing set, never on the
+state**: a mechanism that newly fails pages HIGH once; a set that has not
+changed is silent however many hourly runs go by (the set it last paged
+about is kept in `portal_meta`, key `liveness:paged_failing`); a mechanism
+coming back - or being declared held - is reported once at MEDIUM. Seven
+mechanisms that could not change without a human act paged HIGH every
+hour from 2026-08-31 to 2026-09-02, each page escalating, until the timer
+was stopped by hand; that is what this rule replaces. The host script
+applies the same rule to journald + `/etc/motd` with its own state file,
+so a dead Telegram cannot hide a dead everything-else.
 
 ## Acting on an unhealthy container (#81, decision 12)
 

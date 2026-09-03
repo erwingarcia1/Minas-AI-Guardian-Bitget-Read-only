@@ -50,11 +50,25 @@ be, mechanisms in this declaration:
 declared mechanisms the page also travels by. tests/test_liveness_gate.py
 FAILS if a report path ever appears in the declaration, or if a
 best-effort leg stops being declared (it would then be a hidden
-dependency). The page is deduped by the operator alerter's HIGH
-cooldown, so a persistently dead mechanism pages once per interval.
+dependency).
+
+The page fires on a CHANGE in the failing set, never on the state
+(2026-09-02): seven mechanisms that had been off for days, and could not
+change without a human act, paged HIGH on every hourly run - and each
+page escalated at 60 unacknowledged minutes, so the owner received a
+message every ~30 minutes on two channels, until the timer was stopped by
+hand. `page_verdict` keeps the set of failing mechanism KEYS it last
+reported in portal_meta['liveness:paged_failing']; a mechanism that newly
+fails pages HIGH once; an unchanged set is silent however long it stays;
+one that comes back is reported once at MEDIUM (below HIGH: nothing is
+wrong); a held mechanism is never in the set and never pages. The host
+script applies the same rule to journald and /etc/motd with its own state
+file; the two are deliberately independent because each survives the
+other's death.
 """
 from __future__ import annotations
 
+import json
 import logging
 import os
 from dataclasses import dataclass, field
@@ -67,6 +81,10 @@ HOLDS_PATH_ENV = "SENTINEL_LIVENESS_HOLDS"
 DEFAULT_HOLDS_PATH = "./config/liveness-holds.yaml"
 FRESH = timedelta(hours=48)
 PAGE_RULE = "liveness_failed"
+RECOVERY_RULE = "liveness_recovered"
+# portal_meta key holding the sorted failing keys the last page reported.
+# Written only by page_verdict - a hand run (no --page) never touches it.
+PAGED_STATE_KEY = "liveness:paged_failing"
 
 LIVE, HELD, DEAD, UNKNOWN = "live", "held", "dead", "unknown"
 
@@ -372,22 +390,91 @@ def render(verdicts: list[Verdict]) -> str:
     return "\n".join(lines)
 
 
+def paged_failing(db) -> list[str] | None:
+    """The failing keys the last page reported, or None when no page has
+    ever been recorded (a fresh install, or a database from before this
+    rule) - in which case everything failing now is newly failing."""
+    with db.cursor() as cur:
+        cur.execute("SELECT value FROM portal_meta WHERE key = ?", (PAGED_STATE_KEY,))
+        row = cur.fetchone()
+    if row is None:
+        return None
+    try:
+        return sorted(str(k) for k in json.loads(row["value"]))
+    except (ValueError, TypeError):
+        return None
+
+
+def _remember_paged(db, keys: list[str]) -> None:
+    with db.cursor() as cur:
+        cur.execute("INSERT INTO portal_meta (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (PAGED_STATE_KEY, json.dumps(sorted(keys))))
+
+
 def page_verdict(db, rules, verdicts: list[Verdict]) -> int | None:
     """The verdict as an operator page (see the module docstring for why
-    that path and not another). Returns the page id, or None when nothing
-    fails or no alerter could be built."""
-    bad = failing(verdicts)
-    if not bad:
+    that path and not another), raised on a CHANGE in the failing set and
+    never on the state:
+
+      - a mechanism that newly fails: one HIGH page naming it, with the
+        rest of the set as context;
+      - a set that has not changed since the last page: nothing, however
+        many runs go by and whatever the alerter's cooldown says;
+      - a set that only shrank (something came back, or was declared held):
+        one MEDIUM report - nothing is wrong, and HIGH would escalate;
+      - a held mechanism is not failing and never pages.
+
+    The change is keyed on the set of failing mechanism KEYS: a mechanism
+    moving between `dead` and `unknown` is still not running and is not
+    news. The failing set itself is the page's dedup scope, so the
+    alerter's cooldown can only ever suppress a page about the same set -
+    never a new failure inside the hour.
+
+    Returns the page id, or None when nothing changed, nothing fails and
+    nothing had failed, or no alerter could be built."""
+    current = sorted(v.key for v in failing(verdicts))
+    previous = paged_failing(db)
+    newly = [k for k in current if k not in (previous or [])]
+    recovered = [k for k in (previous or []) if k not in current]
+    if not newly and not recovered:
         return None
+
     from sentinel.alerts.operator import OperatorAlerter
     from sentinel.cli import build_operator_channels
 
     alerter = OperatorAlerter(db, build_operator_channels(rules), rules)
     by = {e.key: e for e in ENTRIES}
-    names = ", ".join(f"{by[v.key].title} ({v.state})" for v in bad)
-    return alerter.page(
-        rule=PAGE_RULE, severity="HIGH",
-        message=(f"Liveness: {len(bad)} mechanism(s) built but not running: {names}. "
-                 f"Each one waits on a human act; `sentinel liveness` on the host prints which."),
-        evidence={"failing": [{"key": v.key, "state": v.state, "evidence": v.evidence} for v in bad]},
-    )
+    state = {v.key: v for v in verdicts}
+
+    def names(keys):
+        return ", ".join(f"{by[k].title} ({state[k].state})" if k in state else by[k].title for k in keys)
+
+    # One line per mechanism, readable through the operator format as it
+    # is (evidence renders as `key: value`): the state, the fact, and the
+    # switch-on act for anything failing.
+    evidence = {"newly_failing": names(newly) or "none",
+                "recovered": names(recovered) or "none",
+                "still_failing": names([k for k in current if k not in newly]) or "none"}
+    for k in current:
+        evidence[k] = f"{state[k].state}: {state[k].evidence} - switch on: {by[k].switch_on}"
+
+    scope = ",".join(current) or "-"
+    if newly:
+        page_id = alerter.page(
+            rule=PAGE_RULE, severity="HIGH",
+            message=(f"Liveness: {len(newly)} mechanism(s) newly not running: {names(newly)}. "
+                     f"{len(current)} built but not running in all"
+                     + (f"; {len(recovered)} recovered: {names(recovered)}" if recovered else "")
+                     + ". Each one waits on a human act; `sentinel liveness` on the host prints which. "
+                     "This pages again only when the failing set changes."),
+            evidence=evidence, dedup_scope=scope)
+    else:
+        page_id = alerter.page(
+            rule=RECOVERY_RULE, severity="MEDIUM",
+            message=(f"Liveness: {len(recovered)} mechanism(s) no longer failing: {names(recovered)}. "
+                     + (f"{len(current)} still built but not running: {names(current)}."
+                        if current else "Every declared mechanism is live or deliberately held.")),
+            evidence=evidence, dedup_scope=scope)
+    _remember_paged(db, current)
+    return page_id

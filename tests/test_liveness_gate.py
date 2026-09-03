@@ -238,7 +238,7 @@ def test_the_member_and_ops_telegram_share_one_bot_token():
     assert 'env_setting("TELEGRAM_BOT_TOKEN")' in contact, "member Telegram (#18) reads TELEGRAM_BOT_TOKEN"
     assert 'env_setting("TELEGRAM_BOT_TOKEN")' in cli, "the ops channels (#53) read TELEGRAM_BOT_TOKEN"
 
-def test_the_verdict_pages_the_operator_once_per_interval_and_never_through_digest_or_sms(db):
+def test_the_verdict_pages_the_operator_once_per_failing_set_and_never_through_digest_or_sms(db):
     from sentinel.alerts.operator import OperatorAlerter
     from sentinel.config import RulesConfig
 
@@ -264,7 +264,7 @@ def test_the_verdict_pages_the_operator_once_per_interval_and_never_through_dige
         second = liveness.page_verdict(db, rules, verdicts)
     finally:
         cli_module.build_operator_channels = original
-    assert first is not None and second is None, "the HIGH cooldown makes it loud once per interval"
+    assert first is not None and second is None, "an unchanged failing set must not page again"
     assert len(_Chan.sent) == 1 and "built but not running" in _Chan.sent[0].message
     with db.cursor() as cur:
         cur.execute("SELECT rule, severity FROM operator_pages")
@@ -273,6 +273,142 @@ def test_the_verdict_pages_the_operator_once_per_interval_and_never_through_dige
     assert "digest" not in src[src.index("def page_verdict"):], "the verdict must not travel by the digest"
     assert "build_sms_channel" not in src
     assert isinstance(OperatorAlerter, type)
+
+
+class _Recorder:
+    """An operator channel that keeps what it was sent."""
+    route_name = "telegram_team"
+    recipients = ["-1"]
+
+    def __init__(self):
+        self.sent = []
+
+    def send(self, alert):
+        self.sent.append(alert)
+
+
+def _paged(db, verdicts, chan):
+    """page_verdict with the ops channels stubbed to `chan` for every severity."""
+    import sentinel.cli as cli_module
+    from sentinel.config import RulesConfig
+
+    original = cli_module.build_operator_channels
+    cli_module.build_operator_channels = lambda _rules: {s: [chan] for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW")}
+    try:
+        return liveness.page_verdict(db, RulesConfig("config/rules.yaml"), verdicts)
+    finally:
+        cli_module.build_operator_channels = original
+
+
+def _pages(db):
+    with db.cursor() as cur:
+        cur.execute("SELECT rule, severity FROM operator_pages ORDER BY id")
+        return [tuple(r) for r in cur.fetchall()]
+
+
+def _with(verdicts, **states):
+    """The same verdicts with the named mechanisms forced to a state."""
+    return [liveness.Verdict(v.key, states.get(v.key, v.state), v.evidence) for v in verdicts]
+
+
+def test_the_page_fires_on_a_change_in_the_failing_set_not_on_the_state(db):
+    """The observed shape (2026-08-31 to 2026-09-02): seven mechanisms off
+    for days, the hourly timer paging HIGH on every run, each page
+    escalating - a message every ~30 minutes on two channels, until the
+    timer was stopped by hand. Same dead set on consecutive hourly runs
+    pages ONCE, not twice - and not after the cooldown either; a set that
+    gains a member pages HIGH again, naming the newcomer; a set that loses
+    one reports at MEDIUM, never HIGH."""
+    chan = _Recorder()
+    verdicts = evaluate(_facts(db, crontab_has_digest=False, newest_backup_age_seconds=-1,
+                               restart_timer_active=True, liveness_timer_active=True))
+    dead = sorted(v.key for v in failing(verdicts))
+    assert len(dead) >= 5, "the fixture must start with a real dead set"
+
+    first = _paged(db, verdicts, chan)
+    assert first is not None and _pages(db) == [("liveness_failed", "HIGH")]
+    assert "newly not running" in chan.sent[0].message
+    assert liveness.paged_failing(db) == dead
+
+    # Hour two, hour three: the same set. Silent - and the alerter's HIGH
+    # cooldown (60 min) is not what keeps it quiet, the unchanged set is:
+    # the second run is inside the cooldown, the third is pushed past it.
+    assert _paged(db, verdicts, chan) is None
+    with db.cursor() as cur:
+        cur.execute("UPDATE operator_pages SET sent_at = ?",
+                    ((datetime.now(timezone.utc) - timedelta(hours=3)).isoformat(),))
+    assert _paged(db, verdicts, chan) is None
+    assert _pages(db) == [("liveness_failed", "HIGH")], "an unchanged dead set paged again"
+
+    # The set gains a member (the restart timer goes off): one more HIGH,
+    # and the message names what is new rather than the whole old list.
+    worse = _with(verdicts, restart_timer=DEAD)
+    assert _paged(db, worse, chan) is not None
+    assert _pages(db) == [("liveness_failed", "HIGH")] * 2
+    assert chan.sent[-1].message.startswith("Liveness: 1 mechanism(s) newly not running: Restart-on-unhealthy timer (dead).")
+    assert "still_failing" in chan.sent[-1].evidence and "Restart-on-unhealthy timer" not in chan.sent[-1].evidence["still_failing"]
+    assert _paged(db, worse, chan) is None
+
+    # The set loses a member (the timer comes back): a report, below HIGH.
+    assert _paged(db, verdicts, chan) is not None
+    assert _pages(db)[-1] == ("liveness_recovered", "MEDIUM")
+    assert "no longer failing: Restart-on-unhealthy timer" in chan.sent[-1].message
+    assert _paged(db, verdicts, chan) is None
+    assert sum(1 for r in _pages(db) if r[1] == "HIGH") == 2
+
+
+def test_a_held_mechanism_never_pages_and_becoming_held_is_not_a_failure(db, tmp_path):
+    """Declared in config/liveness-holds.yaml: not in the failing set, so it
+    cannot page - and a mechanism that goes from dead to held leaves the
+    set like a recovery does, never as a new failure."""
+    chan = _Recorder()
+    everything_live = dict(crontab_has_digest=True, newest_backup_age_seconds=60,
+                           restart_timer_active=True, liveness_timer_active=True)
+    holds = tmp_path / "holds.yaml"
+    holds.write_text('holds:\n  sms: "no provider chosen yet"\n  heartbeat: "vendor not chosen"\n')
+    base = evaluate(_facts(db, holds=load_holds(str(holds)), **everything_live))
+    held = {v.key for v in base if v.state == HELD}
+    assert held == {"sms", "heartbeat"}
+    assert not any(v.key in held for v in failing(base))
+
+    # Everything else dead except the held pair: the page names none of them.
+    dead_elsewhere = evaluate(_facts(db, holds=load_holds(str(holds))))
+    assert _paged(db, dead_elsewhere, chan) is not None
+    assert "SMS provider" not in chan.sent[-1].message and "Dead-man" not in chan.sent[-1].message
+    assert "sms" not in liveness.paged_failing(db) and "heartbeat" not in liveness.paged_failing(db)
+
+    # A dead mechanism that the owner then declares held: it leaves the set.
+    before = len(_pages(db))
+    now_held = _with(dead_elsewhere, thresholds=HELD)
+    assert _paged(db, now_held, chan) is not None
+    assert _pages(db)[-1] == ("liveness_recovered", "MEDIUM") and len(_pages(db)) == before + 1
+
+
+def test_everything_coming_back_is_said_once_and_a_hand_run_keeps_no_state(db, monkeypatch, capsys):
+    import argparse
+
+    from sentinel.cli import cmd_liveness
+
+    chan = _Recorder()
+    dead = evaluate(_facts(db))
+    assert _paged(db, dead, chan) is not None
+    alive = [liveness.Verdict(e.key, LIVE, "x") for e in ENTRIES]
+    assert _paged(db, alive, chan) is not None
+    assert _pages(db)[-1] == ("liveness_recovered", "MEDIUM")
+    assert "Every declared mechanism is live or deliberately held" in chan.sent[-1].message
+    assert liveness.paged_failing(db) == []
+    assert _paged(db, alive, chan) is None, "all-live after all-live is not news"
+
+    # A human at a prompt (no --page) reports and leaves the paged set alone.
+    with db.cursor() as cur:
+        cur.execute("DELETE FROM portal_meta WHERE key = ?", (liveness.PAGED_STATE_KEY,))
+    monkeypatch.setenv("SENTINEL_DB_PATH", str(db._path))
+    monkeypatch.setenv("SENTINEL_LIVENESS_HOLDS", str(ROOT / "config/liveness-holds.yaml"))
+    ns = argparse.Namespace(crontab_has_digest="no", newest_backup_age_seconds=-1, restart_timer_active="yes",
+                            liveness_timer_active="yes", page=False, as_json=False)
+    assert cmd_liveness(ns) == 1
+    capsys.readouterr()
+    assert liveness.paged_failing(db) is None
 
 
 def test_nothing_failing_pages_nobody(db, monkeypatch):
