@@ -5968,3 +5968,42 @@ shape (same set twice = one page; +1 member = a second HIGH naming only
 the newcomer; -1 member = MEDIUM, HIGH count still 2), held mechanisms
 never named and dead->held leaves the set as a recovery, all-live after
 failures said once, a bare run leaves no state.
+
+# 2026-09-03 · URGENT batch, item 2: advice is a property of the rule
+
+AlertMessage.render() (the operator format: Telegram, ops email, every
+operator page) appended `Runbook:` + runbook() unconditionally, and
+render_customer() gated only on severity - so the liveness_failed page
+carried #29's withdrawal runbook under a missing backup directory. Built:
+RULE_ADVICE in sentinel/alerts/base.py maps EVERY rule identifier in the
+source to ACCOUNT_ADVICE or NO_ADVICE with the reason per group;
+advice_kind() strips the escalator's "ESCALATION-unacknowledged: " prefix
+so a re-sent alert keeps its original rule's advice; an unregistered
+rule gets none (omission never leaks, as with the headline map).
+advice_steps()/runbook() take rule= (default: the text itself, for the
+tests and docs that quote it); both renderers and the incident page pass
+the rule, and the page's "What to do next" section is absent, not empty,
+for a rule without advice. Rules that had no advice of their own - ALL of
+them did, universally; now declared NO_ADVICE: account_unreachable,
+unseen_address_check_degraded, account_onboarded_with_partial_baseline,
+the notices (password_reset_requested, password_changed,
+alert_destination_changed, secondary_contact_added,
+telegram_disconnected, pause_requested/expiring/executed/cancelled,
+data_erased, proof_of_life_digest, daily_digest), critical_alert_
+escalated, critical_alert_acknowledged, the key-replacement trio, drill,
+and every operator page (liveness_failed, liveness_recovered,
+monitoring_gap, heartbeat_unreachable, checks_behind_schedule,
+account_unwatchable_too_long, exchange_records_untimestamped,
+alert_delivered_to_nobody, escalation_delivered_to_nobody,
+contact_channel_has_no_provider, alert_routing_fell_back_to_defaults,
+alert_channel_routed_but_not_configured, retention_prune_failed,
+rules_config_rejected, drill_no_account, drill_failed). Judgment call
+made and recorded: account_unreachable (CRITICAL coverage alert) loses
+the runbook - the record says the key is dead, not that funds moved, and
+the act that fits is a new read-only key, which the portal walks through.
+Tests: the two the owner asked for (the operational page carries none,
+on either format, for every NO_ADVICE rule at CRITICAL and HIGH; every
+rule literal in sentinel/ - rule=, subject_rule=, X_RULE =, "rule": -
+plus the headline and notice maps is in RULE_ADVICE, and no stale entry),
+plus escalation-prefix lookup and the incident page without the section.
+CONTRIBUTING hard rule 5 gains the registry step.

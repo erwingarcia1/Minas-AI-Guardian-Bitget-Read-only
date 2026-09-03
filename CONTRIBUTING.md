@@ -39,6 +39,13 @@ scripts/health-check.sh                # every gate, one table — "Is everythin
    `*.pem` are git-ignored — keep it that way.
 5. **Every detector ships with tests** (one fixture that must fire, one
    adjacent case that must not).
+   **And every rule decides its advice**: a new rule identifier - a
+   detector's, an operator page's, a notice's - goes into `RULE_ADVICE` in
+   `sentinel/alerts/base.py` as `ACCOUNT_ADVICE` or `NO_ADVICE` with the
+   reason; `tests/test_incident_advice.py` fails on one in neither. Advice
+   is a property of the rule, not of the message format: on 2026-08-31 the
+   withdrawal runbook rendered under a liveness page about a missing backup
+   directory because it was attached to the format, and every rule got it.
 6. **Verify against live docs, never memory.** New exchange endpoints/fields
    get cited from CCXT source or the exchange's docs; anything unverifiable is
    marked UNVERIFIED rather than guessed.

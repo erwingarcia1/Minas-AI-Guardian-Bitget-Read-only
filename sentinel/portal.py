@@ -2604,6 +2604,12 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
     except ValueError:
         evidence = {}
     before, after = _incident_balances(db, alert["account_id"], alert["sent_at"])
+    steps = advice_steps(alert["exchange"], rule=alert["rule"])
+    advice_html = (
+        '<section class="panel" aria-labelledby="next-title"><h2 id="next-title">What to do next</h2>'
+        '<ol class="steps">' + "".join(f"<li>{html.escape(step)}</li>" for step in steps) + "</ol>"
+        f'<p class="muted">{html.escape(monitoring_note())}</p></section>'
+    ) if steps else ""
 
     delivered = alert["delivered_to"] or 0
     if delivered > 0:
@@ -2713,12 +2719,10 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         '<section class="panel" aria-labelledby="bal2-title"><h2 id="bal2-title">Balances after</h2>'
         f"{_balance_kv(after, 'after')}</section>"
         # Decisions 3 and 9: the SAME steps the alert email carries, from the
-        # same function, so the page and the email cannot drift apart.
-        '<section class="panel" aria-labelledby="next-title"><h2 id="next-title">What to do next</h2>'
-        '<ol class="steps">' + "".join(f"<li>{html.escape(step)}</li>" for step in advice_steps(alert["exchange"]))
-        + "</ol>"
-        f'<p class="muted">{html.escape(monitoring_note())}</p></section>'
-        '<div class="notice notice--info">' + _ICON_INFO
+        # same function, so the page and the email cannot drift apart - and
+        # only for a rule that carries them (RULE_ADVICE); no section otherwise.
+        + advice_html
+        + '<div class="notice notice--info">' + _ICON_INFO
         + '<div><p class="notice__title">Minas cannot do this for you.</p>'
         '<p class="notice__body">Guardian is read-only. It can\'t revoke keys, cancel '
         "withdrawals, or freeze accounts. Only you and the exchange can.</p></div></div>"

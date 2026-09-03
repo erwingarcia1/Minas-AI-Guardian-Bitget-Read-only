@@ -4,8 +4,109 @@ import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
+# --- which rules carry the advice -------------------------------------------
+#
+# The runbook below is about funds: revoke keys you do not recognise, check
+# the exchange's withdrawal history, ask the exchange to hold a withdrawal.
+# It is proportionate on an alert that something may be moving money on an
+# account, and wrong on everything else. On 2026-08-31 it was rendered on an
+# operator page about a missing backup directory and an unset heartbeat URL
+# (rule liveness_failed) - told to a customer, that page would have had them
+# revoking exchange keys and phoning exchange support because Minas had not
+# installed a cron job. The advice was attached to the message format, and
+# every rule got it.
+#
+# So advice is a property of the RULE. Every rule identifier in the codebase
+# is listed here as ACCOUNT_ADVICE (the canonical steps) or NO_ADVICE (none,
+# said explicitly) - tests/test_incident_advice.py enumerates the rules in
+# the source and fails on one that is in neither, which is what stops this
+# recurring when a rule is added. A rule missing from the map at runtime
+# gets NO advice: like the headline map, omission must never leak.
+ACCOUNT_ADVICE = "account"
+NO_ADVICE = None
 
-def advice_steps(exchange: str | None = None) -> list[str]:
+RULE_ADVICE: dict[str, str | None] = {
+    # Money may be moving, or the keys that can move it changed: the steps
+    # are exactly the reversible acts that fit.
+    "withdrawal_to_unseen_address": ACCOUNT_ADVICE,
+    "withdrawal_initiated": ACCOUNT_ADVICE,
+    "withdrawal_burst": ACCOUNT_ADVICE,
+    "withdrawal_cannot_be_identified": ACCOUNT_ADVICE,
+    "unexplained_quantity_decrease": ACCOUNT_ADVICE,
+    "transfer_route_never_seen": ACCOUNT_ADVICE,
+    "baseline_drift_new_deposit_source": ACCOUNT_ADVICE,
+    "never_touched_pair_activity": ACCOUNT_ADVICE,
+    "off_market_execution": ACCOUNT_ADVICE,
+    "abnormal_fee_spend": ACCOUNT_ADVICE,
+    "account_permission_state_changed": ACCOUNT_ADVICE,
+    "two_factor_disabled": ACCOUNT_ADVICE,
+    "monitoring_key_tamper_suspected": ACCOUNT_ADVICE,
+    # Coverage, not compromise: contact with the account is lost. Nothing in
+    # the record says funds moved, and the act that fits - a new read-only
+    # key - is what the portal walks the customer through.
+    "account_unreachable": NO_ADVICE,
+    "unseen_address_check_degraded": NO_ADVICE,
+    "account_onboarded_with_partial_baseline": NO_ADVICE,
+    # Account notices: transactional mail whose whole point is the sentence
+    # it carries. Never a runbook.
+    "password_reset_requested": NO_ADVICE,
+    "password_changed": NO_ADVICE,
+    "alert_destination_changed": NO_ADVICE,
+    "secondary_contact_added": NO_ADVICE,
+    "telegram_disconnected": NO_ADVICE,
+    "pause_requested": NO_ADVICE,
+    "pause_expiring": NO_ADVICE,
+    "pause_executed": NO_ADVICE,
+    "pause_cancelled": NO_ADVICE,
+    "data_erased": NO_ADVICE,
+    "proof_of_life_digest": NO_ADVICE,
+    "daily_digest": NO_ADVICE,
+    # Escalation and the emergency contact: the note to the secondary says
+    # why they are receiving it and points at the portal; the operator page
+    # that an alert went unacknowledged is about Minas, not the account.
+    "critical_alert_escalated": NO_ADVICE,
+    "critical_alert_acknowledged": NO_ADVICE,
+    # The key-replacement flow: a key was (or could not be) swapped.
+    "monitoring_key_replaced": NO_ADVICE,
+    "monitoring_key_replacement_wrong_account": NO_ADVICE,
+    "monitoring_key_replacement_needs_an_operator": NO_ADVICE,
+    # Drills: labelled as such on every surface, and the runbook withheld.
+    "drill": NO_ADVICE,
+    # Operator pages: Minas's own faults. No customer runbook has any place
+    # on them - this is the liveness_failed page of 2026-08-31.
+    "liveness_failed": NO_ADVICE,
+    "liveness_recovered": NO_ADVICE,
+    "monitoring_gap": NO_ADVICE,
+    "heartbeat_unreachable": NO_ADVICE,
+    "checks_behind_schedule": NO_ADVICE,
+    "account_unwatchable_too_long": NO_ADVICE,
+    "exchange_records_untimestamped": NO_ADVICE,
+    "alert_delivered_to_nobody": NO_ADVICE,
+    "escalation_delivered_to_nobody": NO_ADVICE,
+    "contact_channel_has_no_provider": NO_ADVICE,
+    "alert_routing_fell_back_to_defaults": NO_ADVICE,
+    "alert_channel_routed_but_not_configured": NO_ADVICE,
+    "retention_prune_failed": NO_ADVICE,
+    "rules_config_rejected": NO_ADVICE,
+    "drill_no_account": NO_ADVICE,
+    "drill_failed": NO_ADVICE,
+}
+
+# The escalator re-sends an unacknowledged alert to Minas under this prefix
+# plus the original rule; the advice, if any, is the original rule's.
+ESCALATION_PREFIX = "ESCALATION-unacknowledged: "
+
+
+def advice_kind(rule: str | None) -> str | None:
+    """Which advice a rule carries, or None. Unknown rules carry none."""
+    if rule is None:
+        return None
+    if rule.startswith(ESCALATION_PREFIX):
+        rule = rule[len(ESCALATION_PREFIX):]
+    return RULE_ADVICE.get(rule, NO_ADVICE)
+
+
+def advice_steps(exchange: str | None = None, *, rule: str | None = ...) -> list[str]:
     """THE canonical "what to do next" (decisions 3 and 9, 2026-08-27): one
     source for the alert runbook and the incident page, so they cannot
     drift. Three steps, in this order, and nothing else:
@@ -33,8 +134,14 @@ def advice_steps(exchange: str | None = None) -> list[str]:
     connects "I revoked my keys" with "I am no longer watched". Panic makes
     revoke-everything the likely action, so ours is named in step 1.
 
-    Per-rule variation is held (decision 3). Legal reviews the wording
-    later and does not block it."""
+    Per-rule variation of the WORDING is held (decision 3); WHETHER a rule
+    carries the steps at all is `RULE_ADVICE`. With `rule` given, a rule
+    that carries no advice returns no steps - the callers that render a
+    message pass it. Without it (the default: the tests and the docs that
+    quote the text) the steps themselves are returned. Legal reviews the
+    wording later and does not block it."""
+    if rule is not ... and advice_kind(rule) is None:
+        return []
     name = (exchange or "").strip().title() or "the exchange"
     return [
         "Revoke any API key on this account that you do not recognise. "
@@ -47,9 +154,11 @@ def advice_steps(exchange: str | None = None) -> list[str]:
     ]
 
 
-def runbook(exchange: str | None = None) -> str:
+def runbook(exchange: str | None = None, *, rule: str | None = ...) -> str:
     """The advice as plain text for the alert email: numbered steps, then the
-    monitoring note below the list.
+    monitoring note below the list. Empty for a rule that carries no advice
+    (`RULE_ADVICE`): a message with no applicable advice gets NO block,
+    never a generic one.
 
     The numbered list holds only things to *do*. What happens if step 1
     takes our key with it is a consequence, not a fourth action, and
@@ -59,7 +168,9 @@ def runbook(exchange: str | None = None) -> str:
     Plain text, deliberately: HTML mail is the phishing norm, and a
     plain-text security alert is harder to imitate convincingly. Multipart
     HTML+text is a separate decision, not an implementation detail."""
-    steps = [f"{i}. {step}" for i, step in enumerate(advice_steps(exchange), 1)]
+    steps = [f"{i}. {step}" for i, step in enumerate(advice_steps(exchange, rule=rule), 1)]
+    if not steps:
+        return ""
     return "\n\n".join(steps + [monitoring_note()])
 
 
@@ -88,9 +199,9 @@ def monitoring_note() -> str:
 # to scroll past, and the one time it matters it reads as boilerplate - so
 # gating it is a property of the alert, not formatting.
 #
-# Severity is the gate because it is the only signal a detection carries today.
-# Fire drills (#37) are not yet a distinct kind of message; when they land they
-# must be excluded here explicitly, since a drill can legitimately be CRITICAL.
+# Two gates, both required: the RULE must carry advice (`RULE_ADVICE` above)
+# and the severity must warrant interrupting someone with it. Drills are
+# excluded on their own flag, since a drill can legitimately be CRITICAL.
 RUNBOOK_SEVERITIES = frozenset({"CRITICAL", "HIGH"})
 
 # What the customer is told happened, per rule. The rule name is an internal
@@ -201,14 +312,18 @@ class AlertMessage:
                 "This is a scheduled test of the alert path, not a real event. No action is needed.\n"
                 f"Evidence:\n{evidence_lines}"
             )
-        return (
+        body = (
             f"🛡 MINAS AI GUARDIAN\n"
             f"[{self.severity}] {self.rule} - {self.account_label}\n"
             f"{self.message}\n"
             f"Confidence: {self.confidence}\n"
-            f"Evidence:\n{evidence_lines}\n\n"
-            f"Runbook:\n{runbook()}"
+            f"Evidence:\n{evidence_lines}"
         )
+        # Only where the rule carries advice (RULE_ADVICE). The liveness page
+        # of 2026-08-31 carried the withdrawal runbook under a missing backup
+        # directory; a rule with no applicable advice gets no block at all.
+        steps = runbook(rule=self.rule)
+        return f"{body}\n\nRunbook:\n{steps}" if steps else body
 
     def operator_subject(self) -> str:
         if self.drill:
@@ -261,11 +376,12 @@ class AlertMessage:
             "We are telling you because it does not match how this account normally "
             "behaves. It may well be something you did - only you can say.",
         ]
-        if self.severity in RUNBOOK_SEVERITIES:
+        steps = runbook(rule=self.rule) if self.severity in RUNBOOK_SEVERITIES else ""
+        if steps:
             # A neutral heading, because the conditional now lives in each
             # step. "If this was not you:" as a preamble is exactly what a
             # summariser drops before turning the steps into instructions.
-            parts += ["", "What to check:", "", runbook()]
+            parts += ["", "What to check:", "", steps]
         parts += ["", "--", _FOOTER]
         return "\n".join(parts)
 

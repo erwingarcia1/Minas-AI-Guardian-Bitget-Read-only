@@ -13,8 +13,17 @@ correctly ALONE.
 from __future__ import annotations
 
 import re
+from pathlib import Path
 
-from sentinel.alerts.base import AlertMessage, advice_steps, monitoring_note, runbook
+from sentinel.alerts.base import (
+    NO_ADVICE,
+    RULE_ADVICE,
+    AlertMessage,
+    advice_kind,
+    advice_steps,
+    monitoring_note,
+    runbook,
+)
 from tests.test_incident_page import _incident, _request, alice, portal  # noqa: F401 - fixtures
 
 INFERENCES = ("compromis", "attacker", "hacked", "hack ", "theft", "stolen", "breach", "intruder", "fraud")
@@ -109,7 +118,7 @@ def test_the_page_and_the_email_share_one_function_not_two_copies():
     from pathlib import Path
 
     portal_src = (Path(__file__).resolve().parent.parent / "sentinel" / "portal.py").read_text()
-    assert "advice_steps(alert[\"exchange\"])" in portal_src
+    assert "advice_steps(alert[\"exchange\"], rule=alert[\"rule\"])" in portal_src
     assert "Revoke any API key" not in portal_src, "the portal must not carry its own copy of the text"
 
 
@@ -123,3 +132,93 @@ def test_the_customer_email_still_carries_the_steps_for_a_critical():
                          confidence="high", message="A withdrawal was initiated.", evidence={})
     body = alert.render_customer()
     assert advice_steps()[0] in body
+
+
+# --- the advice is a property of the rule (2026-09-03) -------------------------
+
+_SOURCE_ROOT = Path(__file__).resolve().parent.parent / "sentinel"
+_RULE_LITERAL = re.compile(
+    r"""(?:\b[a-z_]*rule=|\b[A-Z_]*RULE(?::\s*str)?\s*=\s*|"rule":\s*)["']([a-z][a-z0-9_]*)["']""")
+
+
+def _rules_in_the_source() -> set[str]:
+    """Every rule identifier written as a literal anywhere in sentinel/:
+    a detector's `rule="..."`, an operator page's `rule="..."`, a notice's
+    `subject_rule="..."`, a module constant `X_RULE = "..."`, a dict's
+    `"rule": "..."`."""
+    found = set()
+    for path in _SOURCE_ROOT.rglob("*.py"):
+        found.update(_RULE_LITERAL.findall(path.read_text()))
+    return found
+
+
+def test_every_rule_has_advice_written_for_it_or_explicitly_declares_none():
+    """The guard that stops this recurring when a rule is added: a rule in
+    the source that RULE_ADVICE neither gives advice nor explicitly denies
+    it fails here - and a stale entry for a rule that no longer exists
+    fails too, so the map stays the map of the codebase."""
+    from sentinel.alerts.base import _HEADLINES, _NOTICE_SUBJECTS
+
+    in_source = _rules_in_the_source() | set(_HEADLINES) | set(_NOTICE_SUBJECTS)
+    assert len(in_source) > 40, "the enumeration found too few rules to be believed"
+    undeclared = sorted(in_source - set(RULE_ADVICE))
+    assert undeclared == [], (
+        f"rule(s) with no advice decision: {undeclared} - add each to RULE_ADVICE in "
+        "sentinel/alerts/base.py as ACCOUNT_ADVICE or NO_ADVICE, with the reason")
+    stale = sorted(set(RULE_ADVICE) - in_source)
+    assert stale == [], f"RULE_ADVICE names rule(s) that no longer exist: {stale}"
+    for rule, kind in RULE_ADVICE.items():
+        assert kind in ("account", NO_ADVICE), f"{rule}: unknown advice kind {kind!r}"
+
+
+def test_an_operational_alert_carries_no_customer_runbook():
+    """The page of 2026-08-31, subject "[Minas AI Guardian HIGH]
+    liveness_failed - MINAS-OPS": a missing backup directory and an unset
+    SENTINEL_HEARTBEAT_URL, under "Revoke any API key on this account that
+    you do not recognise" and "ask whether the withdrawal can be held".
+    Told to a customer it would have them revoking exchange keys and
+    phoning exchange support because Minas had not installed a cron job.
+    Every rule declared NO_ADVICE renders with no advice on EITHER format,
+    at every severity - no block, not a generic one."""
+    page = AlertMessage(
+        account_label="MINAS-OPS", rule="liveness_failed", severity="HIGH", confidence="operator",
+        message="Liveness: 7 mechanism(s) built but not running: Database backup (dead), Dead-man's switch (dead).",
+        evidence={"failing": [{"key": "backup", "state": "dead", "evidence": "no backup file exists"}]},
+    )
+    body = page.render()
+    assert "Runbook" not in body and "Revoke" not in body and "withdrawal" not in body.lower()
+    assert "Database backup (dead)" in body, "the operator's own content is intact"
+
+    no_advice = sorted(r for r, kind in RULE_ADVICE.items() if kind is NO_ADVICE)
+    assert "liveness_failed" in no_advice and "account_unreachable" in no_advice
+    for rule in no_advice:
+        for severity in ("CRITICAL", "HIGH"):
+            alert = AlertMessage(account_label="acct", rule=rule, severity=severity, confidence="high",
+                                 message="something happened", evidence={})
+            for surface, text in (("operator", alert.render()), ("customer", alert.render_customer())):
+                assert "Runbook" not in text and "What to check" not in text, f"{rule} {surface}"
+                for step in advice_steps("bitget"):
+                    assert step not in text, f"{rule}: the {surface} format carries advice it does not apply to"
+                assert monitoring_note() not in text, f"{rule} {surface}"
+    assert runbook(rule="liveness_failed") == "" and advice_steps(rule="liveness_failed") == []
+
+
+def test_advice_follows_the_original_rule_through_an_escalation():
+    """The escalator re-sends to Minas under "ESCALATION-unacknowledged:
+    <rule>"; the advice, if any, is the original rule's."""
+    assert advice_kind("ESCALATION-unacknowledged: withdrawal_initiated") == "account"
+    assert advice_kind("ESCALATION-unacknowledged: account_unreachable") is None
+    assert advice_kind("a_rule_nobody_registered") is None, "omission never leaks advice"
+    assert advice_kind(None) is None
+
+
+def test_the_incident_page_has_no_advice_section_for_a_rule_without_advice(portal, db, alice):  # noqa: F811
+    account_id, token = alice
+    incident = _incident(db, account_id)
+    with db.cursor() as cur:
+        cur.execute("UPDATE alerts SET rule = 'account_unreachable' WHERE id = ?", (incident,))
+    status, body = _request(portal, f"/incident?id={incident}", cookie=token)
+    assert status == 200
+    assert "What to do next" not in body
+    assert "Revoke any API key" not in body and monitoring_note() not in body
+    assert "Minas cannot do this for you" in body, "the read-only notice is about the product, and stays"

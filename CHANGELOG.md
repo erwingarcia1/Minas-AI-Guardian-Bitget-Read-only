@@ -37,8 +37,8 @@ container")._
 
 ### Changed detection behaviour
 
-**The detectors and severities themselves are unchanged.** Two changes to
-who hears what:
+**The detectors and severities themselves are unchanged.** Three changes to
+who hears what, and what they are told:
 
 - **The liveness gate pages on a change, not on a state.** From
   2026-08-31 the hourly timer paged HIGH on every run about the same seven
@@ -59,6 +59,22 @@ who hears what:
   systemd timer, its one automated caller, passes `--page` and pages
   exactly as before. Nothing about what the timer detects or how loudly
   it says so has changed.
+
+- **The "what to do next" steps appear only on alerts they apply to.**
+  The runbook - revoke API keys you do not recognise, check the exchange's
+  withdrawal history, ask the exchange to hold a withdrawal - was attached
+  to the message format, so every rule carried it: on 2026-08-31 an
+  operator page about a missing backup directory and an unset heartbeat
+  URL arrived under those three steps. Told to a customer, that would have
+  had them revoking exchange keys and phoning exchange support because
+  Minas had not installed a cron job. Advice is now a property of the
+  rule (`RULE_ADVICE` in `sentinel/alerts/base.py`): the withdrawal,
+  balance, transfer, trading, permission, two-factor and key-tamper
+  detections carry the steps as before, on the email and the incident
+  page; a "contact with this account has been lost" alert, every account
+  notice, every operator page and every drill carry no advice block at
+  all - not a generic one. A test enumerates every rule in the source and
+  fails on one that has neither advice nor an explicit "none".
 
 ### Changed
 
