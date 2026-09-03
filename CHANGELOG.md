@@ -71,10 +71,17 @@ who hears what, and what they are told:
   rule (`RULE_ADVICE` in `sentinel/alerts/base.py`): the withdrawal,
   balance, transfer, trading, permission, two-factor and key-tamper
   detections carry the steps as before, on the email and the incident
-  page; a "contact with this account has been lost" alert, every account
-  notice, every operator page and every drill carry no advice block at
-  all - not a generic one. A test enumerates every rule in the source and
-  fails on one that has neither advice nor an explicit "none".
+  page. The "contact with this account has been lost" alert now carries
+  advice of its own instead: what was observed (the read-only checks are
+  failing, the account is unwatched until they succeed; nothing in the
+  record says anything happened to the funds), then check the key at the
+  exchange, replace it yourself from the portal, or ask us - never the
+  withdrawal steps, never "if you revoked every key". The "withdrawal
+  record had no destination" notice points at the exchange's own record.
+  Every account notice, every operator page and every drill carry no
+  advice block at all - not a generic one. A test enumerates every rule
+  in the source and fails on one that has neither advice nor an explicit
+  "none".
 
 - **Operator pages and the ops channels no longer carry the customer's
   copy.** The same page told MINAS-OPS to "sign in to Minas AI Guardian

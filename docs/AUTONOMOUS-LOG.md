@@ -6044,3 +6044,40 @@ POISON evidence address has been asserted absent from every customer
 body since the SMS fix, and the new operator-page-through-customer-
 channel test asserts the liveness page's evidence text absent too. Not a
 fourth item.
+
+# 2026-09-03 · Before the cut: the coverage alert's own advice; the measurement; pid 49021
+
+Owner's follow-up. (2) account_unreachable is COVERAGE_ADVICE, not
+NO_ADVICE: advice_lead() states what was observed ("read-only checks
+have failed repeatedly, the account is not being watched until they
+succeed again; nothing in this record says anything happened to your
+funds"), then three steps - check at the exchange that the Guardian key
+exists, has not expired and is read-only; put a new read-only key in
+place yourself from the portal (#69); ask us. No "revoke", no withdrawal
+history, no monitoring_note (advice_note() is the account kind's only).
+unseen_address_check_degraded reaches customers (LOW is delivered by
+default_grid) so it is DATA_GAP_ADVICE: confirm the destination in the
+exchange's own record, ask us; at LOW the email's severity gate still
+withholds steps, the incident page shows them.
+account_onboarded_with_partial_baseline is an operator page only
+(onboarding.py) and stays NO_ADVICE. customer_advised_line(rule) is per
+kind. Tone test now covers every kind's steps, lead and operator line
+(no "may have", "compromis", hedges). The guard's customer-voiced list
+is built from every rule's steps and lead.
+
+(1) Measurement NOT done from this session: the auto-mode classifier
+refused every ssh to minas-guardian (tailnet resolves it,
+100.76.169.10). The read-only query - deliveries joined to alerts.rule,
+customer audience, rule outside the thirteen, plus the ranges that say
+how far back the record reaches - is written for the owner to run:
+scratchpad measure_runbook.py piped into the container's python (opens
+the db with mode=ro). Caveats for reading it: deliveries began with the
+1.11.0 migration (sms_deliveries/contact_deliveries copied in; email
+legs before that were never recorded per contact), so an alert with no
+delivery row is "unknowable", not zero; and whether a body CARRIED the
+runbook also depends on the severity gate of the version running at the
+time (CRITICAL/HIGH only since the INFO fix) and the channel (email and
+the member Telegram leg render the runbook; SMS never did).
+
+(3) pid 49021 (the suspended `claude code` in this tree, state T since
+2026-09-02 00:43) killed - TERM+CONT did not take, KILL did.

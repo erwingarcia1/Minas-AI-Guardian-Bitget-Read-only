@@ -16,11 +16,17 @@ import re
 from pathlib import Path
 
 from sentinel.alerts.base import (
+    ACCOUNT_ADVICE,
+    COVERAGE_ADVICE,
+    DATA_GAP_ADVICE,
     NO_ADVICE,
     RULE_ADVICE,
     AlertMessage,
     advice_kind,
+    advice_lead,
+    advice_note,
     advice_steps,
+    customer_advised_line,
     monitoring_note,
     runbook,
 )
@@ -72,7 +78,10 @@ def test_every_sentence_reads_correctly_in_isolation():
     """Each sentence, alone: starts with a capital, ends with a full stop,
     is an instruction for a reversible act or a plain statement, and says
     nothing about what the event MEANS."""
-    for step in advice_steps("bitget") + [monitoring_note()]:
+    texts = [*advice_steps("bitget"), monitoring_note()]
+    for rule in ("account_unreachable", "unseen_address_check_degraded"):
+        texts += [*advice_steps("bitget", rule=rule), advice_lead(rule), customer_advised_line(rule)]
+    for step in texts:
         for sentence in _sentences(step):
             assert sentence[0].isupper() and sentence.endswith("."), sentence
             low = sentence.lower()
@@ -168,7 +177,7 @@ def test_every_rule_has_advice_written_for_it_or_explicitly_declares_none():
     stale = sorted(set(RULE_ADVICE) - in_source)
     assert stale == [], f"RULE_ADVICE names rule(s) that no longer exist: {stale}"
     for rule, kind in RULE_ADVICE.items():
-        assert kind in ("account", NO_ADVICE), f"{rule}: unknown advice kind {kind!r}"
+        assert kind in (ACCOUNT_ADVICE, COVERAGE_ADVICE, DATA_GAP_ADVICE, NO_ADVICE), f"{rule}: unknown advice kind {kind!r}"
 
 
 def test_an_operational_alert_carries_no_customer_runbook():
@@ -190,7 +199,7 @@ def test_an_operational_alert_carries_no_customer_runbook():
     assert "Database backup (dead)" in body, "the operator's own content is intact"
 
     no_advice = sorted(r for r, kind in RULE_ADVICE.items() if kind is NO_ADVICE)
-    assert "liveness_failed" in no_advice and "account_unreachable" in no_advice
+    assert "liveness_failed" in no_advice and "account_onboarded_with_partial_baseline" in no_advice
     for rule in no_advice:
         for severity in ("CRITICAL", "HIGH"):
             alert = AlertMessage(account_label="acct", rule=rule, severity=severity, confidence="high",
@@ -199,7 +208,7 @@ def test_an_operational_alert_carries_no_customer_runbook():
                 assert "Runbook" not in text and "What to check" not in text, f"{rule} {surface}"
                 for step in advice_steps("bitget"):
                     assert step not in text, f"{rule}: the {surface} format carries advice it does not apply to"
-                assert monitoring_note() not in text, f"{rule} {surface}"
+                assert monitoring_note() not in text and "What was observed" not in text, f"{rule} {surface}"
     assert runbook(rule="liveness_failed") == "" and advice_steps(rule="liveness_failed") == []
 
 
@@ -207,7 +216,7 @@ def test_advice_follows_the_original_rule_through_an_escalation():
     """The escalator re-sends to Minas under "ESCALATION-unacknowledged:
     <rule>"; the advice, if any, is the original rule's."""
     assert advice_kind("ESCALATION-unacknowledged: withdrawal_initiated") == "account"
-    assert advice_kind("ESCALATION-unacknowledged: account_unreachable") is None
+    assert advice_kind("ESCALATION-unacknowledged: account_unreachable") == COVERAGE_ADVICE
     assert advice_kind("a_rule_nobody_registered") is None, "omission never leaks advice"
     assert advice_kind(None) is None
 
@@ -216,9 +225,66 @@ def test_the_incident_page_has_no_advice_section_for_a_rule_without_advice(porta
     account_id, token = alice
     incident = _incident(db, account_id)
     with db.cursor() as cur:
-        cur.execute("UPDATE alerts SET rule = 'account_unreachable' WHERE id = ?", (incident,))
+        cur.execute("UPDATE alerts SET rule = 'account_onboarded_with_partial_baseline' WHERE id = ?", (incident,))
     status, body = _request(portal, f"/incident?id={incident}", cookie=token)
     assert status == 200
     assert "What to do next" not in body
     assert "Revoke any API key" not in body and monitoring_note() not in body
     assert "Minas cannot do this for you" in body, "the read-only notice is about the product, and stays"
+
+
+# --- the coverage alert has advice of its own (2026-09-03) ---------------------
+
+def test_account_unreachable_carries_its_own_advice_not_the_withdrawal_steps():
+    """A CRITICAL that reaches the customer directly, and the one coverage
+    alert they can act on: the key can be checked at the exchange and
+    replaced from the portal (#69), or Minas asked. It states that checks
+    are failing - never that anything happened to the funds - and carries
+    no "revoke", no "withdrawal history", no "if you revoked every key"."""
+    assert advice_kind("account_unreachable") == COVERAGE_ADVICE
+    alert = AlertMessage(account_label="acct", rule="account_unreachable", severity="CRITICAL",
+                         confidence="high", message="Contact lost.", evidence={}, incident_id=7)
+    body = alert.render_customer()
+    assert "What was observed: Minas AI Guardian's read-only checks on this account have failed" in body
+    assert "Nothing in this record says anything happened to your funds." in body
+    for step in advice_steps(None, rule="account_unreachable"):  # the email names no exchange
+        assert step in body
+    assert re.match(r"^(Check|Put|Ask) ", advice_steps(rule="account_unreachable")[0])
+    assert "Revoke" not in body and "withdrawal history" not in body and monitoring_note() not in body
+    assert "compromis" not in body.lower() and "revoked or expired" not in body
+    assert advice_note("account_unreachable") == "" and advice_lead("withdrawal_initiated") == ""
+    # The operator hears what the customer was told, in the operator's voice.
+    ops = alert.render()
+    assert "Customer advised: the read-only checks are failing" in ops
+    assert "yourself" not in ops and "Revoke" not in ops
+
+
+def test_the_data_gap_alert_has_its_own_advice_and_the_email_keeps_the_severity_gate():
+    """unseen_address_check_degraded reaches customers (LOW is delivered by
+    default). Its steps send them to the exchange's own record; at LOW the
+    email carries no steps (the severity gate stands), the incident page
+    does."""
+    assert advice_kind("unseen_address_check_degraded") == DATA_GAP_ADVICE
+    steps = advice_steps("bitget", rule="unseen_address_check_degraded")
+    assert steps and "Bitget's own app or website" in steps[0] and "Revoke" not in " ".join(steps)
+    alert = AlertMessage(account_label="acct", rule="unseen_address_check_degraded", severity="LOW",
+                         confidence="low (data gap)", message="no destination field", evidence={})
+    assert "What to check" not in alert.render_customer()
+    assert "Customer advised: the withdrawal record had no destination" in alert.render()
+    assert advice_kind("account_onboarded_with_partial_baseline") is NO_ADVICE, "an operator page only; left alone"
+
+
+def test_the_incident_page_shows_the_coverage_advice_with_its_lead_and_no_key_note(portal, db, alice):  # noqa: F811
+    account_id, token = alice
+    incident = _incident(db, account_id)
+    with db.cursor() as cur:
+        cur.execute("UPDATE alerts SET rule = 'account_unreachable' WHERE id = ?", (incident,))
+    status, body = _request(portal, f"/incident?id={incident}", cookie=token)
+    assert status == 200
+    import html as _html
+
+    assert "What to do next" in body
+    assert _html.escape(advice_lead("account_unreachable")) in body
+    for step in advice_steps("bitget", rule="account_unreachable"):
+        assert _html.escape(step) in body
+    assert "Revoke any API key" not in body and _html.escape(monitoring_note()) not in body

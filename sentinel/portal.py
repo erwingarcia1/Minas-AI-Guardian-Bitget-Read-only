@@ -2582,7 +2582,7 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
     particular an alert with `delivered_to = 0` was detected and reached
     nobody (#57), and rendering that as "notified" because a row exists would
     undo that distinction in the one document where it matters most."""
-    from sentinel.alerts.base import advice_steps, monitoring_note
+    from sentinel.alerts.base import advice_lead, advice_note, advice_steps
 
     account_ids = [r["id"] for r in member_accounts(db, email)]
     if not account_ids:
@@ -2605,10 +2605,13 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         evidence = {}
     before, after = _incident_balances(db, alert["account_id"], alert["sent_at"])
     steps = advice_steps(alert["exchange"], rule=alert["rule"])
+    lead, note = advice_lead(alert["rule"]), advice_note(alert["rule"])
     advice_html = (
         '<section class="panel" aria-labelledby="next-title"><h2 id="next-title">What to do next</h2>'
-        '<ol class="steps">' + "".join(f"<li>{html.escape(step)}</li>" for step in steps) + "</ol>"
-        f'<p class="muted">{html.escape(monitoring_note())}</p></section>'
+        + (f"<p>{html.escape(lead)}</p>" if lead else "")
+        + '<ol class="steps">' + "".join(f"<li>{html.escape(step)}</li>" for step in steps) + "</ol>"
+        + (f'<p class="muted">{html.escape(note)}</p>' if note else "")
+        + "</section>"
     ) if steps else ""
 
     delivered = alert["delivered_to"] or 0

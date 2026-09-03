@@ -229,11 +229,23 @@ def test_the_rendered_customer_sms_is_exactly_the_conservative_copy():
 # it is written into the operator format.
 
 def _customer_voiced_sentences() -> list[str]:
-    from sentinel.alerts.base import _FOOTER, advice_steps, monitoring_note, portal_action_line
+    from sentinel.alerts.base import (
+        _FOOTER,
+        RULE_ADVICE,
+        advice_lead,
+        advice_steps,
+        monitoring_note,
+        portal_action_line,
+    )
 
-    return [*advice_steps("bitget"), *advice_steps(None), monitoring_note(), portal_action_line(),
-            _FOOTER, "We are telling you because", "What to check:",
-            "Sign in to Minas AI Guardian", "Sign in to the Minas portal", "ask us if"]
+    out = [*advice_steps("bitget"), *advice_steps(None), monitoring_note(), portal_action_line(),
+           _FOOTER, "We are telling you because", "What to check:", "What was observed:",
+           "Sign in to Minas AI Guardian", "Sign in to the Minas portal", "ask us if", "Ask us if"]
+    for rule in RULE_ADVICE:  # every advice kind's steps and lead, whatever the rule
+        out += [*advice_steps("bitget", rule=rule), *advice_steps(None, rule=rule)]
+        if advice_lead(rule):
+            out.append(advice_lead(rule))
+    return [s for s in out if s]
 
 
 # Operator-only detail: the vocabulary of the operator format and of a page.
@@ -242,6 +254,10 @@ def _customer_voiced_sentences() -> list[str]:
 _OPERATOR_ONLY_FRAGMENTS = ("Confidence:", "Evidence:", "Customer advised:",
                             "🛡 MINAS AI GUARDIAN", "Runbook:", "sentinel ack", "{'key'")
 
+COVERAGE = AlertMessage(
+    account_label="acct-g", rule="account_unreachable", severity="CRITICAL", confidence="high",
+    message=f"{CANARY} contact lost after 5 failures", evidence={"consecutive_failures": 5}, incident_id=42,
+)
 ADVICE_BEARING = AlertMessage(
     account_label="acct-g", rule="withdrawal_initiated", severity="CRITICAL", confidence="high",
     message=f"{CANARY} withdrawal of 1250.0 USDT to 0xDeadBeefCafe1234", evidence={"address": "0xDeadBeefCafe1234"},
@@ -278,7 +294,8 @@ def _smtp_capture(monkeypatch):
     return sent
 
 
-@pytest.mark.parametrize("alert", [ADVICE_BEARING, OPERATOR_PAGE], ids=["advice-bearing", "operator-page"])
+@pytest.mark.parametrize("alert", [ADVICE_BEARING, COVERAGE, OPERATOR_PAGE],
+                         ids=["advice-bearing", "coverage", "operator-page"])
 def test_an_operator_audience_body_carries_no_customer_voiced_instruction(monkeypatch, alert):
     """Every operator surface - the ops email, the ops Telegram (render()),
     the operator SMS - is driven and read back: none of the customer's
@@ -302,10 +319,10 @@ def test_an_operator_audience_body_carries_no_customer_voiced_instruction(monkey
     # where the rule carries advice - what the customer was told, in the
     # operator's voice.
     assert alert.rule in bodies["ops email"] and "Evidence:" in bodies["ops email"]
-    if alert is ADVICE_BEARING:
-        assert "Customer advised:" in bodies["ops email"] and "Customer advised:" in bodies["ops telegram"]
-    else:
+    if alert is OPERATOR_PAGE:
         assert "Customer advised:" not in bodies["ops email"]
+    else:
+        assert "Customer advised:" in bodies["ops email"] and "Customer advised:" in bodies["ops telegram"]
 
 
 class _NoResp:
@@ -313,7 +330,8 @@ class _NoResp:
         pass
 
 
-@pytest.mark.parametrize("alert", [ADVICE_BEARING, OPERATOR_PAGE], ids=["advice-bearing", "operator-page"])
+@pytest.mark.parametrize("alert", [ADVICE_BEARING, COVERAGE, OPERATOR_PAGE],
+                         ids=["advice-bearing", "coverage", "operator-page"])
 def test_a_customer_audience_body_carries_no_operator_only_detail(monkeypatch, alert):
     """The other direction, including an operator-page-shaped message pushed
     through a customer channel by mistake: no rule name, no confidence, no

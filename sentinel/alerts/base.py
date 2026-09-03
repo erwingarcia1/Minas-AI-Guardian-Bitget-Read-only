@@ -23,6 +23,14 @@ from dataclasses import dataclass
 # recurring when a rule is added. A rule missing from the map at runtime
 # gets NO advice: like the headline map, omission must never leak.
 ACCOUNT_ADVICE = "account"
+# Coverage (2026-09-03): a CRITICAL that reaches the customer directly and
+# the one coverage alert they can act on - the key can be replaced from the
+# portal (#69), or Minas asked. Its advice states that checks are failing,
+# never that anything happened to the funds.
+COVERAGE_ADVICE = "coverage"
+# A data gap: a withdrawal record with no destination, so the unseen-address
+# check could not run. The customer can look at the exchange's own record.
+DATA_GAP_ADVICE = "data_gap"
 NO_ADVICE = None
 
 RULE_ADVICE: dict[str, str | None] = {
@@ -41,11 +49,14 @@ RULE_ADVICE: dict[str, str | None] = {
     "account_permission_state_changed": ACCOUNT_ADVICE,
     "two_factor_disabled": ACCOUNT_ADVICE,
     "monitoring_key_tamper_suspected": ACCOUNT_ADVICE,
-    # Coverage, not compromise: contact with the account is lost. Nothing in
-    # the record says funds moved, and the act that fits - a new read-only
-    # key - is what the portal walks the customer through.
-    "account_unreachable": NO_ADVICE,
-    "unseen_address_check_degraded": NO_ADVICE,
+    # Coverage, not compromise: the checks are failing. Its own advice - the
+    # key can be replaced from the portal, or Minas asked; never the
+    # withdrawal steps.
+    "account_unreachable": COVERAGE_ADVICE,
+    # A withdrawal record with no destination address: the customer can
+    # confirm the destination in the exchange's own history.
+    "unseen_address_check_degraded": DATA_GAP_ADVICE,
+    # An operator page only (onboarding.py); it does not reach a customer.
     "account_onboarded_with_partial_baseline": NO_ADVICE,
     # Account notices: transactional mail whose whole point is the sentence
     # it carries. Never a runbook.
@@ -140,9 +151,14 @@ def advice_steps(exchange: str | None = None, *, rule: str | None = ...) -> list
     message pass it. Without it (the default: the tests and the docs that
     quote the text) the steps themselves are returned. Legal reviews the
     wording later and does not block it."""
-    if rule is not ... and advice_kind(rule) is None:
+    kind = ACCOUNT_ADVICE if rule is ... else advice_kind(rule)
+    if kind is None:
         return []
     name = (exchange or "").strip().title() or "the exchange"
+    if kind == COVERAGE_ADVICE:
+        return _coverage_steps(name)
+    if kind == DATA_GAP_ADVICE:
+        return _data_gap_steps(name)
     return [
         "Revoke any API key on this account that you do not recognise. "
         "Leave the Minas AI Guardian key in place: it is read-only, and revoking it "
@@ -152,6 +168,54 @@ def advice_steps(exchange: str | None = None, *, rule: str | None = ...) -> list
         f"Contact {name}'s support, quote the incident number above, and ask whether the "
         "withdrawal can be held and what they advise about moving your funds.",
     ]
+
+
+def _coverage_steps(name: str) -> list[str]:
+    """account_unreachable. Certain about what was observed - the checks are
+    failing - and never about what it means. Every step is reversible, and
+    the one that restores monitoring is the customer's own to take (#69)."""
+    return [
+        f"Check in {name}'s own app or website that the API key issued to Minas AI Guardian "
+        "still exists, has not expired and is still read-only.",
+        "Put a new read-only key in place yourself: sign in to Minas AI Guardian, open the "
+        "account and follow the replacement steps there.",
+        "Ask us if anything there does not work, or if you would rather we did it with you.",
+    ]
+
+
+def _data_gap_steps(name: str) -> list[str]:
+    """unseen_address_check_degraded: a withdrawal record with no destination
+    address, so the Guardian could not compare it with the addresses this
+    account has used. The exchange's own record has the destination."""
+    return [
+        f"Check the withdrawal in {name}'s own app or website and confirm that its destination "
+        "is an address you know.",
+        "Ask us if anything in that record does not add up; we will look at it with you.",
+    ]
+
+
+def advice_lead(rule: str | None) -> str:
+    """What was observed, stated before the steps, for the kinds whose steps
+    would otherwise read as if something had happened to the funds. Empty
+    for the account advice: there the alert's first line is the observation
+    and the steps stand alone by design."""
+    kind = advice_kind(rule)
+    if kind == COVERAGE_ADVICE:
+        return ("What was observed: Minas AI Guardian's read-only checks on this account have failed "
+                "repeatedly, so the account is not being watched until they succeed again. Nothing "
+                "in this record says anything happened to your funds.")
+    if kind == DATA_GAP_ADVICE:
+        return ("What was observed: a withdrawal record from the exchange carried no destination "
+                "address, so Minas AI Guardian could not compare it with the addresses this account "
+                "has used before. Nothing in this record says the withdrawal was not yours.")
+    return ""
+
+
+def advice_note(rule: str | None) -> str:
+    """The paragraph below the steps. Only the account advice has one: the
+    consequence of its step 1 (revoking every key). The coverage advice
+    already IS about the key."""
+    return monitoring_note() if advice_kind(rule) == ACCOUNT_ADVICE else ""
 
 
 def runbook(exchange: str | None = None, *, rule: str | None = ...) -> str:
@@ -171,17 +235,30 @@ def runbook(exchange: str | None = None, *, rule: str | None = ...) -> str:
     steps = [f"{i}. {step}" for i, step in enumerate(advice_steps(exchange, rule=rule), 1)]
     if not steps:
         return ""
-    return "\n\n".join(steps + [monitoring_note()])
+    lead = monitoring_note() if rule is ... else advice_note(rule)
+    parts = ([advice_lead(rule)] if rule is not ... and advice_lead(rule) else []) + steps + ([lead] if lead else [])
+    return "\n\n".join(parts)
 
 
-def customer_advised_line() -> str:
+def customer_advised_line(rule: str | None = ...) -> str:
     """What the customer's copy of an advice-bearing alert told them, said
-    to an operator in the third person. One line, no imperative to the
-    reader: the operator format is read by Minas, and "revoke any API key
-    you do not recognise" addressed to MINAS-OPS is the wrong audience."""
-    return ("Customer advised: revoke unrecognised API keys (keeping the Guardian key), "
-            "check the exchange's own withdrawal history, contact the exchange's support "
-            "with the incident number.")
+    to an operator in the third person. One line per advice kind, no
+    imperative to the reader: the operator format is read by Minas, and
+    "revoke any API key you do not recognise" addressed to MINAS-OPS is the
+    wrong audience. Empty for a rule with no advice."""
+    kind = ACCOUNT_ADVICE if rule is ... else advice_kind(rule)
+    if kind == COVERAGE_ADVICE:
+        return ("Customer advised: the read-only checks are failing and the account is unwatched "
+                "until they succeed; check the exchange key exists and is read-only, replace it "
+                "from the portal, or ask Minas.")
+    if kind == DATA_GAP_ADVICE:
+        return ("Customer advised: the withdrawal record had no destination; confirm the destination "
+                "in the exchange's own history, ask Minas if it does not add up.")
+    if kind == ACCOUNT_ADVICE:
+        return ("Customer advised: revoke unrecognised API keys (keeping the Guardian key), "
+                "check the exchange's own withdrawal history, contact the exchange's support "
+                "with the incident number.")
+    return ""
 
 
 def monitoring_note() -> str:
@@ -337,7 +414,8 @@ class AlertMessage:
         # customer copy on an operator surface is the wrong audience, whether
         # or not the rule applies. tests/test_customer_channel_guard.py holds
         # the line in both directions.
-        return f"{body}\n\n{customer_advised_line()}" if advice_kind(self.rule) else body
+        advised = customer_advised_line(self.rule)
+        return f"{body}\n\n{advised}" if advised else body
 
     def operator_subject(self) -> str:
         if self.drill:
