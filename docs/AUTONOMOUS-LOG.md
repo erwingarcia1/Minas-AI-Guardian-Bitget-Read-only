@@ -6081,3 +6081,47 @@ the member Telegram leg render the runbook; SMS never did).
 
 (3) pid 49021 (the suspended `claude code` in this tree, state T since
 2026-09-02 00:43) killed - TERM+CONT did not take, KILL did.
+
+# 2026-09-04 · Measured on production: the withdrawal runbook DID reach a customer on a coverage alert
+
+Owner ran the read-only query (deliveries joined to alerts.rule, customer
+audience, rule outside the thirteen). Record: deliveries 759 rows,
+2026-07-13 -> 2026-09-04; alerts 396 rows from 2026-07-02; 309 alerts
+(2026-07-02 -> 2026-08-27) have NO delivery row - per-contact email
+recording began with #103 item 2, so that window is UNKNOWABLE, not zero.
+
+Found, in the recorded window:
+- account_unreachable, 42 customer-audience ESCALATION emails, status
+  accepted, account 14 (paula-garavillas), all between 02:42:32 and
+  02:50:38 UTC on 2026-08-30 (42 matching SMS legs skipped - no
+  provider). Mechanism, from the code: 1.11.0 (deployed that night) made
+  every coverage alert escalate on the CRITICAL path whatever its level;
+  the escalator found the 41 MEDIUM account_unreachable alerts from
+  2026-07-23 -> 2026-08-12 still unacknowledged and never escalated, and
+  escalated them all in one pass. Each customer leg is built with
+  severity "CRITICAL" and rule "ESCALATION-unacknowledged:
+  account_unreachable", so render_customer gave it the "Urgent:" subject,
+  the GENERIC headline ("Unusual activity was detected on this account" -
+  the prefixed rule misses _HEADLINES) and, CRITICAL being in
+  RUNBOOK_SEVERITIES, the withdrawal runbook. Forty-two "Urgent" emails
+  in eight minutes telling Paula to revoke keys and phone Bitget about a
+  key that had been dead since July.
+- unseen_address_check_degraded, 4 customer emails accepted (accounts 11
+  erwin-garcia-3 x1, 12 erwin-garcia-4 x3; 2026-09-01 and 2026-09-04),
+  LOW: the email's severity gate withheld the runbook; the incident page
+  would have shown the withdrawal steps if opened (fixed 2026-09-03).
+- proof_of_life_digest, 35: the digest's own renderer, no advice.
+
+Unknowable: the 83 HIGH account_unreachable alerts (2026-08-12 ->
+2026-08-18) predate per-contact recording; HIGH renders the runbook on a
+customer email and Part B's measurement says coverage alerts emailed the
+customer then, so the runbook very probably went out on those too, to
+whichever account they belong (the query did not group alerts by
+account; the broken key of that period was Paula's per Part B).
+
+As of d99e5c9 an escalation of account_unreachable carries the coverage
+advice (advice_kind strips the prefix). Still open, reported not fixed:
+the customer-side escalation keeps the prefixed rule and the forced
+CRITICAL, so its headline is the generic "Unusual activity" and its
+subject "Urgent:" for a lost key - headline()/customer_subject() should
+resolve the original rule as advice_kind does.
