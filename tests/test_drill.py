@@ -158,14 +158,29 @@ def test_the_escalator_never_escalates_a_drill(db):
 
     _drill_acct(db)
     run_drill(db, {"CRITICAL": [_Chan()]}, _Router(db), _Pager(), _Rules())
-    # Even un-acknowledged and old, a drill is not an escalation candidate.
+
+    class _Ops:
+        pages = []
+
+        def page(self, **kw):
+            _Ops.pages.append(kw)
+
+    # Un-acknowledged and past the CRITICAL window but still LIVE (inside
+    # the stale bound), a drill is not an escalation candidate: the rule
+    # exclusion is what protects it, not the age.
     with db.cursor() as cur:
         cur.execute("UPDATE alerts SET acknowledged_at = NULL, acknowledged_by = NULL, sent_at = ?",
-                    ((datetime.now(timezone.utc) - timedelta(hours=5)).isoformat(),))
+                    ((datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(),))
     chans = [_Chan()]
-    esc = Escalator(chans, unacknowledged_minutes=15)
+    esc = Escalator(chans, unacknowledged_minutes=15, operator_alerter=_Ops())
     assert esc.check(db) == 0
     assert chans[0].sent == []
+    # Old enough to be a backlog: a drill is not reported to operators as
+    # one either - the exclusion holds on both paths.
+    with db.cursor() as cur:
+        cur.execute("UPDATE alerts SET sent_at = ?", ((datetime.now(timezone.utc) - timedelta(hours=5)).isoformat(),))
+    assert esc.check(db) == 0
+    assert chans[0].sent == [] and _Ops.pages == []
 
 
 def test_a_drill_bypasses_the_members_quiet_hours(db):

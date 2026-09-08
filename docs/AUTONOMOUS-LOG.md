@@ -6207,3 +6207,13 @@ months as a convenience and now hit the bound: test_coverage_repeats widens
 the window (its 25 h is what makes the second dispatch a repeat),
 test_delivery_record uses 30 minutes.
 
+Item 7's full check: eight gates pass, design-guard probes 184/185 - "#37
+the escalator escalates a drill (rule exclusion dropped)" SURVIVED, because
+test_the_escalator_never_escalates_a_drill aged its drill five hours: past
+the new stale bound the un-excluded drill became a backlog, check() still
+returned 0 and the channel stayed empty. The test now holds the drill at
+30 minutes (live: the exclusion is what protects it, not the age) and then
+at five hours with an operator pager, asserting no escalation AND no
+backlog page. Probe re-run by hand: killed. CI on 29a71c0 green
+(34235721553).
+
