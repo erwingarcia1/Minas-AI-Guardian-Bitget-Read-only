@@ -6356,3 +6356,38 @@ the old file: fails with ['heartbeat', 'sms', 'thresholds']. On the next
 gate run the failing set shrinks from four to one (backup): a change, so
 one MEDIUM liveness_recovered report naming the three, no HIGH.
 
+# 2026-09-08 · Part B measured on production (scratchpad measure_partB.py, read-only)
+
+Q1, one withdrawal today (alert 400, 2026-09-06, withdrawal_initiated,
+unacknowledged): customer alert email 1 (SMS skipped), Minas alert legs 3
+(email, telegram, telegram_team), customer escalation email 1 (SMS
+skipped), Minas escalation legs 3, secondary SMS skipped (no secondary
+email on file) - 8 accepted messages per CRITICAL, plus the
+critical_alert_escalated page's 3 legs = 11. Alerts 400-402 were three
+withdrawals inside one minute: 33 messages plus the HIGH burst alert.
+jaypee 2026-08-22 (alerts 369/370, v1.7.0): delivered_to 3 each; the SMS
+legs skipped (no phone); both escalated at 00:21:33/00:22:18; pages #148
+and #149 critical_alert_escalated, 3 legs each; the customer email legs
+were not recorded then. Derived: 6 detection legs to Minas + 2 customer
+emails + 6 re-fires + 2 secondary emails + 6 page legs = 22 (24 if the
+primary's escalation leg existed in 1.7.0). Acknowledged inside 15 min it
+would have been 8 + 2 closing notes = 10. #370 was acknowledged 00:49:58,
+27 minutes after its escalation.
+Q3: telegram_links - 2 revoked, 0 connected: nobody is reachable two-way
+on Telegram today. Portal members 5, with two-factor 0: the path is six
+actions for everyone. 14 accounts carry a primary email; 10 of those
+emails have a portal login - FOUR primaries cannot acknowledge at all,
+so every CRITICAL on their accounts escalates by construction.
+Q4: unacknowledged CRITICALs now 223 (withdrawal_initiated 105,
+unexplained_quantity_decrease 104, withdrawal_to_unseen_address 14). Of
+the 119 withdrawal ones: 60 to an address the same account had withdrawn
+to BEFORE the alert (known_addresses source withdrawal_history,
+first_seen_at earlier); 15 first use at that alert; 14 unseen-address by
+construction; 30 with no address in the evidence (erwin-garcia-3/-4, 15
+each - the record shape that also raises the LOW degraded check). So 60
+of 119 withdrawal CRITICALs (50%), 60 of 89 classifiable (67%), 60 of 223
+overall (27%). The 119 alerts point at 18 distinct account+address pairs
+and 118 of 119 sit on an address that recurs for that account: jaypee's
+20 "before" alerts go to 4 addresses, erwin-garcia's 13 to 3. The 104
+unexplained_quantity_decrease alerts are outside the question.
+
