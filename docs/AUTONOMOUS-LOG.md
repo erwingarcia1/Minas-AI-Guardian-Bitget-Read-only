@@ -6125,3 +6125,27 @@ the customer-side escalation keeps the prefixed rule and the forced
 CRITICAL, so its headline is the generic "Unusual activity" and its
 subject "Urgent:" for a lost key - headline()/customer_subject() should
 resolve the original rule as advice_kind does.
+
+# 2026-09-08 · v1.12.0 batch (owner's brief), item 1: the in-container caller of the liveness gate
+
+Searched v1.11.1 (deployed) and main: page_verdict is called from ONE
+place, cmd_liveness - `sentinel liveness`. Nothing in engine.py,
+dashboard.py, portal.py, the compose healthcheck, deploy.sh, deploy-gate
+or health-check.sh calls it. So "something in the container" is
+`docker compose exec -T sentinel sentinel liveness` invoked from OUTSIDE:
+the host timer's script (scripts/host/liveness.sh, hourly), or a person.
+At v1.11.1 the command pages by default (`not args.no_page`), so every
+hand diagnostic pages - #217 on 2026-08-31, 12:18:23 on 2026-09-08 five
+seconds after a diagnostic. Cadence: the HIGH cooldown (60 min) caps the
+pager at one per hour whoever calls; 75 pages in 8 days is what hand
+runs plus the timer's on-periods produce. Attribution by run is in the
+DATA, not the code: a host-script run hands in the host facts, a bare
+exec does not, and the page's evidence_json says "the host did not
+report" for the latter - the item 8 command groups the 75 by that.
+Code path either way: cmd_liveness -> page_verdict -> OperatorAlerter
+.page(rule=liveness_failed, HIGH). fde3720's fix IS on that path (there
+is no other), and on main the hand run has no path at all (3079de7).
+Proof by test: cmd_liveness with page=True - the flag the host script
+passes - twice on the same failing set pages once; a changed set pages
+again; the bare command never pages; the script's invocation carries
+--page. Nothing bypasses the fixed path.

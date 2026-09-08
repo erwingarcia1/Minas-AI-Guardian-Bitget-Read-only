@@ -411,6 +411,49 @@ def test_everything_coming_back_is_said_once_and_a_hand_run_keeps_no_state(db, m
     assert liveness.paged_failing(db) is None
 
 
+def test_the_scheduled_caller_pages_once_per_failing_set_through_the_cli(db, monkeypatch, capsys):
+    """Item 1 of the 2026-09-08 brief: WHO calls the gate inside the container.
+    At v1.11.1 nothing in the engine, the dashboard or the portal calls
+    page_verdict - the only path to the pager is `sentinel liveness` (this
+    CLI command), invoked by `docker compose exec` from OUTSIDE the
+    container: the host timer's script, or a person. The deployed command
+    paged by default; on main it pages only with --page, and --page goes
+    through page_verdict, the path fde3720 fixed. This drives that exact
+    caller - the CLI with the flag, as scripts/host/liveness.sh invokes it
+    - twice on the same failing set and asserts ONE page; a changed set
+    pages again; and the bare (human) invocation pages never."""
+    import argparse
+
+    import sentinel.cli as cli_module
+    from sentinel.cli import cmd_liveness
+
+    chan = _Recorder()
+    monkeypatch.setattr(cli_module, "build_operator_channels",
+                        lambda _rules: {s: [chan] for s in ("CRITICAL", "HIGH", "MEDIUM", "LOW")})
+    monkeypatch.setenv("SENTINEL_DB_PATH", str(db._path))
+    monkeypatch.setenv("SENTINEL_LIVENESS_HOLDS", str(ROOT / "config/liveness-holds.yaml"))
+    base = dict(crontab_has_digest="no", newest_backup_age_seconds=-1, liveness_timer_active="yes", as_json=False)
+    timer_run = lambda **kw: cmd_liveness(argparse.Namespace(**{**base, "page": True, **kw}))  # noqa: E731
+
+    assert timer_run(restart_timer_active="yes") == 1
+    assert "operator page #" in capsys.readouterr().out
+    assert timer_run(restart_timer_active="yes") == 1
+    assert "operator page #" not in capsys.readouterr().out, "the same set paged twice"
+    assert _pages(db) == [("liveness_failed", "HIGH")]
+    # The set changes (the restart timer is switched off): one more page.
+    assert timer_run(restart_timer_active="no") == 1
+    assert _pages(db) == [("liveness_failed", "HIGH")] * 2
+    assert "Restart-on-unhealthy timer (dead)" in chan.sent[-1].message
+    assert timer_run(restart_timer_active="no") == 1
+    assert len(_pages(db)) == 2
+    # The human's invocation - no flag - never pages, whatever the set.
+    assert cmd_liveness(argparse.Namespace(**base, page=False, restart_timer_active="no")) == 1
+    assert len(_pages(db)) == 2
+    # And the host script - the timer's one caller - is the one that passes the flag.
+    src = (ROOT / "scripts/host/liveness.sh").read_text()
+    assert "sentinel liveness --page" in src
+
+
 def test_nothing_failing_pages_nobody(db, monkeypatch):
     from sentinel.config import RulesConfig
 
