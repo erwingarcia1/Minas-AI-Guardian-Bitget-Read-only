@@ -15,6 +15,19 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+### Fixed
+
+- **The liveness gate no longer reports three settled decisions as dead
+  mechanisms.** `config/liveness-holds.yaml` held only the drill account;
+  the SMS provider, the dead-man's switch and per-account thresholds were
+  decided on hold at the same time and never written, so every gate run
+  since 2026-08-31 - and the operator page after the v1.12.0 deploy -
+  named four dead mechanisms when one (the database backup) was. The
+  three holds are written with their reasons, and a test now evaluates
+  every holdable entry against a fresh deployment's facts and fails on
+  one that is neither held nor live, so a hold decided and not written
+  cannot pass again.
+
 ## [1.12.0] — 2026-09-08
 
 ### Changed — on upgrade

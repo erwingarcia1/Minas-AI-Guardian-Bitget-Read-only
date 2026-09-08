@@ -10,3 +10,9 @@
 #     sms: "waiting on the ClickSend account; decision pending (#19, #75)"
 holds:
   drill_account: "held pending an owner decision - the drill needs a real, dedicated Minas exchange account with a read-only key, and none exists; drills.enabled is false until it does (#37, 2026-08-31)"
+  # The three below were decided on 2026-08-31 alongside the drill hold and
+  # never written here (465aedd wrote only drill_account), so three settled
+  # decisions rendered DEAD on production until these lines were written.
+  sms: "held during beta. Enabling it starts real texts to 13 customers and spends SMS credits before the product is public."
+  heartbeat: "vendor not yet chosen (#63)."
+  thresholds: "no customer has needed one yet."

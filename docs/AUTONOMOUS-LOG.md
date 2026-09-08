@@ -6339,3 +6339,20 @@ v1.12.0^{} -> 13679e3, identical local and remote. CONTRIBUTING gains
 not disable, stopped and disabled are indistinguishable in list-timers
 until a reload, the verification is the page record, not the exit code.
 
+# 2026-09-08 · Part A: the three missing holds
+
+config/liveness-holds.yaml BEFORE: one hold, drill_account (465aedd,
+2026-08-31). AFTER: four - drill_account unchanged, plus sms ("held
+during beta. Enabling it starts real texts to 13 customers and spends
+SMS credits before the product is public."), heartbeat ("vendor not yet
+chosen (#63)."), thresholds ("no customer has needed one yet."), the
+owner's reasons verbatim, in the schema load_holds validates (holdable
+keys only, non-empty reason). The guard
+(test_every_holdable_entry_is_held_with_a_reason_or_live_by_default):
+evaluate() against a fresh deployment's facts - empty env, no threshold
+row, no drill account, host facts live - every holdable entry must be
+HELD by the shipped file or LIVE; DEAD fails naming the keys. Proven on
+the old file: fails with ['heartbeat', 'sms', 'thresholds']. On the next
+gate run the failing set shrinks from four to one (backup): a change, so
+one MEDIUM liveness_recovered report naming the three, no HIGH.
+

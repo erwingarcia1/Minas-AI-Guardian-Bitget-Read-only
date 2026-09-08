@@ -203,6 +203,32 @@ def test_the_shipped_holds_file_parses_and_names_only_holdable_entries():
     assert set(holds) <= holdable
 
 
+def test_every_holdable_entry_is_held_with_a_reason_or_live_by_default(db):
+    """The guard for 2026-09-09: 465aedd wrote one of four holds the owner
+    had decided, and the other three (SMS, the dead-man's switch,
+    per-account thresholds) rendered DEAD on production for nine days -
+    the operator page of 2026-09-08 named four dead mechanisms when one
+    was. A hold decided in an instruction and never written to the file
+    passed unnoticed because nothing compared the file to the entries.
+
+    Evaluated against what a fresh deployment of this repository has -
+    no provider credentials, no heartbeat URL, no threshold row, no drill
+    account, every host fact live - every holdable entry must be HELD by
+    the shipped file (with its reason) or LIVE. A holdable entry that
+    reads DEAD here is a decision nobody wrote down: either write the
+    hold with the owner's reason to config/liveness-holds.yaml, or switch
+    the mechanism on. There is no third state that passes."""
+    holds = load_holds(str(ROOT / "config/liveness-holds.yaml"))
+    verdicts = _by(evaluate(_facts(db, holds=holds, crontab_has_digest=True, newest_backup_age_seconds=60,
+                                   restart_timer_active=True, liveness_timer_active=True)))
+    undeclared = sorted(e.key for e in ENTRIES if e.holdable and verdicts[e.key].state not in (HELD, LIVE))
+    assert undeclared == [], (
+        f"holdable mechanism(s) neither held nor live: {undeclared} - write the owner's hold, with its "
+        "reason, to config/liveness-holds.yaml, or switch the mechanism on")
+    for key, reason in holds.items():
+        assert len(reason) > 10, f"{key}: a hold must say what was decided"
+
+
 # --- the report path: not through anything it checks -----------------------------------------
 
 def test_no_guaranteed_report_path_is_a_declared_mechanism():
