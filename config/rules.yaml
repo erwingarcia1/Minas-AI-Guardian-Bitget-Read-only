@@ -88,6 +88,19 @@ alerting:
   # contact only after this long with no acknowledgement. CRITICAL uses
   # escalation_unacknowledged_minutes. LOW and MEDIUM never reach them.
   escalation_unacknowledged_minutes_high: "60"
+  # The stale bound (2026-09-08). An unacknowledged alert older than this
+  # that has NEVER escalated is a backlog, not a live incident: it is
+  # reported to operators once, with the count, and never emailed to the
+  # customer. On 2026-08-30 a routing change made 41 five-week-old alerts
+  # escalate at once - 42 emails to one customer in eight minutes. Four
+  # hours is four missed 60-minute windows, which only a stopped scheduler
+  # or a routing change produces.
+  escalation_stale_after_hours: "4"
+  # The burst bound. Whatever the cause, one customer receives at most this
+  # many escalation emails per window, then ONE summary naming how many
+  # alerts remain unacknowledged; the rest are recorded as suppressed.
+  escalation_customer_burst_max: "3"
+  escalation_customer_burst_window_minutes: "60"
   # How often "your account is not being watched" repeats while it stays
   # unresolved (G-6). Daily: at HIGH's 30-minute cooldown a broken key would
   # page twice an hour until fixed, and with no repeat an unwatched account

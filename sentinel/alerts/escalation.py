@@ -11,6 +11,10 @@ from sentinel.naming import display_label
 logger = logging.getLogger("sentinel.escalation")
 
 
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
 class _EscalationDetection:
     """Adapts an escalation `AlertMessage` to the shape `ContactRouter.send`
     expects. The rule name keeps its ESCALATION prefix on purpose: someone
@@ -61,10 +65,33 @@ class Escalator:
 
     def __init__(self, channels: list[AlertChannel], unacknowledged_minutes: int,
                  operator_alerter=None, contact_router=None,
-                 high_unacknowledged_minutes: int = 60):
+                 high_unacknowledged_minutes: int = 60,
+                 stale_after_hours: float = 4,
+                 customer_burst_max: int = 3,
+                 customer_burst_window_minutes: int = 60):
         self._channels = channels
         self._window = timedelta(minutes=unacknowledged_minutes)
         self._high_window = timedelta(minutes=high_unacknowledged_minutes)
+        # The stale bound (2026-09-08, after 2026-08-30): an alert older than
+        # this that has NEVER escalated is a backlog, not a live incident.
+        # On 2026-08-30 v1.11.1 made coverage alerts escalate; seven seconds
+        # after the switchover the escalator found 41 five-week-old
+        # unacknowledged alerts on one account and emailed the customer 42
+        # times in eight minutes. The longest live window is 60 minutes;
+        # four hours is four missed opportunities, which only a stopped
+        # scheduler or a routing change produces - so the default is
+        # conservative for the customer's inbox, not for the operator's:
+        # the backlog is reported to Minas once, with the count, and never
+        # emailed. (A snooze that expires on an alert older than this lands
+        # in the same report; the customer chose that snooze.)
+        self._stale_after = timedelta(hours=stale_after_hours)
+        # The burst bound: whatever the cause, one customer receives at most
+        # this many escalation emails per window, plus ONE collapsed message
+        # naming how many alerts remain unacknowledged; the rest are
+        # recorded as suppressed. Counted from alerts.escalated_at, so it
+        # holds across restarts and does not depend on the delivery record.
+        self._burst_max = max(1, int(customer_burst_max))
+        self._burst_window = timedelta(minutes=customer_burst_window_minutes)
         # Optional: a deployment with no operator paging configured is worse
         # off, not broken. See `_page_if_nobody_heard`.
         self._operator_alerter = operator_alerter
@@ -74,6 +101,7 @@ class Escalator:
         # response - and the second pair of eyes never saw it. Escalation that
         # repeats the unanswered channel is not escalation.
         self._contact_router = contact_router
+        self._db_for_record: Database | None = None
 
     def check(self, db: Database) -> int:
         self._db_for_record = db
@@ -82,7 +110,7 @@ class Escalator:
         cutoff_high = (now - self._high_window).isoformat()
         with db.cursor() as cur:
             cur.execute(
-                "SELECT a.id, a.rule, a.severity, a.message, a.confidence, a.account_id, "
+                "SELECT a.id, a.rule, a.severity, a.message, a.confidence, a.account_id, a.sent_at, "
                 "ac.label, ac.member_name, ac.alert_email, ac.alert_phone, ac.alert_email_secondary, "
                 "ac.alert_phone_secondary "
                 "FROM alerts a JOIN accounts ac ON ac.id = a.account_id "
@@ -112,8 +140,16 @@ class Escalator:
             )
             stale = cur.fetchall()
 
+        # The stale bound, before anything reaches a customer: rows older
+        # than the window are a backlog (see __init__), reported once.
+        stale_cutoff = (now - self._stale_after).isoformat()
+        backlog = [r for r in stale if (r["sent_at"] or "") < stale_cutoff]
+        if backlog:
+            self._report_backlog(db, backlog, now)
+        live = [r for r in stale if (r["sent_at"] or "") >= stale_cutoff]
+
         escalated = 0
-        for row in stale:
+        for row in live:
             if row["severity"] == "CRITICAL" or is_coverage_rule(row["rule"]):
                 self._escalate_critical(row)
             else:
@@ -125,6 +161,79 @@ class Escalator:
                 )
             escalated += 1
         return escalated
+
+    def _report_backlog(self, db: Database, rows, now: datetime) -> None:
+        """A backlog of never-escalated alerts older than the stale window:
+        one operator page with the count, one suppressed delivery row per
+        alert (so "was the customer told" stays answerable), escalated_at
+        set so it is reported once and never again."""
+        from sentinel.alerts.delivery import record_delivery
+
+        ids = [int(r["id"]) for r in rows]
+        by_account: dict[str, int] = {}
+        for r in rows:
+            by_account[r["label"]] = by_account.get(r["label"], 0) + 1
+        hours = self._stale_after.total_seconds() / 3600
+        accounts = ", ".join(f"{label} ({n})" for label, n in sorted(by_account.items()))
+        page_id = None
+        if self._operator_alerter is not None:
+            page_id = self._operator_alerter.page(
+                rule="escalation_backlog", severity="HIGH",
+                message=(f"{len(rows)} unacknowledged alert(s) older than {hours:g} h were never escalated "
+                         f"and will NOT be escalated to customers - a backlog, not a live incident "
+                         f"(accounts: {accounts}). Review or acknowledge them in the dashboard."),
+                evidence={"count": len(rows), "older_than_hours": hours, "accounts": accounts,
+                          "oldest": min(r["sent_at"] for r in rows), "newest": max(r["sent_at"] for r in rows),
+                          "alert_ids": ",".join(str(i) for i in ids)},
+                dedup_scope=f"backlog:{min(ids)}:{max(ids)}",
+            )
+        for r in rows:
+            for recipient in (r["alert_email"], r["alert_email_secondary"]):
+                if recipient:
+                    record_delivery(db, channel="email", recipient=recipient, status="suppressed",
+                                    audience="customer" if recipient == r["alert_email"] else "secondary",
+                                    kind="escalation", alert_id=r["id"], account_id=r["account_id"], rule=r["rule"],
+                                    detail=f"stale backlog: never escalated, older than {hours:g} h; "
+                                           f"reported to operators as page #{page_id}")
+            with db.cursor() as cur:
+                cur.execute("UPDATE alerts SET escalated_at = ? WHERE id = ?", (now.isoformat(), r["id"]))
+        logger.warning("escalation backlog: %d alert(s) older than %gh reported to operators, not escalated",
+                       len(rows), hours)
+
+    def _live_escalations_in_window(self, db: Database, account_id: int, now: datetime,
+                                    *, customer_path_only: bool) -> int:
+        """How many alerts on this account escalated LIVE inside the burst
+        window. A backlog row is marked escalated too (so it is reported
+        once), but nobody was written to for it, so it must not count
+        against anyone's inbox: a live escalation happens within the stale
+        window of its alert, a backlog one by definition later.
+        `customer_path_only` counts the rows that reached the primary
+        contact (CRITICAL or coverage); the emergency contact hears HIGH
+        escalations as well, so their bound counts every row."""
+        since = (now - self._burst_window).isoformat()
+        with db.cursor() as cur:
+            cur.execute(
+                "SELECT sent_at, escalated_at, severity, rule FROM alerts "
+                "WHERE account_id = ? AND escalated_at >= ?",
+                (account_id, since),
+            )
+            rows = cur.fetchall()
+        n = 0
+        for r in rows:
+            if customer_path_only and not (r["severity"] == "CRITICAL" or is_coverage_rule(r["rule"])):
+                continue
+            try:
+                age_at_escalation = datetime.fromisoformat(r["escalated_at"]) - datetime.fromisoformat(r["sent_at"])
+            except (TypeError, ValueError):
+                continue
+            if age_at_escalation < self._stale_after:
+                n += 1
+        return n
+
+    def _unacknowledged_on(self, db: Database, account_id: int) -> int:
+        with db.cursor() as cur:
+            cur.execute("SELECT COUNT(*) AS n FROM alerts WHERE account_id = ? AND acknowledged_at IS NULL", (account_id,))
+            return int(cur.fetchone()["n"])
 
     def _record_global_leg(self, channel, status, row, *, detail=None) -> None:
         """A delivery row per recipient of a global escalation leg (#103
@@ -189,6 +298,19 @@ class Escalator:
         phones = [row["alert_phone_secondary"]]
         if not any(emails) and not any(phones):
             return
+        # The same burst bound as the primary's leg: an emergency contact is
+        # a person too, and 41 notes in eight minutes is the 2026-08-30 shape.
+        db = self._db_for_record
+        if db is not None and self._live_escalations_in_window(
+                db, row["account_id"], _now(), customer_path_only=False) >= self._burst_max:
+            from sentinel.alerts.delivery import record_delivery
+
+            for email in emails:
+                if email:
+                    record_delivery(db, channel="email", recipient=email, status="suppressed", audience="secondary",
+                                    kind="escalation", alert_id=row["id"], account_id=row["account_id"], rule=row["rule"],
+                                    detail=f"burst bound: {self._burst_max} escalations to this account's contacts in the window")
+            return
         minutes = int(window.total_seconds() // 60)
         severity_word = "critical" if row["severity"] == "CRITICAL" else "high-severity"
         note = AlertMessage(
@@ -233,13 +355,49 @@ class Escalator:
         phones = [row["alert_phone"]]
         if not any(emails) and not any(phones):
             return
+        # The burst bound (see __init__): prior escalations to this customer
+        # inside the window decide whether this one goes out as itself, as
+        # the ONE collapsed message, or not at all.
+        db = self._db_for_record
+        prior = (self._live_escalations_in_window(db, row["account_id"], _now(), customer_path_only=True)
+                 if db is not None else 0)
+        if prior > self._burst_max:
+            self._record_suppressed(row, emails, prior)
+            return
+        detection = _EscalationDetection(alert, severity=row["severity"])
+        if prior == self._burst_max:
+            open_count = self._unacknowledged_on(db, row["account_id"])
+            minutes = int(self._burst_window.total_seconds() // 60)
+            collapsed = AlertMessage(
+                account_label=row["label"], display_label=display_label(row),
+                rule="escalation_burst_collapsed", severity=row["severity"], confidence=row["confidence"],
+                message=(f"{open_count} alerts on {display_label(row)} remain unacknowledged, including this one. "
+                         f"You have received {self._burst_max} escalation emails about this account in the "
+                         f"last {minutes} minutes, so we are sending this one summary instead of more. "
+                         "Sign in to Minas AI Guardian to see every open alert and acknowledge them."),
+                evidence={"unacknowledged": open_count}, notice=True,
+            )
+            detection = _EscalationDetection(collapsed, severity=row["severity"])
+            detection.is_notice = True
         try:
             self._contact_router.send(
-                _EscalationDetection(alert, severity=row["severity"]), row["label"], emails, phones,
+                detection, row["label"], emails, phones,
                 account_id=row["account_id"], alert_id=row["id"],
             )
         except Exception as exc:  # noqa: BLE001 - one path must not cost the other
             logger.error("escalation to the account's own contacts failed: %s", exc)
+
+    def _record_suppressed(self, row, emails, prior: int) -> None:
+        from sentinel.alerts.delivery import record_delivery
+
+        minutes = int(self._burst_window.total_seconds() // 60)
+        for email in emails:
+            if email:
+                record_delivery(self._db_for_record, channel="email", recipient=email, status="suppressed",
+                                audience="customer", kind="escalation", alert_id=row["id"],
+                                account_id=row["account_id"], rule=row["rule"],
+                                detail=f"burst bound: {prior} escalations to this customer in the last "
+                                       f"{minutes} minutes (max {self._burst_max} + one summary)")
 
     def _page_escalated(self, row) -> None:
         """Minas is told that an escalation happened at all (#27).

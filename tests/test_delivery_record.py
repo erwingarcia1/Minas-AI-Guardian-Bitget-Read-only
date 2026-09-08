@@ -12,6 +12,7 @@ truncated.
 from __future__ import annotations
 
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -187,7 +188,9 @@ def test_the_secondary_note_is_recorded_as_the_secondary_audience(db, router):
                     "alert_phone = NULL, alert_phone_secondary = NULL WHERE id = ?", (aid,))
     alert_id = _alert_row(db, aid)
     with db.cursor() as cur:
-        cur.execute("UPDATE alerts SET sent_at = '2026-01-01T00:00:00+00:00' WHERE id = ?", (alert_id,))
+        # Thirty minutes: past the CRITICAL window, inside the stale bound.
+        cur.execute("UPDATE alerts SET sent_at = ? WHERE id = ?",
+                    ((datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat(), alert_id))
     esc = Escalator([_Channel("telegram", ["-1"])], unacknowledged_minutes=15, contact_router=router)
     esc.check(db)
     rows = _rows(db, alert_id)

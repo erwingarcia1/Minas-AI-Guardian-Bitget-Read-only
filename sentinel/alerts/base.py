@@ -77,6 +77,10 @@ RULE_ADVICE: dict[str, str | None] = {
     # that an alert went unacknowledged is about Minas, not the account.
     "critical_alert_escalated": NO_ADVICE,
     "critical_alert_acknowledged": NO_ADVICE,
+    # The stale bound and the burst bound (2026-09-08): a backlog report to
+    # Minas, and the one collapsed summary a customer receives in a burst.
+    "escalation_backlog": NO_ADVICE,
+    "escalation_burst_collapsed": NO_ADVICE,
     # The key-replacement flow: a key was (or could not be) swapped.
     "monitoring_key_replaced": NO_ADVICE,
     "monitoring_key_replacement_wrong_account": NO_ADVICE,
@@ -338,6 +342,7 @@ _NOTICE_SUBJECTS = {
     "password_reset_requested": "Reset your Minas AI Guardian password",
     "password_changed": "Your Minas AI Guardian password was changed",
     "alert_destination_changed": "Your Minas AI Guardian alerts are going somewhere new",
+    "escalation_burst_collapsed": "Several alerts on your account remain unacknowledged",
 }
 
 # Prefix by severity. Only the two severities that warrant interrupting someone

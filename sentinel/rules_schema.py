@@ -146,6 +146,13 @@ SPEC: dict = {
         # alerts reach them only after this window of no acknowledgement;
         # CRITICAL uses escalation_unacknowledged_minutes above.
         "escalation_unacknowledged_minutes_high": POSITIVE,
+        # The stale bound (2026-09-08): an alert older than this that never
+        # escalated is a backlog reported to operators, never emailed.
+        "escalation_stale_after_hours": POSITIVE,
+        # The burst bound: escalation emails one customer may receive per
+        # window, plus one collapsed summary.
+        "escalation_customer_burst_max": POSITIVE,
+        "escalation_customer_burst_window_minutes": POSITIVE,
         "unreachable_repeat_minutes": POSITIVE,
         "sms_cooldown_minutes": NON_NEGATIVE,
         "sms_critical_overrides_optout": _boolean(),
@@ -267,6 +274,9 @@ DEFAULTS: dict = {
         "snooze_cap_hours": {"CRITICAL": 1, "HIGH": 4, "MEDIUM": 24, "LOW": 24},
         "escalation_unacknowledged_minutes": 15,
         "escalation_unacknowledged_minutes_high": 60,
+        "escalation_stale_after_hours": 4,
+        "escalation_customer_burst_max": 3,
+        "escalation_customer_burst_window_minutes": 60,
         "unreachable_repeat_minutes": 1440,
         "sms_cooldown_minutes": 30,
         "sms_critical_overrides_optout": True,

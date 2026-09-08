@@ -6168,3 +6168,42 @@ and only the second sending is marked; the escalator hands the router
 HIGH and the ops channel CRITICAL; through the real ContactRouter and a
 captured SMTP the subject is the coverage headline. Item 1's full
 health check: nine gates pass (mutation 97% floor held), CI 34230057308.
+
+# 2026-09-08 · v1.12.0 batch, item 7: a stale alert must not escalate to a customer
+
+Two bounds in Escalator.check, both before anything reaches a customer.
+The stale bound: a row whose sent_at is older than escalation_stale_after_hours
+(default 4) and that has never escalated is a BACKLOG - _report_backlog pages
+operators once (rule escalation_backlog, HIGH, count and per-account tally,
+dedup on the id range), writes a suppressed delivery row per contact so "was
+the customer told" stays answerable, and sets escalated_at so it is never
+seen again - by the next pass or by a fresh instance after a restart. Why 4 h:
+the longest live window is 60 min, so four hours is four missed opportunities,
+which only a stopped scheduler or a routing change (2026-08-30's shape)
+produces; a snooze that expires on an older alert lands in the same report,
+and the customer chose that snooze. The burst bound: _live_escalations_in_window
+counts the account's escalations inside escalation_customer_burst_window_minutes
+(60) from alerts.escalated_at - live ones only, a backlog row is escalated_at
+- sent_at >= the stale window and did not write to anyone, so it must not
+count against an inbox. The primary's leg goes out as itself below
+escalation_customer_burst_max (3), as ONE collapsed notice at the bound
+(rule escalation_burst_collapsed, a notice: "N alerts on <label> remain
+unacknowledged ... we are sending this one summary instead of more"), and is
+recorded suppressed past it; the secondary's leg counts every escalation on
+the account (HIGH ones reach them too) and stops at the bound with no
+summary. Minas's channels and pages are not bounded. Config: three keys in
+rules_schema/rules.yaml/cli wiring. Both new rules declared NO_ADVICE; the
+collapsed one has a notice subject.
+Tests (tests/test_escalation_backlog.py): the exact 2026-08-30 shape - 41
+five-week-old MEDIUM coverage alerts, coverage now escalating, then a second
+pass and a fresh Escalator: the router is never called, the global channels
+never fire, one page with count 41 and "acct-1 (41)", 82 suppressed rows;
+a fresh alert still escalates; the window is configurable and bounds at its
+edge; six CRITICALs one per pass give the primary three escalations plus one
+summary and two suppressed rows, the secondary three, Minas six; the summary
+names the open count and is a notice; a reported backlog does not count
+against the live bound. Two existing tests aged their alert 25 h and eight
+months as a convenience and now hit the bound: test_coverage_repeats widens
+the window (its 25 h is what makes the second dispatch a repeat),
+test_delivery_record uses 30 minutes.
+

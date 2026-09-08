@@ -486,7 +486,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     escalator = Escalator(channels.get("CRITICAL", []), escalation_minutes,
                           operator_alerter=operator_alerter,
                           contact_router=contact_router,
-                          high_unacknowledged_minutes=escalation_minutes_high)
+                          high_unacknowledged_minutes=escalation_minutes_high,
+                          stale_after_hours=rules.get_int("alerting", "escalation_stale_after_hours", default=4),
+                          customer_burst_max=rules.get_int("alerting", "escalation_customer_burst_max", default=3),
+                          customer_burst_window_minutes=rules.get_int(
+                              "alerting", "escalation_customer_burst_window_minutes", default=60))
 
     engine = Engine(
         db, cipher, rules, channels, metrics=metrics, escalator=escalator,

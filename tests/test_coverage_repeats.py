@@ -109,8 +109,13 @@ def test_a_repeat_never_escalates_and_never_reaches_the_emergency_contact(db):
         def page(self, **kw):
             _Alerter.pages.append(kw)
 
+    # The first alert is aged 25 h above so the second dispatch is a repeat;
+    # that age is also past the escalator's stale bound (4 h, item 7 of
+    # 2026-09-08), which is a separate concern with its own tests
+    # (test_escalation_backlog.py). Widen it here so this test still
+    # isolates the repeat rule.
     esc = Escalator([_Channel("telegram")], unacknowledged_minutes=15, high_unacknowledged_minutes=60,
-                    operator_alerter=_Alerter(), contact_router=_Router())
+                    operator_alerter=_Alerter(), contact_router=_Router(), stale_after_hours=48)
     escalated = esc.check(db)
     assert escalated == 1, "the FIRST alert escalates; the repeat does not"
     assert all(alert_id == first for alert_id, _ in _Router.calls)

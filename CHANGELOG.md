@@ -51,6 +51,27 @@ hears what, and what they are told:
   acknowledged and is being sent again. What Minas receives is
   unchanged.
 
+- **A stale alert no longer escalates to a customer; it is reported to
+  operators as a backlog.** On 2026-08-30 a routing change made coverage
+  alerts escalate, and seven seconds after the switchover the escalator
+  found 41 five-week-old unacknowledged alerts on one account and emailed
+  the customer 42 times in eight minutes. An unacknowledged alert that
+  has NEVER escalated and is older than `escalation_stale_after_hours`
+  (default 4: four missed 60-minute windows, which only a stopped
+  scheduler or a routing change produces) is now a backlog: one operator
+  page names the count and the accounts, each alert is recorded as
+  suppressed for its contacts, and nobody is emailed. Reported once,
+  and never again after a restart.
+
+- **One customer cannot receive more than a bounded number of escalation
+  emails in a window.** Whatever the cause, an account's primary contact
+  receives at most `escalation_customer_burst_max` (default 3) escalation
+  emails per `escalation_customer_burst_window_minutes` (default 60),
+  then ONE summary naming how many alerts remain unacknowledged; the rest
+  are recorded as suppressed. The emergency contact is bounded by the
+  same count. Minas's own channels are not bounded - the bound is on the
+  customer's inbox, not on what Minas hears.
+
 - **The liveness gate pages on a change, not on a state.** From
   2026-08-31 the hourly timer paged HIGH on every run about the same seven
   mechanisms - all off for days, none able to change without a human act -
