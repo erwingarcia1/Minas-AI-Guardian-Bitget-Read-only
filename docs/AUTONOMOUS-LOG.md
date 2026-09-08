@@ -6217,3 +6217,19 @@ at five hours with an operator pager, asserting no escalation AND no
 backlog page. Probe re-run by hand: killed. CI on 29a71c0 green
 (34235721553).
 
+# 2026-09-08 · v1.12.0 batch, item 9: records
+
+CHANGELOG's on-upgrade block: both timers carry the literal "on upgrade",
+name the hand stop (2026-08-30, 2026-09-02) and that both are disabled as
+of 2026-09-08, and say which change in this release makes each safe; the
+motd line now clears the liveness marker ("MINAS LIVENESS", liveness.sh)
+as well as the restart-cap one. "Changed detection behaviour" opens with
+the detectors and severities being unchanged and lists the four changes
+of who hears what: the escalation reads as its rule (item 6), the stale
+backlog and the burst bound (item 7), the liveness gate pages on a change
+(fde3720). CONTRIBUTING's "A green check that depended on a hole" exists
+from f37102c and already carries both halves - the probe passed because
+of the unauthenticated root, and it never asserted the engine was alive.
+Item 8's measurement is the owner's to run: scratchpad measure_83.py, the
+! command in the report.
+

@@ -20,20 +20,24 @@ container")._
 - **Re-enable `minas-restart-on-unhealthy.timer` on upgrade**:
   `sudo systemctl enable --now minas-restart-on-unhealthy.timer`. It was
   stopped by hand on 2026-08-30 when the healthcheck went red the moment
-  the first operator existed; this release's `/healthz` fix (the probe no
-  longer rests on the dashboard being unauthenticated, and asserts the
-  engine is alive) is what makes switching it back on safe.
+  the first operator existed, and is disabled as of 2026-09-08; this
+  release's `/healthz` fix (the probe no longer rests on the dashboard
+  being unauthenticated, and asserts the engine is alive) is what makes
+  switching it back on safe. Until this release is deployed the container
+  reads unhealthy on purpose, so the timer must stay off.
 
 - **Re-enable `minas-liveness.timer` on upgrade**:
   `sudo systemctl enable --now minas-liveness.timer`. It was stopped by
   hand on 2026-09-02 because every hourly run paged HIGH about the same
-  seven mechanisms, and each page escalated; the change-based paging in
-  this release (below) is what makes switching it back on safe.
+  seven mechanisms, and each page escalated, and is disabled as of
+  2026-09-08; the change-based paging in this release (below) is what
+  makes switching it back on safe.
 
-- **Clear the two restart-cap notices from `/etc/motd` on upgrade.** The
-  #81 flap evidence from August stays by design until a human removes it;
-  on upgrade run `sudo sed -i '/MINAS RESTART CAP/d' /etc/motd` (or edit
-  by hand) so the banner reflects this deploy, not that incident.
+- **Clear the restart-cap and liveness notices from `/etc/motd` on
+  upgrade.** The #81 flap evidence from August and the liveness gate's
+  marker stay by design until a human removes them; on upgrade run
+  `sudo sed -i '/MINAS RESTART CAP/d;/MINAS LIVENESS/d' /etc/motd` (or
+  edit by hand) so the banner reflects this deploy, not those incidents.
 
 ### Changed detection behaviour
 
