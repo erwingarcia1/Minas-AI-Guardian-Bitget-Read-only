@@ -6302,3 +6302,25 @@ CHANGELOG's on-upgrade entry says - the owner's call whether to amend
 before the cut. The failing count: 7 at #217/#218, 6 from #219 (the
 liveness timer itself came on), 7 again at #309 (both timers off).
 
+# 2026-09-08 · v1.12.0 cut
+
+Owner ran `! scripts/release.sh 1.12.0` in the session (the classifier
+refused it from the assistant). Slow path as predicted: no scheduled run
+covered 2984813, the full local check ran - nine gates pass (tests 325 s,
+probes 236 s, mutation 102 s). Release commit 13679e3, annotated tag
+v1.12.0 pushed; local and remote `v1.12.0^{}` both 13679e3; GitHub
+Release published --latest, v1.11.1 demoted; CI on 13679e3 green
+(34247907943). Body read against docs/RELEASE-NOTES.md: opening line,
+"What you need to do" (lifted from the three "on upgrade" entries),
+"Changed detection behaviour" explicit and opening with detectors
+unchanged, Fixed/Changed, Deploy command, compare link - all present.
+Presentation edit via `gh release edit` (no tag touched): the opening
+line now says what the release does, and "What you need to do" is two
+bold imperatives with their commands and a closing "nothing else is
+required" (the three new rules.yaml keys carry defaults). Ships with the
+liveness timer's stop dated 2026-09-02 in the on-upgrade entry; the page
+record says 2026-09-03 (see the item 8 entry) - not amended, the owner
+did not answer before the cut. NOT deployed: the deploy is the owner's
+(`sudo /opt/minas-guardian/scripts/deploy.sh v1.12.0`), then both
+timers back on and the motd cleared, per the Release.
+
