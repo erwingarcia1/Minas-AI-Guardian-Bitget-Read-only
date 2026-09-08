@@ -6324,3 +6324,18 @@ did not answer before the cut. NOT deployed: the deploy is the owner's
 (`sudo /opt/minas-guardian/scripts/deploy.sh v1.12.0`), then both
 timers back on and the motd cleared, per the Release.
 
+# 2026-09-08 · The liveness timer's stop that did not take: Release body amended, CONTRIBUTING lesson
+
+Owner's correction from the page record: the hand stop of 2026-09-02 did
+not survive - hourly pages ran to 2026-09-03 17:46 with one missed run;
+what held was the disable of 2026-09-08. The v1.12.0 Release BODY only
+was amended (`gh release edit`, notes file in scratchpad): the on-upgrade
+entry for minas-liveness.timer and the "What you need to do" sentence now
+say disabled 2026-09-08 and that the 09-02 stop did not survive. The
+tagged CHANGELOG section is untouched (a286b94's rule: a shipped heading
+is never edited). Tag verified before and after: v1.12.0 -> 5865127,
+v1.12.0^{} -> 13679e3, identical local and remote. CONTRIBUTING gains
+"A stopped timer is not a disabled timer": stop on an enabled unit is
+not disable, stopped and disabled are indistinguishable in list-timers
+until a reload, the verification is the page record, not the exit code.
+

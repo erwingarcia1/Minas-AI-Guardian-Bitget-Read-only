@@ -660,6 +660,27 @@ When you close a hole, list what currently passes *through* it - probes,
 tests, cron jobs, dashboards - and repoint them in the same change, or
 the fix ships as an outage.
 
+## A stopped timer is not a disabled timer
+
+**`systemctl stop` on an ENABLED unit is not `disable`.** It survives
+nothing - not a daemon-reload, not a reboot, not the next thing that
+touches the unit - and in `systemctl list-timers` "stopped" and
+"disabled" look the same until something reloads. The verification of a
+silenced timer is the page record, not the command's exit code.
+
+The defect that named this: `minas-liveness.timer` was stopped by hand on
+2026-09-02 and the owner was told the paging had stopped. It had not. The
+page record shows hourly `liveness_failed` pages continuing to 2026-09-03
+17:46 UTC, one missed run apart - 25 hours of paging nobody was watching
+for, because the report said quiet. What held was `disable` on
+2026-09-08.
+
+When you silence a unit, `disable --now` it, read `systemctl is-enabled`
+and `is-active` back, and then look at what the unit produces (the
+operator_pages table, journald) after its next scheduled moment. A
+mitigation that has not been observed to take is not a mitigation - it is
+a claim, and the claim is what the owner acts on.
+
 ## A test that posts to a path that does not exist always passes
 
 **Assert the route is registered before asserting who may use it.** A 404 is
