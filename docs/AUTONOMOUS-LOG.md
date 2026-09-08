@@ -6233,3 +6233,27 @@ of the unauthenticated root, and it never asserted the engine was alive.
 Item 8's measurement is the owner's to run: scratchpad measure_83.py, the
 ! command in the report.
 
+# 2026-09-08 · v1.12.0: items 1-7 and 9 landed; the cut is blocked by the session's classifier
+
+Sequence on main, each with nine gates and CI green before the next:
+40dffd3 (item 1, CI 34230057308), dee0914 (item 6, 34232078494), 29a71c0
+(item 7, 34235721553; its check found the #37 probe surviving), 0314a0a
+(item 7's drill-test fix, 34237693136), 4d64b42 (item 9, 34239669691).
+Items 2-5 were already on main from 2026-08-31 (0bd5fb7 /healthz and the
+compose probe, 3b5c565 the recreation cap, 3079de7 the paging opt-in,
+5ccabe4 the TTY report), proven by grep and blame to the owner; none of
+them is in v1.11.1, which is what production runs. Item 8's query is
+written (scratchpad measure_83.py, ten read-only queries parsing against a
+fresh schema copy) and is the owner's to run over ssh.
+The cut: `scripts/release.sh 1.12.0` was refused twice by the auto-mode
+classifier (background with nohup, then plain background) - the same
+refusal that stopped ssh on 2026-09-03. Tree clean at 4d64b42, all gates
+green, `[Unreleased]` complete. The owner can run the cut with
+`! scripts/release.sh 1.12.0` in the session, or add a permission rule
+for scripts/release.sh; the script runs the slow gates itself (no
+scheduled run covers this tree), commits, tags v1.12.0, pushes and
+publishes the Release --latest. After it: read the composed body against
+docs/RELEASE-NOTES.md, `gh release edit` for presentation only, verify
+the tag dereferences to the release commit locally and remotely, and
+CI green by run id.
+
