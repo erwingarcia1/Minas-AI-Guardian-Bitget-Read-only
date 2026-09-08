@@ -15,3 +15,7 @@ class Detection:
     # never escalated, never subject to a member's preferences (they asked).
     is_drill: bool = False
     bypass_preferences: bool = False
+    # A routine receipt (2026-09-08): a withdrawal to a destination this
+    # account has withdrawn to before. The customer reads it in their digest
+    # and is never pushed for it; Minas sees it in the ops digest.
+    receipt: bool = False

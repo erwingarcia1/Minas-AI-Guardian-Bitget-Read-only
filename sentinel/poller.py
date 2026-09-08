@@ -39,7 +39,7 @@ from sentinel.detectors.quantity_drop import detect_quantity_drop
 from sentinel.detectors.tamper import detect_tamper
 from sentinel.detectors.transfer_pattern import detect_new_transfer_route
 from sentinel.detectors.unseen_address import detect_unseen_address
-from sentinel.detectors.withdrawal import detect_new_withdrawals
+from sentinel.detectors.withdrawal import detect_new_withdrawals, reclassify_familiar_destinations
 from sentinel.events import append_event
 from sentinel.exchange import ExchangeClient, TamperSignal, exchange_account_uid, make_client
 from sentinel.identity import annotate_batch_occurrences, is_unidentifiable
@@ -400,7 +400,16 @@ class AccountPoller:
 
         new_withdrawals = [w for w in withdrawals if record_seen_withdrawal(self._db, account_id, w)]
 
-        for detection in detect_new_withdrawals(new_withdrawals):
+        # Severity by address history (2026-09-08): a destination this
+        # account has withdrawn to before makes the alert a receipt, not a
+        # CRITICAL. Withdrawal history only - never a deposit address - and
+        # judged BEFORE this cycle's addresses are recorded (below), so a
+        # withdrawal is never familiar because of itself.
+        with self._db.cursor() as cur:
+            cur.execute("SELECT address FROM known_addresses WHERE account_id = ? AND source = 'withdrawal_history'",
+                        (account_id,))
+            familiar = {r["address"] for r in cur.fetchall() if r["address"]}
+        for detection in reclassify_familiar_destinations(detect_new_withdrawals(new_withdrawals), familiar):
             self._emit(account_id, label, detection)
 
         with self._db.cursor() as cur:

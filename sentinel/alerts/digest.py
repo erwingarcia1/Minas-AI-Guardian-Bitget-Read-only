@@ -188,6 +188,26 @@ def build_member_digest(db: Database, email: str, rules=None,
         if routine:
             parts.append(f"{routine} routine notice(s)")
         lines.append("Issues found: " + "; ".join(parts) + ".")
+    # Receipts (2026-09-08): withdrawals to destinations this account has
+    # withdrawn to before are told HERE, not pushed - so the digest must
+    # actually carry them, one line each. Customer copy: label and time;
+    # no amounts, no addresses, no rule names.
+    receipts = []
+    if ids:
+        with db.cursor() as cur:
+            cur.execute(
+                f"SELECT a.sent_at, ac.label FROM alerts a JOIN accounts ac ON ac.id = a.account_id "
+                f"WHERE a.account_id IN ({marks}) AND a.rule = 'withdrawal_initiated' AND a.severity = 'MEDIUM' "
+                + ("AND a.sent_at >= ? " if since else "") + "ORDER BY a.sent_at",
+                [*ids, since] if since else ids)
+            receipts = cur.fetchall()
+    if receipts:
+        lines.append("")
+        lines.append(f"Withdrawals to destinations you have used before: {len(receipts)}. "
+                     "Money left the account; nothing here is unusual, and you are told for the record:")
+        for r in receipts:
+            lines.append(f"  - {r['label']}: withdrawal at {r['sent_at'][:16].replace('T', ' ')} UTC, "
+                         "to a destination this account has withdrawn to before")
     # #63 / decision 7: a window in which the Guardian was not running is
     # told here, in the digest, not as an alert - and never hidden.
     from sentinel.heartbeat import gaps_since

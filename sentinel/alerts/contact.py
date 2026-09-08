@@ -222,6 +222,8 @@ class ContactRouter:
             self._record("email", held_email, "held", detail="quiet hours - released in the next digest")
         for muted in [e for e in before_prefs if e not in emails and e not in held_for]:
             self._record("email", muted, "skipped", detail="member preference: channel off for this severity")
+        if getattr(detection, "receipt", False):
+            emails, phones = self._route_receipt(emails, phones, account_id, alert_id, detection)
         if not emails and not phones and not self._telegram_targets:
             return
         alert = AlertMessage(
@@ -291,6 +293,28 @@ class ContactRouter:
 
         if phones:
             self._send_sms(detection, alert, account_label, phones, account_id, alert_id, auditable)
+
+    def _route_receipt(self, emails, phones, account_id, alert_id, detection):
+        """A receipt (a withdrawal to a destination this account has
+        withdrawn to before) is a digest line, not a page: no SMS, no
+        Telegram push, and no email of its own when the member's digest will
+        carry it. The customer is still told - a member whose digest is off,
+        or an address with no portal login, gets the plain email, because a
+        receipt nobody reads is not a receipt."""
+        from sentinel.alerts.digest import digest_frequency, member_exists_for_digest
+
+        for phone in phones:
+            self._record_sms(account_id, alert_id, detection.rule, "skipped", phone=phone,
+                             detail="routine receipt: not texted; in the member digest")
+        self._telegram_targets = []
+        kept = []
+        for email in emails:
+            if self._db is not None and member_exists_for_digest(self._db, email) \
+                    and digest_frequency(self._db, email) != "off":
+                self._record("email", email, "skipped", detail="routine receipt: delivered in the member digest")
+            else:
+                kept.append(email)
+        return kept, []
 
     def _apply_preferences(self, detection, emails, phones, account_id, alert_id):
         """Filter the primary contacts by their #24 preferences. Sets

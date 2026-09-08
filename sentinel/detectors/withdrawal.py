@@ -40,3 +40,35 @@ def detect_new_withdrawals(new_withdrawal_records: list[dict]) -> list[Detection
             )
         )
     return detections
+
+
+FAMILIAR_DESTINATION_NOTE = "destination this account has withdrawn to before"
+
+
+def reclassify_familiar_destinations(detections: list[Detection], familiar: set[str]) -> list[Detection]:
+    """Severity by address history (2026-09-08). A withdrawal to an address
+    THIS ACCOUNT HAS WITHDRAWN TO BEFORE is not a CRITICAL: it is a receipt -
+    money left, to a destination the customer chose once already. An
+    attacker reusing the customer's own destination is sending funds to the
+    customer.
+
+    `familiar` must be built from known_addresses rows with source =
+    'withdrawal_history' ONLY. A deposit_history address means someone sent
+    FROM there; it does not prove the customer chose it as a destination,
+    so deposit-only stays unknown and the withdrawal stays CRITICAL.
+
+    Fail safe: a record with no address, or an address with no withdrawal
+    history, is untouched. Only withdrawal_initiated is judged; the
+    unseen-address and burst rules never pass through here."""
+    for detection in detections:
+        if detection.rule != "withdrawal_initiated":
+            continue
+        address = detection.evidence.get("address")
+        if not address or address not in familiar:
+            continue
+        detection.severity = "MEDIUM"
+        detection.receipt = True
+        detection.evidence["destination"] = FAMILIAR_DESTINATION_NOTE
+        detection.message = f"{detection.message} - {FAMILIAR_DESTINATION_NOTE}"
+    return detections
+

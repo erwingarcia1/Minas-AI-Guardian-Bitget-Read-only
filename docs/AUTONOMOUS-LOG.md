@@ -6391,3 +6391,31 @@ and 118 of 119 sit on an address that recurs for that account: jaypee's
 20 "before" alerts go to 4 addresses, erwin-garcia's 13 to 3. The 104
 unexplained_quantity_decrease alerts are outside the question.
 
+# 2026-09-08 · Four-item batch, item 2: severity by address history
+
+reclassify_familiar_destinations (detectors/withdrawal.py): a
+withdrawal_initiated detection whose evidence address is in `familiar`
+becomes MEDIUM, receipt=True (new Detection field), evidence.destination
+and a message suffix; anything else - other rules, no address, address not
+in the set - passes untouched. The poller builds `familiar` from
+known_addresses WHERE source = 'withdrawal_history' (deposit_history is
+never in it) and judges BEFORE this cycle's addresses are recorded, so a
+withdrawal is never familiar because of itself. ContactRouter._route_receipt:
+SMS legs recorded skipped, the Telegram copy dropped, the email skipped
+("routine receipt: delivered in the member digest") when the address is a
+portal member whose digest is not off, else the plain MEDIUM email goes
+(no Urgent prefix, no runbook). build_member_digest lists the receipts
+since the last mark: "Withdrawals to destinations you have used before:
+N" then label + time per line, no amounts, addresses or rule names; the
+ops digest already listed MEDIUM with rule and message. Escalation: MEDIUM
+is outside the escalator's query. Tests
+(tests/test_familiar_destination.py, 14): the function's exactness and
+fail-safes (never-seen, None, blank, deposit-only, no history), other
+rules untouched, the poller judging against withdrawal history only with
+unseen-address and the LOW gap unchanged, the same withdrawal not
+familiar to itself across two cycles, a member with a digest reads it
+there and is not pushed (legs recorded), digest off -> plain email and
+still no text, no portal login -> plain email, the ops digest carries it,
+a receipt never escalates. Report numbers (2a-2c of measure_batch3.py)
+are the owner's to run.
+

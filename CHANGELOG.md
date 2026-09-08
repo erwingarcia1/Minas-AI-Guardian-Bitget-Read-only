@@ -15,6 +15,25 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+### Changed detection behaviour
+
+- **A withdrawal to a destination this account has withdrawn to before is
+  a receipt, not a CRITICAL.** Measured 2026-09-08: 60 of the 119
+  unacknowledged withdrawal CRITICALs were to addresses the same account
+  had withdrawn to before, on 18 account-address pairs - the customer's
+  own routine, paged as theft. `withdrawal_initiated` now fires at MEDIUM
+  when the destination is in the account's WITHDRAWAL history (never a
+  deposit address: someone sending from there proves nothing about where
+  the customer sends), judged before the withdrawal itself is recorded. A
+  record with no address, or an address with no withdrawal history, stays
+  CRITICAL. The receipt is never pushed - no SMS, no Telegram - and no
+  email of its own when the member's digest will carry it; the member
+  digest lists each one (label and time, no amounts, no addresses), the
+  ops digest lists it as before, and a member whose digest is off or an
+  address with no portal login gets a plain email instead. MEDIUM never
+  escalates. `withdrawal_to_unseen_address`, `withdrawal_burst` and every
+  other rule are untouched.
+
 ### Fixed
 
 - **The liveness gate no longer reports three settled decisions as dead
