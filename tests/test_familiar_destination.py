@@ -63,6 +63,20 @@ def test_anything_short_of_proven_familiar_stays_critical(address, familiar):
     assert "destination" not in out[0].evidence
 
 
+def test_every_detection_in_the_batch_is_judged_on_its_own():
+    """A non-familiar withdrawal, or another rule, ahead of a familiar one
+    must not end the judging: each detection is its own decision. (The
+    mutant this pins: `continue` -> `break`.)"""
+    batch = [
+        Detection(rule="withdrawal_burst", severity="HIGH", confidence="high", message="m", evidence={}),
+        *detect_new_withdrawals([_withdrawal("w-new", NEW), _withdrawal("w-none", None), _withdrawal("w-fam", FAMILIAR)]),
+    ]
+    out = reclassify_familiar_destinations(batch, {FAMILIAR})
+    assert [(d.rule, d.severity) for d in out] == [
+        ("withdrawal_burst", "HIGH"), ("withdrawal_initiated", "CRITICAL"),
+        ("withdrawal_initiated", "CRITICAL"), ("withdrawal_initiated", "MEDIUM")]
+
+
 def test_other_rules_pass_through_untouched():
     others = [
         Detection(rule="withdrawal_to_unseen_address", severity="CRITICAL", confidence="high", message="m",

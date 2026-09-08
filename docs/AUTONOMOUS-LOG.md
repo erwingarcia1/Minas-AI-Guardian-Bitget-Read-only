@@ -6419,3 +6419,15 @@ still no text, no portal login -> plain email, the ops digest carries it,
 a receipt never escalates. Report numbers (2a-2c of measure_batch3.py)
 are the owner's to run.
 
+Item 2's full check on 1cb6c57: eight gates pass, mutation floor FAIL -
+six new survivors, all in reclassify_familiar_destinations. Four escaped
+because scripts/mutation-check.sh runs a FIXED test selection and the
+new test file was not in it ("alerting code added under sentinel/ needs
+its tests added here too"); two (`continue` -> `break`, both loops)
+escaped because no test put a non-familiar detection ahead of a familiar
+one. tests/test_familiar_destination.py is now in the selection and
+gains test_every_detection_in_the_batch_is_judged_on_its_own (burst,
+never-seen, no-address, then familiar: only the last moves).
+`scripts/mutation-check.sh --check` alone: 5 survivors, all ledgered,
+floor held. CI on 1cb6c57 green (34271094197).
+
