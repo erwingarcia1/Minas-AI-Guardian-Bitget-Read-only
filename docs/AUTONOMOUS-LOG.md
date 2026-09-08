@@ -6257,3 +6257,48 @@ docs/RELEASE-NOTES.md, `gh release edit` for presentation only, verify
 the tag dereferences to the release commit locally and remotely, and
 CI green by run id.
 
+# 2026-09-08 · Item 8 measured on production: whose were the 83, and who called the gate
+
+Owner ran scratchpad measure_83.py (read-only, in the container's Python).
+
+The 83 HIGH account_unreachable alerts of 2026-08-12 22:40 -> 2026-08-18
+00:10 belong to FOURTEEN accounts, six each, Paula's five: erwin-primary-1,
+erwin-primary-2, erwin-garcia, erwin-garcia-2, erwin-garcia-3,
+erwin-garcia-4, ezriel-garcia, john-great, john-great-2, jaypee (no
+phone on file), jimrox-odezi, jimrox-odezi-2, binance-jaypee (ids 1,3-13,
+15) and paula-garavillas (14, now disabled). Every one has an email on
+file. NOT ONE of the 83 has a delivery row of any kind, audience or
+channel. The customer email record begins 2026-08-30 02:42 (the 1.11.0
+migration), so for the customer EMAIL leg every account is UNKNOWABLE -
+none shown to have received, none shown not to. Customer SMS rows exist
+from 2026-07-13, and none of the 83 has one, which is evidence that no
+SMS leg was attempted for them, not proof (whether every leg was recorded
+then is not established). The original alerts' global legs sum to zero
+(delivered_to 0 on all 83).
+Second finding: ALL 83 escalated on 2026-08-20 between 12:36:14 and
+12:37:04 - one pass, fourteen accounts, alerts two to eight days old: the
+2026-08-30 backlog shape ten days earlier, on the whole fleet. The
+escalation's customer legs predate per-contact recording (customer
+escalation SMS rows begin 2026-08-22, email 2026-08-30): unknowable too.
+The events table saw ~1,800-2,400 unreachable detections per account in
+that week (the poller was blind on all fourteen; Paula's from 08-12 00:54).
+So besides Paula: thirteen accounts whose primaries may have received up
+to six HIGH "Contact with this account has been lost" emails carrying the
+withdrawal runbook, plus the 08-20 escalation copies - or none. The
+record cannot say; whoever owns those accounts decides whether to be told.
+
+Item 1's attribution from the same run (1a-1c): 75 liveness_failed pages
+since 2026-08-31: ONE bare exec (#217, 08-31 14:55:36, the hand run), 73
+host-script runs hourly from 08-31 16:02 to 09-03 17:46 (gaps of 60-61
+min, one of 120 at 09-02 17:40, one of 86 at 08-31 17:28), then nothing
+for 6,872 minutes, then #309 at 09-08 12:18:19 - a HOST-SCRIPT run (host
+facts present), not a bare exec. Every page but #217 came from
+scripts/host/liveness.sh, i.e. the timer while it ran, and once by hand
+on 09-08. Nothing in the container calls the gate; the "something in the
+container" of the brief's context is refuted. The record also dates the
+timer's stop: pages ran hourly until 09-03 17:46, so the timer was stopped
+on 2026-09-03 (the URGENT brief of 18:22 that day), not 09-02 as the
+CHANGELOG's on-upgrade entry says - the owner's call whether to amend
+before the cut. The failing count: 7 at #217/#218, 6 from #219 (the
+liveness timer itself came on), 7 again at #309 (both timers off).
+
