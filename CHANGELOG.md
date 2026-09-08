@@ -15,6 +15,8 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+## [1.12.0] — 2026-09-08
+
 ### Changed — on upgrade
 
 - **Re-enable `minas-restart-on-unhealthy.timer` on upgrade**:
@@ -2757,7 +2759,8 @@ Initial MVP (Phases 0–3, Bitget only).
 - Branded status dashboard + Prometheus metrics; Docker Compose; docs (threat
   model, customer runbook, deployment, data retention).
 
-[Unreleased]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.11.1...HEAD
+[Unreleased]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.12.0...HEAD
+[1.12.0]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.10.0...v1.11.0
 [1.10.0]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.9.0...v1.10.0
