@@ -37,8 +37,19 @@ container")._
 
 ### Changed detection behaviour
 
-**The detectors and severities themselves are unchanged.** Three changes to
-who hears what, and what they are told:
+**The detectors and severities themselves are unchanged.** Changes to who
+hears what, and what they are told:
+
+- **An escalation now reads as the alert it escalates.** The customer's
+  copy of an unacknowledged alert kept the escalator's internal prefix
+  and a borrowed CRITICAL, so a lost API key escalated as "Urgent:
+  Unusual activity was detected on this account" - 42 times to one
+  customer on 2026-08-30. The subject, headline and advice are now the
+  original rule's, the severity is the alert's own ("Please check:
+  Contact with this account has been lost" for a HIGH coverage alert),
+  and the body says in one sentence that the alert has not been
+  acknowledged and is being sent again. What Minas receives is
+  unchanged.
 
 - **The liveness gate pages on a change, not on a state.** From
   2026-08-31 the hourly timer paged HIGH on every run about the same seven

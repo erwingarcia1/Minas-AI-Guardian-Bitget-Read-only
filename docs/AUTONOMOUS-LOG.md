@@ -6149,3 +6149,22 @@ Proof by test: cmd_liveness with page=True - the flag the host script
 passes - twice on the same failing set pages once; a changed set pages
 again; the bare command never pages; the script's invocation carries
 --page. Nothing bypasses the fixed path.
+
+# 2026-09-08 · v1.12.0 batch, item 6: an escalation resolves its original rule
+
+original_rule() in alerts/base.py strips the escalator's prefix; headline()
+and the notice subject map resolve through it (advice_kind already did).
+AlertMessage.escalation marks the customer's copy - the body adds "This
+alert has not been acknowledged and is being sent again." - set via
+_EscalationDetection.escalation and passed through contact.py. The
+customer's copy now carries the alert's OWN severity (the escalator
+passes severity=row["severity"] to _EscalationDetection); the operator
+re-send keeps the borrowed CRITICAL so it takes the CRITICAL channel
+set. A HIGH account_unreachable escalation reads "Please check: Contact
+with this account has been lost - <label>" with the coverage advice.
+Tests (tests/test_escalation_reads_as_its_rule.py): the helper; the
+coverage escalation's subject/body/advice; a CRITICAL keeps its words
+and only the second sending is marked; the escalator hands the router
+HIGH and the ops channel CRITICAL; through the real ContactRouter and a
+captured SMTP the subject is the coverage headline. Item 1's full
+health check: nine gates pass (mutation 97% floor held), CI 34230057308.

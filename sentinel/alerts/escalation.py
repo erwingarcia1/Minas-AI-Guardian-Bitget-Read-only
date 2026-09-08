@@ -20,11 +20,19 @@ class _EscalationDetection:
     # An escalation is "nobody acknowledged this": it must reach the person
     # whatever their #24 preferences say for ordinary detections.
     bypass_preferences = True
+    # The customer's copy is marked (the body says it is the second sending)
+    # and the rule is resolved by the customer template, so the subject and
+    # headline are the original rule's.
+    escalation = True
 
-    def __init__(self, alert: AlertMessage):
+    def __init__(self, alert: AlertMessage, *, severity: str | None = None):
         self.rule = alert.rule
         self.display_label = alert.display_label
-        self.severity = alert.severity
+        # The operator re-send borrows CRITICAL so it takes the CRITICAL
+        # channel set; the customer's copy keeps the alert's OWN severity,
+        # so a HIGH coverage alert escalates as "Please check: Contact with
+        # this account has been lost", not "Urgent: Unusual activity".
+        self.severity = severity or alert.severity
         self.confidence = alert.confidence
         self.message = alert.message
         self.evidence = alert.evidence
@@ -227,7 +235,7 @@ class Escalator:
             return
         try:
             self._contact_router.send(
-                _EscalationDetection(alert), row["label"], emails, phones,
+                _EscalationDetection(alert, severity=row["severity"]), row["label"], emails, phones,
                 account_id=row["account_id"], alert_id=row["id"],
             )
         except Exception as exc:  # noqa: BLE001 - one path must not cost the other

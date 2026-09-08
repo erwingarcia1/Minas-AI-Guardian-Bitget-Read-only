@@ -238,6 +238,7 @@ class ContactRouter:
             incident_id=alert_id,
             drill=getattr(detection, "is_drill", False),
             display_label=getattr(detection, "display_label", None),
+            escalation=bool(getattr(detection, "escalation", False)),
         )
 
         if getattr(detection, "coverage_repeat", False):

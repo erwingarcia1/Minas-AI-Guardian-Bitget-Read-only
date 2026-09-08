@@ -108,13 +108,23 @@ RULE_ADVICE: dict[str, str | None] = {
 ESCALATION_PREFIX = "ESCALATION-unacknowledged: "
 
 
+def original_rule(rule: str | None) -> str | None:
+    """The rule an escalation is about. The escalator keeps the prefix on
+    the message so an operator can tell the second sending from the first;
+    everything that maps a rule to words the CUSTOMER reads - headline,
+    subject, advice - must resolve it, or a lost API key escalates as
+    "Urgent: Unusual activity was detected on this account" (2026-08-30,
+    42 times)."""
+    if rule is not None and rule.startswith(ESCALATION_PREFIX):
+        return rule[len(ESCALATION_PREFIX):]
+    return rule
+
+
 def advice_kind(rule: str | None) -> str | None:
     """Which advice a rule carries, or None. Unknown rules carry none."""
     if rule is None:
         return None
-    if rule.startswith(ESCALATION_PREFIX):
-        rule = rule[len(ESCALATION_PREFIX):]
-    return RULE_ADVICE.get(rule, NO_ADVICE)
+    return RULE_ADVICE.get(original_rule(rule), NO_ADVICE)
 
 
 def advice_steps(exchange: str | None = None, *, rule: str | None = ...) -> list[str]:
@@ -381,6 +391,12 @@ class AlertMessage:
     # keeps `account_label`, the slug - that is the identity operators and
     # the CLI work with. Never a key.
     display_label: str | None = None
+    # The second sending of an unacknowledged alert (the escalator sets it
+    # on the customer's copy). The customer's body says so in one sentence,
+    # because otherwise it is indistinguishable from the message they
+    # already have; the headline, subject and advice are the ORIGINAL
+    # rule's, so a coverage escalation reads as coverage.
+    escalation: bool = False
 
     @property
     def customer_label(self) -> str:
@@ -425,12 +441,12 @@ class AlertMessage:
     # --- customer-facing -----------------------------------------------------
 
     def headline(self) -> str:
-        return _HEADLINES.get(self.rule, _GENERIC_HEADLINE)
+        return _HEADLINES.get(original_rule(self.rule), _GENERIC_HEADLINE)
 
     def customer_subject(self) -> str:
         """States the situation. No rule name, no severity token, no evidence."""
         if self.notice:
-            return _NOTICE_SUBJECTS.get(self.rule, "A change was made to your Minas AI Guardian account")
+            return _NOTICE_SUBJECTS.get(original_rule(self.rule), "A change was made to your Minas AI Guardian account")
         if self.drill:
             return f"[DRILL] A test of your Minas AI Guardian alerts - {self.customer_label}"
         return f"{_SUBJECT_PREFIX.get(self.severity, '')}{self.headline()} - {self.customer_label}"
@@ -462,8 +478,12 @@ class AlertMessage:
         # quote and find at the top of the portal home, never a link -
         # training the click is what a phisher's "view your incident" needs.
         reference = f" This is incident #{self.incident_id}." if self.incident_id else ""
+        # An escalation is the second sending: said in one plain sentence,
+        # with the same headline and advice as the first, never "Urgent:
+        # Unusual activity" for a rule that has its own words.
+        again = " This alert has not been acknowledged and is being sent again." if self.escalation else ""
         parts = [
-            f"{opener}{reference} {portal_action_line()}",
+            f"{opener}{reference}{again} {portal_action_line()}",
             "",
             "We are telling you because it does not match how this account normally "
             "behaves. It may well be something you did - only you can say.",
