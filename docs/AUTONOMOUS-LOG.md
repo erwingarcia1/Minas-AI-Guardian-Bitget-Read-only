@@ -6582,3 +6582,159 @@ item 6 gap, closed by hand once more until item 6 lands).
 Remaining capacity: not surfaced. smtplib sees the reply to one send and
 nothing else; Resend's quota is visible only in its dashboard/API, Gmail's
 only as the 550 itself. The evidence says so.
+
+Item 4's full check on c29a6aa: nine gates pass (tests 624 s, probes 424 s,
+mutation 239 s, 336/341, ledger 5; evidence .health-check-logs/
+20260922T150618Z-c29a6aa); CI green (35744959011). The first push of the
+item (2bbe397) was refused by the pre-push suite: test_no_live_traffic
+lets only sentinel/net.py name smtplib and the draft's refusal_code
+imported it inside contact.py; moved to net.smtp_refusal_code and amended
+before anything reached main.
+
+# 2026-09-22 · Incident batch, item 5 (report only): which provider sends the mail
+
+From config and code, without reading .env: there is ONE path.
+sentinel/alerts/email.py opens net.smtp(host, port) - smtplib.SMTP, STARTTLS,
+login - with host/port/username/password/sender read from SMTP_* by
+contact._smtp_config and cli (digest). No provider-specific code anywhere;
+the deliveries table records provider="smtp" only, and the liveness verdict
+prints no host. So the provider is whatever SMTP_HOST says, and the repo
+cannot name it. What the repo records: docs/deployment.md "Email
+authentication" says Resend from minastrade.com (DKIM at resend._domainkey,
+SPF on send., custom return path); docs/DEPLOYMENTS.md's deploy-night entry
+says "Email is configured and proven end to end. Resend SMTP: a raw SMTP
+test was accepted, then `sentinel digest --hours 24` delivered a real digest"
+and "the old Resend API key was rotated and deleted"; the [Unreleased]
+pending-ops note still lists "Gmail SMTP credentials" as pending - a line
+from the 2026-07-05 scaffolding (a4a45c7) that the 2026-08-19 session
+already flagged as stale. The 2026-09-22 audit resolved smtp.resend.com
+from the container - as the documented host, not as a value read from
+the environment.
+The wording, against live docs (rule 6): Resend's API reference lists
+daily_quota_exceeded, 429, "You have exceeded your daily email sending
+quota." and its pricing page says the free plan is "limited to 100 emails
+per day" (3,000/month; Pro and above "No daily email limit"). Google's
+Gmail SMTP error page lists "550 5.4.5 Daily user sending limit exceeded",
+"550 5.4.5 Daily SMTP relay limit exceeded for user" and "550 5.7.1 Daily
+SMTP relay sending limit exceeded for this customer". The observed "550
+You have reached your daily email sending quota" is Resend's vocabulary
+("daily email sending quota") with "reached" for "exceeded" and an SMTP
+5xx in place of the API's 429 - Resend's SMTP page documents no error
+text, so the exact SMTP phrasing is UNVERIFIED - and it is NOT Gmail's,
+which says "Daily user sending limit". The premise "the 550 text is
+Gmail's wording" is not supported by either vendor's documentation. A
+100-a-day cap also fits the shape: 188 customer + 596 operator messages in
+48 hours, refusals from 23:41 on the first day.
+What to check in .env (the values, none of them a secret):
+  SMTP_HOST      smtp.resend.com => Resend; smtp.gmail.com or
+                 smtp-relay.gmail.com => Google
+  SMTP_USERNAME  the literal `resend` => Resend; a mailbox address =>
+                 Google
+  SMTP_SENDER    an address on minastrade.com can only be Resend (Google
+                 refuses to send as an unverified domain)
+  SMTP_PORT      informational (Resend takes 25/465/587/2465/2587)
+One command on the host that shows no password:
+  grep -E '^SMTP_(HOST|PORT|USERNAME|SENDER)=' /opt/minas-guardian/.env
+The definitive cross-check is Resend's dashboard log for 2026-09-21/22: if
+the quota refusals are there, the path is Resend and the 2026-09-04 lookup
+of 12-18 August searched the right provider's records. If they are not,
+SMTP_HOST is not Resend and that lookup was blind.
+Documentation conflict, recorded not fixed (report only): docs/deployment.md
+line ~143 says "`serve`, never `funnel`" (the dashboard has no auth) and
+scripts/aws-user-data.sh says "serve, NEVER funnel"; the same file's serve
+block lists the member portal (8391) under serve. The owner states the
+portal has been published via Funnel deliberately since August. The repo
+holds no record of that decision - no log entry, no issue comment, no
+decision row mentions Funnel - so the running system is undocumented, and
+the doc as written forbids it. Needs: the decision recorded (DECISIONS-
+NEEDED or #88, whose "exposure model itself is a decision" is exactly
+this), and deployment.md amended to "serve for the dashboard and metrics
+(no auth, never public); the member portal is Funnel-published, it has its
+own login and #32's two-factor" - or the Funnel reverted. Owner's call.
+
+# 2026-09-22 · Incident batch, item 7 (report only): what each hook runs
+
+The hooks do what CONTRIBUTING and 53de8f5 (#62, 2026-08-13) say. pre-commit
+(scripts/hooks/pre-commit, installed copy identical) runs `ruff check
+sentinel tests` and nothing else - milliseconds; its header records that
+#62 proposed the suite on pre-commit and the split was chosen because "a
+hook people disable protects nothing". pre-push runs ruff plus `pytest -q`,
+the full suite - measured today 293.6 s (item 3's push), 449.4 s and
+493.3 s (item 4's two pushes) for 1,728-1,736 tests. So pre-commit does
+NOT run the suite; the premise "each hook runs the full suite" is not what
+the hook files do. The "~4 minutes" in CONTRIBUTING is `health-check.sh
+--fast`; pre-push is documented as "over two minutes" in the hook section
+and "~9 minutes" by install-hooks.sh, and it is now five to eight.
+Where the suite DID run twice per item, over ten minutes, and what the
+watchdog saw: the session's own chain. For every item today the full
+`scripts/health-check.sh` ran (tests 437-730 s, probes 424-476 s, mutation
+239-341 s: 20-26 min) because every item touched sentinel/alerts/, which
+CONTRIBUTING's "Where the slow gates canonically run" says is when the
+full check is due locally; then the pre-push hook ran the same suite again
+(5-8 min); then push CI ran it a third time. The mutation gate also runs
+the selected tests as its baseline inside mutants/. None of that is
+duplication in the hooks; it is the documented division of labour -
+pre-push + push CI for the suite, scheduled CI for the slow gates, the
+local full check "when a change touches probe-covered code or detection
+behaviour" - executed in full, in series, per item. Memory pressure comes
+from the health check's tests gate and probes (8 worker copies of the
+tree) running while the harness holds its own state; the 13:55 kill of
+item 3's push was a bare `git push` outside tmux, and every push since
+has run inside tmux without loss. Original design, unchanged: 53de8f5's
+split (lint per commit, suite per push) and #86's placement of the slow
+gates in scheduled CI. Nothing changed; nothing recommended beyond
+choosing `--fast` locally when a change is outside the probe-covered code.
+
+# 2026-09-22 · Incident batch, item 6: the selection is complete by construction, and what the measurement found
+
+What landed: scripts/mutation-selection-excluded.txt - every test file
+outside scripts/mutation-check.sh's selection, one per line with a reason;
+tests/test_mutation_selection.py (6) - every file under tests/ is selected
+or excluded (a new file fails the build until classified), no file is
+both, every exclusion has a reason (>15 chars) and names a file that
+exists, every selected file exists, a file that imports a mutated module
+(sentinel.alerts/.detectors/.config) may not carry the default "imports
+nothing under the mutated paths" reason, the gate names unjudged mutants
+before the count check, and also_copy carries the repo paths tests read.
+The selection: 41 -> 80 files (every outside file importing a mutated
+module); 60 excluded with the default reason plus the guard itself.
+also_copy (additive to mutmut's tests/, setup.cfg, pyproject.toml): config,
+docs, scripts, docker-compose.yml, .env.example - 17 failures and one
+collection error among the 39 files inside mutants/ were all "No such
+file or directory" for those paths; with them copied, 484 passed. The
+gate's UNJUDGED block: every 🫥/⏰/🤔/🔇/🧙 line named with the marker's
+meaning, then the existing "selected N but only M ran" refusal - which
+ALREADY made an unjudged mutant fail the run (exit 2), proven 2026-09-08
+and on 84ddf00: the owner's "leaves the denominator" is true of the
+arithmetic, and the gate refused the arithmetic both times. What was
+missing was the name.
+The owner's measurement, score with and without the 39 files, over the
+existing population: 336/341 = 98% either way, the same five ledgered
+survivors (run 1, widened selection: EXIT 0). The number does not move.
+What the measurement found instead - the population is the narrow thing.
+scripts/classify_mutants.py's MUTANT_DEF is `^def (x_...)`: column zero and
+an underscore. mutmut names a METHOD `xǁClassǁmethod__mutmut_N` and
+indents it inside the class, so no method has ever been in the gate's
+population. Counted from the generated tree with an indentation-aware
+parser (scratchpad classify_mutants_new.py; the 341 module-level mutants
+are unchanged by it): 197 more decision-point mutants, 538 in all -
+ContactRouter 87, Escalator 47 (+2 _EscalationDetection), RulesConfig 16,
+WatchAlarms 15, OperatorAlerter 13, TelegramLinkWorker 8, ClickSend 5,
+EmailChannel 3, Twilio 1. Judged (runs 2 and 3, gate unchanged but for
+the classifier): current 41-file selection - 480 killed, 46 survived
+(41 methods + the 5 ledgered), 12 unjudged: 89% of 538, EXIT 2; widened
+80-file selection - 495 killed, 35 survived (30 methods), 8 unjudged
+(ContactRouter._emails_for_chat x3, TelegramLinkWorker x5): 92%, EXIT 2.
+The floor is 97%. So the widened selection kills 12 method decisions
+the old one could not (Escalator._live_escalations_in_window x4, _reach_*
+x3, check, _EscalationDetection.__init__, OperatorAlerter.page_1,
+RulesConfig._reject x2) and judges four more; it ships. The classifier
+fix does NOT ship in this item: with it the gate is red on main until 30
+decisions are pinned and 8 functions get a selected test, and ledgering
+them as "deliberate" would be false. Filed as #104 with the numbers,
+the survivor list and the two-line regex change; the owner orders it. One of the 30 was
+today's: ContactRouter._page_if_refused's `is None or audience !=
+customer` -> `and` survived because every test sent as the customer;
+tests/test_email_refused.py gains the secondary-audience case (9 tests).
+Survivor lists for both runs kept in this session's scratchpad
+(mut-run2-mutmut.log, mut-run3-mutmut.log) and in the issue.

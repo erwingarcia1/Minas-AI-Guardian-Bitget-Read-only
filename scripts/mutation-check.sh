@@ -159,6 +159,13 @@ command -v "$MUTMUT" >/dev/null 2>&1 || [ -x "$MUTMUT" ] || {
 # Keep this a plain list. It is a configparser multi-line value, so an indented
 # `#` comment is read as another test path, not as a comment.
 #
+# `also_copy` (2026-09-22): additive to mutmut's defaults (tests/, setup.cfg,
+# pyproject.toml). Tests that read the repo relative to the cwd -
+# config/rules.yaml, docs/data-retention.md, scripts/host/liveness.sh,
+# docker-compose.yml, .env.example - could not run inside mutants/: 17
+# failures and a collection error across the 39 files the selection
+# gained on 2026-09-22, every one a missing file. Copied, they pass.
+#
 # `only_mutate` (2026-08-26): mutants are GENERATED only for the scope the
 # gate scores. Everything else under sentinel/ is still copied - tests need
 # the whole package importable (quirk 1) - but copied plain, not mutated.
@@ -174,6 +181,12 @@ only_mutate=
     sentinel/detectors/*
     sentinel/alerts/*
     sentinel/config.py
+also_copy=
+    config
+    docs
+    scripts
+    docker-compose.yml
+    .env.example
 pytest_add_cli_args_test_selection=
     tests/test_detectors_phase2.py
     tests/test_detectors_withdrawal.py
@@ -216,6 +229,45 @@ pytest_add_cli_args_test_selection=
     tests/test_fleet_coverage.py
     tests/test_watching.py
     tests/test_email_refused.py
+    tests/test_account_notices.py
+    tests/test_account_overrides.py
+    tests/test_alert_triage.py
+    tests/test_config_defaults.py
+    tests/test_config_key_deprecation.py
+    tests/test_contact_email_normalization.py
+    tests/test_cycle_success_honesty.py
+    tests/test_db_concurrency.py
+    tests/test_disable_account.py
+    tests/test_drill.py
+    tests/test_env_setting.py
+    tests/test_erasure.py
+    tests/test_escalation_backlog.py
+    tests/test_escalation_reads_as_its_rule.py
+    tests/test_healthz.py
+    tests/test_heartbeat.py
+    tests/test_integration.py
+    tests/test_key_replacement.py
+    tests/test_liveness_gate.py
+    tests/test_member_status.py
+    tests/test_metric_labels.py
+    tests/test_no_live_traffic.py
+    tests/test_operator_page_sweep.py
+    tests/test_portal_acknowledge.py
+    tests/test_portal_activity.py
+    tests/test_portal_home_watch.py
+    tests/test_retention.py
+    tests/test_retention_disclosure.py
+    tests/test_retention_failure_visibility.py
+    tests/test_retention_interim.py
+    tests/test_rules_degraded_start.py
+    tests/test_rules_validation.py
+    tests/test_secondary_contact_welcome.py
+    tests/test_snooze.py
+    tests/test_telegram_env.py
+    tests/test_undated_fills.py
+    tests/test_untimestamped_alarm.py
+    tests/test_withdrawal_evidence.py
+    tests/test_withdrawal_no_reference_id.py
 runner=python -m pytest -x -q -p no:cacheprovider
 EOF
 trap 'rm -f setup.cfg' EXIT
@@ -354,6 +406,19 @@ fi
 # scripts/mutation-probe.py). A stale name from a regeneration, or a mutmut
 # version that quietly skips what it cannot parse, would otherwise raise the
 # score by shrinking the denominator.
+# The usual cause, twice on 2026-09-22: a mutant in a function that only a
+# test OUTSIDE the fixed selection exercises. mutmut marks it "no tests" (🫥)
+# and judges it against nothing - neither killed nor survived, so it leaves
+# the denominator and the score reads as if it were covered. Name them, so
+# the fix (select the test file, or write the test) is one line away, and
+# refuse: an unjudged mutant is not a passed mutant.
+{ tr '\r' '\n' < "$LOG" | grep -E "^(🫥|⏰|🤔|🔇|🧙) " || true; } | sort > /tmp/mutation-unjudged.txt
+if [ -s /tmp/mutation-unjudged.txt ]; then
+  echo "UNJUDGED ($(wc -l < /tmp/mutation-unjudged.txt)) - no selected test reached these mutants:" >&2
+  sed 's/^/  /' /tmp/mutation-unjudged.txt >&2
+  echo "🫥 = no selected test calls the function (add its test file to the selection in this" >&2
+  echo "script, or write the test); ⏰ timeout, 🤔 suspicious, 🔇 skipped, 🧙 caught by a type check." >&2
+fi
 if [ "$TOTAL" -ne "${#MUTANTS[@]}" ]; then
   echo "selected ${#MUTANTS[@]} mutants but only $TOTAL ran - the score would be" >&2
   echo "computed over a subset and read as if it covered all of them. Check $LOG." >&2

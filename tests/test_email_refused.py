@@ -103,6 +103,22 @@ def test_nothing_pages_for_a_routine_severity_or_a_dead_wire(db, monkeypatch, de
     assert pager.pages == []
 
 
+def test_a_refused_secondary_contact_email_is_not_the_customers_leg(db, monkeypatch):
+    """Audience is part of the decision: the escalator's copy to the
+    secondary contact refusing is recorded, not paged (found by the
+    method-aware mutation measurement of 2026-09-22: `or` -> `and` in the
+    guard survived because every test sent as the customer)."""
+    router = _router(db, monkeypatch)
+    monkeypatch.setattr("sentinel.alerts.contact.EmailChannel", _RefusingEmail)
+    pager = _Pager()
+    router._operator_alerter = pager
+    account_id = _account_with_phone(db)
+    det = _detection()
+    alert_id = _stored(db, account_id, det)
+    router.send(det, "acct-1", [EMAIL], [], account_id=account_id, alert_id=alert_id, audience="secondary")
+    assert pager.pages == []
+
+
 def test_the_page_reaches_a_channel_that_is_not_email(db, monkeypatch):
     """Through the real OperatorAlerter: the email leg refuses, Telegram accepts."""
     from sentinel.alerts.operator import OperatorAlerter

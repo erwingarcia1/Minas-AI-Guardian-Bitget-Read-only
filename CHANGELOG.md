@@ -79,6 +79,21 @@ container")._
 
 ### Changed
 
+- **The mutation gate's test selection is complete by construction, and an
+  unjudged mutant is named.** The gate runs a fixed list of test files, and
+  twice in one day a new test file landed outside it - its mutants were
+  either unjudged or survived unseen until someone noticed. Now every file
+  under `tests/` must be in the selection or in
+  `scripts/mutation-selection-excluded.txt` with a written reason, and a
+  test fails the build on one that is neither. The 39 files that import a
+  mutated module and were outside the selection are in it (80 files
+  selected, 60 excluded with reasons); the mutants copy carries the repo
+  files those tests read (`also_copy`), which is what had kept them out.
+  When a selected mutant reaches no selected test, the gate now prints its
+  name and the marker's meaning before refusing the run on the count, as it
+  already did. Measured: the score over the existing population is 98%
+  with either selection.
+
 - **The watched/unwatched decision lives in one place and reads every
   failure counter.** The dashboard's watch cell, the portal's member status
   and the engine's failed-poll check each read both counters on their own;
