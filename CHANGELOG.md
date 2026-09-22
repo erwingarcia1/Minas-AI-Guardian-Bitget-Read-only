@@ -43,6 +43,23 @@ container")._
   the page and decides. The page is sent once per incident, whatever the
   pager's cooldown.
 
+- **A refused customer alert email pages Minas on a channel that is not
+  email.** From 2026-09-21 23:41 the SMTP provider answered every send with
+  "550 You have reached your daily email sending quota" - operator pages
+  first, customer alert emails from 10:48 the next morning - and nothing
+  said so: the alarm had consumed the capacity it needed to alarm. The
+  existing no-delivery page did not fire because it counts the alert's
+  operator legs, where Telegram kept delivering; the customer's email leg
+  was recorded as failed and paged nobody. Now, when the provider REFUSES
+  (an SMTP 4xx/5xx reply - a quota, a hard bounce, a rejected sender; a
+  connection error is still one log line) a customer-audience email for a
+  CRITICAL or a coverage alert, Minas is paged at CRITICAL with the
+  provider's words in the evidence, once per refusal code per cooldown.
+  The page's own email leg fails the same way, which is why the CRITICAL
+  operator route carries Telegram and SMS. Remaining capacity is not
+  estimated: SMTP exposes none, and the evidence says so rather than
+  inventing a number.
+
 - **A withdrawal to a destination this account has withdrawn to before is
   a receipt, not a CRITICAL.** Measured 2026-09-08: 60 of the 119
   unacknowledged withdrawal CRITICALs were to addresses the same account
@@ -73,6 +90,13 @@ container")._
   completeness guard; the per-account decisions were not wrong.
 
 ### Fixed
+
+- **The liveness gate reports email DEAD when its last sends were refused,
+  not only when SMTP is unconfigured.** For twelve hours of quota refusals
+  the gate read "SMTP set; last accepted email <yesterday>" and called the
+  channel live. It now reads the newest five email delivery records and
+  declares the channel dead when every one of them failed, quoting the
+  provider's refusal; one accepted send among them keeps it live.
 
 - **The liveness gate no longer reports three settled decisions as dead
   mechanisms.** `config/liveness-holds.yaml` held only the drill account;

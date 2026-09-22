@@ -98,3 +98,17 @@ def smtp(host: str, port: int, *, timeout: float):
     to keep correct."""
     refuse_if_under_test("an SMTP connection", f"{host}:{port}")
     return smtplib.SMTP(host, port, timeout=timeout)
+
+
+def smtp_refusal_code(exc: BaseException) -> int | None:
+    """The SMTP reply code when the provider REFUSED the message; None for
+    anything else (a connection error, a timeout, a bad config). Lives here
+    because only this module may name smtplib: `SMTPResponseException`
+    subclasses carry `smtp_code`, and a recipients refusal carries a dict of
+    (code, message) per address, of which the highest is the verdict."""
+    if isinstance(exc, smtplib.SMTPResponseException):
+        return int(exc.smtp_code) if 400 <= int(exc.smtp_code) <= 599 else None
+    if isinstance(exc, smtplib.SMTPRecipientsRefused) and exc.recipients:
+        codes = [int(v[0]) for v in exc.recipients.values() if isinstance(v, tuple) and v]
+        return max(codes) if codes else None
+    return None

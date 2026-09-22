@@ -262,9 +262,24 @@ def _telegram(f: Facts):
     return LIVE, f"token set; last accepted Telegram delivery {last or 'none recorded yet'}"
 
 
+# How many consecutive refused sends make the email channel DEAD. Five: a
+# single bounce is one bad address; five in a row with no acceptance between
+# them is the provider refusing us (2026-09-21: "550 daily sending quota
+# reached" for twelve hours, every customer alert email lost, SMTP "live").
+SMTP_DEAD_AFTER_REFUSALS = 5
+
+
 def _smtp(f: Facts):
     if not f.env_set("SMTP_HOST", "SMTP_SENDER"):
         return DEAD, "SMTP_HOST/SMTP_SENDER unset: no email leaves this host"
+    recent = f.query("SELECT status, detail, created_at FROM deliveries WHERE channel = 'email' "
+                     "ORDER BY created_at DESC, id DESC LIMIT ?", SMTP_DEAD_AFTER_REFUSALS)
+    if recent and "__error__" not in recent[0] and len(recent) >= SMTP_DEAD_AFTER_REFUSALS \
+            and all(r["status"] == "failed" for r in recent):
+        detail = (recent[0].get("detail") or "")[:120]
+        return DEAD, (f"the last {SMTP_DEAD_AFTER_REFUSALS} email sends were refused (newest {recent[0]['created_at']}): "
+                      f"{detail} - the provider is refusing us; nothing here can say how much capacity remains, "
+                      "SMTP does not expose it")
     last = f.scalar("SELECT max(created_at) FROM deliveries WHERE channel = 'email' AND status = 'accepted'")
     return LIVE, f"SMTP set; last accepted email {last or 'none recorded yet'}"
 
@@ -310,7 +325,7 @@ ENTRIES: tuple[Entry, ...] = (
           "the token is set", ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID", "TELEGRAM_TEAM_CHAT_ID"), _telegram),
     Entry("smtp", "Email", "#20",
           "set SMTP_HOST, SMTP_PORT, SMTP_USERNAME, SMTP_PASSWORD, SMTP_SENDER, SMTP_RECIPIENTS in the host's .env",
-          "host and sender are set", ("SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_SENDER",
+          "host and sender are set AND the last sends were not all refused", ("SMTP_HOST", "SMTP_PORT", "SMTP_USERNAME", "SMTP_PASSWORD", "SMTP_SENDER",
                                       "SMTP_RECIPIENTS"), _smtp),
 )
 

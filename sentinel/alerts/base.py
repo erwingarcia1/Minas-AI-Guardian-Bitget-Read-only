@@ -98,6 +98,7 @@ RULE_ADVICE: dict[str, str | None] = {
     "coverage_failure_fleet": NO_ADVICE,
     "exchange_records_untimestamped": NO_ADVICE,
     "alert_delivered_to_nobody": NO_ADVICE,
+    "customer_email_refused": NO_ADVICE,
     "escalation_delivered_to_nobody": NO_ADVICE,
     "contact_channel_has_no_provider": NO_ADVICE,
     "alert_routing_fell_back_to_defaults": NO_ADVICE,

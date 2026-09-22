@@ -6534,3 +6534,51 @@ re-derive a product decision from the inputs the product uses
 (FAILURE_COUNTERS, not a remembered column) and print the inputs beside
 the verdict.
 
+
+Item 3's full check on 22c87e7: nine gates pass (tests 437 s, probes
+438 s, mutation 307 s, evidence .health-check-logs/20260922T141502Z-
+22c87e7); CI green (35737411240). The session that ran it was ended by the
+harness's low-memory watchdog before it could write this line; recorded by
+the next session from the log on disk.
+
+# 2026-09-22 · Incident batch, item 4: the alarm must not silently consume the capacity it needs to alarm
+
+The answer on alert_delivered_to_nobody: it did NOT fire, and could not.
+poller._page_if_undelivered reads alerts.delivered_to, which dispatch sets
+from the alert's GLOBAL legs - Minas's own routing (telegram, telegram_team,
+sms, email). Telegram kept accepting, so delivered_to > 0 and the page is
+skipped by design ("not when A channel failed"). The customer's email leg
+is sent afterwards by ContactRouter, which recorded each refusal as a
+deliveries row (status failed, detail "(550, b'You have reached your daily
+email sending quota.')") and, per the #58 sweep's decision, logged one
+warning. So the record knew and nobody was told - the same shape as
+item 3's audit, one level down. Had it fired, its email leg would have been
+refused too, and the CRITICAL route's Telegram/SMS legs would have carried
+it - which is what the new page relies on.
+What landed: net.smtp_refusal_code(exc) - the SMTP reply code when the
+provider refused the message (in sentinel/net.py because
+test_no_live_traffic lets only that module name smtplib; the first push
+was refused by that guard) (SMTPResponseException 4xx/5xx; a recipients
+refusal takes the highest code), None for a connection error or timeout.
+ContactRouter._page_if_refused: audience customer, severity CRITICAL or a
+coverage rule, a refusal code -> operator page customer_email_refused at
+CRITICAL, dedup_scope "smtp-refused:<code>" (a storm of refusals is one
+page per cooldown), evidence smtp_code/detail/rule/alert_id/recipients,
+message saying why it arrives on Telegram. A MEDIUM refusal or a dead wire
+still page nobody (#58 stands for those). RULE_ADVICE: NO_ADVICE.
+Liveness: SMTP_DEAD_AFTER_REFUSALS = 5; _smtp reads the newest five
+deliveries rows on the email channel (customer legs and operator-page
+legs alike) and is DEAD when all five failed, quoting the newest detail
+and stating that SMTP exposes no remaining-capacity figure - the brief's
+"say so plainly rather than inventing an estimate". One accepted row
+among the five keeps it LIVE. Tests (tests/test_email_refused.py, 8):
+the code mapping; a refused CRITICAL pages with the provider's words and
+the deliveries row is failed; a refused coverage alert pages; MEDIUM and a
+connection error do not; through the real OperatorAlerter with a refusing
+email leg and an accepting Telegram leg the page is delivered_to 1 and a
+second refusal inside the cooldown is not a second page; the gate's DEAD
+and LIVE shapes. Added to the mutation selection at the same time (the
+item 6 gap, closed by hand once more until item 6 lands).
+Remaining capacity: not surfaced. smtplib sees the reply to one send and
+nothing else; Resend's quota is visible only in its dashboard/API, Gmail's
+only as the 550 itself. The evidence says so.

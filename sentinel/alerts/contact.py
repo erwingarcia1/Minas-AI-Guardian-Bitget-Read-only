@@ -5,9 +5,10 @@ from datetime import datetime, timedelta, timezone
 
 from sentinel.alerts.base import AlertMessage
 from sentinel.alerts.email import EmailChannel
-from sentinel.alerts.meaning import preference_tier
+from sentinel.alerts.meaning import is_coverage_rule, preference_tier
 from sentinel.alerts.sms import build_sms_channel
 from sentinel.config import env_setting
+from sentinel.net import smtp_refusal_code
 
 logger = logging.getLogger("sentinel.alerts.contact")
 
@@ -273,16 +274,18 @@ class ContactRouter:
                     for email in emails_for_email:
                         self._record("email", email, "accepted", provider="smtp")
                 except Exception as exc:  # noqa: BLE001 - delivery failure must not stall detection
-                    # Stays a log line, decided in the #58 sweep. One bounced
-                    # email is noise - a wrong address, a full mailbox, a
-                    # greylisting retry. A *rising rate* is a broken SMTP
-                    # config, and that is metric-and-alarm shaped, not
-                    # page-shaped. Do not re-litigate this without the metric.
-                    # It IS recorded per recipient now (#103 item 2), which is
-                    # what makes that rate measurable at all.
+                    # A connection error stays a log line (the #58 sweep: one
+                    # flaky send is noise). A REFUSAL is different (2026-09-22):
+                    # the provider answered "550 daily sending quota reached"
+                    # to every customer alert for twelve hours and nothing
+                    # said so - the alarm had consumed the capacity it needed
+                    # to alarm. A refused CUSTOMER email on an alert that must
+                    # reach a human now pages Minas, and the page's own email
+                    # leg failing is why the operator routing has Telegram.
                     logger.warning("per-account email to %s failed: %s", emails, exc)
                     for email in emails_for_email:
                         self._record("email", email, "failed", provider="smtp", detail=str(exc))
+                    self._page_if_refused(exc, detection, account_label, alert_id, emails_for_email)
 
         # Guarded on its own like every leg: a Telegram outage must cost
         # neither the email above nor the SMS below.
@@ -293,6 +296,36 @@ class ContactRouter:
 
         if phones:
             self._send_sms(detection, alert, account_label, phones, account_id, alert_id, auditable)
+
+    def _page_if_refused(self, exc, detection, account_label, alert_id, recipients) -> None:
+        """The provider REFUSED the message (an SMTP 4xx/5xx reply - a quota,
+        a hard bounce, a rejected sender), the audience is the customer, and
+        the alert is one that must reach a human now (CRITICAL, or a coverage
+        rule). Then Minas is paged at CRITICAL, deduplicated on the refusal
+        so a storm of refusals is one page per cooldown, with the provider's
+        words in the evidence. Nothing here estimates remaining capacity:
+        SMTP exposes none, and a guess would be a lie in the evidence."""
+        if self._operator_alerter is None or self._leg.get("audience") != "customer":
+            return
+        code = smtp_refusal_code(exc)
+        if code is None:
+            return
+        severity = getattr(detection, "severity", "")
+        if severity != "CRITICAL" and not is_coverage_rule(getattr(detection, "rule", None)):
+            return
+        try:
+            self._operator_alerter.page(
+                rule="customer_email_refused", severity="CRITICAL",
+                message=(f"The email provider REFUSED a {severity} alert ({detection.rule}) to the customer of "
+                         f"{account_label} with SMTP {code}: {str(exc)[:160]}. Customer alert emails are not "
+                         "being delivered until this clears - check the provider's quota or the sender's standing. "
+                         "This page reaches you on Telegram because its own email leg fails the same way."),
+                evidence={"smtp_code": code, "detail": str(exc)[:300], "rule": detection.rule,
+                          "severity": severity, "alert_id": alert_id, "recipients": len(recipients)},
+                dedup_scope=f"smtp-refused:{code}",
+            )
+        except Exception as page_exc:  # noqa: BLE001 - the page must not cost the SMS leg below
+            logger.error("could not page the refused customer email: %s", page_exc)
 
     def _route_receipt(self, emails, phones, account_id, alert_id, detection):
         """A receipt (a withdrawal to a destination this account has
