@@ -229,6 +229,7 @@ pytest_add_cli_args_test_selection=
     tests/test_fleet_coverage.py
     tests/test_watching.py
     tests/test_email_refused.py
+    tests/test_contact_router_decisions.py
     tests/test_account_notices.py
     tests/test_account_overrides.py
     tests/test_alert_triage.py

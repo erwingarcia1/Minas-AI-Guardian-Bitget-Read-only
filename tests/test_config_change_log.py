@@ -273,3 +273,41 @@ def test_a_section_that_appears_or_disappears_is_reported_per_setting():
         ("alerting.sms_cooldown_minutes", "30", None)]
     assert settings_diff({}, {"alerting": {"sms_cooldown_minutes": 30}}) == [
         ("alerting.sms_cooldown_minutes", None, "30")]
+
+
+# --- #104 batch D: the loader's three decisions, pinned -------------------------
+
+def test_a_config_that_was_never_rejected_reports_no_rejection_time(rules_path):
+    rules = RulesConfig(rules_path)
+    assert rules.is_valid is True
+    assert rules.rejected_at is None, "None, not a falsy stand-in (CONTRIBUTING: falsy sentinels)"
+
+
+def test_valid_again_is_logged_only_after_a_rejection(rules_path, caplog):
+    import logging
+
+    with caplog.at_level(logging.WARNING, logger="sentinel.config"):
+        rules = RulesConfig(rules_path)
+    assert not [r for r in caplog.records if "valid again" in r.getMessage()], "a first load is not a recovery"
+
+    rules_path.write_text("polling:\n  fast_loop_seconds: not-a-number\n")
+    rules.reload()
+    assert rules.is_valid is False and rules.rejected_at is not None
+    rules_path.write_text(BASE.replace("fast_loop_seconds: 45", "fast_loop_seconds: 60"))
+    with caplog.at_level(logging.WARNING, logger="sentinel.config"):
+        rules.reload()
+    assert len([r for r in caplog.records if "valid again" in r.getMessage()]) == 1
+    assert rules.rejected_at is None
+
+
+def test_a_change_with_no_recorder_is_applied_without_trying_to_record_it(rules_path, caplog):
+    """`changes and on_change is not None`: no recorder means no call, not a
+    call on None caught and logged as a failed record."""
+    import logging
+
+    rules = RulesConfig(rules_path)
+    rules_path.write_text(BASE.replace("fast_loop_seconds: 45", "fast_loop_seconds: 90"))
+    with caplog.at_level(logging.ERROR, logger="sentinel.config"):
+        rules.reload()
+    assert rules.get_int("polling", "fast_loop_seconds") == 90
+    assert not [r for r in caplog.records if "failed to record" in r.getMessage()], caplog.text

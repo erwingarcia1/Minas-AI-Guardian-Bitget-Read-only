@@ -146,3 +146,53 @@ def test_no_alerter_means_no_construction_not_a_crash(db, cipher):
                     metrics=Metrics(registry=CollectorRegistry()))
     assert engine._watch_alarms is None
     engine._scheduler_tick()  # must not raise
+
+
+# --- #104 batch C: the alarm's decisions, pinned -------------------------------
+
+def _alarms(db, alerter):
+    from sentinel.config import RulesConfig
+    from tests.test_operator_alerting import rules_yaml
+
+    return WatchAlarms(db, RulesConfig(rules_yaml()), alerter)
+
+
+def test_the_fleet_is_behind_exactly_at_the_window_not_one_second_after(db, alerter):
+    """`freshest >= behind_after`: the freshest success ageing INTO the
+    window is the page, not one second past it."""
+    alarms = _alarms(db, alerter)
+    behind_after = alarms._threshold("checks_behind_seconds", 600)
+    _account(db, "only", last_ok=NOW - timedelta(seconds=behind_after))
+    alarms.evaluate(now=NOW)
+    assert [p["rule"] for p in alerter.pages] == ["checks_behind_schedule"]
+
+
+def test_an_account_is_unwatchable_exactly_at_the_window(db, alerter):
+    """`age < unwatchable_after` is fine; AT the window it is paged."""
+    alarms = _alarms(db, alerter)
+    unwatchable_after = alarms._threshold("unwatchable_seconds", 1800)
+    _account(db, "healthy", last_ok=NOW - timedelta(seconds=30))
+    _account(db, "edge", last_ok=NOW - timedelta(seconds=unwatchable_after))
+    alarms.evaluate(now=NOW)
+    assert [(p["rule"], p["evidence"]["account_label"]) for p in alerter.pages] == [("account_unwatchable_too_long", "edge")]
+
+
+def test_a_healthy_account_ahead_of_a_dark_one_does_not_end_the_sweep(db, alerter):
+    """`continue`, not `break`: two healthy rows come first and the dark
+    third is still paged."""
+    _account(db, "healthy-1", last_ok=NOW - timedelta(seconds=30))
+    _account(db, "healthy-2", last_ok=NOW - timedelta(seconds=40))
+    _account(db, "dark", last_ok=NOW - timedelta(hours=3), failures=9)
+    _alarms(db, alerter).evaluate(now=NOW)
+    assert [p["evidence"]["account_label"] for p in alerter.pages] == ["dark"]
+
+
+def test_a_malformed_last_success_falls_back_to_onboarding_not_to_unknown(db, alerter):
+    """`_age` tries the fallback after a malformed candidate (`continue`);
+    a `break` would age the account as unknown and never page it."""
+    _account(db, "healthy", last_ok=NOW - timedelta(seconds=30))
+    broken = _account(db, "broken-stamp", last_ok=None, onboarded=NOW - timedelta(hours=2))
+    with db.cursor() as cur:
+        cur.execute("UPDATE poll_state SET last_success_at = 'not-a-timestamp' WHERE account_id = ?", (broken,))
+    _alarms(db, alerter).evaluate(now=NOW)
+    assert [p["evidence"]["account_label"] for p in alerter.pages] == ["broken-stamp"]

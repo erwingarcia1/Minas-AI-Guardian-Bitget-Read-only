@@ -125,3 +125,30 @@ def test_twilio_needs_all_three_credentials(monkeypatch, missing):
     monkeypatch.delenv(missing, raising=False)
 
     assert build_sms_channel(["+1555"]) is None
+
+
+# --- #104 batch D: the receipt's two decisions, pinned --------------------------
+
+def test_a_receipt_falls_back_to_the_requested_number_when_the_provider_echoes_none():
+    with patch("sentinel.net.post") as post:
+        post.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"response_code": "SUCCESS",
+                          "data": {"messages": [{"status": "SUCCESS", "message_id": "m1"},
+                                                {"status": "SUCCESS", "to": "+16470000002", "message_id": "m2"}]}},
+        )
+        receipts = ClickSendSmsChannel("u", "k", None, ["+16470000001", "+16470000002"]).send(_alert())
+    assert [r["to"] for r in receipts] == ["+16470000001", "+16470000002"]
+    assert [r["provider_message_id"] for r in receipts] == ["m1", "m2"]
+
+
+def test_fewer_results_than_numbers_still_yields_one_receipt_per_number():
+    """`i < len(results)`: the second number has no result row and gets an
+    empty one, never an IndexError."""
+    with patch("sentinel.net.post") as post:
+        post.return_value = MagicMock(
+            status_code=200,
+            json=lambda: {"response_code": "SUCCESS", "data": {"messages": [{"status": "SUCCESS", "message_id": "m1"}]}},
+        )
+        receipts = ClickSendSmsChannel("u", "k", None, ["+16470000001", "+16470000002"]).send(_alert())
+    assert [(r["to"], r["provider_message_id"]) for r in receipts] == [("+16470000001", "m1"), ("+16470000002", None)]

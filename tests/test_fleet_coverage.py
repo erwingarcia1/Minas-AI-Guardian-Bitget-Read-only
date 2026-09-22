@@ -192,3 +192,17 @@ def test_an_unparsable_start_is_skipped_not_the_end_of_the_list(db):
         _first_notice(db, a, T0 + timedelta(seconds=i))
     incident = fleet_incident(db, rules)
     assert incident and sorted(incident["labels"]) == ["good-0", "good-1", "good-2"]
+
+
+def test_a_dark_stranger_listed_after_the_members_is_still_paged_on_its_own(db):
+    """#104 batch C: the member skip is `continue`, not `break` - a tenth
+    account that is dark for its own reason, rows after the nine, still
+    gets its per-account page while the nine share the fleet page."""
+    _nine(db)
+    alerter = _Recorder()
+    alarms = WatchAlarms(db, RulesConfig("config/rules.yaml"), alerter)
+    _account(db, "fine", last_ok=T0 + timedelta(hours=1))
+    _account(db, "stranger", last_ok=T0 - timedelta(hours=5), failures=40)
+    alarms.evaluate(now=T0 + timedelta(hours=1))
+    assert len(_pages(alerter, FLEET_RULE)) == 1
+    assert [p["evidence"]["account_label"] for p in _pages(alerter, "account_unwatchable_too_long")] == ["stranger"]

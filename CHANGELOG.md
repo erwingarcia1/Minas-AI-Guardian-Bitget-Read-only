@@ -84,7 +84,14 @@ container")._
   edge in both comparisons, the live-window edge and its two skips, a
   customer with a phone and no email, the secondary-contact failure log
   line, and the audience of a backlog record - nine decisions, six tests,
-  eight ledger rows gone; 510 of 535, floor 92 to 93.
+  eight ledger rows gone; 510 of 535, floor 92 to 93. Batches B and C, the
+  contact router and the operator pager with the watch alarms: the two
+  skips in the preference loops, the SMS record's guard and its leg, a
+  router with no database, the SMS cooldown edge, the pager's cooldown
+  edge and label and its undeliverable log line, the alarm's two edges and
+  its skips, and the fleet member skip - fifteen decisions, thirteen
+  tests, twelve rows gone and one argued equivalent; 528 of 535, floor 93
+  to 96.
 
 - **The mutation gate measures class methods, and its floor is the honest
   number (#104).** The classifier matched only column-zero functions, so no

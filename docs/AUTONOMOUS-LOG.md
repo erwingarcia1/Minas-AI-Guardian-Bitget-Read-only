@@ -6828,3 +6828,30 @@ secondary escalation logs "escalation to the secondary contact failed:
 customer and the other as secondary. Eight `unpinned` rows retired.
 Gate --check: 535 selected, 510 killed, 95%, ledger 22 accepted, floor
 92 -> 93 by the ratchet, rc 0.
+
+# 2026-09-22 · #104 batches B (contact) and C (operator + watch alarms): fifteen decisions pinned, floor 96
+
+Measured together in one gate run. B: tests/test_contact_router_decisions.py
+(8, added to the selection): a held first address does not stop the
+second (`continue` in the email loop); an unowned first phone does not stop
+the owned second, and a held owner's phone does not stop the next (both
+`continue`s in the phone loop - the first run left mutant 86 surviving,
+the held-owner case was missing); an SMS record with no account is not
+written (_record_sms's guard); the record carries the leg's audience and
+kind (`or {}`); a router with no db sends no Telegram copy and logs
+nothing (`db is None or not emails`); the SMS cooldown edge is open under
+a fixed clock (`<`); a router with no db still texts and never reads
+preferences (`auditable = ... and ...`). _phone_owners' guard is argued
+EQUIVALENT (a query for account None finds no row and returns {}) and its
+row - one fingerprint with _record_sms's killed twin - is re-kinded, not
+retired. C: tests/test_operator_alerting.py (3) - the cooldown edge is
+open (a page exactly one cooldown later goes out), the label names the
+account only when there is one, only an undeliverable page logs "no
+deliverable channel" (a distinct rule so the cooldown does not hide it);
+tests/test_watch_alarms.py (4) - behind exactly at the window, unwatchable
+exactly at the window, healthy rows ahead of a dark one do not end the
+sweep, a malformed last_success falls back to onboarding (the `continue`
+inside _age - the third site of that fingerprint); tests/test_fleet_
+coverage.py (1) - a dark stranger listed after the nine members still
+gets its own page. Twelve `unpinned` rows retired. Gate --check: 535,
+528 killed, 98%, ledger 11 accepted, floor 93 -> 96 by the ratchet, rc 0.

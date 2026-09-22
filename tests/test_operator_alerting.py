@@ -11,6 +11,7 @@ about our problem.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -283,3 +284,39 @@ def test_operator_alerting_config_is_accepted_by_the_schema():
     rules = RulesConfig(rules_yaml())
     assert rules.is_valid
     assert rules.get("operator_alerting", "routing", "CRITICAL")
+
+
+# --- #104 batch C: the pager's decisions, pinned -------------------------------
+
+def test_the_cooldown_edge_is_open_a_page_exactly_one_cooldown_later_goes_out(db, alerter, channels, monkeypatch):
+    """`now - sent_at < cooldown` suppresses; AT the cooldown the page fires."""
+    from sentinel.alerts import operator as op
+
+    t0 = datetime(2026, 9, 22, 12, 0, tzinfo=timezone.utc)
+    monkeypatch.setattr(op, "_now", lambda: t0)
+    assert alerter.page(rule="scheduler_behind", severity="CRITICAL", message="behind") is not None
+    monkeypatch.setattr(op, "_now", lambda: t0 + alerter._cooldown("CRITICAL"))
+    assert alerter.page(rule="scheduler_behind", severity="CRITICAL", message="behind") is not None
+    assert len(channels["CRITICAL"][0].sent) == 2
+
+
+def test_the_label_names_the_account_a_page_is_about_and_only_then(db, alerter, channels):
+    account_id = _account(db)
+    alerter.page(rule="poll_failures", severity="HIGH", message="m", account_id=account_id)
+    alerter.page(rule="scheduler_behind", severity="HIGH", message="m")
+    labels = [a.account_label for a in channels["HIGH"][0].sent]
+    assert labels == [f"MINAS-OPS · account {account_id}", "MINAS-OPS"]
+
+
+def test_only_an_undeliverable_page_is_logged_as_having_no_channel(db, alerter, tmp_path, caplog):
+    import logging
+
+    with caplog.at_level(logging.ERROR, logger="sentinel.alerts.operator"):
+        alerter.page(rule="scheduler_behind", severity="CRITICAL", message="delivered fine")
+    assert not [r for r in caplog.records if "no deliverable channel" in r.getMessage()]
+
+    rules_path = tmp_path / "rules.yaml"
+    rules_path.write_text("operator_alerting:\n  routing:\n    CRITICAL: [telegram]\n")
+    with caplog.at_level(logging.ERROR, logger="sentinel.alerts.operator"):
+        OperatorAlerter(db, {}, RulesConfig(rules_path)).page(rule="backup_missing", severity="CRITICAL", message="lost")
+    assert [r for r in caplog.records if "no deliverable channel" in r.getMessage() and "lost" in r.getMessage()]
