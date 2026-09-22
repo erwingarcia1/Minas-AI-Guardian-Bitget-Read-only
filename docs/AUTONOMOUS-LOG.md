@@ -6870,3 +6870,11 @@ killed, 98%, ledger 7 accepted (the five founding equivalents plus the
 two argued today), floor 96, rc 0. Batches A-D: 29 unpinned mutants in 25
 rows -> 0 rows in 0; 501 -> 528 killed; floor 92 -> 96 by the ratchet,
 never by hand after the one reset.
+
+The batches' full check on e5e8a05 (A dd1531c, B+C 03bac05, D e5e8a05): nine
+gates pass (ruff=0s tests=349s coverage=1s pip-audit=26s issue-status=4s scheduled=3s release=1s design-guard=253s mutation=252s ; mutation 528/535, ledger 7, floor 96; evidence .health-check-
+logs/20260922T210553Z-e5e8a05); CI green (35784475154). Tree clean, no
+tmux sessions. #104 stays open for the fingerprint's missing function
+name only. Ready for the owner's cut once the nine allowlists are in:
+`! scripts/release.sh 1.13.0` (MINOR: a new operator page rule and a new
+liveness verdict shape); [Unreleased] carries item 4's live fix.
