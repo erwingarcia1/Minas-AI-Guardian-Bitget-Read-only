@@ -79,6 +79,13 @@ container")._
 
 ### Changed
 
+- **The unpinned method decisions are being retired in named batches, the
+  floor climbing behind each (#104).** Batch A, the escalator: the stale
+  edge in both comparisons, the live-window edge and its two skips, a
+  customer with a phone and no email, the secondary-contact failure log
+  line, and the audience of a backlog record - nine decisions, six tests,
+  eight ledger rows gone; 510 of 535, floor 92 to 93.
+
 - **The mutation gate measures class methods, and its floor is the honest
   number (#104).** The classifier matched only column-zero functions, so no
   method - the contact router, the escalator, the operator pager, the watch

@@ -6813,3 +6813,18 @@ The --check run on the working tree: 535 selected, 535 ran, 501 killed,
 (escalation) - eight ledger rows, nine decisions - then B, C, D, the
 floor climbing behind each; and the fingerprint's missing function name
 (#104 comment) before the first pair is split.
+
+# 2026-09-22 · #104 batch A (escalation): nine decisions pinned, floor 93
+
+tests/test_escalation_backlog.py gains six tests under a fixed clock
+(esc_module.datetime patched): an alert exactly at the stale edge is live
+(pins `<` backlog and `>=` live in check); a live escalation is one
+younger than the stale window, not equal (`<` in _live_escalations_in_
+window); a HIGH row and an unparseable row ahead of the live CRITICAL do
+not end the count (both `continue`s); a customer with a phone and no
+email is reached (`not any(emails) and not any(phones)`); a failed
+secondary escalation logs "escalation to the secondary contact failed:
+<cause>" (both log-line mutants); a backlog record names the primary as
+customer and the other as secondary. Eight `unpinned` rows retired.
+Gate --check: 535 selected, 510 killed, 95%, ledger 22 accepted, floor
+92 -> 93 by the ratchet, rc 0.

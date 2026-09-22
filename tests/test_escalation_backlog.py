@@ -160,3 +160,113 @@ def test_a_reported_backlog_does_not_count_against_the_customers_burst_bound(db)
     assert [c["rule"] for c in primary] == ["ESCALATION-unacknowledged: withdrawal_initiated"]
     assert len(secondary) == 1
     assert _deliveries(db, status="suppressed", rule="withdrawal_initiated") == []
+
+
+# --- #104 batch A: the escalator's decisions, pinned ---------------------------
+# Nine method decisions the mutation gate had never measured (the population
+# excluded class methods until 2026-09-22). Each test below kills one or more
+# of the eight `unpinned` ledger rows retired with it.
+
+import logging  # noqa: E402
+
+from sentinel.alerts import escalation as esc_module  # noqa: E402
+from tests.test_escalation_reach import _stale_critical  # noqa: E402
+
+FIXED_NOW = datetime(2026, 9, 22, 12, 0, 0, tzinfo=timezone.utc)
+
+
+class _FixedClock(datetime):
+    @classmethod
+    def now(cls, tz=None):
+        return FIXED_NOW
+
+
+def _alert_at(db, account_id, sent_at, *, rule="withdrawal_initiated", severity="CRITICAL", key=None,
+              escalated_at=None):
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, evidence_json, "
+            "confidence, sent_at, escalated_at) VALUES (?, ?, ?, ?, 'm', '{}', 'high', ?, ?)",
+            (account_id, rule, severity, key or f"k{sent_at}{escalated_at}", sent_at, escalated_at),
+        )
+        return cur.lastrowid
+
+
+def test_an_alert_exactly_at_the_stale_edge_is_live_not_backlog(db, monkeypatch):
+    """`sent_at < cutoff` is backlog and `>= cutoff` is live: the instant ON
+    the cutoff escalates. Pins both comparisons in check()."""
+    monkeypatch.setattr(esc_module, "datetime", _FixedClock)
+    account_id = _account(db, alert_email="primary@example.com")
+    _alert_at(db, account_id, (FIXED_NOW - timedelta(hours=4)).isoformat())
+    router, pager = SpyRouter(), SpyAlerter()
+    escalated = Escalator([Recording()], unacknowledged_minutes=15, operator_alerter=pager,
+                          contact_router=router, stale_after_hours=4).check(db)
+    assert escalated == 1 and len(router.calls) == 1
+    assert [c["rule"] for c in pager.calls if c["rule"] == "escalation_backlog"] == []
+
+
+def test_a_live_escalation_is_one_younger_than_the_stale_window_not_equal_to_it(db):
+    """`age_at_escalation < stale_after`: an escalation exactly four hours
+    after its alert is the backlog shape, not a live one, so it does not
+    count against the customer's burst bound."""
+    account_id = _account(db, alert_email="primary@example.com")
+    sent = FIXED_NOW - timedelta(hours=4, minutes=1)
+    _alert_at(db, account_id, sent.isoformat(), escalated_at=(sent + timedelta(hours=4)).isoformat(), key="edge")
+    _alert_at(db, account_id, (FIXED_NOW - timedelta(minutes=30)).isoformat(),
+              escalated_at=(FIXED_NOW - timedelta(minutes=1)).isoformat(), key="young")
+    esc = Escalator([Recording()], unacknowledged_minutes=15, stale_after_hours=4, customer_burst_window_minutes=60)
+    assert esc._live_escalations_in_window(db, account_id, FIXED_NOW, customer_path_only=True) == 1
+
+
+def test_a_skipped_row_ahead_of_a_live_one_does_not_end_the_count(db):
+    """`continue`, not `break`: a HIGH row (outside the customer path) and an
+    unparseable row each come BEFORE the live CRITICAL, and it still counts."""
+    account_id = _account(db, alert_email="primary@example.com")
+    recent = (FIXED_NOW - timedelta(minutes=1)).isoformat()
+    _alert_at(db, account_id, (FIXED_NOW - timedelta(minutes=30)).isoformat(), severity="HIGH",
+              rule="new_api_key", escalated_at=recent, key="high-first")
+    _alert_at(db, account_id, "not-a-timestamp", escalated_at=recent, key="broken-second")
+    _alert_at(db, account_id, (FIXED_NOW - timedelta(minutes=20)).isoformat(), escalated_at=recent, key="live-last")
+    esc = Escalator([Recording()], unacknowledged_minutes=15, customer_burst_window_minutes=60)
+    assert esc._live_escalations_in_window(db, account_id, FIXED_NOW, customer_path_only=True) == 1
+    assert esc._live_escalations_in_window(db, account_id, FIXED_NOW, customer_path_only=False) == 2
+
+
+def test_a_customer_with_a_phone_and_no_email_is_still_reached(db):
+    """`not any(emails) and not any(phones)`: only BOTH absent is silence."""
+    account_id = _account(db, alert_phone="+15550001")
+    _stale_critical(db, account_id)
+    router = SpyRouter()
+    Escalator([Recording()], unacknowledged_minutes=15, contact_router=router).check(db)
+    primary = [c for c in router.calls if c["phones"] == ["+15550001"]]
+    assert len(primary) == 1 and primary[0]["emails"] == [None]
+
+
+def test_a_failed_secondary_escalation_is_logged_with_its_cause(db, caplog):
+    """The log line is the only trace of a lost escalation to the emergency
+    contact: it names what failed and why, in that shape."""
+    account_id = _account(db, alert_email_secondary="sister@example.com")
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, evidence_json, confidence, sent_at) "
+            "VALUES (?, 'new_api_key', 'HIGH', 'h', 'm', '{}', 'high', ?)",
+            (account_id, (datetime.now(timezone.utc) - timedelta(minutes=90)).isoformat()))
+
+    class Exploding:
+        def send(self, *a, **k):
+            raise RuntimeError("smtp is down")
+
+    with caplog.at_level(logging.ERROR, logger="sentinel.escalation"):
+        escalated = Escalator([Recording()], unacknowledged_minutes=15, contact_router=Exploding()).check(db)
+    assert escalated == 1
+    messages = [r.getMessage() for r in caplog.records]
+    assert "escalation to the secondary contact failed: smtp is down" in messages, messages
+
+
+def test_a_backlog_record_names_the_primary_as_customer_and_the_other_as_secondary(db):
+    account_id = _account(db, alert_email="paula@example.com", alert_email_secondary="sister@example.com")
+    _alert(db, account_id, age=timedelta(weeks=5), key="old")
+    Escalator([Recording()], unacknowledged_minutes=15, operator_alerter=SpyAlerter(),
+              contact_router=SpyRouter()).check(db)
+    by_recipient = {d["recipient"]: d["audience"] for d in _deliveries(db, status="suppressed", kind="escalation")}
+    assert by_recipient == {"paula@example.com": "customer", "sister@example.com": "secondary"}
