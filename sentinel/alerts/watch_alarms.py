@@ -30,6 +30,7 @@ import logging
 from datetime import datetime, timezone
 
 from sentinel.db import Database
+from sentinel.watching import FAILURE_COUNTERS, counter, counter_columns_sql
 
 logger = logging.getLogger("sentinel.alerts.watch_alarms")
 
@@ -55,8 +56,7 @@ class WatchAlarms:
 
         with self._db.cursor() as cur:
             cur.execute(
-                "SELECT a.id, a.label, a.onboarded_at, p.last_success_at, "
-                "p.consecutive_failures, p.consecutive_auth_failures "
+                f"SELECT a.id, a.label, a.onboarded_at, p.last_success_at, {counter_columns_sql('p')} "
                 "FROM accounts a LEFT JOIN poll_state p ON p.account_id = a.id "
                 "WHERE a.status = 'active'")
             rows = cur.fetchall()
@@ -120,13 +120,12 @@ class WatchAlarms:
                     f"{row['label']} has not completed a check in {int(age // 60)} minutes "
                     f"(window: {int(unwatchable_after // 60)}m) while other accounts are "
                     f"checking normally - the fault is specific to this account. "
-                    f"Failures: {row['consecutive_failures'] or 0} consecutive, "
-                    f"{row['consecutive_auth_failures'] or 0} auth."
+                    f"Failures: {counter(row, 'consecutive_failures')} consecutive, "
+                    f"{counter(row, 'consecutive_auth_failures')} auth."
                 ),
                 evidence={"account_label": row["label"],
                           "age_seconds": int(age),
-                          "consecutive_failures": int(row["consecutive_failures"] or 0),
-                          "consecutive_auth_failures": int(row["consecutive_auth_failures"] or 0)},
+                          **{name: counter(row, name) for name in FAILURE_COUNTERS}},
                 account_id=int(row["id"]),
                 dedup_scope=f"unwatchable:{row['label']}",
             )

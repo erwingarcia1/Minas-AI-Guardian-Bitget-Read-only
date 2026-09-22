@@ -35,6 +35,7 @@ from sentinel.rules_schema import default_for
 from sentinel.snooze import active_snoozes_for_accounts, snooze_alert, snooze_choices
 from sentinel.twofactor import MEMBER as TWOFACTOR_MEMBER
 from sentinel.twofactor import check_second_factor
+from sentinel.watching import counter, counter_columns_sql
 
 logger = logging.getLogger("sentinel.portal")
 
@@ -271,7 +272,7 @@ def member_login_requires_code(db: Database, email: str) -> bool:
     return is_enabled(db, MEMBER, normalize_email(email))
 
 
-_ACCOUNT_COLUMNS = ("SELECT a.*, p.last_success_at, p.consecutive_failures, p.consecutive_auth_failures "
+_ACCOUNT_COLUMNS = (f"SELECT a.*, p.last_success_at, {counter_columns_sql('p')} "
                     "FROM accounts a LEFT JOIN poll_state p ON p.account_id = a.id ")
 
 
@@ -1795,7 +1796,7 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
 
         label = display_label(r)
         fresh = age is not None and age < window and r["status"] == "active"
-        auth_failing = (r["consecutive_auth_failures"] or 0) > 0
+        auth_failing = counter(r, "consecutive_auth_failures") > 0
 
         # Ordered by what the customer can do about it, with one rule above
         # that (#83): CURRENT STATE BEATS STALE COUNTERS. Only `active`

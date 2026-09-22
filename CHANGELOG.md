@@ -60,6 +60,18 @@ container")._
   escalates. `withdrawal_to_unseen_address`, `withdrawal_burst` and every
   other rule are untouched.
 
+### Changed
+
+- **The watched/unwatched decision lives in one place and reads every
+  failure counter.** The dashboard's watch cell, the portal's member status
+  and the engine's failed-poll check each read both counters on their own;
+  one summary line, the dashboard's headline health percentage, read only
+  `consecutive_failures`. All of them now go through `sentinel/watching.py`,
+  which enumerates every failure counter on poll_state, and a test compares
+  that list to the table's actual columns - a counter added to the schema
+  and consulted by nothing fails the build. A deduplication plus a
+  completeness guard; the per-account decisions were not wrong.
+
 ### Fixed
 
 - **The liveness gate no longer reports three settled decisions as dead

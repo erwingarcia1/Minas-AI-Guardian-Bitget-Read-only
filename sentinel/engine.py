@@ -16,6 +16,7 @@ from sentinel.poller import AccountPoller
 from sentinel.ratelimit import RateLimiters
 from sentinel.retention import prune_all, table_counts
 from sentinel.rules_schema import default_for
+from sentinel.watching import failures_total_sql
 
 logger = logging.getLogger("sentinel.engine")
 
@@ -449,7 +450,7 @@ class Engine:
     def _consecutive_failures(self, account_id: int) -> int:
         with self._db.cursor() as cur:
             cur.execute(
-                "SELECT consecutive_failures + consecutive_auth_failures AS total "
+                f"SELECT {failures_total_sql('poll_state')} AS total "
                 "FROM poll_state WHERE account_id = ?",
                 (account_id,),
             )

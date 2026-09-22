@@ -6505,3 +6505,32 @@ tie-break between equal clusters (> vs >=), and a malformed start ending
 the loop (continue vs break) - each pinned with a test. Gate alone:
 5 survivors, all ledgered, rc 0. CI on 84ddf00 green (35729145260).
 
+# 2026-09-22 · Incident batch, item 3: one watched decision, every counter, and a lesson about the instrument
+
+Not a product defect, and recorded as such: the owner's premise that "the
+unwatched determination reads consecutive_failures, which stays at zero on
+an auth failure" came from THIS SESSION'S audit script (audit_full.sh, A7),
+which flagged unwatched on one counter and printed nine accounts at 61-78
+refused authentications without the flag - while the same rows showed
+since_last_success 16.2 h. The product's per-account decisions read both
+counters throughout: dashboard._watch_cell/_problem_state (sum),
+portal.member_status (age + auth > 0), engine._consecutive_failures (sum),
+watch_alarms (age). One summary line read one: dashboard's headline
+health percentage (consecutive_failures == 0).
+What landed: sentinel/watching.py - FAILURE_COUNTERS, counter(),
+failures_total(), is_unwatched(), and SQL fragments built from the tuple;
+dashboard (watch cell, problem state, health count, counter cells, account
+page, SELECT), portal (member status read, _ACCOUNT_COLUMNS), engine
+(failed-poll sum), watch_alarms (SELECT, page evidence) and fleet
+(membership predicate) all read through it. Guards
+(tests/test_watching.py): PRAGMA table_info(poll_state)'s failure columns
+== FAILURE_COUNTERS; each counter alone at the threshold reads unwatched;
+the 2026-09-21 row (0, 63) reads unwatched; every module under sentinel/
+that names a counter imports the shared module (whole-name match; the
+Telegram worker's own backoff attribute is not a counter); the dashboard
+health count sees an auth failure. CONTRIBUTING gains "A measurement
+that reads one of two counters is not a measurement" - the audit rule:
+re-derive a product decision from the inputs the product uses
+(FAILURE_COUNTERS, not a remembered column) and print the inputs beside
+the verdict.
+

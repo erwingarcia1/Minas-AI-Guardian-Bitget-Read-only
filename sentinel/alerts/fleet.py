@@ -29,6 +29,7 @@ from datetime import datetime, timezone
 
 from sentinel.alerts.meaning import COVERAGE_RULES
 from sentinel.db import Database
+from sentinel.watching import unwatched_predicate_sql
 
 logger = logging.getLogger("sentinel.alerts.fleet")
 
@@ -69,8 +70,8 @@ def coverage_starts(db: Database, threshold: int) -> list[dict]:
             f"     AND a.rule IN ({_MARKS})) AS started_at "
             "FROM accounts ac JOIN poll_state p ON p.account_id = ac.id "
             "WHERE ac.status = 'active' "
-            "AND (COALESCE(p.consecutive_failures, 0) >= ? OR COALESCE(p.consecutive_auth_failures, 0) >= ?)",
-            (*sorted(COVERAGE_RULES), threshold, threshold),
+            f"AND {unwatched_predicate_sql('p')}",
+            (*sorted(COVERAGE_RULES), threshold),
         )
         rows = [dict(r) for r in cur.fetchall() if r["started_at"]]
     return sorted(rows, key=lambda r: r["started_at"])

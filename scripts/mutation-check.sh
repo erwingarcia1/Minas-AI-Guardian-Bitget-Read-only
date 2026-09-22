@@ -214,6 +214,7 @@ pytest_add_cli_args_test_selection=
     tests/test_familiar_destination.py
     tests/test_coverage_cadence.py
     tests/test_fleet_coverage.py
+    tests/test_watching.py
 runner=python -m pytest -x -q -p no:cacheprovider
 EOF
 trap 'rm -f setup.cfg' EXIT

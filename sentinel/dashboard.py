@@ -24,6 +24,7 @@ from sentinel.operators import (
 )
 from sentinel.passwords import LoginThrottle
 from sentinel.rules_schema import default_for
+from sentinel.watching import FAILURE_COUNTERS, counter, counter_columns_sql, failures_total, is_unwatched
 
 logger = logging.getLogger("sentinel.dashboard")
 
@@ -249,8 +250,7 @@ def _watch_cell(row, threshold: int) -> str:
     "The account shows as 'not being watched' everywhere it appears" - and the
     dashboard is one of those places. Derived from the same counters the alert
     fires on, so the page and the alert cannot disagree."""
-    failures = (row["consecutive_failures"] or 0) + (row["consecutive_auth_failures"] or 0)
-    if failures >= threshold:
+    if is_unwatched(row, threshold):
         return '<span class="pill s-tamper">NOT BEING WATCHED</span>'
     return '<span class="pill s-active">watched</span>'
 
@@ -271,8 +271,7 @@ def _problem_state(row, threshold: int) -> str:
         return "paused"
     if row["status"] != "active":
         return "trouble"
-    failures = (row["consecutive_failures"] or 0) + (row["consecutive_auth_failures"] or 0)
-    if failures >= threshold:
+    if is_unwatched(row, threshold):
         return "trouble"
     return "watching"
 
@@ -411,8 +410,8 @@ def _render(db: Database, rules=None, qs=None) -> str:
 
     with db.cursor() as cur:
         cur.execute(
-            "SELECT a.id, a.label, a.topology, a.status, p.last_success_at, p.consecutive_failures, "
-            "p.consecutive_auth_failures, a.exchange FROM accounts a LEFT JOIN poll_state p ON p.account_id = a.id "
+            f"SELECT a.id, a.label, a.topology, a.status, p.last_success_at, {counter_columns_sql('p')}, "
+            "a.exchange FROM accounts a LEFT JOIN poll_state p ON p.account_id = a.id "
             "ORDER BY a.status = 'active' DESC, a.label"
         )
         accounts = cur.fetchall()
@@ -429,7 +428,10 @@ def _render(db: Database, rules=None, qs=None) -> str:
     total = len(accounts)
     active = [a for a in accounts if a["status"] == "active"]
     n_active = len(active)
-    healthy = sum(1 for a in active if a["last_success_at"] and (a["consecutive_failures"] or 0) == 0)
+    # Every failure counter through the shared decision - this summary line
+    # read one of the two until 2026-09-22, while the watch cell beside it
+    # read both.
+    healthy = sum(1 for a in active if a["last_success_at"] and failures_total(a) == 0)
     health_pct = round(100 * healthy / n_active) if n_active else 100
     crit_24h = sum(1 for r in recent if r["severity"] == "CRITICAL")
     high_24h = sum(1 for r in recent if r["severity"] == "HIGH")
@@ -483,8 +485,7 @@ def _render(db: Database, rules=None, qs=None) -> str:
         f"<td class='mono'>{_account_type_label(r['topology'])}</td><td>{_status_pill(r['status'])}</td>"
         f"<td class='mono'>{_ts(r['last_success_at'])}</td>"
         f"<td>{_watch_cell(r, threshold)}</td>"
-        f"<td>{_fail_cell(r['consecutive_failures'] or 0)}</td>"
-        f"<td>{_fail_cell(r['consecutive_auth_failures'] or 0)}</td></tr>"
+        + "".join(f"<td>{_fail_cell(counter(r, name))}</td>" for name in FAILURE_COUNTERS) + "</tr>"
         for r in shown
     ) or ("<tr><td colspan=8 class='empty'>No accounts match this filter</td></tr>"
           if accounts else "<tr><td colspan=8 class='empty'>No accounts onboarded yet</td></tr>")
@@ -904,8 +905,8 @@ def _render_account(db: Database, account_id: int, notice_html: str = "") -> str
     label = f("label")
     status = f("status")
     last_ok = ps["last_success_at"] if ps else None
-    cons_fail = (ps["consecutive_failures"] if ps else 0) or 0
-    cons_auth = (ps["consecutive_auth_failures"] if ps else 0) or 0
+    cons_fail = counter(ps, "consecutive_failures") if ps else 0
+    cons_auth = counter(ps, "consecutive_auth_failures") if ps else 0
 
     # Freshness of monitoring
     live = "warn"

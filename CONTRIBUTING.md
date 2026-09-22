@@ -681,6 +681,26 @@ operator_pages table, journald) after its next scheduled moment. A
 mitigation that has not been observed to take is not a mitigation - it is
 a claim, and the claim is what the owner acts on.
 
+## A measurement that reads one of two counters is not a measurement
+
+**When you measure production, enumerate the columns before you read one.**
+poll_state carries two failure counters, `consecutive_failures` and
+`consecutive_auth_failures`, and an account is unwatched when either
+crosses the threshold. On 2026-09-22 the session's audit script flagged
+"unwatched" on the first counter alone and reported nine accounts at 61-78
+refused authentications as clean. The product was not blind: the dashboard's
+watch cell, the portal's status and the engine all read both counters. The
+instrument was, and for an hour the audit's own headline said the opposite
+of what the same output's per-account rows showed.
+
+The rule for any read-only audit: a decision the product makes (watched,
+delivered, escalated) is re-derived in the query from the same inputs the
+product uses - which today means `sentinel.watching.FAILURE_COUNTERS`, not a
+column name remembered from a previous session - and the query prints the
+inputs beside the verdict so a reader can see a verdict that contradicts its
+own row. A number that cannot be checked against its inputs on the same
+page is a claim, and the owner acts on claims.
+
 ## A test that posts to a path that does not exist always passes
 
 **Assert the route is registered before asserting who may use it.** A 404 is
