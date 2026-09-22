@@ -6738,3 +6738,23 @@ customer` -> `and` survived because every test sent as the customer;
 tests/test_email_refused.py gains the secondary-audience case (9 tests).
 Survivor lists for both runs kept in this session's scratchpad
 (mut-run2-mutmut.log, mut-run3-mutmut.log) and in the issue.
+
+Item 6's full check on 7730bc1: nine gates pass (tests 383 s, probes 310 s,
+mutation 204 s: 341 mutants, 336 killed, 98%, ledger 5, the 80-file
+selection judging every one; evidence .health-check-logs/20260922T161223Z-
+7730bc1); CI green (35752534228).
+
+# 2026-09-22 · Handoff: incident batch closed, one issue open
+
+Seven items: 1-4 and 6 on main, each with nine gates and CI (66a7fd1;
+84ddf00 + 7a7aabb; 22c87e7; c29a6aa; 7730bc1). 5 and 7 are reports, in
+this log above. Not deployed, not cut - [Unreleased] carries five entries.
+Open for the owner: #104 (the mutation gate has never measured a class
+method: 30 unpinned decisions and 8 unjudged functions once the population
+is honest; the classifier fix is two lines and waits on the pinning), the
+.env read for item 5 (`grep -E '^SMTP_(HOST|PORT|USERNAME|SENDER)='
+/opt/minas-guardian/.env`) and Resend's log for 2026-09-21/22, and the
+Funnel/serve conflict in docs/deployment.md - the running system is
+undocumented, the doc forbids it. Every long process this session
+(pushes, health checks, mutation runs) ran inside tmux and none was lost
+to the memory watchdog; the previous session's 13:55 push was.
