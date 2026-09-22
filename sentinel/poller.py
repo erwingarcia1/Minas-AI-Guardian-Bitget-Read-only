@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sentinel.alerts.dispatch import dispatch
+from sentinel.alerts.meaning import coverage_repeat_cooldowns
 from sentinel.baseline import (
     known_traded_pairs,
     known_transfer_routes,
@@ -238,11 +239,11 @@ class AccountPoller:
             sev: self._account_rules(account_id).get_int("alerting", "cooldown_minutes", sev)
             for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW")
         }
-        rule_cooldowns = {
-            # Repeats daily while unresolved: silence must never look like
-            # safety, and a half-hourly repeat is its own kind of silence.
-            "account_unreachable": self._account_rules(account_id).get_int("alerting", "unreachable_repeat_minutes"),
-        }
+        # Every coverage rule repeats on the daily cadence while unresolved
+        # (the class property, not a per-rule literal - see meaning.py):
+        # silence must never look like safety, and an hourly repeat is its
+        # own kind of silence.
+        rule_cooldowns = coverage_repeat_cooldowns(self._account_rules(account_id))
         alert_id = dispatch(
             self._db, self._channels, account_id, label, detection, cooldowns,
             rule_cooldowns=rule_cooldowns,

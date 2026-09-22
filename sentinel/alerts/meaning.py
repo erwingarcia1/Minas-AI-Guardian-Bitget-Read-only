@@ -40,6 +40,22 @@ def is_coverage_rule(rule: str | None) -> bool:
     return (rule or "") in COVERAGE_RULES
 
 
+REPEAT_CADENCE_KEY = ("alerting", "unreachable_repeat_minutes")
+
+
+def coverage_repeat_cooldowns(rules) -> dict[str, int]:
+    """The repeat cadence of the CLASS: every coverage rule re-fires on the
+    daily reminder cadence (`alerting.unreachable_repeat_minutes`), never on
+    its severity's cooldown. This was per rule until 2026-09-22: only
+    account_unreachable was named, and its sibling monitoring_key_tamper_
+    suspected fell back to the HIGH cooldown - so when nine keys were
+    refused by address at once, nine customers were emailed every 62
+    minutes, 145 repeats in sixteen hours. Built from COVERAGE_RULES so the
+    next coverage rule cannot miss it; a test enumerates the set."""
+    minutes = rules.get_int(*REPEAT_CADENCE_KEY)
+    return {rule: minutes for rule in COVERAGE_RULES}
+
+
 def routing_tier(rule: str | None, severity: str, *, repeat: bool = False) -> str | None:
     """Which severity's channel set an alert is delivered on: its own, or
     the direct tier when its meaning demands a human now - or NONE of the

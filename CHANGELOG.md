@@ -17,6 +17,16 @@ container")._
 
 ### Changed detection behaviour
 
+- **Every coverage alert repeats on the daily reminder cadence, not on its
+  severity's cooldown.** On 2026-09-21 nine keys were refused by address in
+  one minute. `account_unreachable` reminded daily as designed; its sibling
+  `monitoring_key_tamper_suspected` had never been given the cadence,
+  because it was applied per rule, and re-fired every 62 minutes with a
+  customer email each time - 145 repeats in sixteen hours, 85 emails to
+  one address in a day. The cadence is now a property of the coverage
+  class (`COVERAGE_RULES`), so the next coverage rule cannot miss it, and
+  a test enumerates the set.
+
 - **A withdrawal to a destination this account has withdrawn to before is
   a receipt, not a CRITICAL.** Measured 2026-09-08: 60 of the 119
   unacknowledged withdrawal CRITICALs were to addresses the same account

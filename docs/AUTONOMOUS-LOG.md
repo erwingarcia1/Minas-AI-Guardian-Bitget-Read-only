@@ -6431,3 +6431,24 @@ never-seen, no-address, then familiar: only the last moves).
 `scripts/mutation-check.sh --check` alone: 5 survivors, all ledgered,
 floor held. CI on 1cb6c57 green (34271094197).
 
+# 2026-09-22 · Incident batch, item 1: the repeat cadence belongs to the coverage class
+
+meaning.coverage_repeat_cooldowns(rules) = {rule: alerting.unreachable_repeat_
+minutes for rule in COVERAGE_RULES}; the poller passes that as
+rule_cooldowns instead of a dict naming account_unreachable. Guard
+(tests/test_coverage_cadence.py): enumerates COVERAGE_RULES and asserts each
+carries the daily cadence and that the map names exactly the class; the
+2026-09-21 shape on one account - tamper at t0, then every 62 min for 23
+hours: nothing re-sent, repeat_count 23 on the first alert, a quiet repeat
+at +1441 min pointing at it; the sibling identical.
+Other per-rule settings that should be class properties, found while
+looking: (1) RULE_ADVICE - account_unreachable carries COVERAGE_ADVICE
+(what was observed, replace the key, ask us) but monitoring_key_tamper_
+suspected carries ACCOUNT_ADVICE, the withdrawal runbook; so the 155 hourly
+emails told customers to revoke unrecognised keys and check withdrawal
+history because the egress address changed. Not changed in this item. (2)
+The dashboard's rule catalogue (dashboard.py ~222) lists the two with
+separate severities and prose - documentation, not behaviour. Everything
+else already keys off is_coverage_rule/COVERAGE_RULES: routing_tier,
+preference_tier, the escalator's query, the router's quiet repeat legs.
+
