@@ -91,7 +91,12 @@ container")._
   edge and label and its undeliverable log line, the alarm's two edges and
   its skips, and the fleet member skip - fifteen decisions, thirteen
   tests, twelve rows gone and one argued equivalent; 528 of 535, floor 93
-  to 96.
+  to 96. Batch D, the config loader and ClickSend: the valid-again
+  warning only after a rejection, a change with no recorder, a receipt
+  that falls back to the requested number, and fewer results than numbers -
+  five tests, four rows gone and one argued equivalent. The `unpinned`
+  kind is empty: every survivor the gate accepts is an argued equivalent,
+  seven rows, and the population is the honest one.
 
 - **The mutation gate measures class methods, and its floor is the honest
   number (#104).** The classifier matched only column-zero functions, so no

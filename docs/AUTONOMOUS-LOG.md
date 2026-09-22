@@ -6855,3 +6855,18 @@ inside _age - the third site of that fingerprint); tests/test_fleet_
 coverage.py (1) - a dark stranger listed after the nine members still
 gets its own page. Twelve `unpinned` rows retired. Gate --check: 535,
 528 killed, 98%, ledger 11 accepted, floor 93 -> 96 by the ratchet, rc 0.
+
+# 2026-09-22 · #104 batch D (config + clicksend): the ledger's unpinned kind is empty
+
+tests/test_config_change_log.py (3): a never-rejected config reports
+rejected_at None; "valid again" is logged only after a rejection, once; a
+change with no recorder is applied without a call on None. tests/test_
+clicksend_sms.py (2): a receipt falls back to the requested number when
+the provider echoes none; fewer results than numbers still yields one
+receipt per number. RulesConfig.__init__'s `_rejected_at = None` -> `""`
+is EQUIVALENT: the constructor calls reload() last and every path through
+it assigns _rejected_at - re-kinded, not retired. Gate --check: 535, 528
+killed, 98%, ledger 7 accepted (the five founding equivalents plus the
+two argued today), floor 96, rc 0. Batches A-D: 29 unpinned mutants in 25
+rows -> 0 rows in 0; 501 -> 528 killed; floor 92 -> 96 by the ratchet,
+never by hand after the one reset.
