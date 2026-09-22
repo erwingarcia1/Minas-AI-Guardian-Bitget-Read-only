@@ -79,6 +79,22 @@ container")._
 
 ### Changed
 
+- **The mutation gate measures class methods, and its floor is the honest
+  number (#104).** The classifier matched only column-zero functions, so no
+  method - the contact router, the escalator, the operator pager, the watch
+  alarms, the config loader - had ever been in its population; "341
+  decision-point mutants" was read as the whole scope. The population is now
+  535 (197 in methods; one dead method deleted). Measured honestly the
+  score is 93%, so the floor was reset by hand from 97 to 92 - the one
+  time it has ever gone down, by the owner's decision, in preference to
+  pinning thirty gaps to protect a number over a population that was never
+  honest. The ratchet is unchanged. The 29 surviving method decisions are
+  in the ledger under a new kind, `unpinned`, each naming its batch (A
+  escalation, B contact, C operator and watch alarms, D config and
+  ClickSend); those rows are the count that must come down, and the weekly
+  report carries it. The Telegram link worker's loop, name lookup and poll
+  gain tests; they were reached by nothing.
+
 - **The mutation gate's test selection is complete by construction, and an
   unjudged mutant is named.** The gate runs a fixed list of test files, and
   twice in one day a new test file landed outside it - its mutants were

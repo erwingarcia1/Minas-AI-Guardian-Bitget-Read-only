@@ -68,3 +68,4 @@ tests/test_unidentifiable_withdrawal.py: imports identity - nothing under the mu
 tests/test_validate_config_cli.py: imports cli, db - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_ws_monitor.py: imports ws_monitor - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_mutation_selection.py: the guard over this list and the selection; reads scripts/, imports no sentinel module
+tests/test_classify_mutants.py: the execution guard over scripts/classify_mutants.py itself; imports no sentinel module

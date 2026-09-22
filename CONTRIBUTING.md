@@ -743,12 +743,28 @@ Restricted to **decision points** — comparison operators, boolean operators,
 An unrestricted run produced **588 survivors from 1,322 mutants** and would take
 ~36 hours for the whole package; roughly 60% were cosmetic (mutated log text,
 SQL keyword casing, string literals). Chasing that list is a project that
-stalls. The restricted run is **110 mutants**, and every survivor is a decision
-a test could reasonably be expected to pin.
+stalls. The restricted run was **110 mutants** when written, and every survivor
+is a decision a test could reasonably be expected to pin.
+
+**The population includes class methods - since 2026-09-22 (#104).** The
+classifier matched `^def (x_...)`: column zero, underscore after the x. mutmut
+names a method `xǁClassǁmethod__mutmut_N` and indents it inside the class, so
+for as long as the gate existed no method was in its population - not
+`ContactRouter`, not the escalator, not `WatchAlarms`, not `OperatorAlerter` -
+and "341 decision-point mutants" was read as the whole scope. Measured
+honest: 538, of which 197 in methods; 30 of those were unpinned and 8 were in
+functions no selected test called. `tests/test_classify_mutants.py` is the
+execution guard: a generated module with an indented method mutant must be
+selected. A population that reads clean because of what it excludes is the
+98% story this file keeps retelling.
 
 The score is a floor in `scripts/mutation-floor.txt`, ratcheted the same way as
-the coverage floor: set from measured reality, never lowered, raised whenever it
-improves.
+the coverage floor: set from measured reality, never lowered by the gate,
+raised whenever it improves. It was reset by hand ONCE, 97 -> 92 on
+2026-09-22, when the population above became honest: the owner's call, in
+preference to pinning thirty gaps to protect a number over a population that
+was never honest. The ratchet is unchanged; the floor climbs behind each
+batch of `unpinned` rows retired from the ledger.
 
 **Known blind spot:** a module with no conditionals produces no decision-point
 mutants at all, and the silence reads like coverage. `detectors/withdrawal.py`
@@ -824,11 +840,18 @@ fails closed, the same rule as a manifest that cannot be checked.
 Two things resist the ledger growing, because adding a row is easier than
 writing a test and each addition looks legitimate on the day. Every row
 carries its reason on the same line — `<fingerprint> <file> <kind>: <why>`,
-kind one of `equivalent`, `unreachable`, `deliberate` — and a row without one
-fails the gate on every run, survivors or not. And the gate prints the
-ledger's size on every run (`Survivor ledger: N accepted`); the weekly
+kind one of `equivalent`, `unreachable`, `deliberate`, `unpinned` — and a row
+without one fails the gate on every run, survivors or not. And the gate prints
+the ledger's size on every run (`Survivor ledger: N accepted`); the weekly
 scheduled-gates report carries that number as its own row. A count that only
 ever goes up is the signal that rows are being added instead of tests.
+
+`unpinned` (#104) is the honest kind for a survivor that has been read, is a
+real gap, and is not yet pinned - its reason names the batch that will pin
+it. It exists so the population could be made honest without calling thirty
+gaps "deliberate". Those rows are the number that must come DOWN: retire a
+batch by writing its tests, delete the rows, and let the ratchet take the
+score. A row that stays is a test nobody wrote; the weekly count says so.
 
 **The ledger is also what makes #93 safe** (see "Is everything okay?"): the
 release predicate trusts a green scheduled run, and a run is green on a

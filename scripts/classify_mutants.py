@@ -24,7 +24,13 @@ import re
 import sys
 from pathlib import Path
 
-MUTANT_DEF = re.compile(r"^def (x_.+?__mutmut_(\d+|orig))\(")
+# A method mutant is INDENTED and named `xǁClassǁmethod__mutmut_N`; a
+# module-level one is `x_fn__mutmut_N` at column 0. Until 2026-09-22 this
+# matched only the second form, so every decision inside a class - the whole
+# ContactRouter, the escalator, WatchAlarms, OperatorAlerter - was outside the
+# population and the gate's 341 read as the whole thing. The indentation is
+# captured so a body ends at the next statement at or above its own level.
+MUTANT_DEF = re.compile(r"^(\s*)def (x.+?__mutmut_(\d+|orig))\(")
 
 # What counts as a decision. Word-boundaried so `or` doesn't match "for".
 DECISION = re.compile(r"(?<![<>=!])(<=|>=|==|!=|<|>)(?!=)|\b(and|or|not|continue|break|return)\b")
@@ -34,27 +40,33 @@ STRING_LITERAL = re.compile(r"(\"\"\".*?\"\"\"|'''.*?'''|\"[^\"]*\"|'[^']*')", r
 def _functions(source: str) -> dict[str, str]:
     """Every mutant function body in a generated module, by name.
 
-    Bounded at the next top-level statement, not at the next mutant. mutmut
-    emits a `mutants_x_fn__mutmut[...] = ...` registration block after the last
-    mutant of each function, and the next function's `def` doesn't start with
-    `x_` - so slicing "until the next mutant" swallowed the registration block
-    and the whole following function into the final mutant's body, and every
-    decision token in it counted as a change."""
+    Bounded at the next statement at or above the def's own indentation -
+    the next `def`, `class`, decorator or `mutants_...` registration block -
+    not at the next mutant. mutmut emits a `mutants_x_fn__mutmut[...] = ...`
+    registration block after the last mutant of each function, and the next
+    function's `def` doesn't start with `x` - so slicing "until the next
+    mutant" swallowed the registration block and the whole following function
+    into the final mutant's body, and every decision token in it counted as a
+    change. Indented (method) mutants are bounded the same way at their own
+    level, so a nested helper deeper than the def stays inside its body."""
     out: dict[str, str] = {}
     name: str | None = None
+    indent = 0
     body: list[str] = []
+    boundary = re.compile(r"^(\s*)(def |mutants_|@|class )")
     for line in source.splitlines(keepends=True):
         match = MUTANT_DEF.match(line)
         if match:
             if name:
                 out[name] = "".join(body)
-            name, body = match.group(1), [line]
-            continue
-        if name and (line.startswith(("def ", "mutants_", "@", "class "))):
-            out[name] = "".join(body)
-            name, body = None, []
+            name, indent, body = match.group(2), len(match.group(1)), [line]
             continue
         if name:
+            edge = boundary.match(line)
+            if edge and len(edge.group(1)) <= indent:
+                out[name] = "".join(body)
+                name, body = None, []
+                continue
             body.append(line)
     if name:
         out[name] = "".join(body)

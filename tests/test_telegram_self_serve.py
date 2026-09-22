@@ -310,3 +310,165 @@ def test_an_ordinary_chat_message_is_ignored_silently(db, sent):
                                "message": {"chat": {"id": 777}, "text": "hello there"}})
     assert sent == [], "no reply of any kind to a non-/start message"
     assert connected_link(db, EMAIL) is None
+
+
+# --- the worker's loop, judged (2026-09-22, #104) ------------------------------
+# run(), _learn_bot_username() and _poll_once() had decision-point mutants no
+# selected test reached - the method-aware mutation population found them
+# unjudged. These call the real methods with net.post faked.
+
+def _worker_with_fake_api(db, monkeypatch, on_get_updates):
+    from sentinel.alerts.telegram_link import TelegramLinkWorker
+
+    calls: list[tuple[str, dict]] = []
+
+    class _Resp:
+        def __init__(self, payload, status=200):
+            self._payload, self.status_code = payload, status
+
+        def raise_for_status(self):
+            if self.status_code >= 400:
+                raise RuntimeError(f"HTTP {self.status_code}")
+
+        def json(self):
+            return self._payload
+
+    def fake_post(url, **kw):
+        calls.append((url, kw.get("json") or {}))
+        if url.endswith("/getMe"):
+            return _Resp({"ok": True, "result": {"username": "minas_guardian_bot"}})
+        return _Resp(*on_get_updates(len([c for c in calls if c[0].endswith("/getUpdates")])))
+
+    monkeypatch.setattr(tl.net, "post", fake_post)
+    return TelegramLinkWorker(db, "tok", poll_timeout=1), calls
+
+
+def test_learning_the_bot_username_records_it_and_a_failure_degrades_quietly(db, monkeypatch, caplog):
+    import logging
+
+    worker, calls = _worker_with_fake_api(db, monkeypatch, lambda n: ({"result": []},))
+    worker._learn_bot_username()
+    assert tl.bot_username(db) == "minas_guardian_bot"
+    assert calls[-1][0].endswith("/bottok/getMe")
+
+    def boom(*a, **k):
+        raise RuntimeError("telegram down")
+
+    monkeypatch.setattr(tl.net, "post", boom)
+    with caplog.at_level(logging.WARNING, logger="sentinel.alerts.telegram_link"):
+        worker._learn_bot_username()  # must not raise: the portal says 'the Minas bot'
+    assert any("could not learn the bot username" in r.getMessage() for r in caplog.records)
+    assert tl.bot_username(db) == "minas_guardian_bot", "a failure never erases what was learnt"
+
+
+def test_a_blank_username_in_the_reply_is_not_recorded(db, monkeypatch):
+    from sentinel.alerts.telegram_link import TelegramLinkWorker
+
+    class _Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return {"ok": True, "result": {"username": ""}}
+
+    monkeypatch.setattr(tl.net, "post", lambda *a, **k: _Resp())
+    TelegramLinkWorker(db, "tok")._learn_bot_username()
+    assert tl.bot_username(db) is None
+
+
+def test_one_poll_processes_every_update_and_persists_the_offset_per_update(db, monkeypatch):
+    account_id = _member_account(db)
+    code = create_link_code(db, EMAIL)
+    updates = [
+        {"update_id": 700, "message": {"chat": {"id": 4242}, "text": f"/start {code}"}},
+        {"update_id": 701, "message": {"chat": {"id": 4242}, "text": "hello"}},
+    ]
+    worker, calls = _worker_with_fake_api(db, monkeypatch, lambda n: ({"result": updates},))
+    worker._poll_once()
+    polls = [c for c in calls if c[0].endswith("/getUpdates")]
+    assert polls[0][1] == {"timeout": 1}, "the first poll carries no offset"
+    assert tl._meta_get(db, tl._OFFSET_KEY) == "702", "the offset is the last update id + 1"
+    with db.cursor() as cur:
+        cur.execute("SELECT status, chat_id FROM telegram_links WHERE member_email = ?", (EMAIL,))
+        row = cur.fetchone()
+    assert (row["status"], row["chat_id"]) == ("connected", "4242"), "the /start update was processed"
+    del account_id
+
+    worker._poll_once()
+    assert [c for c in calls if c[0].endswith("/getUpdates")][-1][1] == {"timeout": 1, "offset": 702}, (
+        "the next poll resumes from the persisted offset")
+
+
+def test_a_poll_that_fails_mid_batch_keeps_the_offset_of_what_was_processed(db, monkeypatch):
+    updates = [
+        {"update_id": 800, "message": {"chat": {"id": 1}, "text": "hi"}},
+        {"update_id": 801, "message": {"chat": {"id": 1}, "text": "hi"}},
+    ]
+    worker, _ = _worker_with_fake_api(db, monkeypatch, lambda n: ({"result": updates},))
+    seen = []
+
+    def process(db_, token, update):
+        seen.append(update["update_id"])
+        if update["update_id"] == 801:
+            raise RuntimeError("db hiccup")
+
+    monkeypatch.setattr(tl, "process_update", process)
+    with pytest.raises(RuntimeError):
+        worker._poll_once()
+    assert seen == [800, 801]
+    assert tl._meta_get(db, tl._OFFSET_KEY) == "801", "800 is done and will not replay; 801 will"
+
+
+def test_an_http_error_from_get_updates_is_raised_to_the_loop(db, monkeypatch):
+    worker, _ = _worker_with_fake_api(db, monkeypatch, lambda n: ({"result": []}, 502))
+    with pytest.raises(RuntimeError, match="HTTP 502"):
+        worker._poll_once()
+
+
+def test_the_loop_learns_the_name_first_then_polls_until_stopped_and_survives_a_failure(db, monkeypatch):
+    def on_get_updates(n):
+        if n == 1:
+            raise RuntimeError("telegram down")
+        return ({"result": []},)
+
+    worker, calls = _worker_with_fake_api(db, monkeypatch, on_get_updates)
+    worker.BACKOFF_BASE_SECONDS = 0  # the wait after the failure must not cost the suite 30 s
+    seen_failures = []
+    original = worker._register_failure
+
+    def register(exc):
+        seen_failures.append(str(exc))
+        if len(seen_failures) >= 3:
+            worker.stop()  # a mutant that fails every poll must not loop the suite forever
+        return original(exc)
+
+    worker._register_failure = register
+    real_poll = worker._poll_once
+
+    def poll_then_stop():
+        real_poll()
+        worker.stop()  # the first SUCCESSFUL poll ends the loop
+
+    worker._poll_once = poll_then_stop
+    worker.run()
+    assert calls[0][0].endswith("/getMe"), "the name is learnt before the first poll"
+    assert seen_failures == ["telegram down"], "the failed poll was registered, not fatal"
+    assert worker._consecutive_failures == 0, "the success after it reset the ladder"
+    assert len([c for c in calls if c[0].endswith("/getUpdates")]) == 2
+
+
+def test_a_stopped_worker_never_polls(db, monkeypatch):
+    worker, calls = _worker_with_fake_api(db, monkeypatch, lambda n: ({"result": []},))
+    polls = []
+
+    def poll():
+        polls.append(1)
+        worker._stop.clear()  # bounds ANY loop shape: a mutant that polls while stopped exits here
+
+    worker._poll_once = poll
+    worker.stop()
+    worker.run()
+    assert polls == [], "stopped before the loop: nothing is polled"
+    assert [c[0].rsplit("/", 1)[1] for c in calls] == ["getMe"], "the name is still learnt"

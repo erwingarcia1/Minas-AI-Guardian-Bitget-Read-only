@@ -157,16 +157,6 @@ class ContactRouter:
             row = cur.fetchone()
         return bool(row["sms_alerts_enabled"]) if row is not None else True
 
-    def _emails_for_chat(self, chat, emails) -> list[str]:
-        """The contact addresses this chat belongs to, for the delivery record."""
-        if self._db is None:
-            return []
-        with self._db.cursor() as cur:
-            cur.execute("SELECT member_email FROM telegram_links WHERE chat_id = ? AND status = 'connected'",
-                        (str(chat),))
-            owners = {r["member_email"] for r in cur.fetchall()}
-        return [e for e in emails if e and e.strip().lower() in owners]
-
     def _critical_overrides_optout(self) -> bool:
         if self._rules is None:
             return True

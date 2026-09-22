@@ -69,14 +69,20 @@ def fingerprint(diff: str) -> tuple[str, str, list[str]]:
     return digest, file, changed
 
 
-REASON_KINDS = ("equivalent", "unreachable", "deliberate")
+# `unpinned` (2026-09-22, #104): a survivor that is KNOWN, read, and not yet
+# pinned by a test - named with the batch that will pin it. It exists so the
+# population can be made honest (class methods had never been in it) without
+# calling thirty real gaps "deliberate". The gate prints the ledger's size on
+# every run and the weekly report carries it: unpinned rows are the number
+# that must come DOWN, and a row that stays is a test nobody wrote.
+REASON_KINDS = ("equivalent", "unreachable", "deliberate", "unpinned")
 
 
 def load_ledger(path: Path | None = None) -> dict[str, str]:
     """fingerprint -> reason. Blank lines and # comments are ignored.
 
     Every row carries its reason on the same line, and the reason starts by
-    naming its kind - equivalent, unreachable or deliberate - followed by
+    naming its kind - equivalent, unreachable, deliberate or unpinned - followed by
     the argument. A row without one fails the gate: adding a row is easier
     than writing a test, and each addition looks legitimate on the day, so
     the row itself has to say why, where the next reader will see it."""

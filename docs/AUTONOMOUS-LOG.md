@@ -6758,3 +6758,51 @@ Funnel/serve conflict in docs/deployment.md - the running system is
 undocumented, the doc forbids it. Every long process this session
 (pushes, health checks, mutation runs) ran inside tmux and none was lost
 to the memory watchdog; the previous session's 13:55 push was.
+
+# 2026-09-22 · #104 shipped: the honest population, floor 92, the thirty in the ledger by batch
+
+Owner's call on #104 (2026-09-22): "don't pin the thirty ... ship the fix,
+move the floor to the measured 92%, and make it a ratchet that can only
+rise. Then work the 30 down in named batches with the floor climbing
+behind them." Also the owner's correction on item 5's premise, recorded
+in their incident doc: the 550 text is Resend's vocabulary, not Gmail's.
+What landed: scripts/classify_mutants.py - MUTANT_DEF `^(\s*)def (x.+?
+__mutmut_(\d+|orig))\(` and _functions bounding a body at the next
+def/class/decorator/mutants_ line at or above its own indentation; the 341
+module-level mutants are unchanged by it (tests/test_classify_mutants.py,
+3: a synthetic module with a function and a method, each with a decision
+and a cosmetic mutant, selects exactly the two decisions; a method body
+ends at its own level; the regex accepts the ǁ form). Population 538 ->
+535: ContactRouter._emails_for_chat was dead code since 0cf19dc
+(2026-08-28), deleted - its three mutants were the "unjudged" ones.
+TelegramLinkWorker.run/_learn_bot_username/_poll_once had five unjudged
+mutants: seven tests in tests/test_telegram_self_serve.py now call them
+with net.post faked (name learnt and recorded, a failure degrades quietly
+and keeps what was learnt, a blank name is not recorded, one poll
+processes every update and persists the offset per update, a failure
+mid-batch keeps the offset of what was done, an HTTP error is raised to
+the loop, the loop learns the name first then polls until stopped and
+survives a failure, a stopped worker never polls). Two of those mutants
+(`while not stop` -> `while stop`; `offset is not None` -> `is None`)
+first came back ⏰ - my tests looped forever under them - so both tests
+now bound any loop shape (a third failure stops the worker; the poll stub
+clears the stop flag). The gate lists ⏰ with 🫥 as unjudged and refuses,
+which is what surfaced it.
+scripts/mutation_survivors.py: REASON_KINDS gains `unpinned` - read, real,
+not yet pinned, names its batch; the ledger header and CONTRIBUTING say
+what it is and that the rows are the number that must come down.
+scripts/mutation-floor.txt 97 -> 92 by hand, once, with the reasoning in
+CONTRIBUTING. Ledger: 5 -> 30 rows: 29 unpinned method survivors in 25
+fingerprints - A escalation 8 rows/9 mutants, B contact 6/8, C operator +
+watch alarms 6/7, D config + clicksend 5/5. Four fingerprints cover two
+mutants each because the fingerprint is file + changed lines and the
+same `continue` -> `break` or `is None or` -> `and` occurs twice in one
+file; pinning one of a pair leaves the row covering the other - recorded
+on #104 as a ledger weakness to close (add the function name to the
+fingerprint) when the rows are retired.
+Measured before the check run: 535 selected, 499 killed, 34 survived
+(5 ledgered), 2 timeouts -> after the test fix the expected honest score
+is 501/535 = 93%. The --check run's own numbers are the next paragraph.
+The --check run on the working tree: 535 selected, 535 ran, 501 killed,
+34 survived, every survivor in the ledger (30 rows accepted), 93%, floor
+92%, rc 0; the ratchet left the floor at 92 (93 - 2 < 92).
