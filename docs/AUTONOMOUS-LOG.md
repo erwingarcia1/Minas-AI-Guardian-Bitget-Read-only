@@ -6806,3 +6806,10 @@ is 501/535 = 93%. The --check run's own numbers are the next paragraph.
 The --check run on the working tree: 535 selected, 535 ran, 501 killed,
 34 survived, every survivor in the ledger (30 rows accepted), 93%, floor
 92%, rc 0; the ratchet left the floor at 92 (93 - 2 < 92).
+
+#104's full check on 9b531af: nine gates pass (ruff=0s tests=462s coverage=2s pip-audit=42s issue-status=4s scheduled=4s release=3s design-guard=281s mutation=447s ; the mutation gate over
+535: 501 killed, 93%, ledger 30, floor 92; evidence .health-check-logs/
+20260922T200513Z-9b531af); CI green (35777949752). Next: batch A
+(escalation) - eight ledger rows, nine decisions - then B, C, D, the
+floor climbing behind each; and the fingerprint's missing function name
+(#104 comment) before the first pair is split.
