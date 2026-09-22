@@ -141,6 +141,17 @@ operator_alerting:
   # data rather than from this comment.
   untimestamped_window_seconds: "900"
   untimestamped_consecutive_windows: "2"
+  # A fleet-wide coverage failure is ONE event (2026-09-22). When at least
+  # this many active accounts enter coverage failure within this window of
+  # each other, Minas is paged once naming all of them, each customer is
+  # told once, and the per-account alarms and daily repeats are held until
+  # their checks succeed again. Simultaneity is the whole signal - nothing
+  # reads error text. Three within ten minutes: one customer's keys expiring
+  # is one or two accounts; three inside a poll sweep (14 accounts at 45 s)
+  # share a cause - an egress address, an exchange, a route. 2026-09-21 was
+  # nine inside one minute.
+  fleet_coverage_min_accounts: "3"
+  fleet_coverage_window_seconds: "600"
 
 # How long each growing table is kept. Interim engineering defaults - the legal
 # retention decision (#47 / DECISIONS-NEEDED decision 6) sets the real numbers,

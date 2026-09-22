@@ -98,8 +98,20 @@ class WatchAlarms:
             # engine is behind would be the same fact times the fleet.
             return
 
+        # A fleet-wide coverage failure is ONE event (alerts/fleet.py): page
+        # once naming every member, and keep the per-account alarm quiet for
+        # them - nine pages an hour about one changed address is noise.
+        from sentinel.alerts.fleet import fleet_incident, page_fleet_incident
+
+        incident = fleet_incident(self._db, self._rules, now)
+        fleet_ids: set[int] = set()
+        if incident:
+            page_fleet_incident(self._db, self._alerter, incident)
+            fleet_ids = set(incident["account_ids"])
         for age, row in ages:
             if age is None or age < unwatchable_after:
+                continue
+            if int(row["id"]) in fleet_ids:
                 continue
             self._alerter.page(
                 rule="account_unwatchable_too_long",

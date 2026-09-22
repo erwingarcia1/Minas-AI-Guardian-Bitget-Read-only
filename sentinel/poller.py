@@ -7,7 +7,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sentinel.alerts.dispatch import dispatch
-from sentinel.alerts.meaning import coverage_repeat_cooldowns
+from sentinel.alerts.fleet import in_fleet_incident
+from sentinel.alerts.meaning import coverage_repeat_cooldowns, is_coverage_rule
 from sentinel.baseline import (
     known_traded_pairs,
     known_transfer_routes,
@@ -233,6 +234,13 @@ class AccountPoller:
         # dispatch and the router put it where a person reads it.
         detection.display_label = getattr(self, "_display", None) or label
         append_event(self._db, account_id, detection.rule, detection.severity, detection.evidence)
+        # A member of an open fleet-wide coverage incident (alerts/fleet.py)
+        # has been told once; its daily repeat is held until the incident
+        # ends. The first notice is never held: an account only joins the
+        # incident once its first coverage alert exists.
+        if is_coverage_rule(detection.rule) and in_fleet_incident(self._db, self._rules, account_id):
+            logger.info("coverage repeat for %s held: part of an open fleet incident", label)
+            return
         if self._metrics is not None:
             self._metrics.detection_fired(detection.rule, detection.severity)
         cooldowns = {

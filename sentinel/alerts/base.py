@@ -95,6 +95,7 @@ RULE_ADVICE: dict[str, str | None] = {
     "heartbeat_unreachable": NO_ADVICE,
     "checks_behind_schedule": NO_ADVICE,
     "account_unwatchable_too_long": NO_ADVICE,
+    "coverage_failure_fleet": NO_ADVICE,
     "exchange_records_untimestamped": NO_ADVICE,
     "alert_delivered_to_nobody": NO_ADVICE,
     "escalation_delivered_to_nobody": NO_ADVICE,

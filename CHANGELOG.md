@@ -27,6 +27,22 @@ container")._
   class (`COVERAGE_RULES`), so the next coverage rule cannot miss it, and
   a test enumerates the set.
 
+- **A fleet-wide coverage failure is one event, not one per account.** On
+  2026-09-21 the instance's public address changed and nine accounts' keys,
+  allowlisted to the old address on two exchanges, were refused in the same
+  minute; the product treated that as nine facts - nine operator pages an
+  hour, nine customers emailed hourly. Now, when
+  `operator_alerting.fleet_coverage_min_accounts` (default 3) or more active
+  accounts enter coverage failure within
+  `operator_alerting.fleet_coverage_window_seconds` (default 600) of each
+  other, Minas receives ONE page naming all of them and the count, each
+  customer is told once (their first coverage alert goes out exactly as
+  before), and the per-account alarm and the daily repeats are held for the
+  members until their checks succeed again. Simultaneity is the whole
+  signal: nothing reads error text or infers a cause; the operator reads
+  the page and decides. The page is sent once per incident, whatever the
+  pager's cooldown.
+
 - **A withdrawal to a destination this account has withdrawn to before is
   a receipt, not a CRITICAL.** Measured 2026-09-08: 60 of the 119
   unacknowledged withdrawal CRITICALs were to addresses the same account

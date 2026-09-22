@@ -173,6 +173,11 @@ SPEC: dict = {
         # older than this while others check normally.
         "checks_behind_seconds": POSITIVE,
         "unwatchable_seconds": POSITIVE,
+        # A fleet-wide coverage failure is one event (2026-09-22): this many
+        # accounts entering coverage failure inside this window is one page
+        # and one notice per customer, not one of each per account per hour.
+        "fleet_coverage_min_accounts": POSITIVE,
+        "fleet_coverage_window_seconds": POSITIVE,
     },
     # Retention periods (#60). NON_NEGATIVE rather than POSITIVE: 0 is a
     # meaningful choice here - "keep this table forever" - and rejecting it
@@ -293,6 +298,8 @@ DEFAULTS: dict = {
         "untimestamped_consecutive_windows": 2,
         "checks_behind_seconds": 600,
         "unwatchable_seconds": 1800,
+        "fleet_coverage_min_accounts": 3,
+        "fleet_coverage_window_seconds": 600,
     },
     "retention": {
         "events_days": 730,

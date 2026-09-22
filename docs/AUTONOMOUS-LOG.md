@@ -6452,3 +6452,45 @@ separate severities and prose - documentation, not behaviour. Everything
 else already keys off is_coverage_rule/COVERAGE_RULES: routing_tier,
 preference_tier, the escalator's query, the router's quiet repeat legs.
 
+# 2026-09-22 · Incident 2026-09-21 19:10 UTC: root cause settled, not a product defect
+
+The instance's public address changed at 19:10:00 UTC (every long-lived
+TCP connection on the host reset at that second; no reboot since July, no
+exit node). Nine accounts' keys were allowlisted to the old address:
+Bitget answered "Invalid IP, Current request IP 57.181.51.14" (code
+40018), Bybit "Unmatched IP" (retCode 10010), from 19:10 on, for
+erwin-garcia, -2, -3, -4, erwin-primary-2, ezriel-garcia, jimrox-odezi,
+john-great, john-great-2. The five keys without an allowlist kept
+working. The owner has allocated an Elastic IP (57.181.51.14) and is
+adding it to the nine allowlists. What the product did with a correct
+signal is where the defects are: items 1, 2, 4 of this batch.
+
+# 2026-09-22 · Incident batch, item 2: a fleet-wide coverage failure is one event
+
+sentinel/alerts/fleet.py: coverage_starts() = every ACTIVE account whose
+failure counters (either) are at or over the heartbeat threshold, with the
+sent_at of its newest non-repeat coverage alert (an account not yet told
+is not a member - the first notice always goes out). fleet_incident()
+takes the largest cluster of starts inside operator_alerting.fleet_
+coverage_window_seconds (600) and returns it when it has at least
+fleet_coverage_min_accounts (3): key = the start minute. WatchAlarms.
+evaluate pages coverage_failure_fleet (HIGH) once per key - a portal_meta
+marker, the liveness gate's page-once pattern, so the pager's 60-minute
+cooldown cannot re-page it - naming every member and the count, and skips
+account_unwatchable_too_long for the members. AccountPoller._emit holds a
+coverage detection for a member of an open incident (event still
+appended) - so the daily repeats stop until the account polls
+successfully, resets its counters and leaves the set. Config keys in
+rules_schema/rules.yaml with the reasoning; the page rule is NO_ADVICE.
+Why 3 in 10 minutes: one customer's keys expiring is one or two accounts;
+three inside a poll sweep (14 accounts at 45 s) share a cause; 2026-09-21
+was nine in one minute. Tests (tests/test_fleet_coverage.py): the exact
+shape - nine accounts told inside one minute, a tenth still checking,
+sixteen hourly evaluations: ONE fleet page naming the nine, zero
+per-account pages, nine alerts in the table; a member's hourly repeat
+held by the poller with the event recorded, a stranger's not; two accounts
+or three hours apart are not an event and the straggler is left out of
+the cluster; the first notice of a tenth account is never held and a
+recovered member leaves the incident; the page is sent once whatever the
+pager says; an auth failure counts for membership.
+
