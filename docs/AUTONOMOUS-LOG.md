@@ -6494,3 +6494,14 @@ the cluster; the first notice of a tenth account is never held and a
 recovered member leaves the incident; the page is sent once whatever the
 pager says; an auth failure counts for membership.
 
+Item 2's full check on 84ddf00: eight gates pass, mutation FAIL twice
+over - "selected 341 mutants but only 338 ran" (three page_fleet_incident
+mutants carried mutmut's no-tests mark) and twelve fleet survivors,
+because tests/test_fleet_coverage.py was not in scripts/mutation-check.sh's
+fixed selection - the same gap as 2026-09-08. The selection now names
+test_coverage_cadence.py and test_fleet_coverage.py. With them, three
+real survivors in fleet_incident: the window's closed edge (<= vs <), the
+tie-break between equal clusters (> vs >=), and a malformed start ending
+the loop (continue vs break) - each pinned with a test. Gate alone:
+5 survivors, all ledgered, rc 0. CI on 84ddf00 green (35729145260).
+

@@ -149,3 +149,46 @@ def test_an_auth_failure_counts_as_a_failure_for_membership(db):
         _first_notice(db, a, T0 + timedelta(seconds=i))
     incident = fleet_incident(db, rules)
     assert incident and incident["count"] == 3
+
+
+def test_a_start_exactly_at_the_window_edge_is_inside_it(db):
+    """Three accounts: t0, t0+300 s, t0+600 s with a 600 s window - the last
+    one is a member (the edge is closed)."""
+    rules = RulesConfig("config/rules.yaml")
+    window = int(rules.get_seconds("operator_alerting", "fleet_coverage_window_seconds"))
+    for i, offset in enumerate((0, window // 2, window)):
+        a = _account(db, f"edge-{i}", last_ok=T0, auth_failures=63)
+        _first_notice(db, a, T0 + timedelta(seconds=offset))
+    incident = fleet_incident(db, rules)
+    assert incident and incident["count"] == 3 and "edge-2" in incident["labels"]
+
+
+def test_equal_clusters_resolve_to_the_earliest(db):
+    """Two clusters of three, hours apart: the incident is the FIRST one, so
+    its key - and therefore the one page - does not move to a later group."""
+    rules = RulesConfig("config/rules.yaml")
+    for i in range(3):
+        a = _account(db, f"early-{i}", last_ok=T0, auth_failures=63)
+        _first_notice(db, a, T0 + timedelta(seconds=i))
+    for i in range(3):
+        a = _account(db, f"late-{i}", last_ok=T0, auth_failures=63)
+        _first_notice(db, a, T0 + timedelta(hours=5, seconds=i))
+    incident = fleet_incident(db, rules)
+    assert incident and sorted(incident["labels"]) == ["early-0", "early-1", "early-2"]
+    assert incident["started_at"].startswith(T0.isoformat()[:16])
+
+
+def test_an_unparsable_start_is_skipped_not_the_end_of_the_list(db):
+    """A row whose coverage alert carries a malformed sent_at must not stop
+    the accounts after it from clustering."""
+    rules = RulesConfig("config/rules.yaml")
+    bad = _account(db, "bad-stamp", last_ok=T0, auth_failures=63)
+    bad_alert = _first_notice(db, bad, T0 - timedelta(days=1))
+    with db.cursor() as cur:
+        cur.execute("UPDATE alerts SET sent_at = '' WHERE id = ?", (bad_alert,))
+        cur.execute("UPDATE alerts SET sent_at = '0000-bad-stamp' WHERE id = ?", (bad_alert,))  # sorts FIRST, unparsable
+    for i in range(3):
+        a = _account(db, f"good-{i}", last_ok=T0, auth_failures=63)
+        _first_notice(db, a, T0 + timedelta(seconds=i))
+    incident = fleet_incident(db, rules)
+    assert incident and sorted(incident["labels"]) == ["good-0", "good-1", "good-2"]
