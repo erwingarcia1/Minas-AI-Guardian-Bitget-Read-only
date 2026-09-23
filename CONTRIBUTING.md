@@ -709,6 +709,43 @@ inputs beside the verdict so a reader can see a verdict that contradicts its
 own row. A number that cannot be checked against its inputs on the same
 page is a claim, and the owner acts on claims.
 
+## A test that waits must bound the wait
+
+**A loop that waits for a condition the code under test produces does not
+fail when a mutant removes that condition - it runs forever, and it takes
+the suite with it.** mutmut reports it as a timeout (⏰), which is neither
+killed nor survived; the gate lists it as unjudged and refuses the run,
+which is how this was found, and a hung test in the ordinary suite is
+worse: no report at all until someone kills the process.
+
+The two that named this (2026-09-22, the Telegram link worker): a test
+that ran `worker.run()` with the stop flag already set expected the loop
+never to poll; the mutant `while not stop` -> `while stop` polled forever.
+Another drove `run()` through one failed poll and stopped it from the first
+successful poll; the mutant `offset is not None` -> `offset is None` raised
+before every poll, the loop caught each one and went round again, and the
+stop was never reached.
+
+The rule: **every wait in a test is bounded by something the test
+controls, never by the behaviour under test.** The shapes that work:
+
+- A counter in the stub that ends the loop by force after N calls - by
+  clearing the flag, raising an exception the loop does not catch, or
+  calling `stop()` - and an assertion that the loop ended for the RIGHT
+  reason (N was never reached) rather than because the bound tripped.
+- A fake clock or a zeroed backoff, so a retry loop cannot sleep the suite
+  (`worker.BACKOFF_BASE_SECONDS = 0`), together with the bound above.
+- For anything polling a real resource (a subprocess, a file, a port): a
+  deadline from `time.monotonic()` and a failure message that says what was
+  waited for, never a bare `while not ready: sleep()`.
+
+Before arming a loop in a test, ask: *if the code under test never
+produces the condition, what stops this?* If the answer is "nothing" or
+"pytest's global timeout", the test cannot fail - it can only hang, and a
+test that cannot fail is the absence-of-evidence shape this file keeps
+coming back to. The same applies to a monitor script or a wait loop in a
+session: bound it, and make the timeout a reported result, not silence.
+
 ## A test that posts to a path that does not exist always passes
 
 **Assert the route is registered before asserting who may use it.** A 404 is
