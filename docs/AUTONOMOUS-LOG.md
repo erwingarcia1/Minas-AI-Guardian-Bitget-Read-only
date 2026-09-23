@@ -7150,3 +7150,17 @@ the push) - the numbers are the next line.
 Item 6's CI on 70e7589: green (35892471297). Item 4's mutation --check on
 the working tree: 562 selected, 555 killed, 98%, ledger 7 accepted under
 the new keys, floor 96, rc 0.
+Items 3 and 4's CI on f3d64c5: green (35894491941). #104 closed by the
+commit, relabelled status: built.
+
+# 2026-09-23 · Handoff: the six-item brief is on main
+
+Order 1, 2, 5, 6, 3, 4: fc1215c (host-level finding), 1027a7f (docs:
+Funnel, the Elastic IP), 54ced13 (advice by diagnosis), 70e7589 (the
+one-sweep hold), e39ee9c (CONTRIBUTING: bound the wait), f3d64c5 (the
+fingerprint's function; #104 closed). Every commit under alerts/ had nine
+gates before its push; every push had CI. Not cut, not deployed: the cut
+waits on the nine exchange allowlists. [Unreleased] carries the 2026-09-21
+incident's fixes end to end - item 4 of the incident batch, the host
+finding, the diagnosis's advice and the hold - so the next cut is the one
+that makes the next address change cost one page.
