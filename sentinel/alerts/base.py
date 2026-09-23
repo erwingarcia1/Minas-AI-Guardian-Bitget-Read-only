@@ -31,6 +31,14 @@ COVERAGE_ADVICE = "coverage"
 # A data gap: a withdrawal record with no destination, so the unseen-address
 # check could not run. The customer can look at the exchange's own record.
 DATA_GAP_ADVICE = "data_gap"
+# The cause is on OUR side (2026-09-23): the product has established that the
+# checks fail because of something Minas must fix - the host's address
+# changed under nine allowlisted keys on 2026-09-21 - and the customer must
+# do NOTHING. The coverage advice ("replace your key") would have them
+# rotate a working credential to a new one with no allowlist entry either:
+# still dark, and the credential changed under us. Advice deepening the
+# outage it describes.
+OUR_SIDE_ADVICE = "our_side"
 NO_ADVICE = None
 
 RULE_ADVICE: dict[str, str | None] = {
@@ -110,6 +118,37 @@ RULE_ADVICE: dict[str, str | None] = {
     "drill_failed": NO_ADVICE,
 }
 
+# --- advice is a property of the DIAGNOSIS, not only the rule (2026-09-23) --
+#
+# RULE_ADVICE made advice a property of the rule. A rule can also fire with
+# an ESTABLISHED cause - a diagnosis the product reached from evidence it
+# holds, not a guess - and then the rule's own advice can be wrong: a
+# coverage alert whose cause is our own host tells the customer to replace
+# a key that is not the problem. So the lookup takes the rule AND the cause.
+# The cause travels on the alert's evidence under CAUSE_KEY (so the stored
+# row, the escalation copy and the incident page all read the same fact),
+# and CAUSE_ADVICE maps each established cause to the advice kind that
+# replaces the rule's. A cause not in this map changes nothing - omission
+# never changes advice - and a cause never ADDS advice to a rule that
+# carries none. The next shared cause (an exchange-wide outage, a route, a
+# certificate) is a row here and its text below, not a special case inline.
+CAUSE_KEY = "cause"
+CAUSE_ADVICE: dict[str, str] = {
+    # alerts/fleet.py: enough accounts refused authentication together that
+    # the only thing they share - this host - is the cause.
+    "host_auth_failure": OUR_SIDE_ADVICE,
+}
+
+
+def established_cause(evidence: dict | None) -> str | None:
+    """The cause an alert carries, or None. Read from the evidence dict a
+    detection, a stored row or an escalation copy all hold."""
+    if not isinstance(evidence, dict):
+        return None
+    cause = evidence.get(CAUSE_KEY)
+    return str(cause) if cause else None
+
+
 # The escalator re-sends an unacknowledged alert to Minas under this prefix
 # plus the original rule; the advice, if any, is the original rule's.
 ESCALATION_PREFIX = "ESCALATION-unacknowledged: "
@@ -127,14 +166,19 @@ def original_rule(rule: str | None) -> str | None:
     return rule
 
 
-def advice_kind(rule: str | None) -> str | None:
-    """Which advice a rule carries, or None. Unknown rules carry none."""
+def advice_kind(rule: str | None, cause: str | None = None) -> str | None:
+    """Which advice a rule carries, or None. Unknown rules carry none. An
+    established cause replaces the rule's kind - only where the rule
+    carries advice at all, and only for a cause CAUSE_ADVICE knows."""
     if rule is None:
         return None
-    return RULE_ADVICE.get(original_rule(rule), NO_ADVICE)
+    kind = RULE_ADVICE.get(original_rule(rule), NO_ADVICE)
+    if kind is None:
+        return None
+    return CAUSE_ADVICE.get(cause, kind) if cause else kind
 
 
-def advice_steps(exchange: str | None = None, *, rule: str | None = ...) -> list[str]:
+def advice_steps(exchange: str | None = None, *, rule: str | None = ..., cause: str | None = None) -> list[str]:
     """THE canonical "what to do next" (decisions 3 and 9, 2026-08-27): one
     source for the alert runbook and the incident page, so they cannot
     drift. Three steps, in this order, and nothing else:
@@ -168,7 +212,7 @@ def advice_steps(exchange: str | None = None, *, rule: str | None = ...) -> list
     message pass it. Without it (the default: the tests and the docs that
     quote the text) the steps themselves are returned. Legal reviews the
     wording later and does not block it."""
-    kind = ACCOUNT_ADVICE if rule is ... else advice_kind(rule)
+    kind = ACCOUNT_ADVICE if rule is ... else advice_kind(rule, cause)
     if kind is None:
         return []
     name = (exchange or "").strip().title() or "the exchange"
@@ -176,6 +220,8 @@ def advice_steps(exchange: str | None = None, *, rule: str | None = ...) -> list
         return _coverage_steps(name)
     if kind == DATA_GAP_ADVICE:
         return _data_gap_steps(name)
+    if kind == OUR_SIDE_ADVICE:
+        return _our_side_steps()
     return [
         "Revoke any API key on this account that you do not recognise. "
         "Leave the Minas AI Guardian key in place: it is read-only, and revoking it "
@@ -211,12 +257,31 @@ def _data_gap_steps(name: str) -> list[str]:
     ]
 
 
-def advice_lead(rule: str | None) -> str:
+def _our_side_steps() -> list[str]:
+    """The cause is ours. Two instructions, both for doing nothing to the
+    key, because the frightened reader's likely act - replace it, revoke
+    it - is the one that deepens the outage. Certain about what was
+    observed; nothing about the funds."""
+    return [
+        "Leave your API key exactly as it is: do not replace it and do not revoke it. "
+        "The key is not the problem, and a new one would be refused in the same way until "
+        "we have finished.",
+        "Wait for our message that the checks have succeeded again. Nothing else is needed "
+        "from you, and you can ask us at any time.",
+    ]
+
+
+def advice_lead(rule: str | None, cause: str | None = None) -> str:
     """What was observed, stated before the steps, for the kinds whose steps
     would otherwise read as if something had happened to the funds. Empty
     for the account advice: there the alert's first line is the observation
     and the steps stand alone by design."""
-    kind = advice_kind(rule)
+    kind = advice_kind(rule, cause)
+    if kind == OUR_SIDE_ADVICE:
+        return ("What was observed: the exchange is refusing Minas AI Guardian's read-only checks on "
+                "this account because of a change on our side - not because of anything you did, and "
+                "not because of anything wrong with your key. The account is not being watched until "
+                "we have put it right. Nothing in this record says anything happened to your funds.")
     if kind == COVERAGE_ADVICE:
         return ("What was observed: Minas AI Guardian's read-only checks on this account have failed "
                 "repeatedly, so the account is not being watched until they succeed again. Nothing "
@@ -228,14 +293,14 @@ def advice_lead(rule: str | None) -> str:
     return ""
 
 
-def advice_note(rule: str | None) -> str:
+def advice_note(rule: str | None, cause: str | None = None) -> str:
     """The paragraph below the steps. Only the account advice has one: the
     consequence of its step 1 (revoking every key). The coverage advice
     already IS about the key."""
-    return monitoring_note() if advice_kind(rule) == ACCOUNT_ADVICE else ""
+    return monitoring_note() if advice_kind(rule, cause) == ACCOUNT_ADVICE else ""
 
 
-def runbook(exchange: str | None = None, *, rule: str | None = ...) -> str:
+def runbook(exchange: str | None = None, *, rule: str | None = ..., cause: str | None = None) -> str:
     """The advice as plain text for the alert email: numbered steps, then the
     monitoring note below the list. Empty for a rule that carries no advice
     (`RULE_ADVICE`): a message with no applicable advice gets NO block,
@@ -249,21 +314,26 @@ def runbook(exchange: str | None = None, *, rule: str | None = ...) -> str:
     Plain text, deliberately: HTML mail is the phishing norm, and a
     plain-text security alert is harder to imitate convincingly. Multipart
     HTML+text is a separate decision, not an implementation detail."""
-    steps = [f"{i}. {step}" for i, step in enumerate(advice_steps(exchange, rule=rule), 1)]
+    steps = [f"{i}. {step}" for i, step in enumerate(advice_steps(exchange, rule=rule, cause=cause), 1)]
     if not steps:
         return ""
-    lead = monitoring_note() if rule is ... else advice_note(rule)
-    parts = ([advice_lead(rule)] if rule is not ... and advice_lead(rule) else []) + steps + ([lead] if lead else [])
+    lead = monitoring_note() if rule is ... else advice_note(rule, cause)
+    head = advice_lead(rule, cause) if rule is not ... else ""
+    parts = ([head] if head else []) + steps + ([lead] if lead else [])
     return "\n\n".join(parts)
 
 
-def customer_advised_line(rule: str | None = ...) -> str:
+def customer_advised_line(rule: str | None = ..., cause: str | None = None) -> str:
     """What the customer's copy of an advice-bearing alert told them, said
     to an operator in the third person. One line per advice kind, no
     imperative to the reader: the operator format is read by Minas, and
     "revoke any API key you do not recognise" addressed to MINAS-OPS is the
     wrong audience. Empty for a rule with no advice."""
-    kind = ACCOUNT_ADVICE if rule is ... else advice_kind(rule)
+    kind = ACCOUNT_ADVICE if rule is ... else advice_kind(rule, cause)
+    if kind == OUR_SIDE_ADVICE:
+        return ("Customer advised: the checks are being refused because of a change on Minas's side; "
+                "they were asked to leave their key exactly as it is and to do nothing until told the "
+                "checks succeed again.")
     if kind == COVERAGE_ADVICE:
         return ("Customer advised: the read-only checks are failing and the account is unwatched "
                 "until they succeed; check the exchange key exists and is read-only, replace it "
@@ -410,6 +480,13 @@ class AlertMessage:
     def customer_label(self) -> str:
         return (self.display_label or "").strip() or self.account_label
 
+    @property
+    def cause(self) -> str | None:
+        """The established cause this alert carries (CAUSE_KEY on its
+        evidence), or None: what turns the rule's advice into the
+        diagnosis's."""
+        return established_cause(self.evidence)
+
     def render(self) -> str:
         """Operator format: rule names, confidence and raw evidence, all of
         which the operator needs and none of which a customer should receive.
@@ -438,7 +515,7 @@ class AlertMessage:
         # customer copy on an operator surface is the wrong audience, whether
         # or not the rule applies. tests/test_customer_channel_guard.py holds
         # the line in both directions.
-        advised = customer_advised_line(self.rule)
+        advised = customer_advised_line(self.rule, self.cause)
         return f"{body}\n\n{advised}" if advised else body
 
     def operator_subject(self) -> str:
@@ -496,7 +573,7 @@ class AlertMessage:
             "We are telling you because it does not match how this account normally "
             "behaves. It may well be something you did - only you can say.",
         ]
-        steps = runbook(rule=self.rule) if self.severity in RUNBOOK_SEVERITIES else ""
+        steps = runbook(rule=self.rule, cause=self.cause) if self.severity in RUNBOOK_SEVERITIES else ""
         if steps:
             # A neutral heading, because the conditional now lives in each
             # step. "If this was not you:" as a preamble is exactly what a

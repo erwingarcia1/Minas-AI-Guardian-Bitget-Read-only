@@ -17,6 +17,22 @@ container")._
 
 ### Changed detection behaviour
 
+- **During a host-level incident the customer is told the cause is ours and
+  asked to do nothing.** The coverage notice's own advice - check the key,
+  put a new read-only key in place - is right when the key is the problem
+  and wrong when our host is: a customer who follows it rotates a working
+  credential to a new key with no allowlist entry either, so they stay dark
+  and the credential has changed under us. Advice is now a lookup over the
+  rule AND the established cause (`CAUSE_ADVICE` in sentinel/alerts/base.py;
+  the cause rides on the alert's evidence), so the alert email, the operator
+  format, the escalation copy and the incident page all say the same thing.
+  A member of a host-level auth incident now receives: "Your account is NOT
+  being watched. The exchange is refusing our read-only key because of a
+  change on our side - not because of anything you did, and not because of
+  anything wrong with your key. Nothing is needed from you: leave your key
+  exactly as it is. Minas is putting it right and will tell you when the
+  checks succeed again." An isolated refusal keeps the rule's own advice.
+
 - **A simultaneous authentication failure across accounts is one host-level
   finding, not N tamper accusations.** On 2026-09-21 nine accounts on four
   exchanges, sharing nothing but this host, were refused in the same second

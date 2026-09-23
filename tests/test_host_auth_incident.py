@@ -381,3 +381,38 @@ def test_a_coverage_incident_with_a_member_outside_the_host_incident_is_not_subs
     pager = _Pager()
     assert page_fleet_incident(db, pager, _coverage(ids + [other]), rules=rules) is not None
     assert [p["rule"] for p in pager.pages] == [FLEET_RULE]
+
+
+def test_members_coverage_notices_say_the_cause_is_ours_and_ask_for_nothing(db, monkeypatch):
+    """The sentence the customer receives during a host-level incident: the
+    key is not the problem, do nothing. Their copy carries the our-side
+    advice, never 're-issue a read-only API key'."""
+    from sentinel.alerts.base import CAUSE_KEY
+
+    channel, pager = _Recording(), _Pager()
+    rows, poller = _fleet(db, monkeypatch, channel=channel, pager=pager)
+    for _ in range(5):
+        for _, row in rows:
+            poller.run_fast_loop(row)
+    notices = [a for a in channel.sent if a.rule == "account_unreachable"]
+    assert len(notices) == 9
+    for alert in notices:
+        assert alert.evidence[CAUSE_KEY] == HOST_AUTH_RULE
+        assert alert.message.startswith("Your account is NOT being watched. The exchange is refusing our read-only key "
+                                        "because of a change on our side")
+        assert "Nothing is needed from you: leave your key exactly as it is." in alert.message
+        assert "Re-issue" not in alert.message and "re-issue" not in alert.message
+        body = alert.render_customer()
+        assert "Leave your API key exactly as it is" in body and "Put a new read-only key" not in body
+    with db.cursor() as cur:
+        cur.execute("SELECT evidence_json FROM alerts WHERE rule = 'account_unreachable'")
+        assert all(HOST_AUTH_RULE in (r["evidence_json"] or "") for r in cur.fetchall()), "the cause is stored"
+
+
+def test_an_isolated_refusal_keeps_the_rules_own_coverage_advice(db, monkeypatch):
+    channel, pager = _Recording(), _Pager()
+    rows, poller = _fleet(db, monkeypatch, channel=channel, pager=pager, spec=[("alone", "bitget")])
+    for _ in range(5):
+        poller.run_fast_loop(rows[0][1])
+    notice = [a for a in channel.sent if a.rule == "account_unreachable"][0]
+    assert "cause" not in notice.evidence and "Re-issue a read-only API key" in notice.message

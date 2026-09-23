@@ -6996,3 +6996,63 @@ carry the same two facts; scripts/aws-user-data.sh's comment no longer
 forbids what runs. Tailscale's CLI forms (`funnel --bg --https=<port>`,
 `funnel status`, `funnel --https=<port> <target> off`, `funnel reset`)
 were read from the live Funnel page before being written (rule 6).
+
+# 2026-09-23 · Four-item brief, item 5: advice is a property of the diagnosis, not the rule
+
+Measured first, by reading: advice reached the customer from RULE_ADVICE
+through advice_kind(rule) in four places - render_customer (the email's
+runbook), render (the operator's "Customer advised" line), the portal's
+incident page (advice_steps(alert["exchange"], rule=alert["rule"]),
+pinned by a guard test to the shared function) and the escalator's
+customer copy, which rebuilt AlertMessage from the stored row with
+evidence={"original_alert_id"} only - so anything carried on evidence
+was dropped there, and the escalator's SELECT did not fetch
+evidence_json at all. The coverage message itself ("Re-issue a read-only
+API key on the exchange and send it to Minas") lives in
+detectors/heartbeat.py, not in the advice map: the first line the
+customer reads had to change too, or the message would say "re-issue"
+above advice saying "leave it".
+What landed: alerts/base.py - OUR_SIDE_ADVICE, CAUSE_KEY ("cause"),
+CAUSE_ADVICE {host_auth_failure: our_side}, established_cause(evidence);
+advice_kind(rule, cause) returns CAUSE_ADVICE's kind only when the rule
+carries advice at all and the cause is registered (an unknown cause
+changes nothing; a cause never adds advice to a NO_ADVICE rule);
+advice_steps/advice_lead/advice_note/runbook/customer_advised_line take
+cause; AlertMessage.cause reads its evidence; both renders pass it.
+_our_side_steps: "Leave your API key exactly as it is: do not replace it
+and do not revoke it. The key is not the problem, and a new one would be
+refused in the same way until we have finished." / "Wait for our message
+that the checks have succeeded again. Nothing else is needed from you,
+and you can ask us at any time." Lead: "What was observed: the exchange
+is refusing Minas AI Guardian's read-only checks on this account because
+of a change on our side - not because of anything you did, and not
+because of anything wrong with your key. The account is not being
+watched until we have put it right. Nothing in this record says anything
+happened to your funds." Operator line: "Customer advised: the checks
+are being refused because of a change on Minas's side; they were asked
+to leave their key exactly as it is and to do nothing until told the
+checks succeed again." detectors/heartbeat.py: detect_unreachable(cause=)
+- the first line under a cause is "Your account is NOT being watched. The
+exchange is refusing our read-only key because of a change on our side -
+not because of anything you did, and not because of anything wrong with
+your key. Nothing is needed from you: leave your key exactly as it is.
+Minas is putting it right and will tell you when the checks succeed
+again." and the cause rides on the evidence. poller._handle_auth_failure
+establishes the cause (a member of host_auth_incident) before building
+the coverage detection. portal: the incident page reads the cause from
+the stored evidence. escalation: the SELECT fetches evidence_json and
+the customer copy carries the original cause. CONTRIBUTING rule 5 gains
+"and of the diagnosis". Tests: tests/test_incident_advice.py (9): the
+lookup's exactness (replaces only where the rule has advice; unknown
+cause changes nothing), the registry's guard (every cause is an operator
+rule with a kind that renders), the copy asks for nothing to the key and
+reads correctly in isolation under the tone guards, the customer email
+and the operator format under the cause and without it, the cause is
+read from evidence only, the incident page carries the diagnosis's
+advice, an escalation copy carries the original cause; tests/test_host_
+auth_incident.py (2): the nine members' notices through the poller carry
+the cause, open with the our-side line, never say re-issue, and are
+stored with it; an isolated refusal keeps the rule's own message.
+Item 2's CI on 1027a7f: green (35883880394). Item 5's full check on
+21e2ad3: nine gates pass (ruff=0s tests=439s coverage=2s pip-audit=35s issue-status=4s scheduled=4s release=1s design-guard=307s mutation=552s ; Killed 555/562 = 98%;  Survivor ledger: 7 accepted;Floor: 96%; evidence
+.health-check-logs/20260923T154901Z-21e2ad3).

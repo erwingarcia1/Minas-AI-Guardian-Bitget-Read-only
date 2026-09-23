@@ -4,7 +4,7 @@ from sentinel.detectors.base import Detection
 
 
 def detect_unreachable(
-    consecutive_failures: int, threshold: int, auth_failures: int = 0
+    consecutive_failures: int, threshold: int, auth_failures: int = 0, cause: str | None = None
 ) -> list[Detection]:
     """Account unreachable for N consecutive polls.
 
@@ -23,11 +23,27 @@ def detect_unreachable(
 
     Distinct from the tamper signal, which reads repeated *auth* failures as a
     possible attack. This one is about coverage, not attribution - both can be
-    true at once and both should fire."""
+    true at once and both should fire.
+
+    `cause` (2026-09-23) is an ESTABLISHED cause the poller has reached from
+    evidence it holds - today `host_auth_failure`, enough accounts refused
+    together that the only thing they share is our host. Then the first line
+    says the cause is ours and asks for nothing, and the cause rides on the
+    evidence (alerts/base.py CAUSE_KEY) so the advice below the message, the
+    escalation copy and the incident page all say the same thing. The
+    rule's own message would have the customer re-issue a key that is not
+    the problem."""
     if consecutive_failures < threshold:
         return []
 
-    if auth_failures >= threshold:
+    if cause:
+        message = (
+            "Your account is NOT being watched. The exchange is refusing our read-only key "
+            "because of a change on our side - not because of anything you did, and not because "
+            "of anything wrong with your key. Nothing is needed from you: leave your key exactly "
+            "as it is. Minas is putting it right and will tell you when the checks succeed again."
+        )
+    elif auth_failures >= threshold:
         message = (
             f"Your account is NOT being watched. The exchange has rejected our read-only "
             f"key {auth_failures} times in a row - it has most likely expired or been "
@@ -52,6 +68,7 @@ def detect_unreachable(
                 "consecutive_failures": consecutive_failures,
                 "auth_failures": auth_failures,
                 "threshold": threshold,
+                **({"cause": cause} if cause else {}),
             },
         )
     ]

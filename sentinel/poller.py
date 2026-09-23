@@ -8,6 +8,7 @@ from decimal import Decimal
 
 from sentinel.alerts.dispatch import dispatch
 from sentinel.alerts.fleet import (
+    HOST_AUTH_RULE,
     TAMPER_RULE,
     host_auth_incident,
     in_fleet_incident,
@@ -698,7 +699,13 @@ class AccountPoller:
         unreachable_threshold = self._account_rules(account_id).get_int(
             "detectors", "heartbeat", "consecutive_failures_threshold", default=5
         )
-        for detection in detect_unreachable(failures, unreachable_threshold, auth_failures=failures):
+        # The ESTABLISHED cause, if the product has one (alerts/fleet.py): a
+        # member of a host-level auth incident is told the cause is ours and
+        # asked to do nothing - the rule's own advice would have them replace
+        # a key that is not the problem (2026-09-23).
+        host = host_auth_incident(self._db, self._rules)
+        cause = HOST_AUTH_RULE if host and account_id in host["account_ids"] else None
+        for detection in detect_unreachable(failures, unreachable_threshold, auth_failures=failures, cause=cause):
             self._emit(account_id, label, detection)
 
         if self._metrics is not None:

@@ -45,6 +45,20 @@ class _EscalationDetection:
 _COVERAGE_MARKS = ", ".join("?" for _ in COVERAGE_RULES)
 
 
+def _carried_cause(row) -> dict:
+    """{CAUSE_KEY: cause} from the stored alert's evidence, or {}."""
+    import json
+
+    from sentinel.alerts.base import CAUSE_KEY, established_cause
+
+    try:
+        evidence = json.loads(row["evidence_json"] or "{}")
+    except (KeyError, IndexError, TypeError, ValueError):
+        return {}
+    cause = established_cause(evidence)
+    return {CAUSE_KEY: cause} if cause else {}
+
+
 class Escalator:
     """Escalates alerts nobody acknowledged within the configured windows.
 
@@ -110,7 +124,7 @@ class Escalator:
         cutoff_high = (now - self._high_window).isoformat()
         with db.cursor() as cur:
             cur.execute(
-                "SELECT a.id, a.rule, a.severity, a.message, a.confidence, a.account_id, a.sent_at, "
+                "SELECT a.id, a.rule, a.severity, a.message, a.confidence, a.account_id, a.sent_at, a.evidence_json, "
                 "ac.label, ac.member_name, ac.alert_email, ac.alert_phone, ac.alert_email_secondary, "
                 "ac.alert_phone_secondary "
                 "FROM alerts a JOIN accounts ac ON ac.id = a.account_id "
@@ -262,7 +276,10 @@ class Escalator:
                 f"{what} #{row['id']} has not been acknowledged. "
                 f"Original: {row['message']} -- acknowledge with: sentinel ack {row['id']}"
             ),
-            evidence={"original_alert_id": row["id"]},
+            # The original's established cause (alerts/base.py CAUSE_KEY)
+            # rides along, so the customer's escalation copy carries the
+            # diagnosis's advice, not the rule's (2026-09-23).
+            evidence={"original_alert_id": row["id"], **_carried_cause(row)},
         )
         delivered = 0
         for channel in self._channels:

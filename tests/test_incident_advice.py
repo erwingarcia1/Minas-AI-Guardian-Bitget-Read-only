@@ -127,7 +127,7 @@ def test_the_page_and_the_email_share_one_function_not_two_copies():
     from pathlib import Path
 
     portal_src = (Path(__file__).resolve().parent.parent / "sentinel" / "portal.py").read_text()
-    assert "advice_steps(alert[\"exchange\"], rule=alert[\"rule\"])" in portal_src
+    assert "advice_steps(alert[\"exchange\"], rule=alert[\"rule\"], cause=cause)" in portal_src
     assert "Revoke any API key" not in portal_src, "the portal must not carry its own copy of the text"
 
 
@@ -288,3 +288,138 @@ def test_the_incident_page_shows_the_coverage_advice_with_its_lead_and_no_key_no
     for step in advice_steps("bitget", rule="account_unreachable"):
         assert _html.escape(step) in body
     assert "Revoke any API key" not in body and _html.escape(monitoring_note()) not in body
+
+
+# --- advice is a property of the DIAGNOSIS (2026-09-23) ---------------------------
+# A rule can fire with an established cause; the cause replaces the rule's
+# advice. The host-level auth failure is the first: the coverage rule's own
+# advice - replace the key - would have a customer rotate a working credential
+# to one with no allowlist entry either.
+
+from sentinel.alerts.base import CAUSE_ADVICE, CAUSE_KEY, OUR_SIDE_ADVICE, established_cause  # noqa: E402
+
+HOST = "host_auth_failure"
+
+
+def test_an_established_cause_replaces_the_rules_advice_only_where_the_rule_has_any():
+    assert advice_kind("account_unreachable") == COVERAGE_ADVICE
+    assert advice_kind("account_unreachable", HOST) == OUR_SIDE_ADVICE
+    assert advice_kind("ESCALATION-unacknowledged: account_unreachable", HOST) == OUR_SIDE_ADVICE
+    assert advice_kind("liveness_failed", HOST) is None, "a cause never adds advice to a rule that carries none"
+    assert advice_kind("account_unreachable", "a_cause_nobody_registered") == COVERAGE_ADVICE, (
+        "an unknown cause changes nothing - omission never changes advice")
+    assert advice_kind("account_unreachable", None) == COVERAGE_ADVICE
+
+
+def test_every_registered_cause_is_an_operator_rule_with_a_kind_that_renders():
+    """The registry's own guard: a cause is the rule of the page that
+    established it, and its kind has steps to show."""
+    for cause, kind in CAUSE_ADVICE.items():
+        assert cause in RULE_ADVICE, f"{cause}: a cause is named after the page that established it"
+        assert advice_steps("bitget", rule="account_unreachable", cause=cause), f"{cause}: {kind} renders no steps"
+        assert kind == OUR_SIDE_ADVICE
+
+
+def test_the_our_side_advice_asks_the_customer_to_do_nothing_to_the_key():
+    steps = advice_steps("bitget", rule="account_unreachable", cause=HOST)
+    assert len(steps) == 2
+    assert steps[0].startswith("Leave your API key exactly as it is: do not replace it and do not revoke it.")
+    assert "Wait for our message" in steps[1] and "Nothing else is needed from you" in steps[1]
+    text = " ".join(steps).lower()
+    for act in ("re-issue", "replace it yourself", "put a new", "revoke any", "sign in"):
+        assert act not in text, act
+    lead = advice_lead("account_unreachable", HOST)
+    assert lead.startswith("What was observed: the exchange is refusing")
+    assert "because of a change on our side" in lead and "not because of anything you did" in lead
+    assert "Nothing in this record says anything happened to your funds." in lead
+    assert advice_note("account_unreachable", HOST) == ""
+
+
+def test_the_our_side_copy_reads_correctly_in_isolation():
+    texts = [*advice_steps("bitget", rule="account_unreachable", cause=HOST),
+             advice_lead("account_unreachable", HOST), customer_advised_line("account_unreachable", HOST)]
+    for step in texts:
+        for sentence in _sentences(step):
+            assert sentence[0].isupper() and sentence.endswith("."), sentence
+            low = sentence.lower()
+            for word in INFERENCES:
+                assert word not in low, f"inference {word!r} in: {sentence}"
+            for hedge in HEDGES:
+                assert hedge not in low, f"hedge {hedge!r} in: {sentence}"
+
+
+def test_the_customer_email_for_a_coverage_alert_with_a_host_cause_says_do_nothing():
+    """The sentence a customer actually receives."""
+    alert = AlertMessage(account_label="acct", rule="account_unreachable", severity="HIGH", confidence="high",
+                         message="Your account is NOT being watched.", evidence={CAUSE_KEY: HOST})
+    body = alert.render_customer()
+    assert "Leave your API key exactly as it is" in body
+    assert "because of a change on our side" in body
+    for wrong in ("Put a new read-only key in place", "Check in Bitget's own app", "Revoke any API key", "re-issue"):
+        assert wrong not in body, wrong
+    plain = AlertMessage(account_label="acct", rule="account_unreachable", severity="HIGH", confidence="high",
+                         message="Your account is NOT being watched.", evidence={})
+    assert "Put a new read-only key in place yourself" in plain.render_customer(), "without a cause, the rule's advice"
+
+
+def test_the_operator_format_says_what_the_customer_was_told_under_the_cause():
+    alert = AlertMessage(account_label="acct", rule="account_unreachable", severity="HIGH", confidence="high",
+                         message="m", evidence={CAUSE_KEY: HOST})
+    body = alert.render()
+    assert "Customer advised: the checks are being refused because of a change on Minas's side" in body
+    assert "leave their key exactly as it is" in body
+    assert "replace it from the portal" not in body
+
+
+def test_the_cause_is_read_from_evidence_and_nothing_else():
+    assert established_cause({CAUSE_KEY: HOST}) == HOST
+    assert established_cause({}) is None and established_cause(None) is None and established_cause("x") is None
+    assert established_cause({CAUSE_KEY: ""}) is None
+    assert AlertMessage(account_label="a", rule="account_unreachable", severity="HIGH", confidence="high",
+                        message="m", evidence={CAUSE_KEY: HOST}).cause == HOST
+
+
+def test_the_incident_page_carries_the_diagnosiss_advice(portal, db, alice):  # noqa: F811
+    import html as _html
+    import json
+
+    account_id, token = alice
+    incident = _incident(db, account_id)
+    with db.cursor() as cur:
+        cur.execute("UPDATE alerts SET rule = 'account_unreachable', evidence_json = ? WHERE id = ?",
+                    (json.dumps({CAUSE_KEY: HOST, "auth_failures": 63}), incident))
+    status, body = _request(portal, f"/incident?id={incident}", cookie=token)
+    assert status == 200 and "What to do next" in body
+    for step in advice_steps("bitget", rule="account_unreachable", cause=HOST):
+        assert _html.escape(step) in body or step in body, step
+    assert "Put a new read-only key in place" not in body
+
+
+def test_an_escalation_copy_carries_the_original_cause(db):
+    """The escalator rebuilds the customer's copy from the stored row; the
+    cause must survive that, or the second sending tells them to replace
+    the key the first sending told them to leave alone."""
+    import json
+
+    from sentinel.alerts.escalation import Escalator
+    from tests.test_escalation_reach import Recording, SpyRouter, _account
+
+    captured = []
+
+    class _Router(SpyRouter):
+        def send(self, detection, account_label, emails, phones, *, account_id=None, alert_id=None):
+            captured.append(detection)
+            super().send(detection, account_label, emails, phones, account_id=account_id, alert_id=alert_id)
+
+    account_id = _account(db, alert_email="primary@example.com")
+    from datetime import datetime, timedelta, timezone
+
+    sent_at = (datetime.now(timezone.utc) - timedelta(minutes=30)).isoformat()
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, evidence_json, confidence, sent_at) "
+            "VALUES (?, 'account_unreachable', 'HIGH', 'k', 'Your account is NOT being watched.', ?, 'high', ?)",
+            (account_id, json.dumps({CAUSE_KEY: HOST}), sent_at))
+    Escalator([Recording()], unacknowledged_minutes=15, contact_router=_Router()).check(db)
+    primary = [d for d in captured if d.rule.endswith("account_unreachable")]
+    assert primary and established_cause(primary[0].evidence) == HOST

@@ -46,6 +46,14 @@ scripts/health-check.sh                # every gate, one table — "Is everythin
    is a property of the rule, not of the message format: on 2026-08-31 the
    withdrawal runbook rendered under a liveness page about a missing backup
    directory because it was attached to the format, and every rule got it.
+   **And of the diagnosis** (2026-09-23): a rule that fires with an
+   ESTABLISHED cause - one the product reached from evidence it holds, such
+   as the host-level auth failure - carries the cause on its evidence under
+   `CAUSE_KEY`, and `CAUSE_ADVICE` maps the cause to the advice that
+   replaces the rule's. Never special-case a cause inline in a renderer:
+   the next shared cause (an exchange-wide outage, a route, a certificate)
+   is a row in that map and its text beside it, so the email, the operator
+   line, the escalation copy and the incident page all change together.
 6. **Verify against live docs, never memory.** New exchange endpoints/fields
    get cited from CCXT source or the exchange's docs; anything unverifiable is
    marked UNVERIFIED rather than guessed.
