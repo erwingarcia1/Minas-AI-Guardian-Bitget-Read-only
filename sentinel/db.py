@@ -170,6 +170,15 @@ class Database:
             "ALTER TABLE portal_members ADD COLUMN scoped INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE operators ADD COLUMN session_epoch INTEGER NOT NULL DEFAULT 1",
             "ALTER TABLE events ADD COLUMN actor TEXT",
+            # The exchange's own words for a refused key (2026-09-23, incident of
+            # 2026-09-21): Bitget names the requesting address in its refusal
+            # ("Invalid IP,Current request IP 57.181.51.14"), so the product
+            # knows its egress address for free. auth_failing_since is the
+            # start of the CURRENT run of auth failures - the moment a
+            # simultaneous failure across accounts is judged by.
+            "ALTER TABLE poll_state ADD COLUMN auth_failing_since TEXT",
+            "ALTER TABLE poll_state ADD COLUMN last_auth_error TEXT",
+            "ALTER TABLE poll_state ADD COLUMN last_auth_error_at TEXT",
             "ALTER TABLE accounts ADD COLUMN exchange TEXT NOT NULL DEFAULT 'bitget'",
             "ALTER TABLE accounts ADD COLUMN alert_email TEXT",
             "ALTER TABLE accounts ADD COLUMN alert_phone TEXT",

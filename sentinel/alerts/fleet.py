@@ -20,11 +20,24 @@ Two effects while such an incident is open:
     as before - and the daily coverage repeats are suppressed for members of
     the incident until it ends (the account polls successfully again, which
     resets its counters and drops it from the set).
+
+A HOST-level auth failure is the same finding one step earlier (2026-09-23).
+Nine accounts that share nothing but this host failing authentication within
+the same window is not nine tampered keys; the only thing those keys share
+is the egress address. So when at least the same number of accounts START
+failing authentication inside the same window, the tamper accusation is
+held for the members (the event is recorded; no customer is told their key
+was tampered with) and Minas is paged once with the shared cause and, where
+the exchange named it, the requesting address: Bitget's refusal is
+`Invalid IP,Current request IP 57.181.51.14`, Bybit's names no address. The
+per-account tamper rule stays for the isolated case. Nothing calls out to
+learn the address - it is read from the refusal the product already holds.
 """
 from __future__ import annotations
 
 import json
 import logging
+import re
 from datetime import datetime, timezone
 
 from sentinel.alerts.meaning import COVERAGE_RULES
@@ -34,8 +47,27 @@ from sentinel.watching import unwatched_predicate_sql
 logger = logging.getLogger("sentinel.alerts.fleet")
 
 FLEET_RULE = "coverage_failure_fleet"
+HOST_AUTH_RULE = "host_auth_failure"
+TAMPER_RULE = "monitoring_key_tamper_suspected"
 _MARKS = ", ".join("?" for _ in COVERAGE_RULES)
 _MARKER = "fleet_coverage:paged"
+
+# The requesting address as an exchange names it in a refusal. Bitget:
+# "Invalid IP,Current request IP 57.181.51.14" (code 40018). Bybit's
+# "Unmatched IP, please check your API key's bound IP addresses" names none.
+# Anchored on the words "request ip" so an address elsewhere in a body is not
+# mistaken for ours; IPv4 or IPv6.
+_REQUEST_IP = re.compile(r"request\s*ip\s*[:=]?\s*((?:\d{1,3}\.){3}\d{1,3}|[0-9a-f]{0,4}(?::[0-9a-f]{0,4}){2,7})",
+                         re.IGNORECASE)
+
+
+def observed_request_ip(text: str | None) -> str | None:
+    """The egress address an exchange named in its refusal, or None. Read
+    from the words the product already holds - never from an outbound call."""
+    if not text:
+        return None
+    match = _REQUEST_IP.search(text)
+    return match.group(1) if match else None
 
 
 def _settings(rules) -> tuple[int, float]:
@@ -82,20 +114,8 @@ def fleet_incident(db: Database, rules, now: datetime | None = None) -> dict | N
     least min_accounts members; else None."""
     min_accounts, window = _settings(rules)
     starts = coverage_starts(db, _unwatched_threshold(rules))
-    if len(starts) < min_accounts:
-        return None
-    stamps = []
-    for r in starts:
-        try:
-            stamps.append((datetime.fromisoformat(r["started_at"]), r))
-        except ValueError:
-            continue
-    best: list[dict] = []
-    for i, (t0, _) in enumerate(stamps):
-        cluster = [r for t, r in stamps[i:] if (t - t0).total_seconds() <= window]
-        if len(cluster) > len(best):
-            best = cluster
-    if len(best) < min_accounts:
+    best = _largest_cluster(starts, window, min_accounts)
+    if best is None:
         return None
     first = best[0]["started_at"]
     return {
@@ -107,6 +127,134 @@ def fleet_incident(db: Database, rules, now: datetime | None = None) -> dict | N
         "window_seconds": window,
         "min_accounts": min_accounts,
     }
+
+
+def _largest_cluster(starts: list[dict], window: float, min_accounts: int) -> list[dict] | None:
+    """The largest run of `started_at` stamps (sorted) inside `window`
+    seconds of its earliest member, if it has at least min_accounts; an
+    unparseable stamp is skipped, not the end of the list."""
+    if len(starts) < min_accounts:
+        return None
+    stamps = []
+    for r in starts:
+        try:
+            stamps.append((datetime.fromisoformat(r["started_at"]), r))
+        except (TypeError, ValueError):
+            continue
+    best: list[dict] = []
+    for i, (t0, _) in enumerate(stamps):
+        cluster = [r for t, r in stamps[i:] if (t - t0).total_seconds() <= window]
+        if len(cluster) > len(best):
+            best = cluster
+    return best if len(best) >= min_accounts else None
+
+
+def auth_failure_starts(db: Database) -> list[dict]:
+    """Every ACTIVE account in a current run of authentication failures, with
+    the moment that run started and the exchange's last words for it."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT ac.id, ac.label, ac.exchange, p.auth_failing_since AS started_at, p.last_auth_error "
+            "FROM accounts ac JOIN poll_state p ON p.account_id = ac.id "
+            "WHERE ac.status = 'active' AND p.auth_failing_since IS NOT NULL")
+        rows = [dict(r) for r in cur.fetchall()]
+    return sorted(rows, key=lambda r: r["started_at"])
+
+
+def host_auth_incident(db: Database, rules, now: datetime | None = None) -> dict | None:
+    """The largest cluster of accounts whose auth failures STARTED inside the
+    window, if it has at least min_accounts members; else None. Same two
+    settings as the coverage incident: it is the same phenomenon, seen at
+    the second failed check instead of the fifth."""
+    min_accounts, window = _settings(rules)
+    best = _largest_cluster(auth_failure_starts(db), window, min_accounts)
+    if best is None:
+        return None
+    first = best[0]["started_at"]
+    ips = sorted({ip for ip in (observed_request_ip(r.get("last_auth_error")) for r in best) if ip})
+    refusals = {}
+    for r in best:
+        if r.get("last_auth_error") and r["exchange"] not in refusals:
+            refusals[r["exchange"]] = str(r["last_auth_error"])[:160]
+    return {
+        "key": f"host-auth:{first[:16]}",
+        "started_at": first,
+        "account_ids": [int(r["id"]) for r in best],
+        "labels": [r["label"] for r in best],
+        "exchanges": sorted({r["exchange"] for r in best}),
+        "observed_request_ips": ips,
+        "refusals": refusals,
+        "count": len(best),
+        "window_seconds": window,
+        "min_accounts": min_accounts,
+    }
+
+
+def in_host_auth_incident(db: Database, rules, account_id: int) -> bool:
+    incident = host_auth_incident(db, rules)
+    return bool(incident) and int(account_id) in incident["account_ids"]
+
+
+def _already_accused(db: Database, account_ids: list[int]) -> list[str]:
+    """Members whose tamper accusation went out before the cluster formed
+    (the first one or two can, when the failures span sweeps): named on the
+    page, because the operator may want to tell those customers."""
+    if not account_ids:
+        return []
+    marks = ", ".join("?" for _ in account_ids)
+    with db.cursor() as cur:
+        cur.execute(
+            f"SELECT DISTINCT ac.label FROM alerts a JOIN accounts ac ON ac.id = a.account_id "
+            f"WHERE a.rule = ? AND a.repeat_of IS NULL AND a.account_id IN ({marks}) "
+            f"AND a.sent_at >= (SELECT min(p.auth_failing_since) FROM poll_state p WHERE p.account_id IN ({marks}))",
+            (TAMPER_RULE, *account_ids, *account_ids))
+        return sorted(r["label"] for r in cur.fetchall())
+
+
+def page_host_auth_incident(db: Database, alerter, incident: dict) -> int | None:
+    """One page per host-level auth incident, keyed on its start minute (the
+    same marker as the coverage page). Names the shared cause and the
+    address the exchange named, and says no customer was accused."""
+    if alerter is None or incident["key"] in _paged(db):
+        return None
+    labels = ", ".join(incident["labels"])
+    exchanges = ", ".join(incident["exchanges"])
+    ips = incident["observed_request_ips"]
+    if ips:
+        address = (f"The exchange named the requesting address in its refusal: {', '.join(ips)}. "
+                   "Check every affected key's IP allowlist against it")
+    else:
+        address = ("No exchange named the requesting address in its refusal (Bybit does not; Bitget "
+                   "does), so check the host's egress address against every affected key's IP allowlist")
+    accused = _already_accused(db, incident["account_ids"])
+    told = (f"Tamper accusations already sent before the cluster formed: {', '.join(accused)}."
+            if accused else "No customer has been told their key was tampered with.")
+    page_id = alerter.page(
+        rule=HOST_AUTH_RULE, severity="HIGH",
+        message=(f"{incident['count']} accounts on {len(incident['exchanges'])} exchange(s) ({exchanges}) were refused "
+                 f"authentication within {int(incident['window_seconds'] // 60)} minutes of each other, from "
+                 f"{incident['started_at'][:16].replace('T', ' ')} UTC: {labels}. The only thing those keys share is "
+                 f"this host, so this is one cause, not {incident['count']}. {address}. {told} Their coverage "
+                 "notices go out as usual, and the per-account tamper alert is held for them until their checks "
+                 "succeed again."),
+        evidence={"count": incident["count"], "accounts": labels, "exchanges": exchanges,
+                  "observed_request_ips": ", ".join(ips), "refusals": incident["refusals"],
+                  "already_accused": ", ".join(accused), "started_at": incident["started_at"],
+                  "window_seconds": int(incident["window_seconds"]), "min_accounts": incident["min_accounts"]},
+        dedup_scope=f"host-auth:{incident['key']}",
+    )
+    _mark_paged(db, incident["key"])
+    logger.warning("host-level auth failure %s: %d accounts on %s (%s), address %s - paged once as #%s",
+                   incident["key"], incident["count"], exchanges, labels, ", ".join(ips) or "unnamed", page_id)
+    return page_id
+
+
+def _mark_paged(db: Database, key: str) -> None:
+    paged = _paged(db) | {key}
+    with db.cursor() as cur:
+        cur.execute("INSERT INTO portal_meta (key, value) VALUES (?, ?) "
+                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                    (_MARKER, json.dumps(sorted(paged))))
 
 
 def in_fleet_incident(db: Database, rules, account_id: int) -> bool:
@@ -124,11 +272,19 @@ def _paged(db: Database) -> set[str]:
         return set()
 
 
-def page_fleet_incident(db: Database, alerter, incident: dict) -> int | None:
+def page_fleet_incident(db: Database, alerter, incident: dict, rules=None) -> int | None:
     """One page per incident, ever: the key is the start minute, recorded in
     portal_meta once the page has gone out. A later evaluation with the same
     start pages nothing, whatever the pager's cooldown says."""
     if alerter is None or incident["key"] in _paged(db):
+        return None
+    # The shared cause was already paged as a host-level auth failure for
+    # these same accounts: a second page five checks later about the same
+    # nine is the 2026-09-21 shape in miniature. Recorded as paged, not sent.
+    host = host_auth_incident(db, rules) if rules is not None else None
+    if host and host["key"] in _paged(db) and set(incident["account_ids"]) <= set(host["account_ids"]):
+        _mark_paged(db, incident["key"])
+        logger.info("fleet coverage incident %s subsumed by host auth incident %s", incident["key"], host["key"])
         return None
     labels = ", ".join(incident["labels"])
     page_id = alerter.page(
@@ -143,11 +299,7 @@ def page_fleet_incident(db: Database, alerter, incident: dict) -> int | None:
                   "window_seconds": int(incident["window_seconds"]), "min_accounts": incident["min_accounts"]},
         dedup_scope=f"fleet:{incident['key']}",
     )
-    paged = _paged(db) | {incident["key"]}
-    with db.cursor() as cur:
-        cur.execute("INSERT INTO portal_meta (key, value) VALUES (?, ?) "
-                    "ON CONFLICT(key) DO UPDATE SET value = excluded.value",
-                    (_MARKER, json.dumps(sorted(paged))))
+    _mark_paged(db, incident["key"])
     logger.warning("fleet coverage incident %s: %d accounts (%s) - paged once as #%s",
                    incident["key"], incident["count"], labels, page_id)
     return page_id

@@ -17,6 +17,29 @@ container")._
 
 ### Changed detection behaviour
 
+- **A simultaneous authentication failure across accounts is one host-level
+  finding, not N tamper accusations.** On 2026-09-21 nine accounts on four
+  exchanges, sharing nothing but this host, were refused in the same second
+  after the host's public address changed, and nine customers were told
+  hourly that their monitoring key may have been tampered with; one was told
+  seventeen times. Every accusation was wrong, and the evidence was in the
+  refusal: Bitget answers `Invalid IP,Current request IP 57.181.51.14`. Now
+  the product keeps the exchange's words for a refused key on `poll_state`
+  (`last_auth_error`, with the start of the current run of failures), reads
+  the requesting address out of them where the exchange names it (Bitget
+  does; Bybit does not), and when `operator_alerting.fleet_coverage_min_accounts`
+  or more accounts START failing authentication within
+  `fleet_coverage_window_seconds` of each other - the same two settings as
+  the coverage incident - the tamper alert is held for those members (the
+  detection is recorded as an event; no customer is told) and Minas is paged
+  ONCE, naming every account, the exchanges, the shared cause and the
+  observed address, and any customer accused before the cluster formed. The
+  later coverage-fleet page for the same accounts is recorded as paged
+  rather than sent. An isolated refusal still raises the per-account tamper
+  alert exactly as before, and each customer's "your monitoring stopped"
+  notice still goes out. No outbound call learns the address: it is read
+  from the refusal the product already holds.
+
 - **Every coverage alert repeats on the daily reminder cadence, not on its
   severity's cooldown.** On 2026-09-21 nine keys were refused by address in
   one minute. `account_unreachable` reminded daily as designed; its sibling

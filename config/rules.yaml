@@ -150,6 +150,10 @@ operator_alerting:
   # is one or two accounts; three inside a poll sweep (14 accounts at 45 s)
   # share a cause - an egress address, an exchange, a route. 2026-09-21 was
   # nine inside one minute.
+  # The same two settings judge a HOST-level auth failure (alerts/fleet.py,
+  # 2026-09-23): when this many accounts start failing authentication within
+  # this window, the tamper accusation is held for them and Minas is paged
+  # once with the shared cause and the address the exchange named.
   fleet_coverage_min_accounts: "3"
   fleet_coverage_window_seconds: "600"
 

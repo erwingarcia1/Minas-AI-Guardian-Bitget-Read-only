@@ -113,7 +113,10 @@ CREATE TABLE IF NOT EXISTS poll_state (
     consecutive_failures INTEGER NOT NULL DEFAULT 0,
     last_success_at TEXT,
     last_fast_loop_at TEXT,
-    last_slow_loop_at TEXT
+    last_slow_loop_at TEXT,
+    auth_failing_since TEXT,
+    last_auth_error TEXT,
+    last_auth_error_at TEXT
 );
 
 CREATE TABLE IF NOT EXISTS alerts (

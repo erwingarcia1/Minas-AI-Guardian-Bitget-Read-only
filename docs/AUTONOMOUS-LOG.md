@@ -6878,3 +6878,85 @@ tmux sessions. #104 stays open for the fingerprint's missing function
 name only. Ready for the owner's cut once the nine allowlists are in:
 `! scripts/release.sh 1.13.0` (MINOR: a new operator page rule and a new
 liveness verdict shape); [Unreleased] carries item 4's live fix.
+
+# 2026-09-23 · Four-item brief, item 1: a simultaneous failure across accounts is one cause, not N
+
+Measured before building, by reading. (a) The tamper conclusion is drawn in
+AccountPoller._handle_auth_failure (poller.py): detect_tamper(consecutive_
+auth_failures, threshold=2) sees ONE account's counter and nothing else;
+nothing at that point has fleet sight. Fleet sight exists in alerts/fleet.py
+(item 2 of the incident batch) but only AFTER the first notices: coverage_
+starts counts accounts already told (a non-repeat coverage alert exists)
+and already at the heartbeat threshold (5), so on 2026-09-21 nine tamper
+accusations (threshold 2) went out before any incident could form, and the
+fleet page then held only the repeats. (b) ExchangeClient._call wraps
+ccxt.AuthenticationError/PermissionDenied as TamperSignal(redact(str(exc)))
+- ccxt's feedback is `<exchange> <body>`, so the message carries Bitget's
+`{"code":"40018","msg":"Invalid IP,Current request IP 57.181.51.14"}`
+verbatim (ccxt/bitget.py maps 40018 -> PermissionDenied). _handle_auth_
+failure receives exc and LOGS it; append_event stores detection.evidence
+(the two counters); poll_state has no error column. So the address the
+exchange named reached the container log and nothing else. Bybit's 10010
+("Unmatched IP, please check your API key's bound IP addresses") names no
+address, as the brief said. Neither finding required restructuring where
+the tamper decision lives - the guard sits in the same place, so I built
+without a design pause.
+What landed: poll_state gains auth_failing_since (the start of the CURRENT
+run of auth failures, set on the first failure, cleared on success),
+last_auth_error (the client's redacted text, 300 chars) and
+last_auth_error_at - additive ALTER TABLE migrations (MINOR). alerts/fleet.py:
+observed_request_ip(text) - the address after the words "request ip",
+IPv4 or IPv6, anchored so an address elsewhere in a body is not taken for
+ours; auth_failure_starts, host_auth_incident (the largest cluster of
+auth_failing_since inside fleet_coverage_window_seconds with at least
+fleet_coverage_min_accounts members - the same two settings, the same
+_largest_cluster now shared with fleet_incident), in_host_auth_incident,
+page_host_auth_incident (rule host_auth_failure, HIGH, once per start
+minute via the portal_meta marker; the message names count, exchanges,
+labels, the observed address or that none was named, and whether any
+customer was accused before the cluster formed - the first one or two can
+be when failures span sweeps - and says the coverage notices still go out
+and the tamper alert is held), and page_fleet_incident records its key as
+paged without sending when every member is in a paged host incident.
+poller._emit: a tamper detection for a member of an open host incident is
+recorded as an event, pages the host incident, and returns before
+dispatch; everything else in _emit is unchanged. RULE_ADVICE: NO_ADVICE.
+rules.yaml: the fleet_coverage comment says the same settings judge this.
+Not changed, flagged for the owner: the customer's account_unreachable
+first notice still goes out to members (the incident batch's rule - "do
+not silence the first notice"), and its advice is COVERAGE_ADVICE
+("replace the key, ask us"); during a host-level incident the key is not
+the problem. Whether that notice should carry host-cause wording is a
+product decision, not made here.
+Tests (tests/test_host_auth_incident.py, 11, in the selection): the two
+refusals verbatim (Bitget names 57.181.51.14, Bybit names nothing, an
+address not named as ours is not ours, IPv6); the 2026-09-21 shape through
+the poller with nine accounts on four exchanges - zero tamper alerts, nine
+tamper EVENTS, one host page with count 9, the four exchanges, the address
+and every label; the page is sent once, the nine account_unreachable
+notices still go out, and the watch alarms' coverage-fleet page is
+subsumed; an isolated refusal still accuses; two together are below the
+bar and both are accused; the refusal and the run's start are recorded and
+a success ends the run; a recovered pair leaves the incident and the one
+left alone is then accused; a first account accused before the cluster
+formed is named on the page and the others are not accused; a Bybit-only
+incident says no address was named; the window edge and the bar are the
+coverage incident's; an unrelated coverage incident still pages.
+The first full check (843f6d9, amended): eight gates pass, mutation FAIL
+- 555 mutants, 540 killed, eight NEW survivors all in the new fleet code.
+Cause: the subsumption test's alarm sweep returned on its "whole engine
+behind" branch (every account had no success and an old onboarding),
+so page_fleet_incident's host check was never reached; the refusal
+sample's `and`, membership's `and`, the log line's address, and the
+subsumption's three conditions (host known, host paged, members a
+subset) had no test either. Seven more tests (18): the sweep with a
+fresh account reaches the coverage incident and the page is subsumed
+and stays subsumed; a stranger is not a member and no incident means
+no member; the refusal sample is only ever the exchange's words; equal
+member sets subsume, an unpaged host incident does not, no rules does
+not, a member outside the host incident does not; the operator log
+names the address or says unnamed.
+Item 1's full check on b6082fa (amended): nine gates pass (tests 481 s,
+probes 334 s, mutation 432 s: 555 mutants, 548 killed, 98%, ledger 7,
+floor 96; evidence .health-check-logs/20260923T145150Z-b6082fa). Pushed
+after the check; CI in the next line.

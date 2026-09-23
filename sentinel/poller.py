@@ -7,7 +7,12 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
 from sentinel.alerts.dispatch import dispatch
-from sentinel.alerts.fleet import in_fleet_incident
+from sentinel.alerts.fleet import (
+    TAMPER_RULE,
+    host_auth_incident,
+    in_fleet_incident,
+    page_host_auth_incident,
+)
 from sentinel.alerts.meaning import coverage_repeat_cooldowns, is_coverage_rule
 from sentinel.baseline import (
     known_traded_pairs,
@@ -234,6 +239,18 @@ class AccountPoller:
         # dispatch and the router put it where a person reads it.
         detection.display_label = getattr(self, "_display", None) or label
         append_event(self._db, account_id, detection.rule, detection.severity, detection.evidence)
+        # A simultaneous auth failure across accounts that share only this
+        # host is a HOST-level finding (alerts/fleet.py, 2026-09-23): the
+        # tamper accusation is held for the members - recorded above, never
+        # sent - and Minas is paged once with the shared cause and the
+        # address the exchange named. An isolated failure still accuses.
+        if detection.rule == TAMPER_RULE:
+            host = host_auth_incident(self._db, self._rules)
+            if host and account_id in host["account_ids"]:
+                page_host_auth_incident(self._db, self._operator_alerter, host)
+                logger.warning("tamper for %s held: %d accounts failed authentication together (%s)",
+                               label, host["count"], ", ".join(host["observed_request_ips"]) or "no address named")
+                return
         # A member of an open fleet-wide coverage incident (alerts/fleet.py)
         # has been told once; its daily repeat is held until the incident
         # ends. The first notice is never held: an account only joins the
@@ -375,6 +392,7 @@ class AccountPoller:
             account_id,
             consecutive_auth_failures=0,
             consecutive_failures=0,
+            auth_failing_since=None,
             last_success_at=_now_iso(),
             last_fast_loop_at=_now_iso(),
         )
@@ -657,7 +675,16 @@ class AccountPoller:
 
     def _handle_auth_failure(self, account_id: int, label: str, state: dict, exc: Exception) -> None:
         failures = state.get("consecutive_auth_failures", 0) + 1
-        _update_poll_state(self._db, account_id, consecutive_auth_failures=failures, consecutive_failures=0)
+        now = _now_iso()
+        # The exchange's own words, kept (redacted by the client already): a
+        # Bitget refusal names the requesting address, which is how a
+        # host-level failure is told apart from a tampered key without any
+        # outbound call. auth_failing_since is the start of THIS run.
+        _update_poll_state(
+            self._db, account_id, consecutive_auth_failures=failures, consecutive_failures=0,
+            auth_failing_since=state.get("auth_failing_since") or now,
+            last_auth_error=str(exc)[:300], last_auth_error_at=now,
+        )
         threshold = self._account_rules(account_id).get_int("detectors", "tamper", "consecutive_auth_failures_threshold", default=2)
         for detection in detect_tamper(failures, threshold):
             self._emit(account_id, label, detection)
