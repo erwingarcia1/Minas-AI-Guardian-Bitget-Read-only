@@ -164,6 +164,17 @@ container")._
 
 ### Fixed
 
+- **The deployment guide described a system that is not running.** It said
+  "serve, never funnel" while the member portal has been published to the
+  internet on Tailscale Funnel, deliberately, since August 2026 - recorded
+  nowhere until now (decision 20, with what it means for the threat model).
+  And the Elastic IP that every customer key is allowlisted to,
+  `57.181.51.14` on i-0faad6c4d361b127d, appeared in no document: it is now
+  beside the onboarding steps, with the rule that a new key's allowlist
+  must carry it, the fact that releasing it unmonitors every allowlisted
+  account (nine on 2026-09-21), and the order of operations for moving it
+  on purpose.
+
 - **The liveness gate reports email DEAD when its last sends were refused,
   not only when SMTP is unconfigured.** For twelve hours of quota refusals
   the gate read "SMTP set; last accepted email <yesterday>" and called the

@@ -37,6 +37,7 @@ whoever builds one should build it to cover both.
 | 17 | Self-serve signup | #6 (stays open) | **ANSWERED 2026-08-23** — no; behind billing + legal, waitlist as fallback; see section 17 |
 | 18 | Sibling-alert definition width + production backfill | #99 (built conservatively) | **OPEN — owner reconsidering 2026-08-27**; nothing dependent to be built |
 | 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | ~~#87~~, ~~#82~~ | **ANSWERED 2026-08-27** — mandatory; host-access recovery, attributed and logged; see section 19 |
+| 20 | The member portal is published to the internet on Tailscale Funnel | #88 (the address is still the open half) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20 |
 
 ---
 
@@ -974,6 +975,68 @@ every customer's contact details.
 **What it blocks**: #87 itself, and #82's dashboard design pass, which
 the owner ordered to wait for the access model so login and look land
 together.
+
+---
+
+## 20. The member portal is published to the internet on Tailscale Funnel (#88) — **ANSWERED by the owner, August 2026; recorded 2026-09-23**
+
+> **Answer (owner, August 2026; written down 2026-09-23).** The member
+> portal (port 8391) is published to the open internet with **Tailscale
+> Funnel**, deliberately, since August 2026. The ops dashboard (8390) and
+> the metrics endpoint (9109) stay on **Tailscale Serve**: tailnet-only,
+> never public. The portal is the surface customers must reach from their
+> own phones and laptops - a tailnet they are not on cannot be the way a
+> customer acknowledges a withdrawal alert - and it carries its own
+> defence: a password login, TOTP two-factor (#32), the shared login
+> throttle, CSRF origin checks, and no operator capability at all.
+
+**Why this is recorded late.** docs/deployment.md said "`serve`, never
+`funnel`" and scripts/aws-user-data.sh said "serve, NEVER funnel", both
+written when the only published surface was the dashboard, which has no
+customer-facing reason to exist off the tailnet. The portal was published
+via Funnel in August and no document, log entry or issue recorded it; the
+doc went on forbidding what production was doing. The 2026-09-22 session
+found the conflict while reporting on item 5 of the incident batch, and
+the owner's brief of 2026-09-23 ordered it written down. Both files now
+say what runs.
+
+**What it means for the threat model** (docs/threat-model.md, A1 and the
+residual-risk list):
+
+- The portal's login is internet-reachable, so credential stuffing and
+  password spraying against member accounts are real, not theoretical.
+  Defences in place: the shared LoginThrottle, TOTP for members who
+  enrolled (not mandatory for members: five members, none enrolled, at the
+  2026-09-08 measurement), and the address-less anti-phishing copy (#88).
+  Two-factor
+  enrolment for every member is the next control to consider; it is the
+  same question decision 19 answered for operators.
+- The portal is the only public HTTP surface. Anything the portal process
+  can do is now the attack surface of an internet-facing service: it must
+  never gain an operator capability (add a customer, read every contact,
+  change thresholds) - those stay on the dashboard, behind the tailnet.
+  The route-classification guard in tests/test_member_roles.py is the
+  registry that keeps that boundary explicit.
+- The host's public address is now also the portal's address in the
+  customer's browser (until #88 gives it a domain), which couples two
+  things that were separate: the egress address the exchanges allowlist
+  and the ingress address customers connect to. Changing the Elastic IP
+  therefore breaks both at once - see docs/deployment.md "The Elastic IP
+  is load-bearing".
+- Funnel terminates TLS at Tailscale's relay with a certificate for the
+  `*.ts.net` name; the relay sees encrypted traffic only. The portal
+  therefore has no certificate to manage and no port open on the security
+  group; the exposure is through Tailscale's identity, and disabling
+  Funnel on the box (`tailscale funnel --https=8391 8391 off`, or
+  `tailscale funnel reset`) withdraws it in one command.
+
+**What it does NOT decide.** The customer-facing domain (#88) is still
+open: customers today reach the portal by the `*.ts.net` name they were
+given, and the anti-phishing copy stays address-less until that is
+chosen. This row records the exposure model only.
+
+**Related:** #88 (address), #32 (member two-factor), decision 19
+(operator two-factor, host-access recovery).
 
 ---
 

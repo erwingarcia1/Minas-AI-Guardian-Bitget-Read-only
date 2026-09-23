@@ -6960,3 +6960,39 @@ Item 1's full check on b6082fa (amended): nine gates pass (tests 481 s,
 probes 334 s, mutation 432 s: 555 mutants, 548 killed, 98%, ledger 7,
 floor 96; evidence .health-check-logs/20260923T145150Z-b6082fa). Pushed
 after the check; CI in the next line.
+Item 1's CI on fc1215c: green (35880948651). Owner accepted item 1; the two
+flagged questions became items 5 and 6, ordered 2, 5, 6, 3, 4.
+
+# 2026-09-23 · Four-item brief, item 2: two docs describe a system that is not running
+
+Measured first: `grep -rn -i funnel docs/ scripts/` finds only the
+prohibition (docs/deployment.md "serve, never funnel", scripts/aws-user-
+data.sh "serve, NEVER funnel", docs/architecture.md "no public ports beyond
+SSH") and #6's unrelated use of the word; no log entry, issue comment or
+decision row records the portal's Funnel publication - the owner's
+statement is the only source, and the row says so. The Elastic IP
+57.181.51.14 and the instance id i-0faad6c4d361b127d appear in no document
+(deployment.md's quickstart says "allocate an Elastic IP" generically).
+What landed (docs only, no code): docs/DECISIONS-NEEDED.md decision 20 -
+the portal on Funnel, dashboard and metrics on Serve, answered by the
+owner in August 2026 and recorded 2026-09-23, with why it was recorded
+late, what it means for the threat model (an internet-reachable login;
+the portal must never gain an operator capability; the one address is
+both egress and ingress; TLS at Tailscale's relay, withdrawable in one
+command) and what it does not decide (#88's domain). docs/deployment.md:
+the Tailscale section's rule is now serve for dashboard/metrics and funnel
+for the portal only; "After the instance is live" names every exchange's
+allowlist; a new section "The Elastic IP is load-bearing: 57.181.51.14"
+beside the onboarding command states the address and instance, that a
+new key's allowlist must carry it, that releasing or re-associating it
+unmonitors every allowlisted account (nine as of 2026-09-22, seven Bitget
+and two Bybit per the owner), what happened on 2026-09-21, that the
+address is also the portal's ingress, and the order for moving it on
+purpose (both entries on every key first, then re-associate, then watch
+host_auth_failure, then remove the old); the "Bitget API key IP
+whitelisting" section is now "Exchange API key IP allowlisting" and names
+the address. docs/architecture.md and docs/threat-model.md (residual risks)
+carry the same two facts; scripts/aws-user-data.sh's comment no longer
+forbids what runs. Tailscale's CLI forms (`funnel --bg --https=<port>`,
+`funnel status`, `funnel --https=<port> <target> off`, `funnel reset`)
+were read from the live Funnel page before being written (rule 6).

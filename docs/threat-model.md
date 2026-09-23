@@ -92,3 +92,9 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
 - No RBAC on the dashboard (A4) — network-gated instead, acceptable at pilot
   scale, not at 1,000 accounts with staff turnover. Revisit in Phase 3.
 - SQLite file readable by host root until Postgres + disk encryption.
+- The member portal is internet-reachable (Tailscale Funnel, decision 20):
+  its login is exposed to credential stuffing, mitigated by the login
+  throttle and TOTP where enrolled; the portal must never gain an operator
+  capability (tests/test_member_roles.py holds the boundary). The host's
+  one Elastic IP is both the exchanges' allowlisted egress and the portal's
+  ingress; losing it unmonitors every allowlisted account (2026-09-21).

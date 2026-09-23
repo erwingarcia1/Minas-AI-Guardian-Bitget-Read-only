@@ -58,7 +58,8 @@ cat > /etc/motd <<'MOTD'
    9. Tailscale (daily access path - docs/deployment.md "Remote access"):
         curl -fsSL https://tailscale.com/install.sh | sh
         sudo tailscale up --ssh --hostname minas-guardian
-        sudo tailscale serve --bg 8390          # serve, NEVER funnel
+        sudo tailscale serve --bg 8390          # dashboard: serve, never funnel
+        # the member portal (8391) is funnel-published - decision 20, docs/deployment.md
       then in the admin console: disable key expiry for this machine.
 
  Updates from now on, one command (docs/deployment.md "Deploying code

@@ -105,9 +105,12 @@ The `chown 1000:1000` matters: the container runs as the non-root
 The final `up -d` (not `start`) recreates the container so any `.env`
 changes actually apply.
 
-**After the instance is live:** add the Elastic IP to each Bitget API key's
-IP whitelist (Bitget → API management → edit key). From that moment the key
-is useless from any other network — do this for every onboarded account.
+**After the instance is live:** add the Elastic IP to each exchange API
+key's IP allowlist (Bitget → API management → edit key; Bybit → API →
+bound IP addresses; OKX and Binance likewise). From that moment the key is
+useless from any other network — do this for every onboarded account, and
+read "The Elastic IP is load-bearing" below before ever touching the
+address.
 
 **Reboot survival:** `restart: unless-stopped` + Docker's systemd unit mean
 the stack comes back on its own after a reboot or crash; no operator action.
@@ -126,7 +129,8 @@ sudo tailscale up --ssh --hostname minas-guardian   # prints an auth URL — ope
 # and container rebuilds — tailscaled proxies to the host's 127.0.0.1):
 sudo tailscale serve --bg 8390                 # dashboard → https://minas-guardian.<tailnet>.ts.net
 sudo tailscale serve --bg --https=9109 9109    # Prometheus metrics
-sudo tailscale serve --bg --https=8391 8391    # member portal (has its own login)
+# The member portal (8391) is NOT served this way: it is published to the
+# internet with `tailscale funnel` (decision 20) - see "Rules of the road".
 tailscale serve status                         # verify
 ```
 
@@ -140,8 +144,17 @@ Then two settings in the [admin console](https://login.tailscale.com/admin):
 
 Rules of the road:
 
-- **`serve`, never `funnel`.** They look alike; `funnel` publishes to the
-  open internet, and the dashboard has no auth.
+- **`serve` for the dashboard and metrics, never `funnel`.** They look
+  alike; `funnel` publishes to the open internet, and the dashboard has no
+  customer-facing reason to be there.
+- **`funnel` for the member portal (8391), and only the portal** - decision
+  20 (docs/DECISIONS-NEEDED.md): customers reach it from their own devices,
+  and it carries its own login, TOTP and throttle. Published in August 2026;
+  `tailscale funnel status` shows what the box is publishing, and
+  `tailscale funnel --https=8391 8391 off` (or `tailscale funnel reset`)
+  withdraws it in one command. Nothing else may ever be funnelled: an
+  operator capability on a
+  public surface is the A1 compromise with the door held open.
 - Daily SSH is `ssh ubuntu@minas-guardian` (Tailscale SSH, no key file).
   Keep the security group's port-22-from-admin-IP rule as break-glass —
   and never remove it before Tailscale SSH is verified from a *fresh*
@@ -431,6 +444,38 @@ host shell history:
 docker compose exec -it sentinel sentinel onboard --label customer-1
 ```
 
+### The Elastic IP is load-bearing: `57.181.51.14`
+
+Production's egress address is the Elastic IP **57.181.51.14**, associated
+with instance **i-0faad6c4d361b127d** (ap-northeast-1). Every onboarded
+customer's exchange key is (or must be) allowlisted to that address on the
+exchange side, so:
+
+- **Every new key's allowlist must carry `57.181.51.14`** before the
+  account is onboarded, or its first check is refused. Whoever onboards
+  customer ten reads this line; nothing else in the product knows the
+  address (the poller keeps the exchange's own words for a refused key in
+  `poll_state.last_auth_error`, and a Bitget refusal names the requesting
+  address - that is how a wrong allowlist is diagnosed, not how the address
+  is chosen).
+- **Releasing, re-associating or replacing the address unmonitors every
+  allowlisted account at once** - nine accounts as of 2026-09-22 (seven
+  Bitget, two Bybit). This is not a hypothetical: on 2026-09-21 at 19:10 UTC
+  the host's public address changed, nine keys were refused within the same
+  second, and those customers were unwatched for more than 24 hours while
+  the allowlists were updated by hand, one exchange login at a time. The
+  product now reads that shape as one host-level finding (alerts/fleet.py,
+  2026-09-23) and pages the operator once with the address the exchange
+  named; it cannot fix an allowlist.
+- **The address is also the portal's ingress** (decision 20: the member
+  portal is Funnel-published on this host), so changing it breaks the
+  customer's bookmark and the exchanges' allowlists together.
+- **To move the address on purpose:** allocate the new EIP, add it to every
+  affected key's allowlist while the old address still works (both entries
+  at once - the exchanges allow more than one), then re-associate, then
+  watch `sentinel` for `host_auth_failure` and the dashboard for auth
+  failures before removing the old entry. Never the other order.
+
 Daily digest via cron on the host (MEDIUM/LOW alerts route here, per
 `alerting.routing` in rules.yaml). **Use root's crontab** (`sudo crontab -e`)
 — the default `ubuntu` user is not in the docker group, so an unprivileged
@@ -459,13 +504,16 @@ pilot; at scale run one compose stack per VM (or per elastic IP) and shard
 accounts across them. The `rate_limits.egress_ip_rps` bucket in rules.yaml
 protects each IP; keep it at ~60% of Bitget's 100 req/s ceiling.
 
-## Bitget API key IP whitelisting
+## Exchange API key IP allowlisting
 
-Once the VM has a stable public IP, re-issue customer read-only keys with
-that IP whitelisted on the Bitget side. This is a real security win (a stolen
-read-only key becomes useless off our IP) and should be standard onboarding
-practice, but note it couples customers to our egress IPs — document the IP
-rotation procedure before enforcing it.
+The VM's stable public IP is the Elastic IP `57.181.51.14` (see "The
+Elastic IP is load-bearing" under First deployment). Customer read-only
+keys are issued with that address allowlisted on the exchange side - Bitget,
+Bybit, OKX and Binance all support it. This is a real security win (a stolen
+read-only key becomes useless off our IP) and is standard onboarding
+practice; it couples every customer to our egress address, which is why the
+rotation procedure above exists and why the address appears in this
+document at all.
 
 ## Secrets posture
 
