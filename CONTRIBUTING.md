@@ -874,7 +874,9 @@ passes. One decision quietly unpinned, inside the headroom.
 
 So `scripts/mutation-known-survivors.txt` lists every survivor the gate
 accepts — today the two argued equivalents — by file plus the `-`/`+` lines of
-`mutmut show`, hashed (`scripts/mutation_survivors.py`); not by mutant number,
+`mutmut show` plus the mutant's FUNCTION (since 2026-09-23: the same diff in
+two functions of one file was one row, and pinning one left the row covering
+the other), hashed (`scripts/mutation_survivors.py`); not by mutant number,
 which changes on every regeneration. `--check` fails on any survivor not in
 the ledger, whatever the score, and prints its diff. If a run shows `NEW`,
 either kill it with a test or, if it is a proven equivalent, read the diff

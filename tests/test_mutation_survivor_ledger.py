@@ -66,6 +66,25 @@ def test_the_fingerprint_ignores_mutant_numbers_and_line_numbers(tool):
                     '+if abs(datetime.fromisoformat(candidate["sent_at"]) - anchor) >= window:']
 
 
+def test_the_same_diff_in_two_functions_of_one_file_is_two_fingerprints(tool):
+    """#104's remainder (2026-09-23): `continue` -> `break` in two methods of
+    contact.py was one row, so pinning one left the row covering the other.
+    The function is in the key; the number still is not."""
+    in_apply = DIFF_47.replace("x_sibling_alert_ids__mutmut_47", "xǁContactRouterǁ_apply_preferences__mutmut_58")
+    in_evaluate = DIFF_47.replace("x_sibling_alert_ids__mutmut_47", "xǁWatchAlarmsǁevaluate__mutmut_35")
+    assert tool.fingerprint(in_apply)[0] != tool.fingerprint(in_evaluate)[0]
+    renumbered = in_apply.replace("__mutmut_58", "__mutmut_86")
+    assert tool.fingerprint(renumbered)[0] == tool.fingerprint(in_apply)[0]
+    assert tool.mutant_function("sentinel.alerts.contact.xǁContactRouterǁsend__mutmut_18") == "xǁContactRouterǁsend"
+    assert tool.mutant_function("sentinel.alerts.dispatch.x_dispatch__mutmut_48") == "x_dispatch"
+
+
+def test_a_diff_without_the_mutant_name_cannot_be_keyed_and_fails_closed(tool):
+    headerless = "\n".join(line for line in DIFF_47.splitlines() if not line.startswith("# "))
+    with pytest.raises(ValueError):
+        tool.fingerprint(headerless)
+
+
 def test_a_different_mutation_is_a_different_fingerprint(tool):
     assert tool.fingerprint(DIFF_47)[0] != tool.fingerprint(DIFF_OFF_MARKET)[0]
     assert tool.fingerprint(DIFF_47.replace(">= window", "< window"))[0] != tool.fingerprint(DIFF_47)[0]

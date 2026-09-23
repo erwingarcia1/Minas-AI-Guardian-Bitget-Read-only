@@ -19,9 +19,14 @@ stopped pinning a decision, or a new decision arrived with nothing pinning
 it, and both are news. Accepting one is a deliberate commit to the ledger
 with the reason written down, never a side effect of a passing run.
 
-Keyed by file plus the mutation diff, not by mutant name: numbering is not
-stable across regenerations (mutation-check.sh quirk 5), and a ledger that
-had to be rewritten every rebuild would be rewritten by copy-paste.
+Keyed by file, FUNCTION and the mutation diff, not by mutant number:
+numbering is not stable across regenerations (mutation-check.sh quirk 5),
+and a ledger that had to be rewritten every rebuild would be rewritten by
+copy-paste. The function (the mutant's name without its number - `x_fn` or
+`xǁClassǁmethod`) is in the key since 2026-09-23: without it the same
+`continue` -> `break` twice in one file was ONE row, and pinning one of
+the pair left the row covering the other - hit four times while the #104
+batches were retired.
 """
 from __future__ import annotations
 
@@ -50,14 +55,28 @@ def show(name: str) -> str:
     return completed.stdout
 
 
+def mutant_function(name: str) -> str:
+    """The stable part of a mutant's name: `sentinel.alerts.contact.xǁContactRouterǁsend__mutmut_18`
+    -> `xǁContactRouterǁsend`. The module is the file's; the number changes
+    on every regeneration."""
+    base = name.strip().rsplit("__mutmut_", 1)[0]
+    return base.rsplit(".", 1)[-1]
+
+
 def fingerprint(diff: str) -> tuple[str, str, list[str]]:
-    """(fingerprint, file, changed lines) from a `mutmut show` diff. Only the
-    file and the -/+ lines count: hunk headers carry line numbers, which
-    move whenever anything above the mutation is edited."""
+    """(fingerprint, file, changed lines) from a `mutmut show` diff. The
+    file, the FUNCTION and the -/+ lines count: hunk headers carry line
+    numbers, which move whenever anything above the mutation is edited,
+    and the mutant number moves on every regeneration. The function comes
+    from mutmut's own header line (`# <mutant name>: <status>`); a diff
+    without one cannot be keyed and fails closed."""
     file = ""
+    function = ""
     changed = []
     for line in diff.splitlines():
-        if line.startswith("+++ "):
+        if line.startswith("# ") and "__mutmut_" in line and not function:
+            function = mutant_function(line[2:].split(":", 1)[0])
+        elif line.startswith("+++ "):
             file = line[4:].strip()
         elif line.startswith(("--- ", "+++ ", "@@", "#")):
             continue
@@ -65,7 +84,9 @@ def fingerprint(diff: str) -> tuple[str, str, list[str]]:
             changed.append(line[0] + line[1:].strip())
     if not file or not changed:
         raise ValueError("no mutation found in diff")
-    digest = hashlib.sha256((file + "\n" + "\n".join(changed)).encode()).hexdigest()[:16]
+    if not function:
+        raise ValueError("no mutant name in diff: the fingerprint needs the function")
+    digest = hashlib.sha256((file + "\n" + function + "\n" + "\n".join(changed)).encode()).hexdigest()[:16]
     return digest, file, changed
 
 

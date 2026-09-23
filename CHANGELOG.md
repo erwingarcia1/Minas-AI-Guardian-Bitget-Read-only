@@ -168,6 +168,15 @@ container")._
   report carries it. The Telegram link worker's loop, name lookup and poll
   gain tests; they were reached by nothing.
 
+- **A survivor's fingerprint carries its function (#104, closed).** The
+  ledger keyed an accepted survivor by file plus the changed lines, so the
+  same `continue` to `break` in two methods of one file was one row, and
+  pinning one of the pair left the row covering the other - hit four times
+  while the #104 batches were retired. The mutant's function (its name
+  without the number, read from mutmut's own header) is in the key; the
+  seven accepted rows were re-keyed, and a diff without a name fails
+  closed.
+
 - **The mutation gate's test selection is complete by construction, and an
   unjudged mutant is named.** The gate runs a fixed list of test files, and
   twice in one day a new test file landed outside it - its mutants were

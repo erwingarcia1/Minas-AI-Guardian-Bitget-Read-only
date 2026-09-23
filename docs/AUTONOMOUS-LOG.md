@@ -7107,3 +7107,46 @@ other, active accounts only. Two together are now accused one sweep late
 Item 5's CI on 54ced13: green (35888012512). Item 6's full check on
 455dbb4: nine gates pass (ruff=0s tests=550s coverage=2s pip-audit=52s issue-status=5s scheduled=7s release=1s design-guard=335s mutation=670s ; Killed 555/562 = 98%;  Survivor ledger: 7 accepted;Floor: 96%; evidence
 .health-check-logs/20260923T162302Z-455dbb4).
+
+# 2026-09-23 · Four-item brief, item 3: a test that waits must bound the wait (CONTRIBUTING)
+
+Docs only. CONTRIBUTING gains "A test that waits must bound the wait",
+before "A test that posts to a path that does not exist always passes":
+the two worker tests of 2026-09-22 that came back from mutmut as
+timeouts (⏰, neither killed nor survived; the gate lists them as unjudged
+and refuses), why a hung test is worse in the ordinary suite (no report
+until someone kills the process), the rule - every wait in a test is
+bounded by something the test controls, never by the behaviour under
+test - and the three shapes that work: a counter in the stub that ends
+the loop by force plus an assertion that the bound was NOT what ended it;
+a fake clock or zeroed backoff together with that bound; a monotonic
+deadline with a message saying what was waited for, for anything polling
+a real resource. The question to ask before arming a loop: if the code
+never produces the condition, what stops this? The same rule for a
+session's own monitors and wait loops.
+
+# 2026-09-23 · Four-item brief, item 4: the survivor fingerprint carries its function (#104 closed)
+
+Measured first: `mutmut show`'s output opens with `# <mutant name>:
+<status>`, so the function is already in the text the fingerprint reads -
+no second lookup. scripts/mutation_survivors.py: mutant_function(name)
+(the name without `__mutmut_N`, module stripped: `x_dispatch`,
+`xǁContactRouterǁ_phone_owners`); fingerprint() hashes file + function +
+the -/+ lines, reads the function from the header line, and fails closed
+on a diff without one (unverifiable is unaccepted, the ledger's own
+rule). The seven accepted rows re-keyed from live `mutmut show` output
+(b2a4372b677f3152 -> ecadaeea8c906806 off_market; 97452414445f4899 ->
+e5c730bc4ac4b543 quantity_drop; e63eeb39cffa6635 -> c2c300ef43d77e98
+preferences; 693e922468f0e4bb -> fcc1a56d813ea19d and 49315fab63af3b9a ->
+e71e5116946087ce dispatch; 4ef6b29c68052624 -> eac18602f31a7c51
+contact._phone_owners; c3a6d68971cf48e1 -> 035810a560d5da9f
+config.__init__); the _phone_owners row's note now says its _record_sms
+twin has its own key. Tests (tests/test_mutation_survivor_ledger.py, 2
+new): the same diff in two functions of one file is two fingerprints and
+the number still is not in the key; a headerless diff fails closed.
+CONTRIBUTING's ledger section says the function is in the key and why.
+Gate: mutation --check alone (no change under alerts/; the suite runs on
+the push) - the numbers are the next line.
+Item 6's CI on 70e7589: green (35892471297). Item 4's mutation --check on
+the working tree: 562 selected, 555 killed, 98%, ledger 7 accepted under
+the new keys, floor 96, rc 0.
