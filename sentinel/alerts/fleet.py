@@ -161,6 +161,21 @@ def auth_failure_starts(db: Database) -> list[dict]:
     return sorted(rows, key=lambda r: r["started_at"])
 
 
+def others_in_auth_failure(db: Database, account_id: int) -> list[str]:
+    """Labels of every OTHER active account currently in a run of auth
+    failures. The one-sweep hold (2026-09-23) reads this: a tamper
+    accusation that would go out while another account is failing waits
+    one more check, so a cluster that is forming can form first. A genuine
+    tamper is not more urgent for arriving one sweep earlier; a false
+    accusation costs a customer relationship."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT ac.label FROM accounts ac JOIN poll_state p ON p.account_id = ac.id "
+            "WHERE ac.status = 'active' AND p.auth_failing_since IS NOT NULL AND ac.id != ? ORDER BY ac.label",
+            (int(account_id),))
+        return [r["label"] for r in cur.fetchall()]
+
+
 def host_auth_incident(db: Database, rules, now: datetime | None = None) -> dict | None:
     """The largest cluster of accounts whose auth failures STARTED inside the
     window, if it has at least min_accounts members; else None. Same two

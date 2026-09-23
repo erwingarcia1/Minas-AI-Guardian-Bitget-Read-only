@@ -7056,3 +7056,54 @@ stored with it; an isolated refusal keeps the rule's own message.
 Item 2's CI on 1027a7f: green (35883880394). Item 5's full check on
 21e2ad3: nine gates pass (ruff=0s tests=439s coverage=2s pip-audit=35s issue-status=4s scheduled=4s release=1s design-guard=307s mutation=552s ; Killed 555/562 = 98%;  Survivor ledger: 7 accepted;Floor: 96%; evidence
 .health-check-logs/20260923T154901Z-21e2ad3).
+
+# 2026-09-23 · Four-item brief, item 6: never accuse on the first eligible failure
+
+Measured before building, as the brief asked. (1) The longest a genuinely
+isolated tamper is now delayed: the hold raises the effective threshold by
+one consecutive failure, and only while another active account has a run
+of auth failures open (poll_state.auth_failing_since not null) - so the
+delay is one more check of THIS account: one scheduler pass,
+polling.fast_loop_seconds = 45 s, plus polling.jitter_seconds (up to 10 s),
+i.e. about 55 s nominal; if the account's own previous poll overran the
+interval, engine._claim skips a cycle ("still has a fast poll in flight"),
+so the worst case is two intervals, about 100 s. It is a hold of one
+sweep, never a mute: an account failing beside a perpetually broken
+neighbour is accused on its third check. With no other run open there is
+no delay at all. (2) Downstream readers of the tamper alert's time:
+escalation.check (a coverage rule escalates when sent_at is older than
+the CRITICAL window) and dispatch's cooldown/repeat (keyed on the same
+alert's sent_at) - both START from the actual send, so they shift with
+it by the same ~55 s, unskewed; fleet.coverage_starts (the newest
+non-repeat coverage alert) clusters inside a 600 s window, and the
+unreachable notice at five failures is usually the member's first
+coverage alert now anyway; siblings.py's window is hours; the heartbeat
+threshold, the watch alarms, the dashboard health and the liveness gate
+read poll_state counters and timestamps, which the hold does not touch
+(the counters still increment; the first accusation's evidence reads
+consecutive_auth_failures 3 instead of 2, truthfully). Nothing is skewed;
+two things shift by the hold's length. Neither answer changed the design.
+What landed: alerts/fleet.py others_in_auth_failure(db, account_id) - the
+labels of every OTHER active account with a run open. poller._handle_auth_
+failure, restructured: the host question is asked first (host_auth_
+incident; member = this account is in it); a member reaching the tamper
+threshold pages the incident (once per key) - moved here from _emit, and
+timed at the threshold rather than at the cluster's third member so the
+page names everyone who failed in the sweep (nine on 2026-09-21), which
+the first cut of this item got wrong (it paged "3 accounts" at the third
+first failure, and the page-once marker then blocked the fuller page);
+then, at failures == threshold, a non-member with others failing is held
+one sweep (a warning names them), else detect_tamper -> _emit as before
+(_emit still records and holds a member's tamper). Tests (tests/test_
+host_auth_incident.py, 4 new; one amended): failures spanning sweeps -
+sweep 1 first alone, sweep 2 second and third then first at the threshold
+(held), sweep 3 the cluster holds it for good: nobody accused, the page
+names nobody as already accused (the gap item 1 left, closed); an
+isolated tamper beside another account's long run is accused on its third
+check, not its second and not later, with no page; an isolated tamper
+with no other run is accused on the threshold as before; the hold reads
+other, active accounts only. Two together are now accused one sweep late
+(amended test), and both are.
+Item 5's CI on 54ced13: green (35888012512). Item 6's full check on
+455dbb4: nine gates pass (ruff=0s tests=550s coverage=2s pip-audit=52s issue-status=5s scheduled=7s release=1s design-guard=335s mutation=670s ; Killed 555/562 = 98%;  Survivor ledger: 7 accepted;Floor: 96%; evidence
+.health-check-logs/20260923T162302Z-455dbb4).

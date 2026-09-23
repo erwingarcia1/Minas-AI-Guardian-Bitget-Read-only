@@ -179,15 +179,22 @@ def test_an_isolated_refusal_still_accuses(db, monkeypatch):
     assert pager.pages == []
 
 
-def test_two_together_are_below_the_bar_and_both_are_accused(db, monkeypatch):
+def test_two_together_are_below_the_bar_and_both_are_accused_one_sweep_late(db, monkeypatch):
+    """Two accounts failing together are not a host-level event (the bar is
+    three), so both are accused - one sweep after the threshold, because
+    each saw the other failing when it reached it (item 6)."""
     channel, pager = _Recording(), _Pager()
     rows, poller = _fleet(db, monkeypatch, channel=channel, pager=pager,
                           spec=[("a", "bitget"), ("b", "bybit"), ("c", "okx")])
     for _ in range(2):
         for _, row in rows[:2]:
             poller.run_fast_loop(row)
+    assert _alerts(db, TAMPER_RULE) == [], "held one sweep: the other was failing"
+    for _, row in rows[:2]:
+        poller.run_fast_loop(row)
     assert sorted(_alerts(db, TAMPER_RULE)) == sorted(a for a, _ in rows[:2])
     assert host_auth_incident(db, RulesConfig(rules_yaml())) is None
+    assert pager.pages == []
 
 
 def test_the_refusal_and_the_runs_start_are_recorded_and_a_success_ends_the_run(db, monkeypatch):
@@ -416,3 +423,80 @@ def test_an_isolated_refusal_keeps_the_rules_own_coverage_advice(db, monkeypatch
         poller.run_fast_loop(rows[0][1])
     notice = [a for a in channel.sent if a.rule == "account_unreachable"][0]
     assert "cause" not in notice.evidence and "Re-issue a read-only API key" in notice.message
+
+
+# --- item 6: never accuse on the first eligible failure ----------------------------
+
+def _tamper_alerts_by_label(db):
+    with db.cursor() as cur:
+        cur.execute("SELECT ac.label FROM alerts a JOIN accounts ac ON ac.id = a.account_id "
+                    "WHERE a.rule = ? AND a.repeat_of IS NULL ORDER BY a.id", (TAMPER_RULE,))
+        return [r["label"] for r in cur.fetchall()]
+
+
+def test_failures_that_span_sweeps_accuse_nobody_once_the_cluster_forms(db, monkeypatch):
+    """The gap item 1 left: a first account reaching the tamper threshold
+    before three had failed. Sweep 1: only `first` fails. Sweep 2: `second`
+    and `third` fail, then `first` reaches the threshold - held one sweep
+    because others are failing. Sweep 3: the cluster of three has formed and
+    holds it for good. Nobody is accused; the page names nobody."""
+    channel, pager = _Recording(), _Pager()
+    rows, poller = _fleet(db, monkeypatch, channel=channel, pager=pager,
+                          spec=[("first", "bitget"), ("second", "bybit"), ("third", "okx")])
+    first, second, third = (row for _, row in rows)
+    poller.run_fast_loop(first)                       # sweep 1
+    for row in (second, third, first):                # sweep 2: first reaches the threshold last
+        poller.run_fast_loop(row)
+    assert _tamper_alerts_by_label(db) == [], "held one sweep: two others were failing"
+    for row in (first, second, third):                # sweep 3
+        poller.run_fast_loop(row)
+    assert _tamper_alerts_by_label(db) == []
+    page = [p for p in pager.pages if p["rule"] == HOST_AUTH_RULE]
+    assert len(page) == 1 and page[0]["evidence"]["already_accused"] == ""
+    assert "No customer has been told" in page[0]["message"]
+
+
+def test_an_isolated_tamper_beside_another_accounts_long_run_is_delayed_exactly_one_sweep(db, monkeypatch):
+    """The cost, measured: `stale` has been failing for days on its own.
+    `alone` starts failing - accused on its THIRD failed check, not its
+    second, and not later. No cluster (two accounts are below the bar)."""
+    channel, pager = _Recording(), _Pager()
+    rows, poller = _fleet(db, monkeypatch, channel=channel, pager=pager,
+                          spec=[("stale", "bitget"), ("alone", "bybit"), ("fine", "okx")])
+    stale, alone = rows[0][1], rows[1][1]
+    with db.cursor() as cur:
+        cur.execute("UPDATE poll_state SET auth_failing_since = '2026-09-20T00:00:00+00:00', "
+                    "consecutive_auth_failures = 400 WHERE account_id = ?", (rows[0][0],))
+    poller.run_fast_loop(alone)
+    poller.run_fast_loop(alone)
+    assert _tamper_alerts_by_label(db) == [], "the second failure would have accused; held while stale is failing"
+    poller.run_fast_loop(alone)
+    assert _tamper_alerts_by_label(db) == ["alone"], "the third failure accuses: the hold is one sweep, not a mute"
+    assert [p for p in pager.pages if p["rule"] == HOST_AUTH_RULE] == []
+    del stale
+
+
+def test_an_isolated_tamper_with_no_other_run_is_accused_on_the_threshold_as_before(db, monkeypatch):
+    channel, pager = _Recording(), _Pager()
+    rows, poller = _fleet(db, monkeypatch, channel=channel, pager=pager,
+                          spec=[("alone", "bitget"), ("fine", "bybit")])
+    poller.run_fast_loop(rows[0][1])
+    assert _tamper_alerts_by_label(db) == []
+    poller.run_fast_loop(rows[0][1])
+    assert _tamper_alerts_by_label(db) == ["alone"], "no other run: no hold, no delay"
+
+
+def test_the_hold_reads_other_accounts_only_and_only_active_ones(db):
+    from sentinel.alerts.fleet import others_in_auth_failure
+
+    a, _ = _account(db, "a", "bitget")
+    b, _ = _account(db, "b", "bybit")
+    c, _ = _account(db, "c", "okx")
+    with db.cursor() as cur:
+        cur.execute("UPDATE poll_state SET auth_failing_since = '2026-09-21T19:10:00+00:00' WHERE account_id IN (?, ?, ?)", (a, b, c))
+        cur.execute("UPDATE accounts SET status = 'disabled' WHERE id = ?", (c,))
+    assert others_in_auth_failure(db, a) == ["b"], "not itself, not a disabled account"
+    assert others_in_auth_failure(db, b) == ["a"]
+    with db.cursor() as cur:
+        cur.execute("UPDATE poll_state SET auth_failing_since = NULL")
+    assert others_in_auth_failure(db, a) == []

@@ -17,6 +17,21 @@ container")._
 
 ### Changed detection behaviour
 
+- **A tamper accusation is never sent on the first eligible failure while
+  another account is failing authentication.** The tamper rule fires at two
+  consecutive refusals and a host-level incident needs three accounts, so
+  when refusals spanned two sweeps the first account could be accused before
+  the cluster formed. Now, when an account reaches the tamper threshold
+  while any other account is in a run of authentication failures, the
+  accusation waits one more check; if the cluster has formed by then it is
+  held for good, and if not it goes out. A genuinely isolated tamper with
+  no other account failing is accused exactly as before. Measured cost: one
+  poll interval (45 seconds plus up to 10 of jitter; two intervals if the
+  account's own poll overran and skipped a cycle), and only while some
+  other account is failing. The host-level page now goes out when a member
+  reaches the tamper threshold, one sweep after the cluster started, so it
+  names everyone who failed in that sweep.
+
 - **During a host-level incident the customer is told the cause is ours and
   asked to do nothing.** The coverage notice's own advice - check the key,
   put a new read-only key in place - is right when the key is the problem

@@ -12,6 +12,7 @@ from sentinel.alerts.fleet import (
     TAMPER_RULE,
     host_auth_incident,
     in_fleet_incident,
+    others_in_auth_failure,
     page_host_auth_incident,
 )
 from sentinel.alerts.meaning import coverage_repeat_cooldowns, is_coverage_rule
@@ -687,8 +688,35 @@ class AccountPoller:
             last_auth_error=str(exc)[:300], last_auth_error_at=now,
         )
         threshold = self._account_rules(account_id).get_int("detectors", "tamper", "consecutive_auth_failures_threshold", default=2)
-        for detection in detect_tamper(failures, threshold):
-            self._emit(account_id, label, detection)
+        # The host-level question first (alerts/fleet.py, 2026-09-23): is this
+        # account one of enough accounts that started failing authentication
+        # together? The page is about the cluster - once per incident, sent
+        # when a member reaches the tamper threshold, i.e. one full sweep
+        # after the cluster started, so it names everyone who failed in that
+        # sweep (nine on 2026-09-21) rather than the first three. A member's
+        # tamper detection is recorded and held in _emit; its coverage
+        # notice carries the cause (item 5).
+        host = host_auth_incident(self._db, self._rules)
+        member = bool(host) and account_id in host["account_ids"]
+        if member and failures >= threshold:
+            page_host_auth_incident(self._db, self._operator_alerter, host)
+        # Never accuse on the first eligible failure while ANY other account
+        # is in a run of auth failures (2026-09-23): the accusation waits one
+        # sweep, so a cluster that is forming can form first and hold it for
+        # good. On the next failed check it goes out unless the cluster has
+        # formed. Measured: the hold costs a genuinely isolated tamper one
+        # poll interval (45 s + up to 10 s jitter; two intervals if its own
+        # poll overran and skipped a cycle) - and only while some other
+        # account is failing. Nothing downstream reads the accusation's time
+        # except the escalation clock and the repeat cooldown, which start
+        # from the actual send and shift with it.
+        held_for = others_in_auth_failure(self._db, account_id) if failures == threshold and not member else []
+        if held_for:
+            logger.warning("tamper for %s held one sweep: %d other account(s) failing authentication (%s)",
+                           label, len(held_for), ", ".join(held_for))
+        else:
+            for detection in detect_tamper(failures, threshold):
+                self._emit(account_id, label, detection)
 
         # An account whose key is rejected is just as unwatched as one whose
         # exchange is down, and G-6's case - an expired or deleted key - arrives
@@ -703,8 +731,7 @@ class AccountPoller:
         # member of a host-level auth incident is told the cause is ours and
         # asked to do nothing - the rule's own advice would have them replace
         # a key that is not the problem (2026-09-23).
-        host = host_auth_incident(self._db, self._rules)
-        cause = HOST_AUTH_RULE if host and account_id in host["account_ids"] else None
+        cause = HOST_AUTH_RULE if member else None
         for detection in detect_unreachable(failures, unreachable_threshold, auth_failures=failures, cause=cause):
             self._emit(account_id, label, detection)
 
