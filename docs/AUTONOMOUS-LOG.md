@@ -7204,3 +7204,13 @@ option would be worse than none. The lesson, for the record: a command
 in an operations document is verified by running its read-only twin
 (`status`) against the box it will be run on, not by matching its form to
 the vendor's reference.
+
+# 2026-09-25 · CONTRIBUTING rule 6 gains its second half
+
+Owner's instruction. Rule 6 said "verify against live docs, never memory"
+and the Funnel command obeyed it and was wrong. Added: an operations
+command is verified by running its read-only twin against the machine it
+will be run on - `status` before `off`, `--dry-run` before the write,
+`SELECT` before `UPDATE`; the vendor's page gives the shape, only the box
+gives the arguments - citing the 2026-09-23 command and its 2026-09-25
+correction. Docs only; ced728a's CI was green (36157933579).

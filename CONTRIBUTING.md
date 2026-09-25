@@ -57,6 +57,17 @@ scripts/health-check.sh                # every gate, one table — "Is everythin
 6. **Verify against live docs, never memory.** New exchange endpoints/fields
    get cited from CCXT source or the exchange's docs; anything unverifiable is
    marked UNVERIFIED rather than guessed.
+   **And an operations command is verified by running its read-only twin
+   against the machine it will be run on.** `status` before `off`,
+   `--dry-run` before the write, `SELECT` before `UPDATE`. The vendor's page
+   gives you the shape; only the box gives you the arguments. On 2026-09-23
+   the Funnel withdraw command in docs/deployment.md was checked against
+   Tailscale's CLI reference and was still wrong: the form was right and the
+   port was invented - `--https=8391`, a port Funnel cannot listen on -
+   because `tailscale serve status` was never run against the box, which
+   would have shown the listener on 8443. The doc obeyed the first half of
+   this rule and shipped a command that did nothing (corrected 2026-09-25,
+   decision 20).
 7. **One session per working tree.** Before starting any issue, confirm no
    other `claude` process (or person) is working in this directory — and
    NEVER start `claude --continue` while a background job holds this tree,
