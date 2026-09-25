@@ -1017,18 +1017,32 @@ residual-risk list):
   change thresholds) - those stay on the dashboard, behind the tailnet.
   The route-classification guard in tests/test_member_roles.py is the
   registry that keeps that boundary explicit.
-- The host's public address is now also the portal's address in the
-  customer's browser (until #88 gives it a domain), which couples two
-  things that were separate: the egress address the exchanges allowlist
-  and the ingress address customers connect to. Changing the Elastic IP
-  therefore breaks both at once - see docs/deployment.md "The Elastic IP
-  is load-bearing".
+- The portal is reachable on TWO addresses, read from the box on
+  2026-09-25 (`sudo tailscale serve status`): the public one,
+  `https://minas-guardian.tail0fdd4a.ts.net:8443` (Funnel, listener 8443,
+  to 127.0.0.1:8391), and the tailnet-only one on port 8391 (Serve, same
+  target). Funnel can only listen on 443, 8443 or 10000, so the public
+  port is never the portal's own. The dashboard (`/`, to 8390) and metrics
+  (9109) are tailnet-only. Customers' browsers resolve the public name to
+  a Tailscale Funnel relay, not to this host: the relay opens an encrypted
+  TCP proxy to the node over the tailnet and, in Tailscale's words, "hides
+  the IP address of your local device". So the Elastic IP is NOT the
+  portal's ingress; it is the exchanges' allowlisted egress only, and the
+  two are independent (an earlier version of this row said the opposite -
+  reasoned, not measured; corrected 2026-09-25).
 - Funnel terminates TLS at Tailscale's relay with a certificate for the
-  `*.ts.net` name; the relay sees encrypted traffic only. The portal
-  therefore has no certificate to manage and no port open on the security
-  group; the exposure is through Tailscale's identity, and disabling
-  Funnel on the box (`tailscale funnel --https=8391 8391 off`, or
-  `tailscale funnel reset`) withdraws it in one command.
+  `*.ts.net` name; the relay cannot decrypt the proxied traffic. The
+  portal therefore has no certificate to manage and no port open on the
+  security group; the exposure is through Tailscale's identity, and the
+  public listener alone is withdrawn with
+  `sudo tailscale funnel --https=8443 8391 off` - the listener port and
+  the target exactly as `serve status` prints them; the first version of
+  this row said `--https=8391`, a port Funnel cannot listen on, which
+  matched nothing. `tailscale funnel reset` is NOT the fallback: the live
+  page says only that it "clears the current tailscale funnel
+  configuration" and does not say what it leaves standing, so whether it
+  also drops the Serve entries for the dashboard and metrics is unverified
+  and a reset offered as the safe option would be worse than none.
 
 **What it does NOT decide.** The customer-facing domain (#88) is still
 open: customers today reach the portal by the `*.ts.net` name they were

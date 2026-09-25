@@ -95,6 +95,8 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
 - The member portal is internet-reachable (Tailscale Funnel, decision 20):
   its login is exposed to credential stuffing, mitigated by the login
   throttle and TOTP where enrolled; the portal must never gain an operator
-  capability (tests/test_member_roles.py holds the boundary). The host's
-  one Elastic IP is both the exchanges' allowlisted egress and the portal's
-  ingress; losing it unmonitors every allowlisted account (2026-09-21).
+  capability (tests/test_member_roles.py holds the boundary). The public
+  name resolves to Tailscale's Funnel relay, not to the host, and the
+  portal is also reachable tailnet-only on 8391. Separately, the host's one
+  Elastic IP is the exchanges' allowlisted egress; losing it unmonitors
+  every allowlisted account (2026-09-21) and does not touch the portal.

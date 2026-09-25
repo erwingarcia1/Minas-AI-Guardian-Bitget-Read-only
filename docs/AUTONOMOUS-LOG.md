@@ -7164,3 +7164,43 @@ waits on the nine exchange allowlists. [Unreleased] carries the 2026-09-21
 incident's fixes end to end - item 4 of the incident batch, the host
 finding, the diagnosis's advice and the hold - so the next cut is the one
 that makes the next address change cost one page.
+
+# 2026-09-25 · Correction to item 2: the Funnel listener is 8443, and the Elastic IP is not the portal's ingress
+
+How it was found: the owner ran `sudo tailscale serve status` on the box.
+It shows Funnel on at https://minas-guardian.tail0fdd4a.ts.net:8443 ->
+127.0.0.1:8391, a tailnet-only :8391 -> 8391, `/` -> 8390 (dashboard) and
+:9109 (metrics). The withdraw command item 2 wrote - `tailscale funnel
+--https=8391 8391 off` - names a listener that does not exist and a port
+Funnel cannot listen on (the live page: "you must use one of the allowed
+ports: 443, 8443, or 10000"); run, it would have done nothing and said
+nothing. How the error was made: the doc was written from Tailscale's CLI
+reference - the command FORM was checked against the live page - without
+running `serve status` against the box. That is the same defect the doc
+was fixing: a claim about the running system that was never measured. A
+second error fell out of the same reading: decision 20, deployment.md,
+architecture.md and threat-model.md said the Elastic IP is "also the
+portal's ingress", so changing it would break the customer's address.
+Reasoned, not measured. Tailscale's Funnel page: public DNS resolves the
+Funnel URL "to the IP address of a Funnel relay server, not your device's
+IP address"; the relay "will establish a TCP proxy to your device using
+Tailscale" and "lets Tailscale hide the IP address of your local device".
+The Elastic IP is the exchanges' egress only; the portal's public address
+is the relay, and the two are independent.
+What changed (docs only): decision 20 records both addresses (8443
+public, 8391 tailnet-only), the real withdraw command `sudo tailscale
+funnel --https=8443 8391 off` with the listener and target as `serve
+status` prints them, and the corrected ingress claim, each marked as a
+correction with the date; deployment.md carries the live `serve status`
+output, the command, the instruction to read status before and after
+(an `off` naming a port with no listener does nothing), and the EIP
+section's bullet now says the address is NOT the portal's ingress;
+architecture.md and threat-model.md say the same. `tailscale funnel
+reset` is removed as a fallback everywhere: the live page says it "clears
+the current tailscale funnel configuration" and nothing about what
+survives, so whether it also drops the Serve entries for the dashboard
+and metrics is UNVERIFIED (rule 6), and a doc offering it as the safe
+option would be worse than none. The lesson, for the record: a command
+in an operations document is verified by running its read-only twin
+(`status`) against the box it will be run on, not by matching its form to
+the vendor's reference.

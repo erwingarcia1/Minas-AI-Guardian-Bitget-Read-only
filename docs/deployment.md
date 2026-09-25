@@ -147,14 +147,35 @@ Rules of the road:
 - **`serve` for the dashboard and metrics, never `funnel`.** They look
   alike; `funnel` publishes to the open internet, and the dashboard has no
   customer-facing reason to be there.
-- **`funnel` for the member portal (8391), and only the portal** - decision
-  20 (docs/DECISIONS-NEEDED.md): customers reach it from their own devices,
-  and it carries its own login, TOTP and throttle. Published in August 2026;
-  `tailscale funnel status` shows what the box is publishing, and
-  `tailscale funnel --https=8391 8391 off` (or `tailscale funnel reset`)
-  withdraws it in one command. Nothing else may ever be funnelled: an
-  operator capability on a
-  public surface is the A1 compromise with the door held open.
+- **`funnel` for the member portal, and only the portal** - decision 20
+  (docs/DECISIONS-NEEDED.md): customers reach it from their own devices,
+  and it carries its own login, TOTP and throttle. Published in August
+  2026. What the box publishes, read 2026-09-25 with `sudo tailscale serve
+  status`:
+
+  ```
+  # Funnel on: https://minas-guardian.tail0fdd4a.ts.net:8443
+  :8443 (Funnel on)    -> 127.0.0.1:8391   portal, PUBLIC
+  :8391 (tailnet only) -> 127.0.0.1:8391   portal, tailnet
+  /     (tailnet only) -> 127.0.0.1:8390   dashboard
+  :9109 (tailnet only) -> 127.0.0.1:9109   metrics
+  ```
+
+  So the portal has TWO addresses: the public one on **8443** (Funnel can
+  only listen on 443, 8443 or 10000) and the tailnet-only one on 8391. The
+  public listener alone is withdrawn with
+
+  ```bash
+  sudo tailscale funnel --https=8443 8391 off   # listener 8443, target 8391 - as serve status prints them
+  ```
+
+  Run `serve status` before and after; an `off` naming a port with no
+  listener does nothing and says nothing. Do NOT use `tailscale funnel
+  reset` as the fallback: Tailscale's page says only that it clears the
+  Funnel configuration and does not say whether the Serve entries survive,
+  so it may take the dashboard and metrics down with the portal. Nothing
+  else may ever be funnelled: an operator capability on a public surface
+  is the A1 compromise with the door held open.
 - Daily SSH is `ssh ubuntu@minas-guardian` (Tailscale SSH, no key file).
   Keep the security group's port-22-from-admin-IP rule as break-glass —
   and never remove it before Tailscale SSH is verified from a *fresh*
@@ -467,9 +488,12 @@ exchange side, so:
   product now reads that shape as one host-level finding (alerts/fleet.py,
   2026-09-23) and pages the operator once with the address the exchange
   named; it cannot fix an allowlist.
-- **The address is also the portal's ingress** (decision 20: the member
-  portal is Funnel-published on this host), so changing it breaks the
-  customer's bookmark and the exchanges' allowlists together.
+- **The address is NOT the portal's ingress.** Customers reach the portal
+  through Tailscale's Funnel relay at the `*.ts.net` name (decision 20);
+  the relay, not this address, is what their browsers resolve. Changing
+  the Elastic IP breaks the exchanges' allowlists and nothing about the
+  portal's address. (The first version of this section said the opposite;
+  corrected 2026-09-25 from Tailscale's own description of Funnel.)
 - **To move the address on purpose:** allocate the new EIP, add it to every
   affected key's allowlist while the old address still works (both entries
   at once - the exchanges allow more than one), then re-associate, then

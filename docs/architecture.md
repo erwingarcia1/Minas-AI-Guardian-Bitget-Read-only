@@ -87,9 +87,11 @@ two `telegram_handle`s, `license`, `status`, timestamps. Baselines live in
   HTTPS; **Tailscale Funnel** publishes the member portal to the internet
   (decision 20, since August 2026) - the one public HTTP surface, with its
   own login and TOTP. No public ports on the security group beyond SSH
-  (locked to admin IPs); Funnel enters through Tailscale's relay.
+  (locked to admin IPs); Funnel enters through Tailscale's relay, which is
+  what the public name resolves to - the portal is reachable publicly on
+  port 8443 and on the tailnet on 8391.
 - **One Elastic IP, `57.181.51.14`**, is the egress address every customer
-  key is allowlisted to and the portal's ingress; it is load-bearing
-  (docs/deployment.md).
+  key is allowlisted to; it is load-bearing for monitoring and plays no
+  part in how customers reach the portal (docs/deployment.md).
 - Scale path: raise worker pool → Postgres (`SENTINEL_DB_DSN`, planned) →
   multiple egress IPs / one stack per IP with a Redis-backed queue.
