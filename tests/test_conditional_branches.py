@@ -201,12 +201,16 @@ def test_switching_only_quiet_hours_on_is_a_change_and_is_stored(db):
     nothing."""
     email = "alice@example.com"
     set_member_password(db, email, "a-long-enough-password-1", notify=None)
-    choices = dict(timezone_name="America/Toronto", quiet_start="22:00", quiet_end="07:00",
+    # Not the defaults (22:00-07:00): a stored window that reads back as the
+    # default would pass for one that was never read at all.
+    choices = dict(timezone_name="America/Toronto", quiet_start="21:30", quiet_end="06:45",
                    grid=default_grid())
     assert set_member_prefs(db, email, quiet_hours_enabled=False, **choices)
     assert member_prefs(db, email)["quiet_hours_enabled"] is False
     assert set_member_prefs(db, email, quiet_hours_enabled=True, **choices)
-    assert member_prefs(db, email)["quiet_hours_enabled"] is True
+    prefs = member_prefs(db, email)
+    assert prefs["quiet_hours_enabled"] is True
+    assert (prefs["quiet_start"], prefs["quiet_end"], prefs["timezone"]) == ("21:30", "06:45", "America/Toronto")
     assert not set_member_prefs(db, email, quiet_hours_enabled=True, **choices)  # no change, no write
 
 

@@ -421,4 +421,49 @@ def test_the_portal_passes_its_rules_to_the_snooze_path():
     assert "rules" in inspect.signature(portal.serve_portal).parameters
     assert "rules=rules" in inspect.getsource(cli.cmd_run)
     handler = inspect.getsource(portal.serve_portal)
-    assert "rules=rules" in handler  # reaches snooze_alert, not just the signature
+    # The snooze call itself, not any `rules=rules` in the function: on
+    # 2026-10-22 the API's `Api(..., rules=rules)` in serve_portal satisfied
+    # the bare substring, and the probe that deletes this argument survived.
+    assert 'severity=alert["severity"], rules=rules)' in handler
+
+
+def test_the_portals_snooze_obeys_the_running_config(db, tmp_path):
+    """The execution half of the wiring test above, through the real portal.
+    A CRITICAL cap of zero in rules.yaml refuses the snooze; the same request
+    to a portal running without that config stores one. A source check can be
+    satisfied by text elsewhere in the function; this cannot."""
+    import http.client
+    import urllib.parse
+
+    from sentinel.config import RulesConfig
+    from sentinel.portal import _session_secret, make_session_token, serve_portal, set_member_password
+
+    member = "owner@example.com"
+    set_member_password(db, member, "a-long-enough-password", notify=None)
+    cookie = "minas_portal=" + make_session_token(_session_secret(db), member, epoch=1)
+    rules_path = tmp_path / "rules.yaml"
+    rules_path.write_text('alerting:\n  snooze_cap_hours:\n    CRITICAL: "0"\n')
+
+    def snooze_through(rules) -> bool:
+        account_id = make_account(db, label=f"acct-{id(rules)}")
+        with db.cursor() as cur:
+            cur.execute("UPDATE accounts SET alert_email = ? WHERE id = ?", (member, account_id))
+            cur.execute(
+                "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, evidence_json, confidence, "
+                "sent_at, delivered_to) VALUES (?, 'withdrawal_initiated', 'CRITICAL', ?, 'm', '{}', 'high', "
+                "'2026-10-01T00:00:00+00:00', 1)", (account_id, f"k-{account_id}"))
+            alert_id = cur.lastrowid
+        srv = serve_portal(db, 0, host="127.0.0.1", rules=rules)
+        try:
+            conn = http.client.HTTPConnection("127.0.0.1", srv.server_address[1], timeout=5)
+            conn.request("POST", "/snooze", body=urllib.parse.urlencode({"alert_id": alert_id, "hours": "1"}),
+                         headers={"Content-Type": "application/x-www-form-urlencoded", "Cookie": cookie})
+            assert conn.getresponse().status in (200, 303)
+            conn.close()
+        finally:
+            srv.shutdown()
+            srv.server_close()
+        return active_snooze(db, account_id, f"k-{account_id}") is not None
+
+    assert snooze_through(None), "without the config a CRITICAL snoozes - the request reaches the path"
+    assert not snooze_through(RulesConfig(str(rules_path))), "the configured zero never reached the portal"
