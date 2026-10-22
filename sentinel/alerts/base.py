@@ -70,6 +70,7 @@ RULE_ADVICE: dict[str, str | None] = {
     # it carries. Never a runbook.
     "password_reset_requested": NO_ADVICE,
     "password_changed": NO_ADVICE,
+    "app_signed_in": NO_ADVICE,  # decision 21c: a phone signed in to this login
     "alert_destination_changed": NO_ADVICE,
     "secondary_contact_added": NO_ADVICE,
     "telegram_disconnected": NO_ADVICE,

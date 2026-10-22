@@ -45,7 +45,8 @@ ACCOUNT_CHILDREN = ("events", "known_addresses", "seen_withdrawals", "balance_sn
                     "account_threshold_overrides", "snoozes", "expected_activity")
 MEMBER_TABLES = (("portal_members", "email"), ("member_account_grants", "email"),
                  ("held_alerts", "email"), ("deliveries", "recipient"),
-                 ("telegram_links", "member_email"), ("password_resets", "email"))
+                 ("telegram_links", "member_email"), ("password_resets", "email"),
+                 ("api_devices", "email"))
 
 
 def _now() -> str:
@@ -100,6 +101,11 @@ def export_member_data(db: Database, email: str) -> dict:
                     "digest_frequency, created_at, last_login_at FROM portal_members WHERE email = ?", (normalized,))
         row = cur.fetchone()
         out["login"] = dict(row) if row else None
+        # Which phones held this login, and when (decision 21c). Never the
+        # token hashes: they are credentials, like the API key above.
+        cur.execute("SELECT name, created_at, last_refreshed_at, revoked_at, revoked_reason "
+                    "FROM api_devices WHERE email = ? ORDER BY id", (normalized,))
+        out["app_devices"] = [dict(r) for r in cur.fetchall()]
     return out
 
 

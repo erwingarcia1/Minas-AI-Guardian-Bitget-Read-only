@@ -125,6 +125,11 @@ NEVER_PRUNE = frozenset({
     # Live countdowns plus their forensic record (#98): a pruned pending row
     # IS a lost pause, and executed/cancelled rows are who-asked-when facts.
     "pause_requests",
+    # App sign-ins (decision 21c), the telegram_links shape: a live row IS a
+    # signed-in phone - pruning it signs somebody out - and revoked rows are
+    # the record of which device held the login, and why it was cut off.
+    # Human-scale: one row per app sign-in, never per refresh.
+    "api_devices",
 })
 
 # Tables holding a row *about* one alert. Every one of them declares

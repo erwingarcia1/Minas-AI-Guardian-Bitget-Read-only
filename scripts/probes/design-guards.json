@@ -1748,5 +1748,105 @@
    "tests/test_coverage_repeats.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "api: a device signed in before a password change still authenticates",
+  "file": "sentinel/api.py",
+  "old": "or row[\"member_epoch\"] != row[\"session_epoch\"]:",
+  "new": ":",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: a revoked device still authenticates",
+  "file": "sentinel/api.py",
+  "old": "if row is None or row[\"revoked_at\"] is not None or",
+  "new": "if row is None or",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: a replayed refresh token does not revoke the device",
+  "file": "sentinel/api.py",
+  "old": "            revoke_device(db, reused[\"email\"], int(reused[\"id\"]), \"refresh_reused\")",
+  "new": "            pass",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: revoking a device is not scoped to the signed-in login",
+  "file": "sentinel/api.py",
+  "old": "\"WHERE id = ? AND email = ? AND revoked_at IS NULL\",\n            (_iso(_clock()), reason, int(device_id), email),",
+  "new": "\"WHERE id = ? AND revoked_at IS NULL\",\n            (_iso(_clock()), reason, int(device_id)),",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: sign-in accepts any code once two-factor is on",
+  "file": "sentinel/api.py",
+  "old": "if self.cipher is None or not check_second_factor(self.db, self.cipher, MEMBER, email, code):",
+  "new": "if self.cipher is None:",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: sign-in no longer requires two-factor to be on",
+  "file": "sentinel/api.py",
+  "old": "if not member_login_requires_code(self.db, email):",
+  "new": "if False:",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: an expired refresh token still refreshes",
+  "file": "sentinel/api.py",
+  "old": "or row[\"refresh_expires_at\"] <= _iso(now)):",
+  "new": "):",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: an expired access token still authenticates",
+  "file": "sentinel/api.py",
+  "old": "        if int(expires_s) <= now_v:\n            return None",
+  "new": "        pass",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: a wrong password is not counted on the login throttle",
+  "file": "sentinel/api.py",
+  "old": "            self.throttle.record_failure(pair)\n            self.throttle.record_failure(ip)\n            logger.warning(\"api sign-in failed",
+  "new": "            logger.warning(\"api sign-in failed",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: every route is treated as needing no sign-in",
+  "file": "sentinel/api.py",
+  "old": "if route in PRE_AUTH:",
+  "new": "if True:",
+  "tests": [
+   "tests/test_api_routes.py"
+  ],
+  "expect": "killed"
  }
 ]

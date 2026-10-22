@@ -131,6 +131,25 @@ container")._
   escalates. `withdrawal_to_unseen_address`, `withdrawal_burst` and every
   other rule are untouched.
 
+### Added
+
+- **Sign-in for the iOS and Android apps (decision 21c).** The member
+  portal now serves a JSON API under `/api/v1/` for the customer apps.
+  This release carries its sign-in: the web's email, password and TOTP,
+  counted on the portal's own login throttle, and only for a member with
+  two-factor on - the app is refused with "turn on two-factor" otherwise.
+  The app holds a 15-minute access token and a refresh token that is
+  replaced on every use; an app left unopened for 30 days signs out. A
+  replaced refresh token presented again ends that sign-in at once, and a
+  password change signs every phone out, as it already signed out every
+  browser. Every app sign-in emails the member and appears on their
+  activity page with the device's name, as does every sign-out.
+  `GET /api/v1/security` lists the live sign-ins; a member can end any of
+  their own (`DELETE /api/v1/devices/{id}`) and never anyone else's.
+  Nothing changes for the web portal or for alerting. New table:
+  `api_devices` (additive; erased with the member, listed in the data
+  export without its token hashes).
+
 ### Changed
 
 - **The unpinned method decisions are being retired in named batches, the

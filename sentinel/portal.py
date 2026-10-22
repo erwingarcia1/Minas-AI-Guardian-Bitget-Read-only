@@ -1733,6 +1733,12 @@ def _activity_detail(event_type: str, payload: dict) -> str:
         return f"login {shown(payload.get('login'))}"
     if event_type == "customer_added":
         return f"{shown(payload.get('exchange'))} · {shown(payload.get('topology'))}"
+    if event_type in ("member_app_signed_in", "member_app_device_revoked"):
+        from sentinel.api import REVOKE_REASONS
+
+        detail = f"login {shown(payload.get('login'))} · {shown(payload.get('device'))}"
+        reason = REVOKE_REASONS.get(payload.get("reason"))
+        return detail + (f" · {html.escape(reason)}" if reason else "")
     return ""
 
 
@@ -3400,6 +3406,15 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             return True  # non-browser clients send neither header
         return urlparse(origin).netloc == (handler.headers.get("Host") or "")
 
+    # Decision 21: the apps' JSON API, on this server's secret, throttle and
+    # cipher - one sign-in limiter for the web and the app, not two.
+    from sentinel.api import MAX_BODY_BYTES, Api
+
+    api = Api(db, secret, throttle, _throttle_pair, cipher=cipher, rules=rules)
+
+    def _is_api(path: str) -> bool:
+        return path == "/api" or path.startswith("/api/")
+
     class Handler(BaseHTTPRequestHandler):
         def finish(self):
             # Same leak as the dashboard's (#79): the portal serves from the
@@ -3485,8 +3500,42 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
         def _client_ip(self) -> str:
             return self.client_address[0] if self.client_address else "?"
 
+        def _api(self, method: str) -> None:
+            """Every `/api/` request, whatever its method (decision 21).
+
+            Ahead of the session cookie and of the CSRF gate on purpose: the
+            API authenticates with bearer tokens only and never reads the
+            cookie, so there is no ambient credential for a cross-site request
+            to borrow - see sentinel/api.py."""
+            parsed = urlparse(self.path)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0 or length > MAX_BODY_BYTES:
+                body = json.dumps({"error": "invalid_request",
+                                   "message": "The request body is missing a valid length or is too large."})
+                self._send(body.encode(), 400, content_type="application/json; charset=utf-8")
+                return
+            raw = self.rfile.read(length) if length else b""
+            response = api.handle(method, parsed.path.rstrip("/"), self.headers, raw,
+                                  self._client_ip(), parse_qs(parsed.query))
+            payload = b"" if response.body is None else json.dumps(response.body).encode()
+            self._send(payload, response.status, response.headers,
+                       content_type="application/json; charset=utf-8")
+
+        def do_DELETE(self):
+            path = urlparse(self.path).path.rstrip("/")
+            if _is_api(path):
+                self._api("DELETE")
+                return
+            self._send(_render_not_found().encode(), 404)
+
         def do_GET(self):
             path = urlparse(self.path).path.rstrip("/") or "/"
+            if _is_api(path):
+                self._api("GET")
+                return
             if path == "/favicon.ico":
                 self.send_response(204)
                 self.end_headers()
@@ -4133,6 +4182,9 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
 
         def do_POST(self):
             path = urlparse(self.path).path.rstrip("/")
+            if _is_api(path):
+                self._api("POST")
+                return
             if not _same_origin(self):
                 self._send(b"cross-origin POST rejected", 403)
                 return

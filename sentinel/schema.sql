@@ -636,3 +636,37 @@ CREATE TABLE IF NOT EXISTS alert_triage (
     updated_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_triage_handled ON alert_triage(handled_at);
+
+-- App sign-ins (decision 21c). One row per sign-in from the iOS or Android
+-- app; the member sees every live one on the Security page and can revoke it.
+--
+-- The refresh token is stored as a SHA-256 hash, never as itself, for the
+-- reason `password_resets` stores hashes: a database read must not yield a
+-- working credential. `previous_refresh_hash` is the token the current one
+-- replaced. It can never be redeemed again; it is kept only so that presenting
+-- it is recognised as REUSE - the app and somebody holding a copy have both
+-- tried it - and the device is revoked on the spot.
+--
+-- `session_epoch` is the member's epoch at sign-in. A password change bumps
+-- the member's epoch (#33), and every device signed in under the old one stops
+-- working: "every other signed-in device has been signed out" has to be as
+-- true of a phone as of a browser.
+--
+-- Revoking sets `revoked_at` rather than deleting: which phone was signed in,
+-- when it was cut off and why, is what a member reads when deciding whether
+-- somebody else has their login.
+CREATE TABLE IF NOT EXISTS api_devices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL,
+    name TEXT NOT NULL,
+    session_epoch INTEGER NOT NULL,
+    refresh_hash TEXT NOT NULL UNIQUE,
+    previous_refresh_hash TEXT,
+    refresh_expires_at TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    last_refreshed_at TEXT,
+    revoked_at TEXT,
+    revoked_reason TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_api_devices_email ON api_devices(email, revoked_at);
+CREATE INDEX IF NOT EXISTS idx_api_devices_previous ON api_devices(previous_refresh_hash);
