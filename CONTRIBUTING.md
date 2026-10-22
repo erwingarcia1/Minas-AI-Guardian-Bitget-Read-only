@@ -458,6 +458,12 @@ work until it's green:
 gh run list --limit 1
 ```
 
+**Read the weekly run too.** `gh run list --workflow ci.yml --event schedule
+--limit 3`. Its failures are meant to file an issue, but from 2026-09-14 to
+2026-10-22 the job's token could not write issues, and five red weeks
+reached nobody. A notification path is itself a thing that can fail
+silently.
+
 Green locally is not evidence CI is green. The tests run on a freshly booted
 runner with fewer cores, and at least one real defect has been found only there:
 `time.monotonic()` is seconds since **boot**, so any `now - last.get(k, 0) >= interval`
@@ -795,6 +801,17 @@ scripts/mutation-check.sh --check    # fail below the floor, raise it on improve
 
 Restricted to **decision points** — comparison operators, boolean operators,
 `continue`/`break`/`return` — over `sentinel/detectors/` and `sentinel/alerts/`.
+
+**The instrument is pinned: mutmut 3.7.0** (`MUTMUT_VERSION` in
+`scripts/mutation-check.sh`, the install line in `ci.yml`; the gate refuses
+any other version, and `tests/test_scheduled_gates.py` keeps the two equal).
+CI used to install whatever was newest. mutmut 3.8.0 was released on
+2026-09-12 and generates mutant kinds 3.7.0 does not: the same tree went
+from 322 decision points to 400. The weekly run went red on 2026-09-14 over
+code that had not changed and stayed red for five weeks, and nobody was told
+(see "After pushing"). A floor and a survivor ledger mean something only
+against one generator. Upgrade deliberately: the new version, its new
+survivors judged (tests or ledger rows), and both pins, in one commit.
 
 An unrestricted run produced **588 survivors from 1,322 mutants** and would take
 ~36 hours for the whole package; roughly 60% were cosmetic (mutated log text,

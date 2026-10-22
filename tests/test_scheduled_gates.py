@@ -18,8 +18,11 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
+
+import yaml
 
 ROOT = Path(__file__).parent.parent
 REPORT = ROOT / "scripts" / "scheduled-gates-report.sh"
@@ -228,6 +231,35 @@ def test_the_workflow_wires_both_gates_and_the_classifier():
     assert wf.count("continue-on-error: true") >= 2, (
         "each gate must reach its own verdict; an abort reports the second gate as nothing")
     assert "if: always()" in wf, "a timeout kill must still be classified and filed"
+
+
+def test_the_mutation_instrument_is_one_pinned_version_everywhere():
+    """mutmut 3.8.0 arrived unpinned on 2026-09-12 and moved the gate's
+    population (322 decision points became 400 on an unchanged tree): the
+    weekly run went red on 2026-09-14 and stayed red for five weeks over
+    code that had not changed. The version CI installs, the version the gate
+    refuses to run without, and the version its install hint names must be
+    one number, so an upgrade is a commit, never an accident."""
+    script = MUTATION_TOOL.read_text()
+    pinned = re.search(r"^MUTMUT_VERSION=(\S+)$", script, re.M)
+    assert pinned, "mutation-check.sh no longer declares the version it is calibrated for"
+    installs = re.findall(r"pip install mutmut(\S*)", WORKFLOW.read_text())
+    assert installs, "ci.yml no longer installs mutmut"
+    assert installs == [f"=={pinned.group(1)}"] * len(installs), (
+        f"ci.yml installs mutmut{installs}, the gate is calibrated for {pinned.group(1)}")
+    # The refusal itself, and the hint that names the same number.
+    assert '[ "$installed" != "$MUTMUT_VERSION" ]' in script
+    assert "pip install mutmut==$MUTMUT_VERSION" in script
+
+
+def test_the_scheduled_job_may_file_the_issues_it_exists_to_file():
+    """From 2026-09-14 the report step failed every week with "Resource not
+    accessible by integration (repository.issues)": the default token could
+    not write issues, so the red reached nobody. The job names what it needs,
+    and only that. Execution evidence is the job log's GITHUB_TOKEN
+    permissions block on a dispatched run."""
+    job = yaml.safe_load(WORKFLOW.read_text())["jobs"]["scheduled-gates"]
+    assert job["permissions"] == {"contents": "read", "issues": "write"}
 
 
 def test_the_local_health_check_watches_the_schedules_own_pulse():

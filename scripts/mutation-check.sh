@@ -140,8 +140,25 @@ done
 # from a shell, a hook and CI.
 PY=python3; [ -x .venv/bin/python ] && PY=.venv/bin/python
 MUTMUT=mutmut; [ -x .venv/bin/mutmut ] && MUTMUT=.venv/bin/mutmut
+
+# The instrument is pinned (2026-10-22). mutmut 3.8.0, released 2026-09-12,
+# generates mutant kinds 3.7.0 does not (`if (x) or True` among them): the
+# same tree went from 322 decision points to 400. CI installed whatever was
+# newest, so the weekly gate went red on 2026-09-14 over code that had not
+# changed - the measurement moved, not the decisions - and stayed red for
+# five weeks. A floor and a survivor ledger mean something only against one
+# generator. Upgrading is a deliberate change: this number, ci.yml's install
+# line (tests/test_scheduled_gates.py keeps them equal) and the new
+# generator's survivors judged, in one commit.
+MUTMUT_VERSION=3.7.0
 command -v "$MUTMUT" >/dev/null 2>&1 || [ -x "$MUTMUT" ] || {
-  echo "mutmut not installed: pip install mutmut" >&2; exit 2; }
+  echo "mutmut not installed: pip install mutmut==$MUTMUT_VERSION" >&2; exit 2; }
+installed=$("$PY" -c "import importlib.metadata as m; print(m.version('mutmut'))" 2>/dev/null || echo unknown)
+if [ "$installed" != "$MUTMUT_VERSION" ]; then
+  echo "mutmut $installed is installed; this gate is calibrated for mutmut $MUTMUT_VERSION." >&2
+  echo "pip install mutmut==$MUTMUT_VERSION - a different generator measures a different population." >&2
+  exit 2
+fi
 
 # The test selection is deliberately narrow: mutation testing runs it once per
 # mutant, so the full 70-second suite would make this unusable. These are the

@@ -7305,3 +7305,29 @@ reports 25 survivors not in the ledger, and the step that should file an
 issue fails with "Resource not accessible by integration
 (repository.issues)" - the workflow token cannot write issues, so the red
 reached nobody. Not fixed here. release.sh refuses while that run is red.
+
+# 2026-10-22 · The weekly gates: red for five weeks, and nobody told
+
+Scheduled CI failed every week from 2026-09-14 (last green 2026-09-07).
+Two causes, both measured from the run logs:
+
+1. **The instrument moved.** ci.yml ran `pip install mutmut`, unpinned.
+   The 2026-09-07 run installed 3.7.0: 322 decision points, 98%, pass. The
+   2026-09-14 run installed 3.8.0 (released 2026-09-12): 400 points, 9 new
+   survivors, on code that had not changed. By main@58975e2 (2026-10-19)
+   there were 693 points, 25 new survivors and 95% against a floor of 96.
+   3.8.0's new kind is mostly `if x` -> `if (x) or True`. The Sep 22-23
+   local runs passed because the laptop still had 3.7.0.
+2. **The alarm could not ring.** The report step's `gh issue create` failed
+   every week with "Resource not accessible by integration
+   (repository.issues)": the job's default token could not write issues.
+
+Fix, on branch `fix-scheduled-gates`: mutmut pinned to 3.7.0 in ci.yml and
+as MUTMUT_VERSION in mutation-check.sh, which refuses any other version
+(exit 2: "no result" to the classifier). Run for real with 3.8.0 installed,
+it refused before touching `mutants/`. The job has `permissions: contents:
+read, issues: write`. tests/test_scheduled_gates.py keeps the two pins
+equal and the permission present; both tests were probed and fail when the
+fix is undone. CONTRIBUTING: the pin, its history, and "read the weekly run
+too". The 25 survivors under 3.8.0 are #106, the deliberate upgrade. `.venv`
+now has mutmut 3.7.0.
