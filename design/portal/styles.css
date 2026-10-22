@@ -174,7 +174,7 @@ small { font-size: var(--text-sm); }
   letter-spacing: -.005em;
 }
 .brand:hover { text-decoration: none; }
-.brand__mark { width: 28px; height: 28px; flex: none; color: var(--gold); }
+.brand__mark { width: 28px; height: 28px; flex: none; display: block; object-fit: contain; }
 .brand__name span { color: var(--text-muted); font-weight: 600; }
 
 .topbar__meta { font-size: var(--text-sm); color: var(--text-muted); text-align: right; }

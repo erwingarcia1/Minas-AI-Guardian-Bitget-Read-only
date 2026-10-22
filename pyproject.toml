@@ -40,8 +40,9 @@ include = ["sentinel*"]
 
 [tool.setuptools.package-data]
 # schema.sql ships inside the package; without this a clean (non-editable)
-# install crash-loops at startup - caught by the Docker dry run.
-sentinel = ["schema.sql"]
+# install crash-loops at startup - caught by the Docker dry run. The logo
+# files are the same case: sentinel/brand.py reads them at import.
+sentinel = ["schema.sql", "static/*.png"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

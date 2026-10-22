@@ -7284,3 +7284,24 @@ failed-login log lines carry the source address).
 
 Next: push the branch and open a PR once `gh` is authenticated; push
 (21e) waits on its answer; the 22c preconditions.
+
+# 2026-10-22 · The Minas logo replaces the infinity mark
+
+Owner supplied `files/minaslogo.png` (4096 px RGBA; left uncommitted where it
+was dropped). It carries a near-invisible square behind the mark (alpha 5,
+noise to ~12) that shows as a smudge on dark and a grey box on white;
+`scripts/brand-assets.py clean` remaps alpha so that floor is transparent,
+and `derive` writes every size from the 2048 px master in `design/brand/`.
+The portal serves the files itself (WEB_ASSETS in sentinel/brand.py,
+package-data, verified in a real image build), so there is still no
+external request. The dashboard stays unbranded (decision 2 on #82).
+Icon sizes checked against Expo's and Android's pages on the day: 1024
+square and opaque for iOS, adaptive layers 108 dp with the inner 66 dp
+never clipped.
+
+Also found: CI on 5c6f2a0 is green, but the weekly scheduled-gates job
+has failed four weeks running (since 2026-09-28): the mutation gate
+reports 25 survivors not in the ledger, and the step that should file an
+issue fails with "Resource not accessible by integration
+(repository.issues)" - the workflow token cannot write issues, so the red
+reached nobody. Not fixed here. release.sh refuses while that run is red.

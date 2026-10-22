@@ -182,6 +182,16 @@ container")._
 
 ### Changed
 
+- **The member portal wears the Minas logo.** It replaces the stroked
+  infinity mark in the top bar and on the sign-in page. The portal now
+  has a browser-tab icon and an iPhone home-screen icon; `/favicon.ico`
+  used to answer with nothing. The logo files are served by the portal
+  itself (`/brand/...`, cached for a day), so no page makes an external
+  request. Every size is derived from one master by
+  `scripts/brand-assets.py`, which also produced the app-store icons in
+  `design/brand/`. The ops dashboard stays unbranded on purpose. Nothing
+  changes for alerting.
+
 - **The unpinned method decisions are being retired in named batches, the
   floor climbing behind each (#104).** Batch A, the escalator: the stale
   edge in both comparisons, the live-window edge and its two skips, a

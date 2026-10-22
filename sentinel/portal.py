@@ -19,7 +19,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 # Logic helpers only, deliberately: the portal owns its stylesheet, its pill
 # and its brand usage (#82 — tests/test_surface_styles.py refuses a shared
 # stylesheet, so the two surfaces cannot quietly converge again).
-from sentinel.brand import MARK_SVG
+from sentinel.brand import ICON_LINKS, MARK_HTML, WEB_ASSETS
+from sentinel.brand import asset as brand_asset
 from sentinel.dashboard import (
     _LOCAL_TIME_SCRIPT,
     _account_type_label,
@@ -720,7 +721,7 @@ _PORTAL_STYLE = """
   .brand { display:inline-flex; align-items:center; gap:var(--space-3); color:var(--text);
            text-decoration:none; font-weight:700; font-size:var(--text-base); letter-spacing:-.005em; }
   .brand:hover { text-decoration:none; }
-  .brand__mark { width:28px; height:28px; flex:none; color:var(--gold); }
+  .brand__mark { width:28px; height:28px; flex:none; display:block; object-fit:contain; }
   .brand__name span { color:var(--text-muted); font-weight:600; }
   .brand__stack { display:flex; flex-direction:column; line-height:1.25; }
   .brand__tag { font-size:var(--text-xs); font-weight:700; letter-spacing:var(--tracking-wide);
@@ -1036,7 +1037,7 @@ def _page(body_html: str, email: str | None = None, active: str = "",
     `actionbar` reserves bottom space for a fixed action bar; `back`
     replaces the subnav with a single return link (alert detail)."""
     brand = (
-        '<a class="brand" href="/" aria-label="Minas AI Guardian home">' + MARK_SVG
+        '<a class="brand" href="/" aria-label="Minas AI Guardian home">' + MARK_HTML
         + '<span class="brand__stack"><span class="brand__name">Minas AI <span>Guardian</span></span>'
         '<span class="brand__tag">Member portal</span></span></a>'
     )
@@ -1078,7 +1079,8 @@ def _page(body_html: str, email: str | None = None, active: str = "",
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
         '<meta name="color-scheme" content="dark">'
-        f"<title>{html.escape(title)} — Member portal</title><style>" + _PORTAL_STYLE + "</style></head>"
+        f"<title>{html.escape(title)} — Member portal</title>" + ICON_LINKS
+        + "<style>" + _PORTAL_STYLE + "</style></head>"
         f'<body class="{body_cls}">'
         '<a class="skip-link" href="#main">Skip to content</a>'
         + topbar + main + footer
@@ -1262,7 +1264,7 @@ _ICON_SHIELD = (
 
 def _auth_brand() -> str:
     return (
-        '<div class="auth-card__brand">' + MARK_SVG
+        '<div class="auth-card__brand">' + MARK_HTML
         + '<div class="brand__name">Minas AI <span>Guardian</span></div>'
         '<div class="brand__tag">Member portal</div></div>'
     )
@@ -3636,6 +3638,20 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             self._send(payload, response.status, response.headers,
                        content_type="application/json; charset=utf-8")
 
+        def _send_asset(self, path: str) -> None:
+            """The logo files (sentinel/brand.py): public, before any session
+            check, because the sign-in page wears the logo. Cached for a day -
+            they change only with a release - unlike every page, which is
+            no-store."""
+            body = brand_asset(path)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_DELETE(self):
             path = urlparse(self.path).path.rstrip("/")
             if _is_api(path):
@@ -3648,9 +3664,8 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             if _is_api(path):
                 self._api("GET")
                 return
-            if path == "/favicon.ico":
-                self.send_response(204)
-                self.end_headers()
+            if path in WEB_ASSETS:
+                self._send_asset(path)
                 return
             email = self._session_email()
             if email is None:
