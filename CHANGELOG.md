@@ -233,6 +233,17 @@ container")._
   one that is neither held nor live, so a hold decided and not written
   cannot pass again.
 
+- **The weekly slow-gate run is measuring again, and its failures reach
+  someone.** It had been red since 2026-09-14, with no change to the code
+  it measures. CI installed mutmut unpinned, and 3.8.0 (released
+  2026-09-12) generates mutant kinds the gate's floor and survivor ledger
+  were never calibrated for. mutmut is now pinned to 3.7.0, and the gate
+  refuses any other version as "no result". Meanwhile the step that files
+  an issue on failure could not write issues, so five weeks of red reached
+  nobody; the job now has that permission. The deliberate upgrade to 3.8.0
+  is tracked in #106. Tooling only: nothing about detection or
+  alerting changes.
+
 ## [1.12.0] — 2026-09-08
 
 ### Changed — on upgrade

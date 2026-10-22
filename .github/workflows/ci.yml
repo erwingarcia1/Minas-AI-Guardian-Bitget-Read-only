@@ -115,6 +115,14 @@ jobs:
   scheduled-gates:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    # The report step files issues, and the default token cannot: from
+    # 2026-09-14 it failed every week with "Resource not accessible by
+    # integration (repository.issues)", so five weeks of red reached nobody.
+    # Naming any permission sets every unnamed one to none, so the checkout's
+    # contents: read is stated too.
+    permissions:
+      contents: read
+      issues: write
     # Measured, not guessed: mutation alone took 20 minutes cold on this
     # runner (run 32003357961); the probes are ~13 minutes locally. 75 gives
     # a slow runner room without letting a wedged run burn hours - and a
@@ -132,7 +140,10 @@ jobs:
       - name: Install
         run: |
           pip install -e ".[dev]"
-          pip install mutmut
+          # Pinned: must equal MUTMUT_VERSION in scripts/mutation-check.sh,
+          # which refuses any other. Unpinned, 3.8.0 arrived on its own and
+          # moved the population under the floor (see the script).
+          pip install mutmut==3.7.0
 
       # #97 replaced the cold-run assert with a VALIDATED cache. The old
       # proof ("a fresh runner cannot have a cache") bought trust by paying
