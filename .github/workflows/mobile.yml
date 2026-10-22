@@ -1,0 +1,60 @@
+name: Mobile
+
+# The iOS and Android app in mobile/ (decision 21f). Its own job, so npm never
+# enters the server's gates or its image, and only when something the app is
+# built from changes - including the API contract, because a server change
+# that breaks the app must break the build.
+on:
+  push:
+    branches: [main]
+    paths: ["mobile/**", "api/openapi.yaml", ".github/workflows/mobile.yml"]
+  pull_request:
+    branches: [main]
+    paths: ["mobile/**", "api/openapi.yaml", ".github/workflows/mobile.yml"]
+  workflow_dispatch:
+
+jobs:
+  app:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: mobile
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: mobile/package-lock.json
+
+      - name: Install (lockfile exact; install scripts per package.json allowScripts)
+        run: npm ci
+
+      # The client types are generated from api/openapi.yaml, the same file
+      # tests/test_api_contract.py holds the server to. Regenerate and fail on
+      # any difference: the app is never built against a stale contract.
+      - name: The API types match the contract
+        run: |
+          npm run gen:api
+          git diff --exit-code -- src/api/schema.d.ts \
+            || { echo "::error::src/api/schema.d.ts is stale - run npm run gen:api in mobile/ and commit"; exit 1; }
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test -- --ci
+
+      # High and critical advisories in the production tree, against the
+      # reasoned list in audit-allowlist.json: an unlisted one fails, and so
+      # does a listed one that no longer appears. No report is "no result".
+      - name: Dependency audit
+        run: npm run audit:check
+
+      # The strongest check without a device: Metro resolves every import,
+      # route and asset and compiles both platforms' bundles.
+      - name: Both platforms bundle
+        run: npx expo export --platform ios --platform android --output-dir "$RUNNER_TEMP/expo-export"

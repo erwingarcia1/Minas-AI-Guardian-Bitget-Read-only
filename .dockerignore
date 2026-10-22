@@ -15,3 +15,6 @@ scripts/
 !scripts/retention-boundary.py
 .claude/
 .pytest_cache/
+# The mobile app (decision 21f): its own toolchain, ~900 MB of node_modules,
+# and nothing the server image uses.
+mobile/

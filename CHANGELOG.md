@@ -182,6 +182,14 @@ container")._
 
 ### Changed
 
+- **The deploy gate accepts release tags only (`v*`).** The iOS and
+  Android app now lives in `mobile/` and tags its own releases
+  `mobile-vX.Y.Z`, with its own `mobile/CHANGELOG.md`. Before this change
+  the gate took any tag: an app-only commit would have passed it, and a
+  commit carrying both kinds of tag could have stamped the server image
+  with the app's tag. `mobile/` is also kept out of the Docker build
+  context. Nothing changes for a deploy of a `vX.Y.Z` release.
+
 - **The member portal wears the Minas logo.** It replaces the stroked
   infinity mark in the top bar and on the sign-in page. The portal now
   has a browser-tab icon and an iPhone home-screen icon; `/favicon.ico`

@@ -44,7 +44,11 @@ case "${1:-}" in
   *) echo "deploy-gate: unknown argument: $1 (try --export, --help)" >&2; exit 2 ;;
 esac
 
-if ! TAG=$(git describe --exact-match --tags HEAD 2>/dev/null); then
+# --match 'v*' here too (decision 21f): the mobile app tags its own releases
+# `mobile-vX.Y.Z` in this repo. Without it, an app-only commit passed this
+# gate, and a commit carrying both tags could export the app's as GIT_TAG -
+# failing deploy.sh's assertion that the container names the tag it deployed.
+if ! TAG=$(git describe --exact-match --tags --match 'v*' HEAD 2>/dev/null); then
   SHA=$(git rev-parse --short HEAD)
   # --match 'v*': only release tags count as "the last release". The repo
   # carries non-release tags (a pre-autonomous-work marker), and reporting one

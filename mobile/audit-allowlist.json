@@ -1,0 +1,14 @@
+[
+  {
+    "advisory": "https://github.com/advisories/GHSA-vfj7-8cjw-p6xm",
+    "package": "braces",
+    "reason": "Stack exhaustion on deeply nested glob patterns. braces is the file matcher Metro uses at build time, matching our own source tree; it is not in the app bundle. No fixed release exists: 3.0.3 is the latest, and vulnerable.",
+    "reviewed": "2026-10-22"
+  },
+  {
+    "advisory": "https://github.com/advisories/GHSA-86w9-cpqp-85rv",
+    "package": "node-forge",
+    "reason": "RSA PKCS#1 v1.5 signature verification accepts extra nested DigestAlgorithm elements. node-forge is used by @expo/cli to sign expo-updates manifests at build time; it is not in the app bundle, and the app does not use expo-updates. No fixed release exists: 1.4.0 is the latest, and vulnerable.",
+    "reviewed": "2026-10-22"
+  }
+]

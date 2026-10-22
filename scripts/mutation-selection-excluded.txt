@@ -39,6 +39,7 @@ tests/test_login_lockout.py: imports passwords, portal - nothing under the mutat
 tests/test_member_account_grants.py: imports dashboard, operators, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_member_roles.py: imports sentinel, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_metrics.py: imports metrics - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_mobile_app.py: imports api, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_multi_exchange.py: imports exchange, poller - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_mutant_cache.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_mutant_refresh.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)

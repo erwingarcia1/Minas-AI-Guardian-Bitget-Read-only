@@ -7331,3 +7331,48 @@ equal and the permission present; both tests were probed and fail when the
 fix is undone. CONTRIBUTING: the pin, its history, and "read the weekly run
 too". The 25 survivors under 3.8.0 are #106, the deliberate upgrade. `.venv`
 now has mutmut 3.7.0.
+
+# 2026-10-22 · The mobile app, started (decision 21), on branch `mobile-app`
+
+`mobile/` was scaffolded with `create-expo-app --template default@sdk-58
+--no-agents-md`. The template was checked against Expo's docs on the day:
+without `@sdk-58`, `@latest` still creates an SDK 57 project. Removed from
+the template: Expo's MIT LICENSE (this repo is proprietary), `.vscode/`,
+and every example screen and asset. Screens: sign-in (two-factor
+required), accounts ("Am I being watched?" in the portal's
+_OVERALL_COPY words), alerts, incident and acknowledge, security and
+devices, activity, limits.
+
+Decisions taken, each with its reason in mobile/README.md:
+- **API types are generated** from api/openapi.yaml. openapi-typescript
+  7.13 needs TypeScript ^5 and SDK 58 ships 6, so the generator runs via
+  `npx` at pinned versions with its own TypeScript 5.
+- **Refresh tokens are traded one at a time**, because the server revokes
+  on replay. Jest tests cover the single flight, offline and server
+  errors keeping the sign-in, a 401 ending it, and one retry. Each of
+  three behaviours, removed, fails them.
+- **Audit.** `npm audit` on the bare SDK 58 template reports 19 high, from
+  two root advisories (braces in Metro, node-forge in @expo/cli). Both are
+  build tooling, and neither has a fixed release. They are listed in
+  `mobile/audit-allowlist.json` with reasons. `audit-check.mjs` fails on
+  an unlisted advisory or a stale entry, and reports "no result" on no
+  report; all three outcomes were exercised.
+- **npm 11.18 install scripts.** `@parcel/watcher` and `unrs-resolver`
+  are denied in `allowScripts`. The bundle builds without their scripts.
+- **TypeScript 6** no longer loads `@types` automatically. The Jest test
+  references its types itself, so test globals do not leak into app code.
+
+Verified: tsc clean, including from a checkout with no generated Expo
+files; Jest 8/8; `expo export` builds iOS (2.6 MB) and Android (2.9 MB)
+Hermes bundles, and the sign-in logo's hash is in the export.
+tests/test_mobile_app.py, in the server suite, holds the app to the
+portal's :root colours, the brand files byte for byte, `app.json`, the
+API route set and `.dockerignore`. The colour and icon drift checks were
+probed: both are caught.
+
+Also landed: the deploy gate's `--match 'v*'`, the 21f precondition, with
+two tests that fail on the old gate.
+
+Not done: push (21e); bundle id and package (owner: publishing entity);
+store accounts. Nothing has run on a device yet - that needs Expo Go or a
+simulator, and a reachable API.

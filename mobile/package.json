@@ -1,0 +1,58 @@
+{
+  "name": "minas-ai-guardian",
+  "version": "1.0.0",
+  "main": "expo-router/entry",
+  "dependencies": {
+    "@expo/ui": "~58.0.22",
+    "expo": "~58.0.17",
+    "expo-constants": "~58.0.13",
+    "expo-device": "~58.0.5",
+    "expo-font": "~58.0.9",
+    "expo-glass-effect": "~58.0.4",
+    "expo-image": "~58.0.16",
+    "expo-linking": "~58.0.14",
+    "expo-router": "~58.0.25",
+    "expo-secure-store": "~58.0.2",
+    "expo-splash-screen": "~58.0.11",
+    "expo-status-bar": "~58.0.4",
+    "expo-symbols": "~58.0.4",
+    "expo-system-ui": "~58.0.6",
+    "expo-web-browser": "~58.0.6",
+    "openapi-fetch": "^0.17.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-native": "0.88.0",
+    "react-native-gesture-handler": "~3.3.0",
+    "react-native-reanimated": "4.7.1",
+    "react-native-safe-area-context": "~5.10.1",
+    "react-native-screens": "~4.30.0",
+    "react-native-web": "~0.21.4",
+    "react-native-worklets": "0.13.0"
+  },
+  "devDependencies": {
+    "@testing-library/react-native": "^14.1.0",
+    "@types/jest": "30.0.0",
+    "@types/react": "~19.3.0",
+    "jest": "~30.5.2",
+    "jest-expo": "~58.0.12",
+    "typescript": "~6.0.3"
+  },
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "gen:api": "npx --yes --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "jest",
+    "audit:check": "node scripts/audit-check.mjs",
+    "lint": "expo lint"
+  },
+  "private": true,
+  "jest": {
+    "preset": "jest-expo"
+  },
+  "allowScripts": {
+    "@parcel/watcher": false,
+    "unrs-resolver": false
+  }
+}

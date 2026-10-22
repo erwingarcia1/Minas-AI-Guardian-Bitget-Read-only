@@ -1307,8 +1307,19 @@ against decision 22's hostname.
   non-primary allowed).
 - **The contract is `api/openapi.yaml`**, held to the server by
   `tests/test_api_contract.py`.
-- **Not built yet:** push (21e), the primary-only writes (v2), and the
-  app in `mobile/`.
+- **The app is started (2026-10-22, branch `mobile-app`)** in `mobile/`.
+  It is Expo SDK 58 with React Native, and covers sign-in, accounts,
+  alerts, incident and acknowledge, security and devices, activity and
+  limits. It has its own CI workflow (`.github/workflows/mobile.yml`) and
+  its own changelog. The deploy gate now accepts only `v*` tags, the
+  precondition 21f set for the first `mobile-v*` tag. `mobile/` is in
+  `.dockerignore`. See `mobile/README.md`.
+- **Not built yet:**
+  - push (21e);
+  - the primary-only writes (v2);
+  - the app's bundle identifier and package name, which wait on the
+    publishing entity (21f, the owner's call);
+  - store accounts and builds.
 
 **Related:** decision 13 (browser push, no-JS posture), decision 20
 (member surface boundary, member two-factor), decision 22 (the address),
