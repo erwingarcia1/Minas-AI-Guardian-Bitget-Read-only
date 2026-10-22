@@ -143,7 +143,7 @@ jobs:
           # Pinned: must equal MUTMUT_VERSION in scripts/mutation-check.sh,
           # which refuses any other. Unpinned, 3.8.0 arrived on its own and
           # moved the population under the floor (see the script).
-          pip install mutmut==3.7.0
+          pip install mutmut==3.8.0
 
       # #97 replaced the cold-run assert with a VALIDATED cache. The old
       # proof ("a fresh runner cannot have a cache") bought trust by paying
