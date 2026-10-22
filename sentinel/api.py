@@ -48,6 +48,8 @@ REFRESH_TTL_SECONDS = 30 * 24 * 3600
 DEVICE_NAME_MAX = 64
 UNNAMED_DEVICE = "Phone app"
 MAX_BODY_BYTES = 8 * 1024
+ALERTS_PAGE_DEFAULT = 50
+ALERTS_PAGE_MAX = 200
 
 # Why a sign-in ended, in the words the activity page shows the member.
 REVOKE_REASONS = {
@@ -75,6 +77,11 @@ PRE_AUTH = frozenset({
 # What any signed-in contact may read, primary or not (#25: a non-primary
 # may READ).
 MEMBER_READ = frozenset({
+    ("GET", "/api/v1/accounts"),
+    ("GET", "/api/v1/alerts"),
+    ("GET", "/api/v1/alerts/{id}"),
+    ("GET", "/api/v1/activity"),
+    ("GET", "/api/v1/limits"),
     ("GET", "/api/v1/security"),
 })
 
@@ -391,6 +398,11 @@ class Api:
             ("POST", "/api/v1/session/refresh"): self._refresh,
             ("DELETE", "/api/v1/session"): self._sign_out,
             ("DELETE", "/api/v1/devices/{id}"): self._revoke,
+            ("GET", "/api/v1/accounts"): self._accounts,
+            ("GET", "/api/v1/alerts"): self._alerts,
+            ("GET", "/api/v1/alerts/{id}"): self._incident,
+            ("GET", "/api/v1/activity"): self._activity,
+            ("GET", "/api/v1/limits"): self._limits,
             ("GET", "/api/v1/security"): self._security,
         }
         assert set(self.handlers) == ROUTES, "ROUTES must mirror the dispatch table"
@@ -495,6 +507,145 @@ class Api:
         return Response(204)
 
     # -- reads ------------------------------------------------------------------
+    #
+    # Each one answers with the portal's own query for the same page, so the
+    # app and the web cannot disagree. All scoped through `member_accounts`,
+    # the isolation boundary: another member's id is a 404 indistinguishable
+    # from one that does not exist.
+
+    def _accounts(self, _request: Request, device) -> Response:
+        from sentinel.portal import member_accounts, member_role, member_status
+
+        email = device["email"]
+        status = member_status(self.db, email, self.rules)
+        exchanges = {int(r["id"]): r["exchange"] for r in member_accounts(self.db, email)}
+        return Response(200, {
+            "overall": status["overall"],
+            "checked_at": status["checked_at"],
+            "stale_after_seconds": status["stale_after_seconds"],
+            "accounts": [{
+                "id": a["account_id"],
+                "name": a["label"],
+                "exchange": exchanges.get(a["account_id"]),
+                "status": a["status"],
+                "watched": a["watched"],
+                "reason": a["reason"],
+                "last_success_at": a["last_success_at"],
+                # #25: what this login may change on the account.
+                "role": member_role(self.db, email, a["account_id"]),
+            } for a in status["accounts"]],
+        })
+
+    def _alerts(self, request: Request, device) -> Response:
+        from sentinel.naming import display_label
+        from sentinel.portal import _SEVERITIES, alert_history_rows, member_accounts
+
+        def one(key: str) -> str:
+            values = request.query.get(key) or [""]
+            return values[0].strip()
+
+        # A filter that cannot be understood is refused, never ignored: an
+        # ignored filter shows everything under a heading that claims a
+        # selection (alert_history_rows' rule, said as a 400 here).
+        account = None
+        if one("account"):
+            if not (one("account").isascii() and one("account").isdigit() and len(one("account")) <= 18):
+                return error(400, "invalid_filter", "account must be an account id.")
+            account = int(one("account"))
+        severity = one("severity").upper() or None
+        if severity is not None and severity not in _SEVERITIES:
+            return error(400, "invalid_filter", f"severity must be one of {', '.join(_SEVERITIES)}.")
+        dates = {}
+        for key in ("from", "to"):
+            if one(key):
+                try:
+                    dates[key] = datetime.strptime(one(key), "%Y-%m-%d").date().isoformat()
+                except ValueError:
+                    return error(400, "invalid_filter", f"{key} must be a date, YYYY-MM-DD.")
+        try:
+            limit = int(one("limit") or ALERTS_PAGE_DEFAULT)
+            offset = int(one("offset") or 0)
+        except ValueError:
+            return error(400, "invalid_filter", "limit and offset must be whole numbers.")
+        if not (1 <= limit <= ALERTS_PAGE_MAX) or not (0 <= offset <= 10**9):
+            return error(400, "invalid_filter", f"limit must be 1 to {ALERTS_PAGE_MAX}; offset 0 or more.")
+
+        ids = [r["id"] for r in member_accounts(self.db, device["email"])]
+        rows, total = alert_history_rows(self.db, ids, account=account, severity=severity,
+                                         date_from=dates.get("from"), date_to=dates.get("to"),
+                                         limit=limit, offset=offset)
+        return Response(200, {
+            "total": total,
+            "limit": limit,
+            "offset": offset,
+            "alerts": [{
+                "id": int(r["id"]),
+                "account_id": int(r["account_id"]),
+                "account_name": display_label(r),
+                "sent_at": r["sent_at"],
+                "severity": r["severity"],
+                "rule": r["rule"],
+                "message": r["message"],
+                "confidence": r["confidence"],
+                # How many channels it reached: 0 means detected and told to
+                # nobody (#57), and is never shown as notified.
+                "delivered_to": int(r["delivered_to"] or 0),
+                "acknowledged_at": r["acknowledged_at"],
+                "acknowledged_by": r["acknowledged_by"],
+                "repeat_count": r["repeat_count"],
+                "last_repeat_at": r["last_repeat_at"],
+            } for r in rows],
+        })
+
+    def _incident(self, request: Request, device) -> Response:
+        from sentinel.portal import incident_record
+
+        record = incident_record(self.db, device["email"], request.params["id"])
+        if record is None:
+            return error(404, "not_found", "There is no such alert.")
+        return Response(200, record)
+
+    def _activity(self, _request: Request, device) -> Response:
+        from sentinel.events import ADMIN_EVENT_LABELS
+        from sentinel.naming import display_label
+        from sentinel.portal import _payload, account_activity, activity_detail, member_accounts
+
+        ids = [r["id"] for r in member_accounts(self.db, device["email"])]
+        return Response(200, {"events": [{
+            "id": int(r["id"]),
+            "account_id": int(r["account_id"]),
+            "account_name": display_label(r),
+            "type": r["event_type"],
+            "title": ADMIN_EVENT_LABELS.get(r["event_type"], r["event_type"]),
+            "detail": activity_detail(r["event_type"], _payload(r["payload_json"])),
+            # None is a finding, not a blank: a change nobody can be named for.
+            "actor": r["actor"],
+            "created_at": r["created_at"],
+        } for r in account_activity(self.db, ids)]})
+
+    def _limits(self, _request: Request, device) -> Response:
+        from sentinel.portal import (
+            LIMITS_CANNOT,
+            LIMITS_DOES,
+            LIMITS_HEADLINE,
+            RETENTION_REVIEWED,
+            member_sensitivity,
+            polling_cadence,
+            retention_summary,
+        )
+
+        fast, slow = polling_cadence(self.rules)
+        return Response(200, {
+            "headline": {"title": LIMITS_HEADLINE[0], "text": LIMITS_HEADLINE[1]},
+            "does": [{"title": t, "text": x} for t, x in LIMITS_DOES],
+            # `see_status`: the sentence points at "am I being watched?".
+            "cannot": [{"title": t, "text": x, "see_status": see} for t, x, see in LIMITS_CANNOT],
+            "timing": {"balances_every_seconds": fast, "permissions_every_seconds": slow},
+            "retention": [{"what": what, "how_long": how_long}
+                          for what, how_long in retention_summary(self.rules)],
+            "retention_reviewed": RETENTION_REVIEWED,
+            "sensitivity": member_sensitivity(self.db, device["email"], self.rules),
+        })
 
     def _security(self, _request: Request, device) -> Response:
         from sentinel.twofactor import MEMBER, is_enabled, remaining_recovery_codes

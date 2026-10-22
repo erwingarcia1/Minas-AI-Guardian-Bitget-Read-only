@@ -59,6 +59,19 @@ def add_account(db, email: str, label: str = "acct-1", secondary: str | None = N
     return account_id
 
 
+def add_alert(db, account_id: int, *, rule: str = "withdrawal_initiated", severity: str = "CRITICAL",
+              sent_at: str = "2026-08-28T00:00:00+00:00", message: str = "Withdrawal initiated",
+              evidence: str = "{}", delivered_to: int = 1) -> int:
+    with db.cursor() as cur:
+        cur.execute(
+            "INSERT INTO alerts (account_id, rule, severity, dedup_key, message, evidence_json, confidence, "
+            "sent_at, delivered_to) VALUES (?, ?, ?, ?, ?, ?, 'high', ?, ?)",
+            (account_id, rule, severity, f"{account_id}:{rule}:{sent_at}", message, evidence, sent_at,
+             delivered_to),
+        )
+        return cur.lastrowid
+
+
 def enrolled_member(db, cipher, email: str, *, password: str = PASSWORD) -> str:
     """A member with a login and confirmed two-factor. Returns the TOTP secret.
 

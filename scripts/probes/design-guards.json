@@ -896,8 +896,8 @@
  {
   "name": "#28 a customer's mark is dropped from the incident document handed to an exchange",
   "file": "sentinel/portal.py",
-  "old": "    for mark in marks_for_alert(db, alert[\"id\"]):",
-  "new": "    for mark in []:",
+  "old": "for m in marks_for_alert(db, alert[\"id\"])]",
+  "new": "for m in []]",
   "tests": [
    "tests/test_expected_activity.py"
   ],
@@ -1178,8 +1178,8 @@
  {
   "name": "#69 a key replacement stops appearing on the page a customer reads to see who touched their account",
   "file": "sentinel/events.py",
-  "old": "    \"monitoring_key_replaced\",\n)",
-  "new": ")",
+  "old": "    \"monitoring_key_replaced\",\n    \"member_app_signed_in\",",
+  "new": "    \"member_app_signed_in\",",
   "tests": [
    "tests/test_key_replacement.py"
   ]
@@ -1205,8 +1205,8 @@
  {
   "name": "#48 a prevention claim reaches the customer",
   "file": "sentinel/portal.py",
-  "old": "        _feat(\"yes\", \"It watches for money leaving.\",",
-  "new": "        _feat(\"yes\", \"The Guardian protects your funds around the clock.\",",
+  "old": "    (\"It watches for money leaving.\",",
+  "new": "    (\"The Guardian protects your funds around the clock.\",",
   "tests": [
    "tests/test_no_prevention_claims.py"
   ]
@@ -1846,6 +1846,36 @@
   "new": "if True:",
   "tests": [
    "tests/test_api_routes.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: an unknown severity filter is ignored instead of refused",
+  "file": "sentinel/api.py",
+  "old": "if severity is not None and severity not in _SEVERITIES:",
+  "new": "if False:",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: the alert list reads past the member's own accounts",
+  "file": "sentinel/api.py",
+  "old": "rows, total = alert_history_rows(self.db, ids,",
+  "new": "rows, total = alert_history_rows(self.db, list(range(1, 100)),",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: the activity record reads past the member's own accounts",
+  "file": "sentinel/api.py",
+  "old": "} for r in account_activity(self.db, ids)]})",
+  "new": "} for r in account_activity(self.db, list(range(1, 100)))]})",
+  "tests": [
+   "tests/test_api_reads.py"
   ],
   "expect": "killed"
  }

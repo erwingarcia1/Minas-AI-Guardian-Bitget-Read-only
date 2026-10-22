@@ -9,6 +9,7 @@
 # one must be, write why.
 tests/test_account_status_writers.py: imports onboarding - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_add_customer.py: imports dashboard, onboarding - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_api_reads.py: imports api, events, expected, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_api_routes.py: imports api, passwords, portal, totp - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_api_session.py: imports api, erasure, portal, totp - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_baseline.py: imports baseline - nothing under the mutated paths (alerts/, detectors/, config.py)

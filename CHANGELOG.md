@@ -150,6 +150,20 @@ container")._
   `api_devices` (additive; erased with the member, listed in the data
   export without its token hashes).
 
+- **What the apps read (decision 21d).** `GET /api/v1/accounts` (each
+  account, whether it is being watched and why not, and what this login
+  may change on it), `/alerts` (newest first; filter by `severity`,
+  `account`, `from`, `to`; up to 200 per page with `limit` and `offset`),
+  `/alerts/{id}` (the incident record), `/activity` and `/limits`. Each
+  answers from the portal's own query for the same page: the incident
+  page, the limits page's sentences and sensitivity table, and the
+  activity page's wording are now data that the page and the app both
+  render, so the two cannot disagree. Every read is scoped to the
+  member's own accounts, and another member's alert is a 404
+  indistinguishable from one that does not exist. A filter the API cannot
+  understand is refused, never ignored. Quantities stay strings, never
+  floats.
+
 ### Changed
 
 - **The unpinned method decisions are being retired in named batches, the
@@ -222,6 +236,10 @@ container")._
   completeness guard; the per-account decisions were not wrong.
 
 ### Fixed
+
+- **The activity page names each connection by the member's own name
+  (#8),** as every other page already did. Its query never fetched the
+  name, so it showed the internal slug.
 
 - **The deployment guide described a system that is not running.** It said
   "serve, never funnel" while the member portal has been published to the

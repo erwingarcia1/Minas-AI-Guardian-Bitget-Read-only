@@ -17,7 +17,7 @@ from sentinel import api as api_module
 from sentinel.api import MEMBER_READ, NON_PRIMARY_ALLOWED, PRE_AUTH, ROUTES, Api
 from sentinel.passwords import LoginThrottle
 from sentinel.portal import serve_portal
-from tests.helpers.api_client import ApiClient, add_account, enrolled_member
+from tests.helpers.api_client import ApiClient, add_account, add_alert, enrolled_member
 
 ALICE = "alice@example.com"
 
@@ -33,15 +33,20 @@ def server(db, cipher, monkeypatch):
 
 @pytest.fixture
 def signed_in(server, db, cipher):
-    add_account(db, ALICE, "alice-1")
+    account_id = add_account(db, ALICE, "alice-1")
+    alert_id = add_alert(db, account_id)
     secret = enrolled_member(db, cipher, ALICE)
     status, tokens, _ = server.sign_in(ALICE, secret)
     assert status == 200, tokens
-    return tokens
+    return {**tokens, "alert_id": alert_id}
 
 
-def _path(template: str, device_id: int = 1) -> str:
-    return template.replace("{id}", str(device_id))
+def _path(template: str, ids: dict | None = None) -> str:
+    """A concrete path that reaches the handler's real body: an alert route
+    gets one of the member's alerts, a device route their device."""
+    ids = ids or {"alert_id": 1, "device_id": 1}
+    key = "alert_id" if template.startswith("/api/v1/alerts/") else "device_id"
+    return template.replace("{id}", str(ids[key]))
 
 
 # --- completeness -------------------------------------------------------------
@@ -71,7 +76,7 @@ def test_the_dispatch_table_and_the_registry_name_the_same_routes(db):
 def test_every_route_is_served(server, signed_in, route):
     method, template = route
     body = {} if method == "POST" else None
-    status, data, headers = server.request(method, _path(template, signed_in["device_id"]), body,
+    status, data, headers = server.request(method, _path(template, signed_in), body,
                                            token=signed_in["access_token"])
     assert status != 404, (route, status, data)
     assert headers["content-type"].startswith("application/json")
@@ -96,20 +101,22 @@ def test_a_real_path_with_the_wrong_method_is_405_and_says_which(server, signed_
 NEEDS_A_DEVICE = sorted(ROUTES - PRE_AUTH)
 
 
-@pytest.mark.parametrize("route", NEEDS_A_DEVICE)
-@pytest.mark.parametrize("authorization", [
+BAD_AUTHORIZATIONS = (
     None, "", "Bearer", "Bearer ", "Basic YWxpY2U6cHc=", "Bearer not-a-token", "Bearer 1.9999999999.deadbeef",
-])
-def test_every_route_but_sign_in_refuses_without_a_valid_token(server, signed_in, db, route, authorization):
+)
+
+
+@pytest.mark.parametrize("route", NEEDS_A_DEVICE)
+def test_every_route_but_sign_in_refuses_without_a_valid_token(server, signed_in, db, route):
     method, template = route
-    headers = {} if authorization is None else {"Authorization": authorization}
     with db.cursor() as cur:
         cur.execute("SELECT revoked_at FROM api_devices")
         before = [r["revoked_at"] for r in cur.fetchall()]
-    status, data, response_headers = server.request(method, _path(template, signed_in["device_id"]),
-                                                    headers=headers)
-    assert status == 401 and data["error"] == "unauthorized"
-    assert response_headers["www-authenticate"].startswith("Bearer")
+    for authorization in BAD_AUTHORIZATIONS:
+        headers = {} if authorization is None else {"Authorization": authorization}
+        status, data, response_headers = server.request(method, _path(template, signed_in), headers=headers)
+        assert status == 401 and data["error"] == "unauthorized", (authorization, status, data)
+        assert response_headers["www-authenticate"].startswith("Bearer"), authorization
     with db.cursor() as cur:
         cur.execute("SELECT revoked_at FROM api_devices")
         assert [r["revoked_at"] for r in cur.fetchall()] == before
@@ -190,7 +197,7 @@ def test_no_api_get_writes_anything(server, signed_in, db, route):
     """The execution twin of tests/test_get_is_read_only.py: signed in and
     signed out, the whole database is identical before and after."""
     _, template = route
-    path = _path(template, signed_in["device_id"])
+    path = _path(template, signed_in)
     before = _dump(db._path)
     status, _, _ = server.request("GET", path, token=signed_in["access_token"])
     assert status == 200
