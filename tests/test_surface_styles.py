@@ -56,8 +56,8 @@ def test_the_brand_lives_in_brand_py_and_the_portal_draws_from_it():
     """One home for the identity, so it cannot drift into two spellings of
     gold - and so the dashboard's own design pass can drop it by deleting an
     import rather than hunting hex codes."""
-    assert brand.MARK_SVG.startswith('<svg class="brand__mark"')
-    assert "from sentinel.brand import MARK_SVG" in PORTAL_SRC
+    assert brand.MARK_HTML.startswith('<img class="brand__mark"')
+    assert "from sentinel.brand import ICON_LINKS, MARK_HTML, WEB_ASSETS" in PORTAL_SRC
     assert brand.GOLD in portal._PORTAL_STYLE
 
 
@@ -255,7 +255,8 @@ def test_the_dashboard_wears_no_brand():
     for hue in (brand.GOLD, brand.VIOLET, brand.VIOLET_DEEP):
         assert hue.lower() not in sheet, f"identity hue {hue} in the dashboard sheet"
     assert "gradient" not in sheet and "glow" not in sheet and "box-shadow" not in sheet
-    assert "_MARK_SVG" not in DASHBOARD_SRC and "brand.MARK_SVG" not in DASHBOARD_SRC
+    assert "MARK_SVG" not in DASHBOARD_SRC and "MARK_HTML" not in DASHBOARD_SRC
+    assert "ICON_LINKS" not in DASHBOARD_SRC and "/brand/" not in DASHBOARD_SRC  # the logo files
     assert "<h1><span class=\"minas\">" not in DASHBOARD_SRC
     assert "Ops dashboard" in DASHBOARD_SRC and "Minas staff only" in DASHBOARD_SRC
 

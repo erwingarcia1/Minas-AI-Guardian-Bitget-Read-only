@@ -163,6 +163,13 @@ def test_the_dispatch_table_and_the_classification_name_the_same_routes():
         f"classified but not dispatched: {sorted(POST_ROUTES - literals)}")
     assert "path ==" not in body and "path.startswith" not in body and "path in (" not in body, (
         "do_POST must dispatch through the table only")
+    # The one sanctioned branch beside the table (decision 21): /api/ goes to
+    # the apps' API, which has its own default-deny registry
+    # (sentinel/api.py, tests/test_api_routes.py) and never reads the session
+    # cookie this gate protects. Named here so it is a decision on record,
+    # not a route that slipped past the string checks above.
+    assert body.count("_is_api(") == 1 and 'self._api("POST")' in body, (
+        "the only branch beside the table is the API's")
     assert "if path in PRIMARY_ONLY and not self._may_change(path, form)" in body, (
         "the gate must sit between the route lookup and the handler")
 
@@ -174,8 +181,13 @@ def test_every_account_scoped_route_is_primary_only():
 def test_the_allowlist_is_own_login_plumbing_and_acknowledging_only():
     """The owner's ruling, as a set: a signed-in non-primary may leave,
     harden their own login, and acknowledge. Anything else appearing here
-    is a decision that has to be made out loud, not by editing a constant."""
-    ruling = {"/logout", "/security/2fa/start", "/security/2fa/confirm", "/security/2fa/disable", "/acknowledge"}
+    is a decision that has to be made out loud, not by editing a constant.
+
+    Decision 21c (2026-10-22) added signing one of the login's own phones
+    out of the app: leaving, from the browser, for a sign-in that is this
+    login's and nobody else's."""
+    ruling = {"/logout", "/security/2fa/start", "/security/2fa/confirm", "/security/2fa/disable",
+              "/security/devices/revoke", "/acknowledge"}
     assert ruling == NON_PRIMARY_ALLOWED
 
 

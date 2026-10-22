@@ -28,7 +28,7 @@ Dark surface, no gradients, no glow. Colour is functional, not decorative.
 | `--surface-2` | `#1c212b` | Raised surfaces, inputs, numbered steps |
 | `--border` / `--border-strong` | `#2a3140` / `#3a4256` | Dividers and outlines |
 | `--text` / `--text-muted` / `--text-subtle` | `#f4f6fa` / `#aab2c1` / `#768093` | Primary / secondary / tertiary text |
-| **`--gold`** | `#f0b429` | Identity. Infinity mark, primary buttons, active nav underline, and a few emphasis numerals. Used sparingly. |
+| **`--gold`** | `#f0b429` | Identity. Primary buttons, active nav underline, and a few emphasis numerals. Used sparingly. |
 | `--violet` / `--violet-text` | `#8b5cf6` / `#c4b2ff` | Interactive accents: links, secondary button outlines, **focus rings**. The lighter `--violet-text` is used for small link text to clear AA on the dark bg. |
 | `--danger` | `#f87171` | Critical / attack / not-watched |
 | `--warn` | `#fbbf24` | Partial / paused / needs attention |
@@ -100,10 +100,11 @@ so it reads as a report, not a screenshot.
   intentional and touch-scrollable).
 
 ### Header
-Top bar holds the infinity mark + wordmark left and meta right. A second row
+Top bar holds the Minas logo + wordmark left and meta right. A second row
 is the primary navigation (My accounts / Am I being watched? / Limits) with
-the current page underlined in gold. The infinity mark is an inline SVG
-(stroked, no fill) — same path reused everywhere.
+the current page underlined in gold. The logo (supplied 2026-10-22, replacing
+the stroked infinity mark) is one master, `design/brand/minas-logo.png`;
+every size the product uses is derived from it by `scripts/brand-assets.py`.
 
 ---
 

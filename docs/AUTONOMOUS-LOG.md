@@ -7245,3 +7245,63 @@ and was fast-forwarded, with no divergence. `gh` is not authenticated in
 this environment, so no issue was filed for 21 or 22 and #88's text is
 not yet amended. Next: the v1 API (21c, 21d), and the 22c preconditions,
 which do not depend on any open question.
+
+# 2026-10-22 · API v1 for the apps, on branch `api-v1` (decision 21)
+
+Before starting: the local `.venv` was broken by a system Python upgrade
+(3.12 to 3.14; site-packages stayed under 3.12, so `pytest` vanished and
+`mutation-probe.py`, which prefers `.venv/bin/python`, reported every probe
+killed). Rebuilt with `uv venv .venv --python 3.12`, a uv-managed
+interpreter a system upgrade cannot move. `gh` is unauthenticated here, so
+CI on 5c6f2a0 could not be read; its steps were run locally instead (ruff,
+1808 passed at 89% coverage, pip-audit clean, the image build reporting
+its commit; the compose check skipped because it needs `.env`).
+
+Four commits on `api-v1`, none on main, none pushed:
+1. Sign-in (21c): password + TOTP, 2FA required, on the portal's throttle;
+   15-minute HMAC access tokens under a derived key; per-device refresh
+   tokens held as hashes, rotated on use, reuse revokes; session_epoch
+   ends every phone on a password change. Ahead of the CSRF gate because
+   the API never reads the cookie.
+2. Reads (21d): accounts, alerts, incident, activity, limits, each from
+   the portal's own data function (incident_record, activity_detail,
+   member_sensitivity, LIMITS_*). Fixed on the way: the activity page
+   showed the slug, not the member's name (#8).
+3. Acknowledge from the app; the Security page lists phones with sign-out.
+   tests/test_member_roles.py now names the /api/ branch in do_POST, which
+   its string checks had not seen.
+4. `api/openapi.yaml` and a contract test with a closed-object validator
+   that is itself shown to reject bad shapes.
+
+Fourteen API design-guard probes, all killed; three existing probes
+re-pointed after their text moved (#28, #48, #69), all killed.
+
+Found, recorded in decision 22c item 6, NOT fixed: no code reads a
+forwarded client address, so behind any proxy the per-IP login throttle
+is one shared bucket - a lockout for everyone. Possibly live in production
+behind Funnel and Docker's port forwarding; UNVERIFIED (the portal's
+failed-login log lines carry the source address).
+
+Next: push the branch and open a PR once `gh` is authenticated; push
+(21e) waits on its answer; the 22c preconditions.
+
+# 2026-10-22 · The Minas logo replaces the infinity mark
+
+Owner supplied `files/minaslogo.png` (4096 px RGBA; left uncommitted where it
+was dropped). It carries a near-invisible square behind the mark (alpha 5,
+noise to ~12) that shows as a smudge on dark and a grey box on white;
+`scripts/brand-assets.py clean` remaps alpha so that floor is transparent,
+and `derive` writes every size from the 2048 px master in `design/brand/`.
+The portal serves the files itself (WEB_ASSETS in sentinel/brand.py,
+package-data, verified in a real image build), so there is still no
+external request. The dashboard stays unbranded (decision 2 on #82).
+Icon sizes checked against Expo's and Android's pages on the day: 1024
+square and opaque for iOS, adaptive layers 108 dp with the inner 66 dp
+never clipped.
+
+Also found: CI on 5c6f2a0 is green, but the weekly scheduled-gates job
+has failed four weeks running (since 2026-09-28): the mutation gate
+reports 25 survivors not in the ledger, and the step that should file an
+issue fails with "Resource not accessible by integration
+(repository.issues)" - the workflow token cannot write issues, so the red
+reached nobody. Not fixed here. release.sh refuses while that run is red.

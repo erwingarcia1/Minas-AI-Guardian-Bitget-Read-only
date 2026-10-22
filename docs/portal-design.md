@@ -22,7 +22,11 @@ the fuller design rationale.
    dense, unbranded** (its pass waits on the access model — #87). An ops
    screenshot must not be usable to impersonate a customer page.
 3. **Brand assets live in `sentinel/brand.py`**: the gold/violet identity
-   and the stroked infinity mark (`currentColor`, sized by the host).
+   and the Minas logo (supplied 2026-10-22, replacing the stroked infinity
+   mark). The logo is raster, derived from one master
+   (`design/brand/minas-logo.png`) by `scripts/brand-assets.py`, and served
+   by the portal itself from `sentinel/static/` - still no external
+   request.
 4. **Portal first**; dashboard design waits.
 
 ## Tokens (`:root`, all with role names)
@@ -30,7 +34,7 @@ the fuller design rationale.
 - **Surfaces**: `--bg --surface --surface-2 --border --border-strong` —
   dark, flat, no gradients, no glow. Colour is functional, not decorative.
 - **Text**: `--text --text-muted --text-subtle`, plus `--text-on-gold`.
-- **Identity**: `--gold` (the mark, the one primary button per screen, the
+- **Identity**: `--gold` (the one primary button per screen, the
   active-nav underline — used sparingly) and `--violet`/`--violet-text`
   (links, secondary outlines, focus rings; the light variant clears AA for
   small text).

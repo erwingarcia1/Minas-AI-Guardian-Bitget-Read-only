@@ -17,7 +17,7 @@ without it). Sort and filter are server-side query parameters (#39).
 | | Member portal (`design/portal/`) | Ops dashboard |
 |---|---|---|
 | Ground | dark `#0d0f13` | light `#f4f5f7` |
-| Identity | infinity mark, gold, violet, "Member portal" lockup | none — "Ops dashboard · internal · Minas staff only" in plain text |
+| Identity | the Minas logo, gold, violet, "Member portal" lockup | none — "Ops dashboard · internal · Minas staff only" in plain text |
 | Accent | gold primary buttons, violet links/focus | one utilitarian navy `#1f4e79` for links, buttons, focus |
 | Shape | rounded cards, generous spacing, 16px body | 2–3px radii, dense rows, 13–14px body, tabular numerals |
 | Tone | reassuring, one answer per screen | a control surface: tables first, everything on one screen |

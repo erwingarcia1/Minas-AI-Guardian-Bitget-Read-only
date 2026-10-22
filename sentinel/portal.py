@@ -19,7 +19,8 @@ from urllib.parse import parse_qs, urlencode, urlparse
 # Logic helpers only, deliberately: the portal owns its stylesheet, its pill
 # and its brand usage (#82 — tests/test_surface_styles.py refuses a shared
 # stylesheet, so the two surfaces cannot quietly converge again).
-from sentinel.brand import MARK_SVG
+from sentinel.brand import ICON_LINKS, MARK_HTML, WEB_ASSETS
+from sentinel.brand import asset as brand_asset
 from sentinel.dashboard import (
     _LOCAL_TIME_SCRIPT,
     _account_type_label,
@@ -362,6 +363,9 @@ PRE_AUTH = frozenset({"/login", "/login-code", "/forgot", "/reset"})
 NON_PRIMARY_ALLOWED = frozenset({
     "/logout",
     "/security/2fa/start", "/security/2fa/confirm", "/security/2fa/disable",
+    # Decision 21c: ending one of this login's own app sign-ins - leaving, on
+    # a phone, from the browser.
+    "/security/devices/revoke",
     "/acknowledge",
 })
 
@@ -717,7 +721,7 @@ _PORTAL_STYLE = """
   .brand { display:inline-flex; align-items:center; gap:var(--space-3); color:var(--text);
            text-decoration:none; font-weight:700; font-size:var(--text-base); letter-spacing:-.005em; }
   .brand:hover { text-decoration:none; }
-  .brand__mark { width:28px; height:28px; flex:none; color:var(--gold); }
+  .brand__mark { width:28px; height:28px; flex:none; display:block; object-fit:contain; }
   .brand__name span { color:var(--text-muted); font-weight:600; }
   .brand__stack { display:flex; flex-direction:column; line-height:1.25; }
   .brand__tag { font-size:var(--text-xs); font-weight:700; letter-spacing:var(--tracking-wide);
@@ -1033,7 +1037,7 @@ def _page(body_html: str, email: str | None = None, active: str = "",
     `actionbar` reserves bottom space for a fixed action bar; `back`
     replaces the subnav with a single return link (alert detail)."""
     brand = (
-        '<a class="brand" href="/" aria-label="Minas AI Guardian home">' + MARK_SVG
+        '<a class="brand" href="/" aria-label="Minas AI Guardian home">' + MARK_HTML
         + '<span class="brand__stack"><span class="brand__name">Minas AI <span>Guardian</span></span>'
         '<span class="brand__tag">Member portal</span></span></a>'
     )
@@ -1075,7 +1079,8 @@ def _page(body_html: str, email: str | None = None, active: str = "",
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">'
         '<meta name="color-scheme" content="dark">'
-        f"<title>{html.escape(title)} — Member portal</title><style>" + _PORTAL_STYLE + "</style></head>"
+        f"<title>{html.escape(title)} — Member portal</title>" + ICON_LINKS
+        + "<style>" + _PORTAL_STYLE + "</style></head>"
         f'<body class="{body_cls}">'
         '<a class="skip-link" href="#main">Skip to content</a>'
         + topbar + main + footer
@@ -1259,7 +1264,7 @@ _ICON_SHIELD = (
 
 def _auth_brand() -> str:
     return (
-        '<div class="auth-card__brand">' + MARK_SVG
+        '<div class="auth-card__brand">' + MARK_HTML
         + '<div class="brand__name">Minas AI <span>Guardian</span></div>'
         '<div class="brand__tag">Member portal</div></div>'
     )
@@ -1697,7 +1702,7 @@ def account_activity(db: Database, account_ids: list[int], limit: int = 200):
     with db.cursor() as cur:
         cur.execute(
             f"SELECT e.id, e.account_id, e.event_type, e.payload_json, e.actor, e.created_at, "
-            f"ac.label FROM events e JOIN accounts ac ON ac.id = e.account_id "
+            f"ac.label, ac.member_name FROM events e JOIN accounts ac ON ac.id = e.account_id "
             f"WHERE e.account_id IN ({account_marks}) AND e.event_type IN ({type_marks}) "
             f"ORDER BY e.created_at DESC, e.id DESC LIMIT ?",
             [*account_ids, *ADMIN_EVENT_TYPES, limit],
@@ -1705,15 +1710,16 @@ def account_activity(db: Database, account_ids: list[int], limit: int = 200):
         return cur.fetchall()
 
 
-def _activity_detail(event_type: str, payload: dict) -> str:
-    """What actually changed, in words, from the recorded payload.
+def activity_detail(event_type: str, payload: dict) -> str:
+    """What actually changed, in words, from the recorded payload - plain
+    text, for the activity page (escaped there) and the app (decision 21d).
 
     Every branch reads a value the row carries. Nothing here infers or
-    reconstructs: this page is the one a customer reads when deciding whether
+    reconstructs: this is what a customer reads when deciding whether
     somebody else has their account, and a plausible sentence the record does
     not support is worse than a blank cell."""
     def shown(value) -> str:
-        return html.escape(str(value)) if value not in (None, "") else "none"
+        return str(value) if value not in (None, "") else "none"
 
     if event_type == "alert_contact_updated":
         parts = []
@@ -1733,7 +1739,17 @@ def _activity_detail(event_type: str, payload: dict) -> str:
         return f"login {shown(payload.get('login'))}"
     if event_type == "customer_added":
         return f"{shown(payload.get('exchange'))} · {shown(payload.get('topology'))}"
+    if event_type in ("member_app_signed_in", "member_app_device_revoked"):
+        from sentinel.api import REVOKE_REASONS
+
+        detail = f"login {shown(payload.get('login'))} · {shown(payload.get('device'))}"
+        reason = REVOKE_REASONS.get(payload.get("reason"))
+        return detail + (f" · {reason}" if reason else "")
     return ""
+
+
+def _activity_detail(event_type: str, payload: dict) -> str:
+    return html.escape(activity_detail(event_type, payload))
 
 
 def _stale_after_seconds(rules=None) -> int:
@@ -2100,6 +2116,56 @@ def retention_summary(rules=None) -> list[tuple[str, str]]:
     ]
 
 
+# What the Guardian can and cannot do (G-44, #48), as data: the limits page
+# and the app read the same sentences (decision 21d). Trusted literals; the
+# page interpolates them unescaped exactly as it always has.
+LIMITS_HEADLINE = (
+    "Minas AI Guardian cannot stop an attack.",
+    "It cannot freeze your account, cancel a transaction, or move funds. When you get "
+    "an alert, you and the exchange are the ones who can act — and seconds decide the "
+    "outcome.",
+)
+LIMITS_DOES = (
+    ("It watches for money leaving.",
+     "Withdrawals, transfers, and balance drops that no trade explains."),
+    ("It watches your account's security settings.",
+     "API permissions and IP allowlists changing are how a takeover starts."),
+    ("It tells you, on the channels you have configured.",
+     "And tells a second contact, and escalates if nobody acknowledges."),
+    ("It keeps the record.",
+     "Every alert and every check is stored, so you can reconstruct what "
+     "happened and when afterwards."),
+)
+# (title, text, points at "am I being watched?")
+LIMITS_CANNOT = (
+    ("It cannot see what the exchange does not report.",
+     "Every check reads the exchange's own API. If the exchange is slow "
+     "to show a withdrawal, omits a reference, or is unreachable, the "
+     "Guardian is that much later or that much blinder. It says so "
+     "rather than guessing.", True),
+    ("It cannot recover money that has gone.",
+     "There is no reversal. The Guardian shortens the time between a "
+     "theft starting and you knowing about it. That is the whole product.", False),
+)
+# Flipped only by the legal review decision 6 is waiting on; the page's
+# "not yet reviewed" notice and the app's flag both read it.
+RETENTION_REVIEWED = False
+
+
+def polling_cadence(rules=None) -> tuple[int, int]:
+    """(fast, slow) loop seconds from the running config - the numbers the
+    poller keeps, never typed in."""
+    fast = (
+        rules.get_int("polling", "fast_loop_seconds") if rules is not None
+        else int(default_for("polling", "fast_loop_seconds") or 45)
+    )
+    slow = (
+        rules.get_int("polling", "slow_loop_seconds") if rules is not None
+        else int(default_for("polling", "slow_loop_seconds") or 600)
+    )
+    return fast, slow
+
+
 def _render_limits(db: Database, email: str, rules=None) -> str:
     """G-44 (#48): what the Guardian can and cannot do, said plainly.
 
@@ -2117,14 +2183,7 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
     a response time the poller does not keep is worse than a page that promises
     nothing.
     """
-    fast = (
-        rules.get_int("polling", "fast_loop_seconds") if rules is not None
-        else int(default_for("polling", "fast_loop_seconds") or 45)
-    )
-    slow = (
-        rules.get_int("polling", "slow_loop_seconds") if rules is not None
-        else int(default_for("polling", "slow_loop_seconds") or 600)
-    )
+    fast, slow = polling_cadence(rules)
 
     def _feat(kind, title, text):
         path = ("M8 12.5l2.5 2.5L16 9" if kind == "yes" else "M9 9l6 6M15 9l-6 6")
@@ -2134,28 +2193,12 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
                 'stroke-linecap="round" stroke-linejoin="round"/></svg>'
                 f"<div><strong>{title}</strong><span>{text}</span></div></li>")
 
-    does = "".join([
-        _feat("yes", "It watches for money leaving.",
-              "Withdrawals, transfers, and balance drops that no trade explains."),
-        _feat("yes", "It watches your account's security settings.",
-              "API permissions and IP allowlists changing are how a takeover starts."),
-        _feat("yes", "It tells you, on the channels you have configured.",
-              "And tells a second contact, and escalates if nobody acknowledges."),
-        _feat("yes", "It keeps the record.",
-              "Every alert and every check is stored, so you can reconstruct what "
-              "happened and when afterwards."),
-    ])
-
-    cannot = "".join([
-        _feat("no", "It cannot see what the exchange does not report.",
-              "Every check reads the exchange's own API. If the exchange is slow "
-              "to show a withdrawal, omits a reference, or is unreachable, the "
-              "Guardian is that much later or that much blinder. It says so "
-              'rather than guessing — see <a class="acctlink" href="/status">Am I being watched?</a>.'),
-        _feat("no", "It cannot recover money that has gone.",
-              "There is no reversal. The Guardian shortens the time between a "
-              "theft starting and you knowing about it. That is the whole product."),
-    ])
+    does = "".join(_feat("yes", title, text) for title, text in LIMITS_DOES)
+    cannot = "".join(
+        _feat("no", title, text.removesuffix(".")
+              + ' — see <a class="acctlink" href="/status">Am I being watched?</a>.' if to_status else text)
+        for title, text, to_status in LIMITS_CANNOT
+    )
 
     keeps = "".join(
         f'<div class="kv__row"><dt>{html.escape(what)}</dt>'
@@ -2169,10 +2212,8 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
         '<p class="lead">A monitoring product, not a brake. Knowing the difference changes '
         "how fast you act when an alert arrives.</p></div>"
         '<div class="callout-danger" role="note">'
-        "<h2>Minas AI Guardian cannot stop an attack.</h2>"
-        "<p>It cannot freeze your account, cancel a transaction, or move funds. When you get "
-        "an alert, you and the exchange are the ones who can act — and seconds decide the "
-        "outcome.</p></div>"
+        f"<h2>{LIMITS_HEADLINE[0]}</h2>"
+        f"<p>{LIMITS_HEADLINE[1]}</p></div>"
         '<section class="panel" aria-labelledby="does-title"><h2 id="does-title">What the Guardian does</h2>'
         f'<ul class="feature-list">{does}</ul></section>'
         '<section class="panel" aria-labelledby="cannot-title"><h2 id="cannot-title">What it cannot do</h2>'
@@ -2195,29 +2236,25 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
         '<section class="panel" aria-labelledby="keeps-title"><h2 id="keeps-title">What we keep, and for how long</h2>'
         '<p class="count">read from the running configuration</p>'
         f'<dl class="kv">{keeps}</dl>'
-        '<div class="notice notice--info" style="margin-top:var(--space-4)">' + _ICON_INFO
+        + ("" if RETENTION_REVIEWED else '<div class="notice notice--info" style="margin-top:var(--space-4)">' + _ICON_INFO
         + '<div><p class="notice__title">These periods are our current practice, not yet '
         "reviewed policy.</p>"
         '<p class="notice__body">They are enforced automatically on the schedule shown, but '
         "a legal review of retention obligations is still pending — if it changes these "
         "numbers, this page changes with them, because it reads the same configuration the "
-        "deletion job runs on.</p></div></div></section>"
+        "deletion job runs on.</p></div></div>") + "</section>"
         + _sensitivity_section(db, email, rules)
     )
     return _page(body, email, "/limits", title="Limits — Minas AI Guardian")
 
 
-def _sensitivity_section(db: Database, email: str, rules=None) -> str:
-    """#17's third criterion: the member sees their EFFECTIVE sensitivity in
-    plain terms — the same numbers detection actually runs on, read through
-    the same override layer, so this page and the alerts cannot disagree.
-    A value set specifically for the account says so; everything else says
-    'standard'."""
+def member_sensitivity(db: Database, email: str, rules=None) -> list[dict]:
+    """#17's third criterion, as data: each account's EFFECTIVE sensitivity -
+    the same numbers detection actually runs on, read through the same
+    override layer - for the limits page and the app (decision 21d), so
+    neither can disagree with the alerts. A value set specifically for the
+    account says so; everything else is the standard one."""
     from sentinel.overrides import overrides_for
-
-    accounts = member_accounts(db, email)
-    if not accounts:
-        return ""
 
     def _effective(overrides: dict, setting: str):
         raw = overrides.get(setting)
@@ -2246,20 +2283,38 @@ def _sensitivity_section(db: Database, email: str, rules=None) -> str:
          lambda v, o: f"after {v} failed checks in a row"),
     ]
 
-    cards = ""
-    for acct in accounts:
+    out = []
+    for acct in member_accounts(db, email):
         overrides = overrides_for(db, int(acct["id"]))
-        rows_html = ""
+        thresholds = []
         for title, setting, phrase in ROWS:
             value, custom = _effective(overrides, setting)
+            thresholds.append({"title": title, "setting": setting, "value": str(value),
+                               "phrase": phrase(value, overrides), "set_for_this_account": custom})
+        out.append({"account_id": int(acct["id"]), "account_name": display_label(acct),
+                    "thresholds": thresholds})
+    return out
+
+
+def _sensitivity_section(db: Database, email: str, rules=None) -> str:
+    """The limits page's sensitivity panel, rendered from
+    `member_sensitivity`."""
+    accounts = member_sensitivity(db, email, rules)
+    if not accounts:
+        return ""
+
+    cards = ""
+    for acct in accounts:
+        rows_html = ""
+        for row in acct["thresholds"]:
             chip = ('<span class="badge badge--neutral"><span class="dot" aria-hidden="true"></span>'
-                    "set for this account</span>") if custom else (
+                    "set for this account</span>") if row["set_for_this_account"] else (
                     '<span class="meta">standard</span>')
-            rows_html += (f'<div class="kv__row"><dt>{html.escape(title)}</dt>'
-                          f"<dd>{html.escape(phrase(value, overrides))} {chip}</dd></div>")
+            rows_html += (f'<div class="kv__row"><dt>{html.escape(row["title"])}</dt>'
+                          f"<dd>{html.escape(row['phrase'])} {chip}</dd></div>")
         cards += (
             f'<article class="acct"><div class="acct__head"><div>'
-            f'<p class="acct__label">{html.escape(display_label(acct))}</p></div></div>'
+            f'<p class="acct__label">{html.escape(acct["account_name"])}</p></div></div>'
             f'<dl class="kv">{rows_html}</dl></article>'
         )
     return (
@@ -2371,7 +2426,7 @@ def alert_history_rows(db: Database, account_ids: list[int], *,
         cur.execute(f"SELECT COUNT(*) AS n FROM alerts al WHERE {clause}", params)
         total = cur.fetchone()["n"]
         sql = (
-            "SELECT al.id, al.sent_at, al.severity, al.rule, al.message, al.confidence, "
+            "SELECT al.id, al.account_id, al.sent_at, al.severity, al.rule, al.message, al.confidence, "
             "al.delivered_to, al.acknowledged_at, al.acknowledged_by, ac.member_name, "
             "al.repeat_count, al.last_repeat_at, ac.label "
             "FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
@@ -2570,19 +2625,18 @@ def _incident_balances(db: Database, account_id: int, sent_at: str) -> tuple[lis
     return list(before), list(after)
 
 
-def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
-    """One incident, as a document (G-25, #29).
+def incident_record(db: Database, email: str, alert_id: int) -> dict | None:
+    """One incident, as data (G-25, #29): what the incident page renders and
+    what the app's incident screen reads (decision 21d) - one query, one
+    advice lookup, so the page, the app and the email cannot drift apart.
 
-    This is the most detailed view of an account in the product - balances,
-    destination addresses, exact timings - and it exists to be handed to
-    somebody else. So it is scoped through `member_accounts` like everything
-    else here, and it returns None for another member's incident and for one
-    that does not exist alike.
+    Scoped through `member_accounts` like everything else here, and None for
+    another member's incident and for one that does not exist alike.
 
     What it must never do is claim more than the record supports. In
     particular an alert with `delivered_to = 0` was detected and reached
-    nobody (#57), and rendering that as "notified" because a row exists would
-    undo that distinction in the one document where it matters most."""
+    nobody (#57), and `delivered_to` is carried as the number it is, never
+    rounded up into "notified"."""
     from sentinel.alerts.base import advice_lead, advice_note, advice_steps, established_cause
 
     account_ids = [r["id"] for r in member_accounts(db, email)]
@@ -2600,25 +2654,72 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
     if alert is None:
         return None
 
-    try:
-        evidence = json.loads(alert["evidence_json"] or "{}")
-    except ValueError:
-        evidence = {}
+    evidence = _payload(alert["evidence_json"])
     before, after = _incident_balances(db, alert["account_id"], alert["sent_at"])
     # The advice is the diagnosis's where the alert carries one (CAUSE_KEY on
     # its evidence), the rule's otherwise - the same lookup the email used.
     cause = established_cause(evidence)
     steps = advice_steps(alert["exchange"], rule=alert["rule"], cause=cause)
-    lead, note = advice_lead(alert["rule"], cause), advice_note(alert["rule"], cause)
+
+    def balances(rows):
+        # Quantities stay the strings they are stored as: Decimal-exact, never
+        # a float on the way to a phone.
+        return [{"coin": r["coin"], "quantity": str(r["quantity"]), "snapshot_at": r["snapshot_at"]}
+                for r in rows]
+
+    return {
+        "id": int(alert["id"]),
+        "account_id": int(alert["account_id"]),
+        "account_name": display_label(alert),
+        "exchange": alert["exchange"] or "bitget",
+        "rule": alert["rule"],
+        "severity": alert["severity"],
+        "confidence": alert["confidence"],
+        "message": alert["message"],
+        "sent_at": alert["sent_at"],
+        "evidence": evidence,
+        "delivered_to": int(alert["delivered_to"] or 0),
+        "acknowledged_at": alert["acknowledged_at"],
+        "acknowledged_by": alert["acknowledged_by"],
+        # Decisions 3 and 9: the SAME steps the alert email carries, and only
+        # for a rule that carries them (RULE_ADVICE); None otherwise.
+        "advice": {
+            "lead": advice_lead(alert["rule"], cause),
+            "steps": list(steps),
+            "note": advice_note(alert["rule"], cause),
+        } if steps else None,
+        "balances_before": balances(before),
+        "balances_after": balances(after),
+        # A customer saying "that was me" is part of this incident's record,
+        # and this is the document handed to an exchange or an insurer (G-24,
+        # #28).
+        "expected_marks": [{"marked_by": m["marked_by"], "note": m["note"], "created_at": m["created_at"]}
+                           for m in marks_for_alert(db, alert["id"])],
+    }
+
+
+def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
+    """One incident, as a document (G-25, #29), rendered from
+    `incident_record`.
+
+    This is the most detailed view of an account in the product - balances,
+    destination addresses, exact timings - and it exists to be handed to
+    somebody else. None for another member's incident and for one that does
+    not exist alike."""
+    rec = incident_record(db, email, alert_id)
+    if rec is None:
+        return None
+
+    advice = rec["advice"]
     advice_html = (
         '<section class="panel" aria-labelledby="next-title"><h2 id="next-title">What to do next</h2>'
-        + (f"<p>{html.escape(lead)}</p>" if lead else "")
-        + '<ol class="steps">' + "".join(f"<li>{html.escape(step)}</li>" for step in steps) + "</ol>"
-        + (f'<p class="muted">{html.escape(note)}</p>' if note else "")
+        + (f"<p>{html.escape(advice['lead'])}</p>" if advice["lead"] else "")
+        + '<ol class="steps">' + "".join(f"<li>{html.escape(step)}</li>" for step in advice["steps"]) + "</ol>"
+        + (f'<p class="muted">{html.escape(advice["note"])}</p>' if advice["note"] else "")
         + "</section>"
-    ) if steps else ""
+    ) if advice else ""
 
-    delivered = alert["delivered_to"] or 0
+    delivered = rec["delivered_to"]
     if delivered > 0:
         notified = (
             f"<b>Notified</b> — sent to {delivered} channel(s)"
@@ -2632,10 +2733,10 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         )
         notified_cls = "warn"
 
-    if alert["acknowledged_at"]:
+    if rec["acknowledged_at"]:
         acknowledged = (
-            f"<b>Acknowledged</b> — by {html.escape(alert['acknowledged_by'] or 'unknown')} "
-            f"at {_ts(alert['acknowledged_at'])}"
+            f"<b>Acknowledged</b> — by {html.escape(rec['acknowledged_by'] or 'unknown')} "
+            f"at {_ts(rec['acknowledged_at'])}"
         )
         ack_cls = "ok"
     else:
@@ -2643,15 +2744,11 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         ack_cls = "warn"
 
     timeline = [
-        ("ok", f"<b>Detected</b> — {html.escape(alert['message'])}", _ts(alert["sent_at"])),
-        (notified_cls, notified, _ts(alert["sent_at"])),
-        (ack_cls, acknowledged, _ts(alert["acknowledged_at"]) if alert["acknowledged_at"] else "—"),
+        ("ok", f"<b>Detected</b> — {html.escape(rec['message'])}", _ts(rec["sent_at"])),
+        (notified_cls, notified, _ts(rec["sent_at"])),
+        (ack_cls, acknowledged, _ts(rec["acknowledged_at"]) if rec["acknowledged_at"] else "—"),
     ]
-    # A customer saying "that was me" is part of this incident's record, and
-    # this page is the document handed to an exchange or an insurer. Leaving it
-    # off would let a document describe a theft the account's owner had already
-    # said was their own trading (G-24, #28).
-    for mark in marks_for_alert(db, alert["id"]):
+    for mark in rec["expected_marks"]:
         note = f" — “{html.escape(mark['note'])}”" if mark["note"] else ""
         timeline.append((
             "ok",
@@ -2675,7 +2772,7 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
             return f'<p class="empty">No snapshot {when_label} this alert.</p>'
         return '<dl class="kv">' + "".join(
             f'<div class="kv__row"><dt>{html.escape(r["coin"])}</dt>'
-            f"<dd><span class='mono'>{html.escape(str(r['quantity']))}</span> "
+            f"<dd><span class='mono'>{html.escape(r['quantity'])}</span> "
             f"<span class='meta'>{_ts(r['snapshot_at'])}</span></dd></div>"
             for r in rows
         ) + "</dl>"
@@ -2683,17 +2780,17 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
     evidence_kv = '<dl class="kv">' + ("".join(
         f'<div class="kv__row"><dt>{html.escape(str(k))}</dt>'
         f"<dd class=\"mono\">{html.escape(str(v))}</dd></div>"
-        for k, v in sorted(evidence.items())
+        for k, v in sorted(rec["evidence"].items())
     ) or '<div class="kv__row"><dt>Evidence</dt><dd class="muted">No structured evidence recorded</dd></div>') + "</dl>"
 
-    unack = not alert["acknowledged_at"]
+    unack = not rec["acknowledged_at"]
     if unack:
         actionbar = (
             '<div class="actionbar no-print"><div class="container actionbar__inner">'
             '<p class="actionbar__note"><strong>Acknowledge doesn\'t stop the attack.</strong> '
             "It only marks this alert as seen.</p>"
             '<form method="post" action="/acknowledge">'
-            f'<input type="hidden" name="alert_id" value="{int(alert["id"])}">'
+            f'<input type="hidden" name="alert_id" value="{rec["id"]}">'
             '<button type="submit" class="btn btn--primary btn--block">Acknowledge alert</button>'
             "</form></div></div>"
         )
@@ -2701,20 +2798,20 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         actionbar = (
             '<div class="actionbar no-print"><div class="container actionbar__inner">'
             f'<p class="actionbar__note">Acknowledged by '
-            f"{html.escape(alert['acknowledged_by'] or 'unknown')} at {_ts(alert['acknowledged_at'])}.</p>"
+            f"{html.escape(rec['acknowledged_by'] or 'unknown')} at {_ts(rec['acknowledged_at'])}.</p>"
             "</div></div>"
         )
 
     body = (
         '<section class="alert-head">'
-        f"{_sev_badge(alert['severity'], large=True)}"
-        f"<h1>{html.escape(alert['message'])}</h1>"
+        f"{_sev_badge(rec['severity'], large=True)}"
+        f"<h1>{html.escape(rec['message'])}</h1>"
         '<div class="alert-meta">'
-        f'<p><strong style="color:var(--text)">Detected:</strong> {_ts(alert["sent_at"])}</p>'
+        f'<p><strong style="color:var(--text)">Detected:</strong> {_ts(rec["sent_at"])}</p>'
         f'<p><strong style="color:var(--text)">Account:</strong> '
-        f"{html.escape((alert['exchange'] or 'bitget').title())} — {html.escape(display_label(alert))}</p>"
-        f'<p><strong style="color:var(--text)">Incident:</strong> #{int(alert["id"])} · '
-        f"{html.escape(alert['rule'])} · confidence {html.escape(alert['confidence'] or '—')}</p>"
+        f"{html.escape(rec['exchange'].title())} — {html.escape(rec['account_name'])}</p>"
+        f'<p><strong style="color:var(--text)">Incident:</strong> #{rec["id"]} · '
+        f"{html.escape(rec['rule'])} · confidence {html.escape(rec['confidence'] or '—')}</p>"
         "</div></section>"
         '<section class="panel" aria-labelledby="what-title"><h2 id="what-title">What was detected</h2>'
         f"{evidence_kv}</section>"
@@ -2722,12 +2819,9 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         '<p class="count">detection → notification → acknowledgement</p>'
         f"{timeline_html}</section>"
         '<section class="panel" aria-labelledby="bal-title"><h2 id="bal-title">Balances before</h2>'
-        f"{_balance_kv(before, 'before')}</section>"
+        f"{_balance_kv(rec['balances_before'], 'before')}</section>"
         '<section class="panel" aria-labelledby="bal2-title"><h2 id="bal2-title">Balances after</h2>'
-        f"{_balance_kv(after, 'after')}</section>"
-        # Decisions 3 and 9: the SAME steps the alert email carries, from the
-        # same function, so the page and the email cannot drift apart - and
-        # only for a rule that carries them (RULE_ADVICE); no section otherwise.
+        f"{_balance_kv(rec['balances_after'], 'after')}</section>"
         + advice_html
         + '<div class="notice notice--info">' + _ICON_INFO
         + '<div><p class="notice__title">Minas cannot do this for you.</p>'
@@ -2738,9 +2832,8 @@ def _render_incident(db: Database, email: str, alert_id: int) -> str | None:
         + actionbar
     )
     return _page(body, email, actionbar=unack,
-                 back=f"/account?id={int(alert['account_id'])}",
-                 title=f"Incident #{int(alert['id'])} — Minas AI Guardian")
-
+                 back=f"/account?id={rec['account_id']}",
+                 title=f"Incident #{rec['id']} — Minas AI Guardian")
 
 _RESET_ACK = (
     "If that address has a Minas AI Guardian login, a password-reset link is on "
@@ -3110,12 +3203,39 @@ def _render_security(db: Database, email: str, *, secret: str | None = None,
     # The 2FA interstitials (fresh secret, one-time recovery codes) stay
     # focused; the other settings join the page in its settled states.
     if not codes and not secret:
+        body += _app_devices_section(db, email)
         body += _telegram_section(db, email)
         body += _preferences_section(db, email)
         body += _digest_section(db, email)
         body += _erasure_section(db, email)
     return _page(banner + body, email, "/security",
                  title="Security — Minas AI Guardian")
+
+
+def _app_devices_section(db: Database, email: str) -> str:
+    """Every phone signed in to this login with the app, and a way to sign
+    each one out (decision 21c). Absent when there is none: a member who has
+    never used the app has nothing to review here."""
+    from sentinel.api import live_devices
+
+    devices = live_devices(db, normalize_email(email))
+    if not devices:
+        return ""
+    rows = "".join(
+        f'<div class="kv__row"><dt>{html.escape(d["name"])}</dt>'
+        f"<dd>signed in {_ts(d['created_at'])} · last active {_ts(d['last_refreshed_at'] or d['created_at'])}"
+        '<form method="post" action="/security/devices/revoke" style="margin-top:var(--space-2)">'
+        f'<input type="hidden" name="device_id" value="{int(d["id"])}">'
+        '<button class="btn btn--secondary btn--sm" type="submit">Sign out this phone</button>'
+        "</form></dd></div>"
+        for d in devices
+    )
+    return (
+        '<section class="panel" aria-labelledby="devices-title"><h2 id="devices-title">Phones signed in to the app</h2>'
+        '<p class="muted">Each of these can read your alerts and acknowledge them. If you do not '
+        "recognise one, sign it out here and change your password.</p>"
+        f'<dl class="kv">{rows}</dl></section>'
+    )
 
 
 def _erasure_section(db: Database, email: str) -> str:
@@ -3400,6 +3520,15 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             return True  # non-browser clients send neither header
         return urlparse(origin).netloc == (handler.headers.get("Host") or "")
 
+    # Decision 21: the apps' JSON API, on this server's secret, throttle and
+    # cipher - one sign-in limiter for the web and the app, not two.
+    from sentinel.api import MAX_BODY_BYTES, Api
+
+    api = Api(db, secret, throttle, _throttle_pair, cipher=cipher, rules=rules)
+
+    def _is_api(path: str) -> bool:
+        return path == "/api" or path.startswith("/api/")
+
     class Handler(BaseHTTPRequestHandler):
         def finish(self):
             # Same leak as the dashboard's (#79): the portal serves from the
@@ -3485,11 +3614,58 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
         def _client_ip(self) -> str:
             return self.client_address[0] if self.client_address else "?"
 
+        def _api(self, method: str) -> None:
+            """Every `/api/` request, whatever its method (decision 21).
+
+            Ahead of the session cookie and of the CSRF gate on purpose: the
+            API authenticates with bearer tokens only and never reads the
+            cookie, so there is no ambient credential for a cross-site request
+            to borrow - see sentinel/api.py."""
+            parsed = urlparse(self.path)
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = -1
+            if length < 0 or length > MAX_BODY_BYTES:
+                body = json.dumps({"error": "invalid_request",
+                                   "message": "The request body is missing a valid length or is too large."})
+                self._send(body.encode(), 400, content_type="application/json; charset=utf-8")
+                return
+            raw = self.rfile.read(length) if length else b""
+            response = api.handle(method, parsed.path.rstrip("/"), self.headers, raw,
+                                  self._client_ip(), parse_qs(parsed.query))
+            payload = b"" if response.body is None else json.dumps(response.body).encode()
+            self._send(payload, response.status, response.headers,
+                       content_type="application/json; charset=utf-8")
+
+        def _send_asset(self, path: str) -> None:
+            """The logo files (sentinel/brand.py): public, before any session
+            check, because the sign-in page wears the logo. Cached for a day -
+            they change only with a release - unlike every page, which is
+            no-store."""
+            body = brand_asset(path)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/png")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_DELETE(self):
+            path = urlparse(self.path).path.rstrip("/")
+            if _is_api(path):
+                self._api("DELETE")
+                return
+            self._send(_render_not_found().encode(), 404)
+
         def do_GET(self):
             path = urlparse(self.path).path.rstrip("/") or "/"
-            if path == "/favicon.ico":
-                self.send_response(204)
-                self.end_headers()
+            if _is_api(path):
+                self._api("GET")
+                return
+            if path in WEB_ASSETS:
+                self._send_asset(path)
                 return
             email = self._session_email()
             if email is None:
@@ -3848,6 +4024,27 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
 
             self._send(_render_not_found().encode(), 404)
 
+        def _revoke_device(self, form):
+            """Sign one of this login's phones out of the app (decision 21c).
+            The login's scope is in the UPDATE itself (api.revoke_device), so
+            another login's device is the same not-found as no device."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            from sentinel.api import revoke_device
+
+            try:
+                device_id = int((form.get("device_id") or [""])[0])
+            except (TypeError, ValueError):
+                self._send(_render_not_found().encode(), 404)
+                return
+            if not revoke_device(db, normalize_email(email), device_id, "revoked"):
+                self._send(_render_not_found().encode(), 404)
+                return
+            logger.info("portal: %s signed out app device %d", email, device_id)
+            self._send(_render_security(db, email, notice="That phone is signed out of the app.").encode())
+
         def _login_code(self, form):
             """Step two of a two-factor sign-in (#32).
 
@@ -4133,6 +4330,9 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
 
         def do_POST(self):
             path = urlparse(self.path).path.rstrip("/")
+            if _is_api(path):
+                self._api("POST")
+                return
             if not _same_origin(self):
                 self._send(b"cross-origin POST rejected", 403)
                 return
@@ -4154,6 +4354,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 "/security/2fa/start": lambda form: self._twofactor(path, form),
                 "/security/2fa/confirm": lambda form: self._twofactor(path, form),
                 "/security/2fa/disable": lambda form: self._twofactor(path, form),
+                "/security/devices/revoke": self._revoke_device,
                 "/telegram/link": lambda form: self._telegram_link(path),
                 "/telegram/unlink": lambda form: self._telegram_link(path),
                 "/digest/frequency": self._digest_frequency,

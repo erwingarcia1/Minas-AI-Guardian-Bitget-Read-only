@@ -31,14 +31,18 @@ GET_ROUTES = {
     "/activity": "/activity", "/export.json": "/export.json", "/alerts.csv": "/alerts.csv",
     "/incident": "/incident?id={alert}", "/security": "/security", "/key": "/key?id={account}",
     "/account": "/account?id={account}", "/forgot": "/forgot", "/reset": "/reset?token=not-a-token",
-    "/favicon.ico": "/favicon.ico",
+    "/favicon.ico": "/favicon.ico", "/brand/mark.png": "/brand/mark.png", "/brand/icon.png": "/brand/icon.png",
+    "/brand/apple-touch-icon.png": "/brand/apple-touch-icon.png",
 }
 
 
 def _get_literals() -> set[str]:
     src = inspect.getsource(portal_module.serve_portal)
     body = src[src.index("def do_GET"):src.index("def _pause")]
-    return set(re.findall(r'path == "(/[a-z0-9/._-]*)"', body))
+    # The logo files are served from one table (sentinel/brand.py), not by
+    # literal: they count as GET routes all the same.
+    assert "if path in WEB_ASSETS:" in body
+    return set(re.findall(r'path == "(/[a-z0-9/._-]*)"', body)) | set(portal_module.WEB_ASSETS)
 
 
 def test_the_route_list_matches_do_get():

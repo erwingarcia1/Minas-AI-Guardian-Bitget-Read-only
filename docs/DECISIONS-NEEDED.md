@@ -1260,7 +1260,9 @@ The apps carry the Minas identity, the same one the portal carries
 - Violet `#8b5cf6` and `#6d28d9`.
 - The dark surfaces from `design/portal/styles.css` (`--bg #0d0f13`,
   `--surface #151921`).
-- The infinity mark in `sentinel/brand.py`.
+- The Minas logo, supplied by the owner on 2026-10-22 (it replaces the
+  infinity mark): `design/brand/`, served by the portal from
+  `sentinel/static/`.
 
 What that takes:
 
@@ -1271,12 +1273,11 @@ What that takes:
   read it, and a test fails if they disagree. This is tokens only, not a
   stylesheet: `tests/test_surface_styles.py` refuses a shared stylesheet,
   and that rule stays.
-- **Artwork the stores need and the repo does not have.** The only logo
-  in the repo is the stroked SVG mark. The app icon needs a 1024×1024
-  image plus Android's adaptive-icon layers, and the launch screen needs
-  artwork. If Minas has official logo files (a wordmark, a full-colour
-  mark), they belong in `design/` before the icon is made. Otherwise the
-  icon is drawn from the mark.
+- **The store artwork exists (2026-10-22).** `design/brand/` holds the
+  app icon (1024, opaque), Android's adaptive foreground and monochrome
+  layers, and the splash image. All are derived from the supplied logo by
+  `scripts/brand-assets.py`. `design/brand/README.md` names the Expo key
+  for each file and the background colour to use with them.
 - **The ops dashboard stays unbranded** (#82). An operator screen must
   not be usable to impersonate a customer page, and that matters more
   now that both share one address (decision 22).
@@ -1286,6 +1287,28 @@ What that takes:
 The apps, end to end. Nothing blocks the API now that 21c and 21d are
 answered. Push (21e) waits on its own answer, and the apps are built
 against decision 22's hostname.
+
+### Built so far — 2026-10-22, branch `api-v1`
+
+- **Sign-in (21c), the v1 reads and acknowledge (21d)** are built, as
+  answered, in `sentinel/api.py`, served by the portal process under
+  `/api/v1/`.
+- **The route registry lives in `sentinel/api.py`**, not in the portal's
+  sets as 21d first said. API routes carry a method and path ids, which
+  the portal's path-only sets cannot hold. The buckets are the portal's:
+  `PRE_AUTH`, `MEMBER_READ`, `NON_PRIMARY_ALLOWED`, with `PRIMARY_ONLY`
+  arriving with v2. `tests/test_api_routes.py` covers the registry the
+  way `tests/test_member_roles.py` covers the portal's.
+- **`DELETE /api/v1/devices/{id}` is built as "sign a device out"** (21c).
+  Push-token registration (`POST /api/v1/devices` in the table above)
+  waits on 21e.
+- **The portal's Security page lists signed-in phones** with a sign-out
+  button (`POST /security/devices/revoke`, own-login plumbing, so
+  non-primary allowed).
+- **The contract is `api/openapi.yaml`**, held to the server by
+  `tests/test_api_contract.py`.
+- **Not built yet:** push (21e), the primary-only writes (v2), and the
+  app in `mobile/`.
 
 **Related:** decision 13 (browser push, no-JS posture), decision 20
 (member surface boundary, member two-factor), decision 22 (the address),
@@ -1417,6 +1440,17 @@ checked:
    proxy, for office or VPN addresses. It is a lighter gate than the
    tailnet was, and it keeps password-spraying traffic away from the
    operator login. The owner's call.
+6. **Each server must know the real client address behind the proxy.**
+   Both servers take the address from the TCP connection
+   (`client_address`), and no code reads a forwarded header (checked
+   2026-10-22). Behind a proxy, every visitor arrives from the proxy's
+   address. The login throttle's per-address limit then becomes a single
+   shared bucket: five wrong passwords from anyone block every sign-in,
+   member and operator, for fifteen minutes. The fix is to trust
+   `X-Forwarded-For` from the proxy's own address only, with a test.
+   This may already be true in production: Funnel and Docker's port
+   forwarding are both proxies. UNVERIFIED; the portal logs every failed
+   sign-in with its source address, so the server's log answers it.
 
 ### 22d. Moving customers to the new address
 
