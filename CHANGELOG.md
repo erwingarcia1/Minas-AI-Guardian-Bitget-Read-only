@@ -307,6 +307,23 @@ container")._
   is tracked in #106. Tooling only: nothing about detection or
   alerting changes.
 
+- **The weekly mutation gate measures with mutmut 3.8.0 (#106).** The
+  upgrade is deliberate this time. 3.8.0 forces each side of a conditional
+  expression, which 3.7.0 never did, and found 25 conditionals the suite
+  never took both ways. 16 are now pinned by tests
+  (`tests/test_conditional_branches.py`):
+  - a customer email with no incident number never says "incident #None";
+  - an operator email keeps the operator subject line;
+  - switching only quiet hours on is a saved change;
+  - a bare `/start` to the Telegram bot gets the refusal rather than
+    stopping the link worker;
+  - config reads convert a value to Decimal and read an absent value as 0;
+  - the remaining eleven are similar small branches.
+
+  The other 9 are equivalent or unreachable, and each is in the survivor
+  ledger with its argument. Score 677/693 (97%); the floor stays 96. Tests
+  and tooling only: the code under test is unchanged.
+
 ## [1.12.0] — 2026-09-08
 
 ### Changed — on upgrade

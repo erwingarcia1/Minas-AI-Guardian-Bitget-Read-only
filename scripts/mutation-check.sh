@@ -150,7 +150,7 @@ MUTMUT=mutmut; [ -x .venv/bin/mutmut ] && MUTMUT=.venv/bin/mutmut
 # generator. Upgrading is a deliberate change: this number, ci.yml's install
 # line (tests/test_scheduled_gates.py keeps them equal) and the new
 # generator's survivors judged, in one commit.
-MUTMUT_VERSION=3.7.0
+MUTMUT_VERSION=3.8.0
 command -v "$MUTMUT" >/dev/null 2>&1 || [ -x "$MUTMUT" ] || {
   echo "mutmut not installed: pip install mutmut==$MUTMUT_VERSION" >&2; exit 2; }
 installed=$("$PY" -c "import importlib.metadata as m; print(m.version('mutmut'))" 2>/dev/null || echo unknown)
@@ -283,6 +283,7 @@ pytest_add_cli_args_test_selection=
     tests/test_secondary_contact_welcome.py
     tests/test_snooze.py
     tests/test_telegram_env.py
+    tests/test_conditional_branches.py
     tests/test_undated_fills.py
     tests/test_untimestamped_alarm.py
     tests/test_withdrawal_evidence.py
