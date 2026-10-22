@@ -131,7 +131,66 @@ container")._
   escalates. `withdrawal_to_unseen_address`, `withdrawal_burst` and every
   other rule are untouched.
 
+### Added
+
+- **Sign-in for the iOS and Android apps (decision 21c).** The member
+  portal now serves a JSON API under `/api/v1/` for the customer apps.
+  This release carries its sign-in: the web's email, password and TOTP,
+  counted on the portal's own login throttle, and only for a member with
+  two-factor on - the app is refused with "turn on two-factor" otherwise.
+  The app holds a 15-minute access token and a refresh token that is
+  replaced on every use; an app left unopened for 30 days signs out. A
+  replaced refresh token presented again ends that sign-in at once, and a
+  password change signs every phone out, as it already signed out every
+  browser. Every app sign-in emails the member and appears on their
+  activity page with the device's name, as does every sign-out.
+  `GET /api/v1/security` lists the live sign-ins; a member can end any of
+  their own (`DELETE /api/v1/devices/{id}`) and never anyone else's.
+  Nothing changes for the web portal or for alerting. New table:
+  `api_devices` (additive; erased with the member, listed in the data
+  export without its token hashes).
+
+- **What the apps read (decision 21d).** `GET /api/v1/accounts` (each
+  account, whether it is being watched and why not, and what this login
+  may change on it), `/alerts` (newest first; filter by `severity`,
+  `account`, `from`, `to`; up to 200 per page with `limit` and `offset`),
+  `/alerts/{id}` (the incident record), `/activity` and `/limits`. Each
+  answers from the portal's own query for the same page: the incident
+  page, the limits page's sentences and sensitivity table, and the
+  activity page's wording are now data that the page and the app both
+  render, so the two cannot disagree. Every read is scoped to the
+  member's own accounts, and another member's alert is a 404
+  indistinguishable from one that does not exist. A filter the API cannot
+  understand is refused, never ignored. Quantities stay strings, never
+  floats.
+
+- **Acknowledging from the app, and signing a phone out from the browser
+  (decisions 21c, 21d).** `POST /api/v1/alerts/{id}/acknowledge` runs
+  through the portal's own scoped writer, so it stops a CRITICAL's
+  escalation exactly as the web button does, any contact on the account
+  may use it (#25), and the first acknowledgement stands. The portal's
+  Security page lists every phone signed in to the login, with a button
+  to sign each one out; it appears only once a phone has signed in.
+
+- **The app API's contract, `api/openapi.yaml` (decision 21f).** The one
+  description the server and the apps share; the apps' client is to be
+  generated from it. The server is held to it: the routes must be exactly
+  the served ones, and every answer the server gives on every route,
+  success and error, must match the file's schema for its status, with
+  closed objects, so an undocumented field fails the build as surely as
+  a missing one.
+
 ### Changed
+
+- **The member portal wears the Minas logo.** It replaces the stroked
+  infinity mark in the top bar and on the sign-in page. The portal now
+  has a browser-tab icon and an iPhone home-screen icon; `/favicon.ico`
+  used to answer with nothing. The logo files are served by the portal
+  itself (`/brand/...`, cached for a day), so no page makes an external
+  request. Every size is derived from one master by
+  `scripts/brand-assets.py`, which also produced the app-store icons in
+  `design/brand/`. The ops dashboard stays unbranded on purpose. Nothing
+  changes for alerting.
 
 - **The unpinned method decisions are being retired in named batches, the
   floor climbing behind each (#104).** Batch A, the escalator: the stale
@@ -203,6 +262,10 @@ container")._
   completeness guard; the per-account decisions were not wrong.
 
 ### Fixed
+
+- **The activity page names each connection by the member's own name
+  (#8),** as every other page already did. Its query never fetched the
+  name, so it showed the internal slug.
 
 - **The deployment guide described a system that is not running.** It said
   "serve, never funnel" while the member portal has been published to the

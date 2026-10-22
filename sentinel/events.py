@@ -68,6 +68,8 @@ ADMIN_EVENT_TYPES = (
     "pause_cancelled",
     "pause_executed",
     "monitoring_key_replaced",
+    "member_app_signed_in",  # decision 21c: a phone signed in to this login
+    "member_app_device_revoked",
 )
 
 # How each reads to a customer. The dashboard shows event_type; this page is
@@ -91,6 +93,8 @@ ADMIN_EVENT_LABELS = {
     "pause_cancelled": "Pause request cancelled",
     "pause_executed": "Monitoring paused",
     "monitoring_key_replaced": "Monitoring key replaced",
+    "member_app_signed_in": "Phone app signed in",
+    "member_app_device_revoked": "Phone app signed out",
 }
 
 

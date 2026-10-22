@@ -896,8 +896,8 @@
  {
   "name": "#28 a customer's mark is dropped from the incident document handed to an exchange",
   "file": "sentinel/portal.py",
-  "old": "    for mark in marks_for_alert(db, alert[\"id\"]):",
-  "new": "    for mark in []:",
+  "old": "for m in marks_for_alert(db, alert[\"id\"])]",
+  "new": "for m in []]",
   "tests": [
    "tests/test_expected_activity.py"
   ],
@@ -1178,8 +1178,8 @@
  {
   "name": "#69 a key replacement stops appearing on the page a customer reads to see who touched their account",
   "file": "sentinel/events.py",
-  "old": "    \"monitoring_key_replaced\",\n)",
-  "new": ")",
+  "old": "    \"monitoring_key_replaced\",\n    \"member_app_signed_in\",",
+  "new": "    \"member_app_signed_in\",",
   "tests": [
    "tests/test_key_replacement.py"
   ]
@@ -1205,8 +1205,8 @@
  {
   "name": "#48 a prevention claim reaches the customer",
   "file": "sentinel/portal.py",
-  "old": "        _feat(\"yes\", \"It watches for money leaving.\",",
-  "new": "        _feat(\"yes\", \"The Guardian protects your funds around the clock.\",",
+  "old": "    (\"It watches for money leaving.\",",
+  "new": "    (\"The Guardian protects your funds around the clock.\",",
   "tests": [
    "tests/test_no_prevention_claims.py"
   ]
@@ -1746,6 +1746,146 @@
   "new": "            self._telegram_targets = []\n",
   "tests": [
    "tests/test_coverage_repeats.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: a device signed in before a password change still authenticates",
+  "file": "sentinel/api.py",
+  "old": "or row[\"member_epoch\"] != row[\"session_epoch\"]:",
+  "new": ":",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: a revoked device still authenticates",
+  "file": "sentinel/api.py",
+  "old": "if row is None or row[\"revoked_at\"] is not None or",
+  "new": "if row is None or",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: a replayed refresh token does not revoke the device",
+  "file": "sentinel/api.py",
+  "old": "            revoke_device(db, reused[\"email\"], int(reused[\"id\"]), \"refresh_reused\")",
+  "new": "            pass",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: revoking a device is not scoped to the signed-in login",
+  "file": "sentinel/api.py",
+  "old": "\"WHERE id = ? AND email = ? AND revoked_at IS NULL\",\n            (_iso(_clock()), reason, int(device_id), email),",
+  "new": "\"WHERE id = ? AND revoked_at IS NULL\",\n            (_iso(_clock()), reason, int(device_id)),",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: sign-in accepts any code once two-factor is on",
+  "file": "sentinel/api.py",
+  "old": "if self.cipher is None or not check_second_factor(self.db, self.cipher, MEMBER, email, code):",
+  "new": "if self.cipher is None:",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: sign-in no longer requires two-factor to be on",
+  "file": "sentinel/api.py",
+  "old": "if not member_login_requires_code(self.db, email):",
+  "new": "if False:",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: an expired refresh token still refreshes",
+  "file": "sentinel/api.py",
+  "old": "or row[\"refresh_expires_at\"] <= _iso(now)):",
+  "new": "):",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: an expired access token still authenticates",
+  "file": "sentinel/api.py",
+  "old": "        if int(expires_s) <= now_v:\n            return None",
+  "new": "        pass",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: a wrong password is not counted on the login throttle",
+  "file": "sentinel/api.py",
+  "old": "            self.throttle.record_failure(pair)\n            self.throttle.record_failure(ip)\n            logger.warning(\"api sign-in failed",
+  "new": "            logger.warning(\"api sign-in failed",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: every route is treated as needing no sign-in",
+  "file": "sentinel/api.py",
+  "old": "if route in PRE_AUTH:",
+  "new": "if True:",
+  "tests": [
+   "tests/test_api_routes.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: an unknown severity filter is ignored instead of refused",
+  "file": "sentinel/api.py",
+  "old": "if severity is not None and severity not in _SEVERITIES:",
+  "new": "if False:",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: the alert list reads past the member's own accounts",
+  "file": "sentinel/api.py",
+  "old": "rows, total = alert_history_rows(self.db, ids,",
+  "new": "rows, total = alert_history_rows(self.db, list(range(1, 100)),",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: the activity record reads past the member's own accounts",
+  "file": "sentinel/api.py",
+  "old": "} for r in account_activity(self.db, ids)]})",
+  "new": "} for r in account_activity(self.db, list(range(1, 100)))]})",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: acknowledging looks the alert up outside the member's scope",
+  "file": "sentinel/api.py",
+  "old": "if _member_alert(self.db, alert_id, ids) is None:",
+  "new": "if False:",
+  "tests": [
+   "tests/test_api_acknowledge.py"
   ],
   "expect": "killed"
  }

@@ -1,0 +1,454 @@
+# The Minas AI Guardian app API (decision 21) - the one contract the server
+# and the iOS/Android apps share.
+#
+# tests/test_api_contract.py holds the server to this file: the routes here
+# must be exactly sentinel/api.py's ROUTES, and every response the server
+# gives is validated against the schema for its status. Objects are closed
+# (additionalProperties: false), so a field the server adds without adding it
+# here fails the build, and so does a documented field it stops sending.
+# The app's client is generated from this file.
+openapi: 3.1.0
+info:
+  title: Minas AI Guardian app API
+  version: "1"
+  description: >-
+    Read-only monitoring of a member's own exchange accounts, for the Minas
+    AI Guardian iOS and Android apps. Sign in with the portal's email,
+    password and two-factor code; two-factor must be on. Every response is
+    scoped to the signed-in member's accounts.
+servers:
+  - url: https://guardian.minastrade.com
+security:
+  - bearer: []
+paths:
+  /api/v1/session:
+    post:
+      operationId: signIn
+      summary: Sign in and register this device
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/SignInRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Tokens"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "403":
+          description: Two-factor is off for this login (error `two_factor_required`).
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+    delete:
+      operationId: signOut
+      summary: End this device's sign-in
+      responses:
+        "204": {description: 'Signed out.'}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/session/refresh:
+    post:
+      operationId: refresh
+      summary: Trade the refresh token for a new pair
+      description: >-
+        The refresh token is replaced on every use. Presenting a replaced one
+        ends the device's sign-in.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/RefreshRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/Tokens"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/devices/{id}:
+    delete:
+      operationId: revokeDevice
+      summary: Sign one of this login's devices out
+      parameters:
+        - {$ref: "#/components/parameters/Id"}
+      responses:
+        "204": {description: 'Signed out.'}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/accounts:
+    get:
+      operationId: listAccounts
+      summary: The member's accounts and whether each is being watched
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Accounts"}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/alerts:
+    get:
+      operationId: listAlerts
+      summary: Alerts on the member's accounts, newest first
+      parameters:
+        - {name: severity, in: query, schema: {$ref: "#/components/schemas/Severity"}}
+        - {name: account, in: query, schema: {type: integer}}
+        - {name: from, in: query, description: "YYYY-MM-DD, inclusive", schema: {type: string, format: date}}
+        - {name: to, in: query, description: "YYYY-MM-DD, inclusive", schema: {type: string, format: date}}
+        - {name: limit, in: query, schema: {type: integer, minimum: 1, maximum: 200, default: 50}}
+        - {name: offset, in: query, schema: {type: integer, minimum: 0, default: 0}}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/AlertList"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/alerts/{id}:
+    get:
+      operationId: getIncident
+      summary: One incident, as the portal's incident page shows it
+      parameters:
+        - {$ref: "#/components/parameters/Id"}
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Incident"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/alerts/{id}/acknowledge:
+    post:
+      operationId: acknowledgeAlert
+      summary: Acknowledge an alert, which stops a CRITICAL's escalation
+      parameters:
+        - {$ref: "#/components/parameters/Id"}
+      responses:
+        "200":
+          description: Acknowledged, now or earlier. The first acknowledgement stands.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Acknowledgement"}
+        "401": {$ref: "#/components/responses/Error"}
+        "404": {$ref: "#/components/responses/Error"}
+  /api/v1/activity:
+    get:
+      operationId: listActivity
+      summary: Every change to how the member's accounts are watched or reached
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Activity"}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/limits:
+    get:
+      operationId: getLimits
+      summary: What the Guardian can and cannot do, and the member's sensitivity
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Limits"}
+        "401": {$ref: "#/components/responses/Error"}
+  /api/v1/security:
+    get:
+      operationId: getSecurity
+      summary: Two-factor state and the devices signed in to this login
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Security"}
+        "401": {$ref: "#/components/responses/Error"}
+components:
+  securitySchemes:
+    bearer:
+      type: http
+      scheme: bearer
+      description: The access token from sign-in or refresh. Valid 15 minutes.
+  parameters:
+    Id:
+      name: id
+      in: path
+      required: true
+      schema: {type: integer}
+  responses:
+    Tokens:
+      description: A new token pair.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Tokens"}
+    Error:
+      description: An error, with a code the app can act on and a sentence a person can read.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error, message]
+      properties:
+        error:
+          type: string
+          enum: [invalid_json, invalid_request, invalid_credentials, two_factor_required, too_many_attempts,
+                 invalid_refresh_token, unauthorized, not_found, method_not_allowed, invalid_filter]
+        message: {type: string}
+    SignInRequest:
+      type: object
+      required: [email, password, code]
+      properties:
+        email: {type: string}
+        password: {type: string}
+        code: {type: string, description: 'The six-digit code from the member''s authenticator, or a recovery code.'}
+        device_name: {type: string, description: 'Shown on the member''s device list and in the sign-in email.'}
+    RefreshRequest:
+      type: object
+      required: [refresh_token]
+      properties:
+        refresh_token: {type: string}
+    Tokens:
+      type: object
+      additionalProperties: false
+      required: [token_type, access_token, expires_in, refresh_token, refresh_expires_in, device_id]
+      properties:
+        token_type: {type: string, enum: [Bearer]}
+        access_token: {type: string}
+        expires_in: {type: integer, description: 'Seconds the access token is valid.'}
+        refresh_token: {type: string}
+        refresh_expires_in: {type: integer, description: 'Seconds the refresh token is valid unused.'}
+        device_id: {type: integer}
+    Severity:
+      type: string
+      enum: [CRITICAL, HIGH, MEDIUM, LOW]
+    Accounts:
+      type: object
+      additionalProperties: false
+      required: [overall, checked_at, stale_after_seconds, accounts]
+      properties:
+        overall: {type: string, enum: [watching, degraded, not_watching]}
+        checked_at: {type: string}
+        stale_after_seconds: {type: integer}
+        accounts:
+          type: array
+          items: {$ref: "#/components/schemas/Account"}
+    Account:
+      type: object
+      additionalProperties: false
+      required: [id, name, exchange, status, watched, reason, last_success_at, role]
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        exchange: {type: [string, "null"]}
+        status: {type: string}
+        watched: {type: boolean}
+        reason: {type: [string, "null"], description: 'Why it is not being watched, in words; null when it is.'}
+        last_success_at: {type: [string, "null"]}
+        role: {type: string, enum: [primary, non-primary], description: 'What this login may change on it (#25).'}
+    AlertList:
+      type: object
+      additionalProperties: false
+      required: [total, limit, offset, alerts]
+      properties:
+        total: {type: integer}
+        limit: {type: integer}
+        offset: {type: integer}
+        alerts:
+          type: array
+          items: {$ref: "#/components/schemas/AlertSummary"}
+    AlertSummary:
+      type: object
+      additionalProperties: false
+      required: [id, account_id, account_name, sent_at, severity, rule, message, confidence, delivered_to,
+                 acknowledged_at, acknowledged_by, repeat_count, last_repeat_at]
+      properties:
+        id: {type: integer}
+        account_id: {type: integer}
+        account_name: {type: string}
+        sent_at: {type: string}
+        severity: {$ref: "#/components/schemas/Severity"}
+        rule: {type: string}
+        message: {type: string}
+        confidence: {type: [string, "null"]}
+        delivered_to: {type: integer, description: 'Channels it reached. 0 means detected and told to nobody.'}
+        acknowledged_at: {type: [string, "null"]}
+        acknowledged_by: {type: [string, "null"]}
+        repeat_count: {type: [integer, "null"]}
+        last_repeat_at: {type: [string, "null"]}
+    Incident:
+      type: object
+      additionalProperties: false
+      required: [id, account_id, account_name, exchange, rule, severity, confidence, message, sent_at, evidence,
+                 delivered_to, acknowledged_at, acknowledged_by, advice, balances_before, balances_after,
+                 expected_marks]
+      properties:
+        id: {type: integer}
+        account_id: {type: integer}
+        account_name: {type: string}
+        exchange: {type: string}
+        rule: {type: string}
+        severity: {$ref: "#/components/schemas/Severity"}
+        confidence: {type: [string, "null"]}
+        message: {type: string}
+        sent_at: {type: string}
+        evidence: {type: object, description: 'What was detected, as recorded. Keys vary by rule.'}
+        delivered_to: {type: integer}
+        acknowledged_at: {type: [string, "null"]}
+        acknowledged_by: {type: [string, "null"]}
+        advice:
+          oneOf:
+            - {$ref: "#/components/schemas/Advice"}
+            - {type: "null"}
+        balances_before:
+          type: array
+          items: {$ref: "#/components/schemas/Balance"}
+        balances_after:
+          type: array
+          items: {$ref: "#/components/schemas/Balance"}
+        expected_marks:
+          type: array
+          items: {$ref: "#/components/schemas/ExpectedMark"}
+    Advice:
+      type: object
+      additionalProperties: false
+      required: [lead, steps, note]
+      properties:
+        lead: {type: string}
+        steps: {type: array, items: {type: string}}
+        note: {type: string}
+    Balance:
+      type: object
+      additionalProperties: false
+      required: [coin, quantity, snapshot_at]
+      properties:
+        coin: {type: string}
+        quantity: {type: string, description: 'Exact decimal, as a string. Never parse it as a float.'}
+        snapshot_at: {type: string}
+    ExpectedMark:
+      type: object
+      additionalProperties: false
+      required: [marked_by, note, created_at]
+      properties:
+        marked_by: {type: string}
+        note: {type: [string, "null"]}
+        created_at: {type: string}
+    Acknowledgement:
+      type: object
+      additionalProperties: false
+      required: [id, newly_acknowledged, acknowledged_at, acknowledged_by]
+      properties:
+        id: {type: integer}
+        newly_acknowledged: {type: boolean}
+        acknowledged_at: {type: [string, "null"]}
+        acknowledged_by: {type: [string, "null"]}
+    Activity:
+      type: object
+      additionalProperties: false
+      required: [events]
+      properties:
+        events:
+          type: array
+          items: {$ref: "#/components/schemas/ActivityEvent"}
+    ActivityEvent:
+      type: object
+      additionalProperties: false
+      required: [id, account_id, account_name, type, title, detail, actor, created_at]
+      properties:
+        id: {type: integer}
+        account_id: {type: integer}
+        account_name: {type: string}
+        type: {type: string}
+        title: {type: string}
+        detail: {type: string}
+        actor: {type: [string, "null"], description: 'Null means nobody can be named for the change.'}
+        created_at: {type: string}
+    Limits:
+      type: object
+      additionalProperties: false
+      required: [headline, does, cannot, timing, retention, retention_reviewed, sensitivity]
+      properties:
+        headline: {$ref: "#/components/schemas/Statement"}
+        does:
+          type: array
+          items: {$ref: "#/components/schemas/Statement"}
+        cannot:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [title, text, see_status]
+            properties:
+              title: {type: string}
+              text: {type: string}
+              see_status: {type: boolean, description: 'The sentence points at "am I being watched?".'}
+        timing:
+          type: object
+          additionalProperties: false
+          required: [balances_every_seconds, permissions_every_seconds]
+          properties:
+            balances_every_seconds: {type: integer}
+            permissions_every_seconds: {type: integer}
+        retention:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [what, how_long]
+            properties:
+              what: {type: string}
+              how_long: {type: string}
+        retention_reviewed: {type: boolean}
+        sensitivity:
+          type: array
+          items: {$ref: "#/components/schemas/AccountSensitivity"}
+    Statement:
+      type: object
+      additionalProperties: false
+      required: [title, text]
+      properties:
+        title: {type: string}
+        text: {type: string}
+    AccountSensitivity:
+      type: object
+      additionalProperties: false
+      required: [account_id, account_name, thresholds]
+      properties:
+        account_id: {type: integer}
+        account_name: {type: string}
+        thresholds:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [title, setting, value, phrase, set_for_this_account]
+            properties:
+              title: {type: string}
+              setting: {type: string}
+              value: {type: string}
+              phrase: {type: string}
+              set_for_this_account: {type: boolean}
+    Security:
+      type: object
+      additionalProperties: false
+      required: [two_factor_enabled, recovery_codes_left, devices]
+      properties:
+        two_factor_enabled: {type: boolean}
+        recovery_codes_left: {type: integer}
+        devices:
+          type: array
+          items: {$ref: "#/components/schemas/Device"}
+    Device:
+      type: object
+      additionalProperties: false
+      required: [id, name, signed_in_at, last_refreshed_at, current]
+      properties:
+        id: {type: integer}
+        name: {type: string}
+        signed_in_at: {type: string}
+        last_refreshed_at: {type: [string, "null"]}
+        current: {type: boolean, description: 'This is the device making the request.'}

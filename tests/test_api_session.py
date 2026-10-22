@@ -1,0 +1,338 @@
+"""Signing in from the app, and every way that sign-in ends (decision 21c).
+
+The app signs in with the web's credentials - email, password and the
+member's TOTP - and must have two-factor on. It holds a 15-minute access token
+and a refresh token that is replaced on every use. A password change, a
+revocation or a replayed refresh token ends the sign-in on the next request.
+"""
+from __future__ import annotations
+
+import time
+
+import pytest
+
+from sentinel import api as api_module
+from sentinel.api import (
+    ACCESS_TTL_SECONDS,
+    REFRESH_TTL_SECONDS,
+    access_key,
+    device_name,
+    make_access_token,
+)
+from sentinel.portal import (
+    _session_secret,
+    make_session_token,
+    serve_portal,
+    set_member_password,
+)
+from sentinel.totp import STEP_SECONDS
+from tests.conftest import PINNED_TOTP_NOW
+from tests.helpers.api_client import PASSWORD, ApiClient, add_account, enrolled_member
+
+ALICE = "alice@example.com"
+BOB = "bob@example.com"
+
+
+@pytest.fixture
+def notices(monkeypatch):
+    sent = []
+    monkeypatch.setattr(api_module, "send_new_device_email",
+                        lambda db, address, name: sent.append((address, name)))
+    return sent
+
+
+@pytest.fixture
+def server(db, cipher, notices):
+    srv = serve_portal(db, 0, host="127.0.0.1", cipher=cipher)
+    yield ApiClient(srv.server_address[1])
+    srv.shutdown()
+    srv.server_close()
+
+
+@pytest.fixture
+def alice(db, cipher):
+    add_account(db, ALICE, "alice-1")
+    return enrolled_member(db, cipher, ALICE)
+
+
+def _devices(db, email=ALICE):
+    with db.cursor() as cur:
+        cur.execute("SELECT * FROM api_devices WHERE email = ? ORDER BY id", (email,))
+        return cur.fetchall()
+
+
+def _move_api_clock(monkeypatch, seconds: float):
+    base = time.time()
+    monkeypatch.setattr(api_module, "_clock", lambda: base + seconds)
+
+
+# --- signing in ------------------------------------------------------------------
+
+def test_password_and_code_issue_both_tokens_and_record_the_device(server, db, alice, notices):
+    status, body, _ = server.sign_in(ALICE, alice, device_name="Alice's iPhone")
+    assert status == 200, body
+    assert body["token_type"] == "Bearer"
+    assert body["expires_in"] == ACCESS_TTL_SECONDS
+    assert body["refresh_expires_in"] == REFRESH_TTL_SECONDS
+    [device] = _devices(db)
+    assert body["device_id"] == device["id"]
+    assert device["name"] == "Alice's iPhone"
+    assert device["revoked_at"] is None
+    # The refresh token is held only as its hash.
+    assert body["refresh_token"] not in (device["refresh_hash"], device["previous_refresh_hash"])
+    status, security, _ = server.request("GET", "/api/v1/security", token=body["access_token"])
+    assert status == 200 and security["two_factor_enabled"] is True
+
+
+def test_every_sign_in_tells_the_member_and_lands_on_their_activity_page(server, db, alice, notices):
+    status, _, _ = server.sign_in(ALICE, alice, device_name="Alice's iPhone")
+    assert status == 200
+    assert notices == [(ALICE, "Alice's iPhone")]
+    with db.cursor() as cur:
+        cur.execute("SELECT payload_json, actor FROM events WHERE event_type = 'member_app_signed_in'")
+        rows = cur.fetchall()
+    assert len(rows) == 1 and "Alice's iPhone" in rows[0]["payload_json"]
+    assert rows[0]["actor"] == ALICE
+
+
+def test_a_failed_notice_does_not_undo_the_sign_in(server, alice, monkeypatch):
+    def boom(db, address, name):
+        raise RuntimeError("smtp down")
+
+    monkeypatch.setattr(api_module, "send_new_device_email", boom)
+    status, body, _ = server.sign_in(ALICE, alice)
+    assert status == 200 and body["access_token"]
+
+
+def test_a_wrong_password_and_a_wrong_code_get_the_same_answer(server, db, alice):
+    bad_password = server.sign_in(ALICE, alice, password="not-the-password")
+    bad_code = server.request("POST", "/api/v1/session",
+                              {"email": ALICE, "password": PASSWORD, "code": "000000"})
+    assert bad_password[0] == bad_code[0] == 401
+    assert bad_password[1] == bad_code[1]
+    assert bad_password[1]["error"] == "invalid_credentials"
+    assert _devices(db) == []
+
+
+def test_two_factor_off_is_refused_and_only_after_the_right_password(server, db):
+    add_account(db, BOB, "bob-1")
+    set_member_password(db, BOB, PASSWORD, notify=None)
+    wrong = server.request("POST", "/api/v1/session", {"email": BOB, "password": "nope-nope-nope"})
+    right = server.request("POST", "/api/v1/session", {"email": BOB, "password": PASSWORD})
+    assert wrong[0] == 401 and wrong[1]["error"] == "invalid_credentials"
+    assert right[0] == 403 and right[1]["error"] == "two_factor_required"
+    assert _devices(db, BOB) == []
+
+
+def test_an_unknown_address_reads_exactly_like_a_wrong_password(server, alice):
+    unknown = server.request("POST", "/api/v1/session",
+                             {"email": "nobody@example.com", "password": PASSWORD, "code": "123456"})
+    wrong = server.sign_in(ALICE, alice, password="not-the-password")
+    assert unknown[:2] == wrong[:2]
+
+
+def test_failures_count_on_the_portals_own_throttle(server, db, alice):
+    """One limiter for the web and the app: five wrong passwords through the
+    API and the web sign-in is throttled too, for the same address and
+    source."""
+    import http.client
+    import urllib.parse
+
+    for _ in range(5):
+        assert server.sign_in(ALICE, alice, password="not-the-password")[0] == 401
+    status, body, _ = server.sign_in(ALICE, alice)
+    assert status == 429 and body["error"] == "too_many_attempts"
+    conn = http.client.HTTPConnection("127.0.0.1", server.port, timeout=5)
+    conn.request("POST", "/login", body=urllib.parse.urlencode({"email": ALICE, "password": PASSWORD}),
+                 headers={"Content-Type": "application/x-www-form-urlencoded"})
+    resp = conn.getresponse()
+    assert resp.status == 429
+    conn.close()
+
+
+def test_a_body_that_is_not_a_json_object_is_refused(server, alice):
+    for raw in (b"not json", b"[1, 2]", b"\xff\xfe"):
+        status, body, _ = server.request("POST", "/api/v1/session", raw)
+        assert status == 400 and body["error"] == "invalid_json"
+
+
+# --- the access token -------------------------------------------------------------
+
+def test_the_access_token_dies_after_fifteen_minutes(server, alice, monkeypatch):
+    _, tokens, _ = server.sign_in(ALICE, alice)
+    _move_api_clock(monkeypatch, ACCESS_TTL_SECONDS - 5)
+    assert server.request("GET", "/api/v1/security", token=tokens["access_token"])[0] == 200
+    _move_api_clock(monkeypatch, ACCESS_TTL_SECONDS + 5)
+    assert server.request("GET", "/api/v1/security", token=tokens["access_token"])[0] == 401
+
+
+def test_a_portal_cookie_is_not_an_access_token_and_the_reverse(server, db, alice):
+    secret = _session_secret(db)
+    cookie = make_session_token(secret, ALICE, epoch=1)
+    assert server.request("GET", "/api/v1/security", token=cookie)[0] == 401
+    _, tokens, _ = server.sign_in(ALICE, alice)
+    status, body, _ = server.request("GET", "/", headers={"Cookie": f"minas_portal={tokens['access_token']}"})
+    assert status == 200 and "Sign in" in body  # the login page, not the member's home
+
+
+def test_a_token_signed_with_another_key_is_refused(server, db, alice):
+    _, tokens, _ = server.sign_in(ALICE, alice)
+    forged = make_access_token(access_key(b"not-the-portal-secret"), tokens["device_id"])
+    assert server.request("GET", "/api/v1/security", token=forged)[0] == 401
+
+
+# --- the refresh token ------------------------------------------------------------
+
+def test_a_refresh_replaces_both_tokens(server, db, alice):
+    _, first, _ = server.sign_in(ALICE, alice)
+    status, second, _ = server.request("POST", "/api/v1/session/refresh",
+                                       {"refresh_token": first["refresh_token"]})
+    assert status == 200
+    assert second["device_id"] == first["device_id"]
+    assert second["refresh_token"] != first["refresh_token"]
+    assert server.request("GET", "/api/v1/security", token=second["access_token"])[0] == 200
+    [device] = _devices(db)
+    assert device["last_refreshed_at"] is not None
+
+
+def test_a_replaced_refresh_token_presented_again_ends_the_sign_in(server, db, alice):
+    """Two parties held the device's credential. Whichever is the thief,
+    neither keeps the sign-in."""
+    _, first, _ = server.sign_in(ALICE, alice)
+    _, second, _ = server.request("POST", "/api/v1/session/refresh",
+                                  {"refresh_token": first["refresh_token"]})
+    status, body, _ = server.request("POST", "/api/v1/session/refresh",
+                                     {"refresh_token": first["refresh_token"]})
+    assert status == 401 and body["error"] == "invalid_refresh_token"
+    [device] = _devices(db)
+    assert device["revoked_at"] is not None and device["revoked_reason"] == "refresh_reused"
+    assert server.request("POST", "/api/v1/session/refresh",
+                          {"refresh_token": second["refresh_token"]})[0] == 401
+    assert server.request("GET", "/api/v1/security", token=second["access_token"])[0] == 401
+
+
+def test_an_unknown_refresh_token_is_refused_and_revokes_nothing(server, db, alice):
+    _, tokens, _ = server.sign_in(ALICE, alice)
+    for presented in ("made-up", "", None, 12345):
+        assert server.request("POST", "/api/v1/session/refresh", {"refresh_token": presented})[0] == 401
+    [device] = _devices(db)
+    assert device["revoked_at"] is None
+    assert server.request("GET", "/api/v1/security", token=tokens["access_token"])[0] == 200
+
+
+def test_a_refresh_token_unused_for_thirty_days_is_dead(server, alice, monkeypatch):
+    _, tokens, _ = server.sign_in(ALICE, alice)
+    _move_api_clock(monkeypatch, REFRESH_TTL_SECONDS + 60)
+    assert server.request("POST", "/api/v1/session/refresh",
+                          {"refresh_token": tokens["refresh_token"]})[0] == 401
+
+
+def test_using_the_app_keeps_it_signed_in(server, alice, monkeypatch):
+    """The window slides: a refresh at day 29 buys another 30 days."""
+    _, tokens, _ = server.sign_in(ALICE, alice)
+    _move_api_clock(monkeypatch, REFRESH_TTL_SECONDS - 86400)
+    _, again, _ = server.request("POST", "/api/v1/session/refresh",
+                                 {"refresh_token": tokens["refresh_token"]})
+    _move_api_clock(monkeypatch, REFRESH_TTL_SECONDS + 86400)
+    assert server.request("POST", "/api/v1/session/refresh",
+                          {"refresh_token": again["refresh_token"]})[0] == 200
+
+
+# --- ending a sign-in ------------------------------------------------------------
+
+def test_a_password_change_signs_every_app_out(server, db, alice):
+    """The password-change email says every other signed-in device has been
+    signed out. A phone is a signed-in device."""
+    _, tokens, _ = server.sign_in(ALICE, alice)
+    set_member_password(db, ALICE, "a-brand-new-password", notify=None)
+    assert server.request("GET", "/api/v1/security", token=tokens["access_token"])[0] == 401
+    assert server.request("POST", "/api/v1/session/refresh",
+                          {"refresh_token": tokens["refresh_token"]})[0] == 401
+
+
+def test_signing_out_ends_this_device_and_no_other(server, db, alice):
+    _, phone, _ = server.sign_in(ALICE, alice, device_name="phone")
+    _, tablet, _ = server.sign_in(ALICE, alice, at=PINNED_TOTP_NOW + STEP_SECONDS, device_name="tablet")
+    assert server.request("DELETE", "/api/v1/session", token=phone["access_token"])[0] == 204
+    assert server.request("GET", "/api/v1/security", token=phone["access_token"])[0] == 401
+    assert server.request("POST", "/api/v1/session/refresh",
+                          {"refresh_token": phone["refresh_token"]})[0] == 401
+    status, security, _ = server.request("GET", "/api/v1/security", token=tablet["access_token"])
+    assert status == 200 and [d["name"] for d in security["devices"]] == ["tablet"]
+    assert security["devices"][0]["current"] is True
+    signed_out = [d for d in _devices(db) if d["name"] == "phone"][0]
+    assert signed_out["revoked_reason"] == "signed_out"
+
+
+def test_a_member_revokes_their_own_device_and_never_anyone_elses(server, db, cipher, alice):
+    add_account(db, BOB, "bob-1")
+    bob = enrolled_member(db, cipher, BOB)
+    _, alice_phone, _ = server.sign_in(ALICE, alice, device_name="phone")
+    _, alice_tablet, _ = server.sign_in(ALICE, alice, at=PINNED_TOTP_NOW + STEP_SECONDS, device_name="tablet")
+    _, bob_phone, _ = server.sign_in(BOB, bob)
+
+    status, body, _ = server.request("DELETE", f"/api/v1/devices/{bob_phone['device_id']}",
+                                     token=alice_phone["access_token"])
+    assert status == 404 and body["error"] == "not_found"
+    assert server.request("GET", "/api/v1/security", token=bob_phone["access_token"])[0] == 200
+
+    assert server.request("DELETE", f"/api/v1/devices/{alice_tablet['device_id']}",
+                          token=alice_phone["access_token"])[0] == 204
+    assert server.request("GET", "/api/v1/security", token=alice_tablet["access_token"])[0] == 401
+    # Revoking twice is not-found the second time: nothing left to end.
+    assert server.request("DELETE", f"/api/v1/devices/{alice_tablet['device_id']}",
+                          token=alice_phone["access_token"])[0] == 404
+
+
+def test_the_activity_page_names_the_device_and_why_it_ended(server, db, alice):
+    from sentinel.portal import _activity_detail
+
+    _, tokens, _ = server.sign_in(ALICE, alice, device_name="Alice's <iPhone>")
+    server.request("DELETE", "/api/v1/session", token=tokens["access_token"])
+    with db.cursor() as cur:
+        cur.execute("SELECT event_type, payload_json FROM events WHERE event_type LIKE 'member_app_%' ORDER BY id")
+        rows = cur.fetchall()
+    assert [r["event_type"] for r in rows] == ["member_app_signed_in", "member_app_device_revoked"]
+    import json
+
+    detail = _activity_detail(rows[1]["event_type"], json.loads(rows[1]["payload_json"]))
+    assert "Alice&#x27;s &lt;iPhone&gt;" in detail  # escaped, never raw markup
+    assert "signed out in the app" in detail
+
+
+# --- erasure -----------------------------------------------------------------------
+
+def test_erasure_deletes_the_devices_and_their_tokens_stop_working(server, db, alice):
+    from sentinel.erasure import erase_member
+
+    _, tokens, _ = server.sign_in(ALICE, alice)
+    erase_member(db, ALICE, actor=ALICE)
+    assert _devices(db) == []
+    assert server.request("GET", "/api/v1/security", token=tokens["access_token"])[0] == 401
+    assert server.request("POST", "/api/v1/session/refresh",
+                          {"refresh_token": tokens["refresh_token"]})[0] == 401
+
+
+def test_the_data_export_lists_devices_and_never_their_tokens(server, db, alice):
+    from sentinel.erasure import export_member_data
+
+    server.sign_in(ALICE, alice, device_name="phone")
+    exported = export_member_data(db, ALICE)
+    assert [d["name"] for d in exported["app_devices"]] == ["phone"]
+    assert "refresh_hash" not in exported["app_devices"][0]
+
+
+# --- device names ------------------------------------------------------------------
+
+@pytest.mark.parametrize("raw, shown", [
+    ("Alice's iPhone", "Alice's iPhone"),
+    ("  spaced \t out\n name ", "spaced out name"),
+    ("bell\x07 and\x00 nul", "bell and nul"),
+    ("x" * 200, "x" * 64),
+    ("", "Phone app"),
+    ("\n\t", "Phone app"),
+    (None, "Phone app"),
+    (42, "Phone app"),
+])
+def test_a_device_name_is_made_safe_to_show(raw, shown):
+    assert device_name(raw) == shown
