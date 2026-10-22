@@ -7214,3 +7214,34 @@ will be run on - `status` before `off`, `--dry-run` before the write,
 `SELECT` before `UPDATE`; the vendor's page gives the shape, only the box
 gives the arguments - citing the 2026-09-23 command and its 2026-09-25
 correction. Docs only; ced728a's CI was green (36157933579).
+
+# 2026-10-22 · Decisions 21 and 22: customer apps, the JSON API, one address, no Tailscale
+
+Docs only, recorded in docs/DECISIONS-NEEDED.md from this session's
+answers. Decision 21: iOS and Android apps for customers, in React
+Native, living in this repo under `mobile/`, in the company's colours and
+logo; sign-in (21c) and the v1 API scope (21d) accepted as recommended.
+Still open: 21b (the web portal stays server-rendered, recommended) and
+21e (push). Neither blocks the API. Decision 22:
+`https://guardian.minastrade.com` is the one address, the dashboard shares
+it (under `/admin`, recommended), Tailscale leaves the project entirely,
+and host access is SSH with the EC2 key pair. Still open: 22b (TLS;
+Caddy recommended). Decision 20 is marked superseded in part.
+
+Found while drafting, each written into the decision that needs it:
+- `scripts/deploy-gate.sh` accepts ANY tag: `git describe --exact-match
+  --tags HEAD` has no `--match 'v*'`. Harmless while the only non-release
+  tag is the old marker; it must be fixed, with a test, before the first
+  `mobile-v*` tag (21f).
+- The dashboard's session cookie has no `Secure` flag, and neither server
+  sends HSTS or clickjacking headers (22c). Both must be fixed before the
+  dashboard is public.
+- Tailscale SSH is the daily way onto the box (`scripts/aws-user-data.sh`),
+  so removing Tailscale is ordered last, after SSH by the public address
+  is proven (22e).
+
+Session notes: the working copy started 193 commits behind origin/main
+and was fast-forwarded, with no divergence. `gh` is not authenticated in
+this environment, so no issue was filed for 21 or 22 and #88's text is
+not yet amended. Next: the v1 API (21c, 21d), and the 22c preconditions,
+which do not depend on any open question.

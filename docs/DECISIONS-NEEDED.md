@@ -37,7 +37,9 @@ whoever builds one should build it to cover both.
 | 17 | Self-serve signup | #6 (stays open) | **ANSWERED 2026-08-23** — no; behind billing + legal, waitlist as fallback; see section 17 |
 | 18 | Sibling-alert definition width + production backfill | #99 (built conservatively) | **OPEN — owner reconsidering 2026-08-27**; nothing dependent to be built |
 | 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | ~~#87~~, ~~#82~~ | **ANSWERED 2026-08-27** — mandatory; host-access recovery, attributed and logged; see section 19 |
-| 20 | The member portal is published to the internet on Tailscale Funnel | #88 (the address is still the open half) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20 |
+| 20 | The member portal is published to the internet on Tailscale Funnel | #88 (the address is still the open half) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in part by 22: no Tailscale* |
+| 21 | Native iOS and Android apps, and the JSON API they need | the apps | **PARTLY ANSWERED 2026-10-22** — customers only, React Native, in this repo, company branding, sign-in and v1 API scope as recommended; push and the web portal open; see section 21 |
+| 22 | One public address, guardian.minastrade.com; no Tailscale | #88 (the address); the hostname the apps are built against | **PARTLY ANSWERED 2026-10-22** — one hostname including the dashboard, no Tailscale anywhere, host access by SSH with the key pair; TLS open; see section 22 |
 
 ---
 
@@ -980,6 +982,10 @@ together.
 
 ## 20. The member portal is published to the internet on Tailscale Funnel (#88) — **ANSWERED by the owner, August 2026; recorded 2026-09-23**
 
+> **Superseded in part, 2026-10-22: decision 22** retires Tailscale from
+> the project and moves the dashboard to the public address. Until 22 is
+> built, the answer below is what runs.
+
 > **Answer (owner, August 2026; written down 2026-09-23).** The member
 > portal (port 8391) is published to the open internet with **Tailscale
 > Funnel**, deliberately, since August 2026. The ops dashboard (8390) and
@@ -1051,6 +1057,426 @@ chosen. This row records the exposure model only.
 
 **Related:** #88 (address), #32 (member two-factor), decision 19
 (operator two-factor, host-access recovery).
+
+---
+
+## 21. Native iOS and Android apps, and the JSON API they need — **PARTLY ANSWERED 2026-10-22: audience, framework, repository, branding, sign-in and API scope decided; push and the web portal still open**
+
+> **Answer so far (2026-10-22).**
+> - **The apps are for customers** (members). Operators keep the web
+>   dashboard. (21a)
+> - **React Native**, so iOS and Android share one codebase and are
+>   maintained once.
+> - **The app lives in this repository**, so the API and the app change
+>   together, in one commit when needed. (21f)
+> - **The apps carry the company's colours and logo.** (21g)
+> - **Sign-in and the first API version as recommended** (21c, 21d):
+>   bearer tokens with required TOTP for the app; v1 reads everything a
+>   member can see, plus acknowledge and push registration.
+> - The apps and the JSON API are both urgent, and the API comes first.
+>   Everything is served from `https://guardian.minastrade.com` (decision
+>   22).
+>
+> Still open, each with a recommendation below: 21b (does the web portal
+> change) and 21e (push). Neither blocks the API.
+
+**What this changes.** The portal's first rule (docs/portal-design.md;
+owner, 2026-08-19, on #82) reads: "No framework. Plain server-rendered
+HTML + CSS; the no-JS posture is security posture… Anything beyond needs
+a decision, not a diff." Decision 13 kept that posture and named the one
+thing that reopens it: a deliberate decision to change it for some other
+reason. This is that decision. The apps are a JavaScript codebase with an
+npm dependency tree, and they hold a member's session on a phone. Two
+points keep that honest:
+
+- **Native push is not browser push.** Decision 13 rejected browser push
+  because it only reaches a browser that is already open. Native push
+  reaches a locked phone in a pocket, which is the case this product
+  exists for. Decision 13 still stands for the browser.
+- **The app never holds an exchange credential**, provided 21d holds:
+  key replacement (`/key`) stays on the web. Even so, a compromised app
+  or a stolen session can read a member's alerts and can ACKNOWLEDGE one,
+  and an acknowledgement stops CRITICAL escalation. That is the harm to
+  design against: someone holding a member's session can silence the
+  alarm about their own withdrawal. 21c carries the mitigation.
+
+### 21a. Who the apps are for — **ANSWERED 2026-10-22: customers**
+
+Members only. Operators keep the web dashboard. This keeps decision 20's
+line: the member surface never gains an operator capability (add a
+customer, read every contact, change thresholds), and an operator app
+would have put exactly those on a phone. Once decision 22 is built,
+operators can reach the dashboard from a phone's browser.
+
+### 21b. Does the browser portal change? — open
+
+**Recommendation: no.** The web portal stays server-rendered, and the
+no-JS posture still holds for the browser. This decision limits the
+posture change to the native apps. Reasons:
+
+- The portal already works on phones; it has been mobile-first since
+  round 2 of #82.
+- It is pinned by 1,600+ tests and the design guards.
+- A rewrite would put two unfinished UIs in front of customers at once.
+- React on the web does not speed up the apps. React Native draws native
+  views, not HTML, so the app's screens get written for React Native
+  either way.
+
+If a web build of the app is wanted later, Expo can produce one from the
+same screens. That is its own decision, taken after the apps ship.
+21b does not block the API.
+
+### 21c. How the apps sign in — **ANSWERED 2026-10-22: as recommended**
+
+The portal's session is an `HttpOnly; Secure` cookie, with CSRF judged
+on `Sec-Fetch-Site` and `Origin` (#92). A native app sends neither header
+reliably, and cookies are awkward there, so the API needs a credential of
+its own. Accepted as recommended:
+
+- **The same sign-in as the web**: email, password, and the member's TOTP
+  where enrolled, all through the same `LoginThrottle`. No new way in.
+- **Two tokens.** A short-lived access token (15 minutes), plus one
+  refresh token per device. The refresh token lasts 30 days and is
+  replaced on every use; if a used one comes back, that device is
+  revoked. Both live in the phone's Keychain or Keystore and travel as
+  `Authorization: Bearer`, never as a cookie. That keeps the CSRF gate
+  out of `/api/`, and the web's CSRF gate is not weakened to make room.
+- **Members can see and cut sessions.** The portal's Security page lists
+  every signed-in device with a revoke button, and a sign-in from a new
+  device emails the member. This answers the stolen-session harm above:
+  a member can find and end a session they don't recognise.
+- **Member two-factor.** Decision 20 named mandatory member TOTP as the
+  next control to consider; five members, none enrolled, at the
+  2026-09-08 measurement. A 30-day session on a phone raises the stakes,
+  so TOTP enrolment is required for app sign-in. The web keeps its
+  current rule until decision 20's question is answered.
+
+### 21d. What the first API version does — **ANSWERED 2026-10-22: as recommended**
+
+**Read everything a member can see, plus acknowledge, plus push
+registration. Nothing else in v1.** The API is served by the portal
+process, under `/api/v1/`.
+
+| v1 route | Mirrors |
+|---|---|
+| `POST /api/v1/session`, `POST /api/v1/session/refresh`, `DELETE /api/v1/session` | new: sign-in and sign-out (21c) |
+| `GET /api/v1/accounts` | `/`, `/status`: each account, its status, and whether it is being watched |
+| `GET /api/v1/alerts`, `GET /api/v1/alerts/{id}` | `/alerts`, `/incident`, including the what-to-do-next text (decisions 3 and 9) |
+| `GET /api/v1/activity` | `/activity` |
+| `GET /api/v1/limits` | `/limits` |
+| `GET /api/v1/security` | `/security`: posture, plus the device list from 21c |
+| `POST /api/v1/alerts/{id}/acknowledge` | `/acknowledge`, the one act every contact may perform (#25) |
+| `POST /api/v1/devices`, `DELETE /api/v1/devices/{id}` | new: push token registration (21e) |
+
+The primary-only changes follow in v2, one at a time: `/preferences`,
+`/snooze`, `/expected`, `/pause/*`, `/account/name`, `/digest/frequency`,
+`/telegram/*`, `/drill` and `/erase`. **`/key` stays web-only** until
+there is a reason to move it, because it is the one route that accepts
+exchange credentials.
+
+The existing guards apply unchanged:
+
+- Every API route joins the default-deny classification in
+  `sentinel/portal.py` (`PRE_AUTH`, `NON_PRIMARY_ALLOWED`,
+  `PRIMARY_ONLY`), so `tests/test_member_roles.py` covers it.
+- Every response is scoped through `member_accounts`. An id the member
+  does not own returns 404, exactly as on the web.
+- API GETs fall under the no-GET-writes test.
+- Responses reuse the portal's queries instead of re-deriving them, so
+  the app and the web cannot disagree about whether an account is
+  watched.
+- The contract is one OpenAPI file in this repo (21f). The server is
+  tested against it.
+
+Adding the routes is a MINOR release.
+
+### 21e. Push notifications — open
+
+**Recommendation: a new alert channel, additive, and never the only
+channel for a CRITICAL.**
+
+- **It follows every rule the other channels follow**: the member's
+  per-level channel choices and quiet hours (decision 4), cooldowns, and
+  a delivery record per recipient per channel.
+- **The payload is like the member SMS**: severity, alert type, and the
+  account's name. No amounts, no addresses, no balances. Push travels
+  through Apple and Google, and Expo if it is used, and it lands on a
+  lock screen.
+- **Never the only path for a CRITICAL.** We cannot count on knowing a
+  push was seen, and a member who turns off notifications or deletes the
+  app goes silent to us. SMS and email keep their current roles.
+- **Provider: Expo's push service for v1.** It is one integration for
+  both platforms and the fastest to ship. The cost is one more party
+  carrying the payload, which is already minimal. Switch to APNs and FCM
+  directly later if that cost comes to matter.
+
+### 21f. Where the app lives — **ANSWERED 2026-10-22: in this repository**
+
+The app goes in `mobile/` at the root of this repo (Expo / React Native,
+TypeScript). An API change and the app change that uses it can then land
+in the same commit. What that takes, so the server's gates stay what they
+are:
+
+- **The server image does not change.** The Dockerfile copies only
+  `sentinel/`, `config/` and `pyproject.toml`. Add `mobile/` to
+  `.dockerignore` as well, so the app is not even in the build context.
+- **CI gains an app job** (type check, tests, `npm audit`) next to the
+  Python job. The Python gates (ruff, pytest, coverage, mutation,
+  design-guard probes) are scoped to `sentinel/` and `tests/` and do not
+  see `mobile/`.
+- **The API contract is shared, not copied.** There is one OpenAPI file.
+  The server is tested against it, and the app's API client is generated
+  from it, so a server change that breaks the app breaks the build.
+- **App releases are not server releases.** The stores take their own
+  version numbers, so the app gets its own tag prefix (for example
+  `mobile-v1.0.0`) and its own changelog under `mobile/`.
+- **Before the first app tag, the deploy gate must accept release tags
+  only.** `scripts/deploy-gate.sh` checks
+  `git describe --exact-match --tags HEAD`, which matches *any* tag.
+  Today a commit carrying only an app tag would pass the gate. A commit
+  carrying both kinds of tag could report the app tag as the server's
+  version, and deploy.sh's version assertion would then fail after the
+  switchover. The fix is one `--match 'v*'`, with a test.
+- **One session per working tree still applies** (CONTRIBUTING rule 7).
+  The app and the server now share the tree.
+
+**Publisher accounts.** The apps need an Apple Developer Program account
+and a Google Play account in the company's name. Enrolling an
+organisation includes identity verification, which takes time, so start
+it now, before the app is ready. Which legal entity publishes is the
+owner's call.
+
+**App review.** The app shows exchange account activity and moves no
+funds. Read the current App Store Review Guidelines on cryptocurrency
+apps before submitting. UNVERIFIED: how those guidelines apply to a
+monitoring-only app.
+
+### 21g. Branding — **ANSWERED 2026-10-22: company colours and logo**
+
+The apps carry the Minas identity, the same one the portal carries
+(#82):
+
+- Gold `#f0b429`.
+- Violet `#8b5cf6` and `#6d28d9`.
+- The dark surfaces from `design/portal/styles.css` (`--bg #0d0f13`,
+  `--surface #151921`).
+- The infinity mark in `sentinel/brand.py`.
+
+What that takes:
+
+- **One source for the identity.** `sentinel/brand.py` exists "so the
+  brand cannot drift into two spellings of gold". A JavaScript app cannot
+  import a Python module, so the identity colours move to one tokens
+  file (for example `design/tokens.json`). `brand.py` and the app both
+  read it, and a test fails if they disagree. This is tokens only, not a
+  stylesheet: `tests/test_surface_styles.py` refuses a shared stylesheet,
+  and that rule stays.
+- **Artwork the stores need and the repo does not have.** The only logo
+  in the repo is the stroked SVG mark. The app icon needs a 1024×1024
+  image plus Android's adaptive-icon layers, and the launch screen needs
+  artwork. If Minas has official logo files (a wordmark, a full-colour
+  mark), they belong in `design/` before the icon is made. Otherwise the
+  icon is drawn from the mark.
+- **The ops dashboard stays unbranded** (#82). An operator screen must
+  not be usable to impersonate a customer page, and that matters more
+  now that both share one address (decision 22).
+
+### What it blocks
+
+The apps, end to end. Nothing blocks the API now that 21c and 21d are
+answered. Push (21e) waits on its own answer, and the apps are built
+against decision 22's hostname.
+
+**Related:** decision 13 (browser push, no-JS posture), decision 20
+(member surface boundary, member two-factor), decision 22 (the address),
+#25 (non-primary role), #82 (portal design rules and the brand), #92
+(CSRF). No issue filed yet.
+
+---
+
+## 22. One public address, https://guardian.minastrade.com, and no Tailscale (#88) — **PARTLY ANSWERED 2026-10-22: one hostname for everything, no Tailscale anywhere, host access by SSH; TLS still open**
+
+> **Answer so far (2026-10-22).**
+> - **`https://guardian.minastrade.com` is the project's one address.**
+>   DNS is being set up.
+> - **The admin dashboard shares that hostname.** There is no separate
+>   admin hostname. (22a)
+> - **No more Tailscale for this project**: not for the portal (Funnel),
+>   not for the dashboard or metrics (Serve), and not for SSH. (22e)
+> - **Host access is SSH with the EC2 key pair**, which is already in use.
+>   (22e)
+>
+> This answers #88's open half (the customer-facing address) and
+> supersedes decision 20's exposure model. Still open, with a
+> recommendation: 22b (TLS and the way in). The preconditions in 22c are
+> not options.
+
+**What it reverses, so nobody reads the old line as current.** Decision
+20 says: "The ops dashboard (8390) and the metrics endpoint (9109) stay
+on Tailscale Serve: tailnet-only, never public". Tailscale also appears
+in:
+
+- docs/deployment.md, docs/architecture.md, and docs/threat-model.md
+  (A4: "network-gated instead").
+- The README's server table.
+- SECURITY.md ("Access is granted/revoked by tailnet membership").
+- `.env.example`.
+- `scripts/aws-user-data.sh`, which installs Tailscale with SSH and
+  Serve.
+- The dashboard's own footer ("Tailscale-gated", `sentinel/dashboard.py`)
+  and docstrings in `sentinel/dashboard.py`, `sentinel/metrics.py` and
+  `sentinel/operators.py`.
+
+Each one changes in the commit that makes it untrue, not before.
+
+The dashboard is the higher-privilege surface (decision 19): it adds
+customers and reads every customer's contact details. With no tailnet
+and no separate hostname, its login is the only thing standing between
+the internet and those. The boundary between the two surfaces still
+holds: the member portal never gains an operator capability. What
+changes is that the operator surface becomes reachable from the internet
+too, defended by its own login.
+
+### 22a. One hostname — **ANSWERED 2026-10-22: the dashboard shares it**
+
+A separate admin hostname was recommended, for origin isolation, and was
+declined. What sharing the hostname takes:
+
+- **The dashboard moves under a path; recommended: `/admin`.** Today the
+  dashboard serves from `/`, and so does the portal, and both have a
+  `/login`. The dashboard needs a base-path setting that every link,
+  form action and redirect goes through. The proxy then sends `/admin/*`
+  to the dashboard (8390) and everything else to the portal (8391).
+- **The cookies do not collide.** The dashboard's is `ops_session` and
+  the portal's is `minas_portal` (checked 2026-10-22). The dashboard's
+  cookie gets `Path=/admin`, and `Secure` (22c).
+- **Same origin means the CSRF gate cannot tell the two apart.** The gate
+  judges `Sec-Fetch-Site` and `Origin`, and a form on any portal page
+  posting to `/admin` counts as same-origin. Nothing on the portal can be
+  made to do that today: it runs no JavaScript and escapes every value a
+  member supplies. Even so, the dashboard's POST gate should also require
+  the `Referer` path to start with `/admin`, so the boundary does not
+  rest on the portal staying clean. `Referrer-Policy: same-origin`
+  already sends that header.
+- **The anti-impersonation rule (#82) now rests on looks and the path
+  alone.** The dashboard stays plain and unbranded, and every dashboard
+  page shows that it is the ops view.
+- **Extra controls apply by path.** Any IP allowlist (22c, item 5) goes
+  on `/admin/*` at the proxy.
+
+### 22b. TLS and the way in — open
+
+**Recommendation: Caddy on the instance**, as one more compose service.
+It gets certificates from Let's Encrypt, renews them automatically, and
+proxies `/admin/*` to the dashboard and everything else to the portal,
+both on their existing `127.0.0.1` publishes.
+
+- **DNS:** an `A` record for `guardian.minastrade.com`, pointing at the
+  Elastic IP.
+- **Security group:** opens 443, plus 80 if a plain-HTTP redirect is
+  wanted. These are the first public web ports this host has had. Today
+  the only inbound rule is SSH from an admin IP, and the portal arrives
+  through Tailscale's relay.
+
+Alternatives considered:
+
+- An AWS load balancer with an AWS-managed certificate. No certificate
+  on the box, but more AWS configuration and a monthly cost.
+- Cloudflare in front. DDoS protection and a WAF, but a third party
+  decrypts every member's traffic.
+
+Caddy has the fewest moving parts for one VM.
+
+One consequence to keep in view: the Elastic IP becomes the way in as
+well as the exchanges' allowlisted way out. Changing it already breaks
+every key's allowlist (2026-09-21); after this, it also means changing
+DNS.
+
+### 22c. What must be true before the dashboard is public
+
+These are not options. They are preconditions, and each one can be
+checked:
+
+1. **Every production operator is enrolled in TOTP.** Mandatory
+   two-factor is built (#87, decision 19). Measure enrolment on the box
+   before the switch, not after it.
+2. **The dashboard's session cookie is marked `Secure`.** Today it is
+   `HttpOnly; SameSite=Lax` without `Secure` (`sentinel/dashboard.py`,
+   `_issue_session`); the portal's cookie has the flag. That is harmless
+   over the tailnet's HTTPS and wrong on the internet.
+3. **Both servers send the security headers they don't send today:**
+   `Strict-Transport-Security`, and clickjacking protection
+   (`Content-Security-Policy: frame-ancestors 'none'`, or
+   `X-Frame-Options: DENY`). Checked 2026-10-22: the only header of this
+   kind either server sets is the portal's `X-Content-Type-Options:
+   nosniff`. Set them in the application, where a test can pin them, not
+   only at the proxy.
+4. **Only the proxy listens publicly.** The host-side publishes in
+   docker-compose.yml stay on `127.0.0.1`.
+5. **Optional, recommended: an IP allowlist on `/admin/*`**, at the
+   proxy, for office or VPN addresses. It is a lighter gate than the
+   tailnet was, and it keeps password-spraying traffic away from the
+   operator login. The owner's call.
+
+### 22d. Moving customers to the new address
+
+- `SENTINEL_PORTAL_URL` changes to the new address, so SMS links point
+  there.
+- Keep the old Funnel address up for a stated period, with a notice on
+  its sign-in page, and email members the new address. The old address
+  goes when Tailscale goes (22e, step 6).
+- The anti-phishing copy has stayed address-less because there was no
+  address worth naming (#88). Now it can say the one thing that works:
+  "We will only ever send you to guardian.minastrade.com."
+- #88's issue text is amended in the same commit as the answer
+  (CONTRIBUTING: retired criteria are amended where they live).
+
+### 22e. Removing Tailscale — **ANSWERED 2026-10-22: all of it; host access by SSH with the EC2 key pair**
+
+Tailscale does five jobs today. Each one needs a replacement before
+Tailscale goes:
+
+| Tailscale does today | After |
+|---|---|
+| The portal's public address (Funnel, `:8443`) | `guardian.minastrade.com`, through the proxy |
+| The dashboard (Serve, `/`) | `guardian.minastrade.com/admin`, behind operator sign-in and two-factor |
+| Metrics (Serve, `:9109`) | **Not published.** The endpoint has no login. It stays on `127.0.0.1`, and the dashboard's Metrics page is the view operators use. Publishing the raw endpoint later is its own decision. |
+| SSH, the daily way onto the box (`tailscale up --ssh` in `scripts/aws-user-data.sh`) | **SSH on port 22 with the EC2 key pair**, which is already in use (answered 2026-10-22). This is the break-glass path in docs/deployment.md promoted to daily use. Its security-group rule must admit named admin IPs only; read the rule in AWS before Tailscale goes, rather than trusting the deployment guide. |
+| Decision 19's last-operator recovery ("host access, over the tailnet") | The same host access, by whichever path replaces SSH |
+
+**The order matters, because the box can be locked out.** Tailscale is
+the daily way onto the host. Remove it before its replacement is proven
+and nobody can reach the host: no deploys, and no last-operator
+recovery. So:
+
+1. DNS for `guardian.minastrade.com` points at the Elastic IP, and the
+   proxy is up with a certificate.
+2. The portal answers at the new address, and `SENTINEL_PORTAL_URL`
+   changes.
+3. The dashboard answers at `/admin`, with every 22c precondition met.
+4. SSH without Tailscale is proven: connect with the key pair by the
+   instance's public address, not its tailnet name, and run a read-only
+   command (`sudo docker compose exec -T sentinel sentinel version`).
+   This is rule 6's read-only twin.
+5. Members are moved to the new address (22d).
+6. Read `sudo tailscale serve status`, then withdraw Funnel and Serve.
+7. Disconnect and uninstall Tailscale, and remove the machine from the
+   Tailscale admin console. Verify each command on the box at the time
+   (rule 6).
+8. Docs, SECURITY.md, `.env.example` and `scripts/aws-user-data.sh` stop
+   describing Tailscale in the release that ships the code for steps 2
+   and 3. docs/DEPLOYMENTS.md records each step with its evidence.
+
+### What it blocks
+
+The apps (decision 21), which are built against this hostname; #88's
+anti-phishing copy; and every document that describes how the system is
+reached.
+
+**Related:** decision 19 (operator two-factor, host-access recovery),
+decision 20 (the exposure model this supersedes), decision 21 (the
+apps), #82 (ops screens must not impersonate customer pages), #88 (the
+address).
 
 ---
 
