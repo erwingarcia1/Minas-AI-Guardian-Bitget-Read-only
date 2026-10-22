@@ -172,6 +172,14 @@ container")._
   Security page lists every phone signed in to the login, with a button
   to sign each one out; it appears only once a phone has signed in.
 
+- **The app API's contract, `api/openapi.yaml` (decision 21f).** The one
+  description the server and the apps share; the apps' client is to be
+  generated from it. The server is held to it: the routes must be exactly
+  the served ones, and every answer the server gives on every route,
+  success and error, must match the file's schema for its status, with
+  closed objects, so an undocumented field fails the build as surely as
+  a missing one.
+
 ### Changed
 
 - **The unpinned method decisions are being retired in named batches, the

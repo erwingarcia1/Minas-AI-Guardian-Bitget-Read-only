@@ -1287,6 +1287,28 @@ The apps, end to end. Nothing blocks the API now that 21c and 21d are
 answered. Push (21e) waits on its own answer, and the apps are built
 against decision 22's hostname.
 
+### Built so far — 2026-10-22, branch `api-v1`
+
+- **Sign-in (21c), the v1 reads and acknowledge (21d)** are built, as
+  answered, in `sentinel/api.py`, served by the portal process under
+  `/api/v1/`.
+- **The route registry lives in `sentinel/api.py`**, not in the portal's
+  sets as 21d first said. API routes carry a method and path ids, which
+  the portal's path-only sets cannot hold. The buckets are the portal's:
+  `PRE_AUTH`, `MEMBER_READ`, `NON_PRIMARY_ALLOWED`, with `PRIMARY_ONLY`
+  arriving with v2. `tests/test_api_routes.py` covers the registry the
+  way `tests/test_member_roles.py` covers the portal's.
+- **`DELETE /api/v1/devices/{id}` is built as "sign a device out"** (21c).
+  Push-token registration (`POST /api/v1/devices` in the table above)
+  waits on 21e.
+- **The portal's Security page lists signed-in phones** with a sign-out
+  button (`POST /security/devices/revoke`, own-login plumbing, so
+  non-primary allowed).
+- **The contract is `api/openapi.yaml`**, held to the server by
+  `tests/test_api_contract.py`.
+- **Not built yet:** push (21e), the primary-only writes (v2), and the
+  app in `mobile/`.
+
 **Related:** decision 13 (browser push, no-JS posture), decision 20
 (member surface boundary, member two-factor), decision 22 (the address),
 #25 (non-primary role), #82 (portal design rules and the brand), #92
@@ -1417,6 +1439,17 @@ checked:
    proxy, for office or VPN addresses. It is a lighter gate than the
    tailnet was, and it keeps password-spraying traffic away from the
    operator login. The owner's call.
+6. **Each server must know the real client address behind the proxy.**
+   Both servers take the address from the TCP connection
+   (`client_address`), and no code reads a forwarded header (checked
+   2026-10-22). Behind a proxy, every visitor arrives from the proxy's
+   address. The login throttle's per-address limit then becomes a single
+   shared bucket: five wrong passwords from anyone block every sign-in,
+   member and operator, for fifteen minutes. The fix is to trust
+   `X-Forwarded-For` from the proxy's own address only, with a test.
+   This may already be true in production: Funnel and Docker's port
+   forwarding are both proxies. UNVERIFIED; the portal logs every failed
+   sign-in with its source address, so the server's log answers it.
 
 ### 22d. Moving customers to the new address
 
