@@ -35,6 +35,7 @@ PROBE_COUNT = len(json.loads((ROOT / "scripts" / "probes" / "design-guards.json"
 REGRESSION_PROBES = "Design-guard probe no longer killed by any test"
 NORESULT_PROBES = "Design-guard probes produced no result"
 REGRESSION_MUTATION = "Mutation score dropped below the floor"
+REGRESSION_UNLEDGERED = "Mutation gate found a survivor no test pins"
 NORESULT_MUTATION = "Mutation gate produced no result"
 
 
@@ -155,6 +156,68 @@ def test_a_score_below_the_floor_keeps_its_established_title(tmp_path):
     assert NORESULT_MUTATION not in _filed(result)
 
 
+def test_an_unledgered_survivor_is_a_regression_not_a_broken_gate(tmp_path):
+    """#110, 2026-10-22: the gate ran, scored 97% against a floor of 96, and
+    failed because one survivor was not in the ledger - and the issue said
+    the gate "produced no result". It produced exactly one: a decision no
+    test pins. The issue carries the survivor and its diff, and not the
+    accepted rows."""
+    log = tmp_path / "mutation.log"
+    log.write_text(
+        "SURVIVORS (2):\n  a.x_ok__mutmut_1\n  b.x_new__mutmut_53\n\n"
+        "Killed 676/693 = 97%\n\n"
+        "Survivor ledger (scripts/mutation-known-survivors.txt):\n"
+        "  Survivor ledger: 16 accepted\n"
+        "  accepted   1111111111111111  a.x_ok__mutmut_1\n"
+        "             sentinel/a.py equivalent: argued\n"
+        "  NEW        6117330947849837  b.x_new__mutmut_53\n"
+        "             -keep = x if c else d\n"
+        "             +keep = x if (c) and False else d\n"
+        "\n1 survivor(s) not in scripts/mutation-known-survivors.txt: a decision this suite used to pin, "
+        "it no longer does - or a new one nobody pinned.\n"
+        "A survivor the ledger does not know is a decision nobody is pinning.\n")
+    result = _run(tmp_path, mutation_log=log, mutation_outcome="failure")
+    assert _filed(result) == [REGRESSION_UNLEDGERED], result.stdout
+    assert "REGRESSION (unledgered survivor)" in result.stdout
+
+
+def test_the_unledgered_issue_carries_the_survivor_and_not_the_accepted_rows(tmp_path):
+    """The body is what someone acts on; prove it by filing for real against
+    a stub gh that records what it was given."""
+    log = tmp_path / "mutation.log"
+    log.write_text(
+        "Killed 676/693 = 97%\n"
+        "  accepted   1111111111111111  a.x_ok__mutmut_1\n"
+        "             sentinel/a.py equivalent: argued\n"
+        "  NEW        6117330947849837  b.x_new__mutmut_53\n"
+        "             -keep = x if c else d\n"
+        "             +keep = x if (c) and False else d\n"
+        "1 survivor(s) not in scripts/mutation-known-survivors.txt: a decision nobody pins.\n")
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    record = tmp_path / "gh-calls.txt"
+    gh = bin_dir / "gh"
+    gh.write_text(f'#!/usr/bin/env bash\nprintf "%s\\0" "$@" >> {record}\nprintf "\\n" >> {record}\n')
+    gh.chmod(0o755)
+    env = dict(os.environ)
+    env.update({"PATH": f"{bin_dir}:{env['PATH']}", "PROBES_LOG": str(_green_probes_log(tmp_path)),
+                "MUTATION_LOG": str(log), "PROBES_OUTCOME": "success", "MUTATION_OUTCOME": "failure"})
+    env.pop("DRY_RUN", None)
+    result = subprocess.run(["bash", str(REPORT)], capture_output=True, text=True, env=env, cwd=ROOT, timeout=60)
+    assert result.returncode == 1, result.stderr
+    calls = record.read_text()
+    assert REGRESSION_UNLEDGERED in calls
+    assert "6117330947849837" in calls and "(c) and False" in calls and "Killed 676/693" in calls
+    assert "1111111111111111" not in calls and "equivalent: argued" not in calls
+
+
+def test_a_malformed_ledger_is_a_broken_gate_not_a_regression(tmp_path):
+    log = tmp_path / "mutation.log"
+    log.write_text("Killed 676/693 = 97%\nsurvivor ledger is malformed: row 3 has no reason\n")
+    result = _run(tmp_path, mutation_log=log, mutation_outcome="failure")
+    assert _filed(result) == [NORESULT_MUTATION]
+
+
 def test_no_mutants_ran_is_a_broken_gate_not_a_dropped_score(tmp_path):
     """THE defect: 'no mutants ran' used to be filed as 'score dropped below
     the floor'. It measured nothing; there is no score to have dropped."""
@@ -195,6 +258,10 @@ def test_the_classifier_greps_strings_the_gate_scripts_actually_emit():
     assert "probes as expected" in probe_src
     assert "FAIL " in probe_src
     assert "dropped below the floor" in mutation_src
+    survivors_src = (ROOT / "scripts" / "mutation_survivors.py").read_text()
+    assert 'survivor(s) not in {LEDGER.relative_to(REPO)}' in survivors_src
+    assert 'print(f"  NEW        {digest}  {name}")' in survivors_src
+    assert '"survivor ledger is malformed' in survivors_src
     assert 'Killed ' in mutation_src
     assert "Floor" in mutation_src
 
@@ -204,7 +271,7 @@ def test_the_classifier_still_keys_on_those_strings():
     refactor that drops a grep silently narrows classification."""
     report_src = REPORT.read_text()
     for phrase in ("DID NOT LAND", "probes as expected", "dropped below the floor",
-                   "Killed", "Floor"):
+                   "Killed", "Floor", "survivor\\(s\\) not in scripts/mutation-known-survivors", "^  NEW "):
         assert phrase in report_src, f"classifier no longer keys on {phrase!r}"
 
 

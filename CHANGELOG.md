@@ -307,6 +307,15 @@ container")._
   is tracked in #106. Tooling only: nothing about detection or
   alerting changes.
 
+- **A weekly mutation run that finds an unpinned survivor says so.** The
+  failure report treated only "score dropped below the floor" as a
+  regression, so a run that scored above the floor but found a survivor
+  the ledger does not accept was filed as "Mutation gate produced no
+  result" (#110). It had produced a result: a decision no test pins. Such
+  a run now files "Mutation gate found a survivor no test pins", with each
+  new survivor and its diff, and without the accepted rows. A malformed or
+  unreadable ledger is still "no result". Tooling only.
+
 - **The weekly mutation gate measures with mutmut 3.8.0 (#106).** The
   upgrade is deliberate this time. 3.8.0 forces each side of a conditional
   expression, which 3.7.0 never did, and found 25 conditionals the suite
