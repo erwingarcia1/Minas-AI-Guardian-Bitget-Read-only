@@ -164,6 +164,14 @@ container")._
   understand is refused, never ignored. Quantities stay strings, never
   floats.
 
+- **Acknowledging from the app, and signing a phone out from the browser
+  (decisions 21c, 21d).** `POST /api/v1/alerts/{id}/acknowledge` runs
+  through the portal's own scoped writer, so it stops a CRITICAL's
+  escalation exactly as the web button does, any contact on the account
+  may use it (#25), and the first acknowledgement stands. The portal's
+  Security page lists every phone signed in to the login, with a button
+  to sign each one out; it appears only once a phone has signed in.
+
 ### Changed
 
 - **The unpinned method decisions are being retired in named batches, the

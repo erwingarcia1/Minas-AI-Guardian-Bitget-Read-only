@@ -1878,5 +1878,15 @@
    "tests/test_api_reads.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "api: acknowledging looks the alert up outside the member's scope",
+  "file": "sentinel/api.py",
+  "old": "if _member_alert(self.db, alert_id, ids) is None:",
+  "new": "if False:",
+  "tests": [
+   "tests/test_api_acknowledge.py"
+  ],
+  "expect": "killed"
  }
 ]

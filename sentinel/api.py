@@ -85,10 +85,13 @@ MEMBER_READ = frozenset({
     ("GET", "/api/v1/security"),
 })
 
-# Writes any signed-in contact may make: ending their own sign-ins.
+# Writes any signed-in contact may make: ending their own sign-ins, and
+# acknowledging an alert - the one account-facing act an emergency contact
+# exists to perform (#25).
 NON_PRIMARY_ALLOWED = frozenset({
     ("DELETE", "/api/v1/session"),
     ("DELETE", "/api/v1/devices/{id}"),
+    ("POST", "/api/v1/alerts/{id}/acknowledge"),
 })
 
 ROUTES = PRE_AUTH | MEMBER_READ | NON_PRIMARY_ALLOWED
@@ -398,6 +401,7 @@ class Api:
             ("POST", "/api/v1/session/refresh"): self._refresh,
             ("DELETE", "/api/v1/session"): self._sign_out,
             ("DELETE", "/api/v1/devices/{id}"): self._revoke,
+            ("POST", "/api/v1/alerts/{id}/acknowledge"): self._acknowledge,
             ("GET", "/api/v1/accounts"): self._accounts,
             ("GET", "/api/v1/alerts"): self._alerts,
             ("GET", "/api/v1/alerts/{id}"): self._incident,
@@ -505,6 +509,31 @@ class Api:
         if not revoke_device(self.db, device["email"], request.params["id"], "revoked"):
             return error(404, "not_found", "There is no such device.")
         return Response(204)
+
+    def _acknowledge(self, request: Request, device) -> Response:
+        """The app's one account-facing write (G-22, #26): it is what stops a
+        CRITICAL's escalation. The portal's own writer does it, with the
+        member's scope inside its UPDATE; the first acknowledgement is kept,
+        so a second tap is an answer, not an error."""
+        from sentinel.portal import _member_alert, acknowledge_alert_as_member, member_accounts
+
+        email = device["email"]
+        ids = [r["id"] for r in member_accounts(self.db, email)]
+        alert_id = request.params["id"]
+        if _member_alert(self.db, alert_id, ids) is None:
+            return error(404, "not_found", "There is no such alert.")
+        newly = acknowledge_alert_as_member(self.db, alert_id, email, ids)
+        with self.db.cursor() as cur:
+            cur.execute("SELECT acknowledged_at, acknowledged_by FROM alerts WHERE id = ?", (alert_id,))
+            row = cur.fetchone()
+        if newly:
+            logger.info("api: alert %d acknowledged by %s from device %d", alert_id, email, device["id"])
+        return Response(200, {
+            "id": alert_id,
+            "newly_acknowledged": newly,
+            "acknowledged_at": row["acknowledged_at"],
+            "acknowledged_by": row["acknowledged_by"],
+        })
 
     # -- reads ------------------------------------------------------------------
     #

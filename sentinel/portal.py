@@ -362,6 +362,9 @@ PRE_AUTH = frozenset({"/login", "/login-code", "/forgot", "/reset"})
 NON_PRIMARY_ALLOWED = frozenset({
     "/logout",
     "/security/2fa/start", "/security/2fa/confirm", "/security/2fa/disable",
+    # Decision 21c: ending one of this login's own app sign-ins - leaving, on
+    # a phone, from the browser.
+    "/security/devices/revoke",
     "/acknowledge",
 })
 
@@ -3198,12 +3201,39 @@ def _render_security(db: Database, email: str, *, secret: str | None = None,
     # The 2FA interstitials (fresh secret, one-time recovery codes) stay
     # focused; the other settings join the page in its settled states.
     if not codes and not secret:
+        body += _app_devices_section(db, email)
         body += _telegram_section(db, email)
         body += _preferences_section(db, email)
         body += _digest_section(db, email)
         body += _erasure_section(db, email)
     return _page(banner + body, email, "/security",
                  title="Security — Minas AI Guardian")
+
+
+def _app_devices_section(db: Database, email: str) -> str:
+    """Every phone signed in to this login with the app, and a way to sign
+    each one out (decision 21c). Absent when there is none: a member who has
+    never used the app has nothing to review here."""
+    from sentinel.api import live_devices
+
+    devices = live_devices(db, normalize_email(email))
+    if not devices:
+        return ""
+    rows = "".join(
+        f'<div class="kv__row"><dt>{html.escape(d["name"])}</dt>'
+        f"<dd>signed in {_ts(d['created_at'])} · last active {_ts(d['last_refreshed_at'] or d['created_at'])}"
+        '<form method="post" action="/security/devices/revoke" style="margin-top:var(--space-2)">'
+        f'<input type="hidden" name="device_id" value="{int(d["id"])}">'
+        '<button class="btn btn--secondary btn--sm" type="submit">Sign out this phone</button>'
+        "</form></dd></div>"
+        for d in devices
+    )
+    return (
+        '<section class="panel" aria-labelledby="devices-title"><h2 id="devices-title">Phones signed in to the app</h2>'
+        '<p class="muted">Each of these can read your alerts and acknowledge them. If you do not '
+        "recognise one, sign it out here and change your password.</p>"
+        f'<dl class="kv">{rows}</dl></section>'
+    )
 
 
 def _erasure_section(db: Database, email: str) -> str:
@@ -3979,6 +4009,27 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
 
             self._send(_render_not_found().encode(), 404)
 
+        def _revoke_device(self, form):
+            """Sign one of this login's phones out of the app (decision 21c).
+            The login's scope is in the UPDATE itself (api.revoke_device), so
+            another login's device is the same not-found as no device."""
+            email = self._session_email()
+            if email is None:
+                self._send(_render_login().encode())
+                return
+            from sentinel.api import revoke_device
+
+            try:
+                device_id = int((form.get("device_id") or [""])[0])
+            except (TypeError, ValueError):
+                self._send(_render_not_found().encode(), 404)
+                return
+            if not revoke_device(db, normalize_email(email), device_id, "revoked"):
+                self._send(_render_not_found().encode(), 404)
+                return
+            logger.info("portal: %s signed out app device %d", email, device_id)
+            self._send(_render_security(db, email, notice="That phone is signed out of the app.").encode())
+
         def _login_code(self, form):
             """Step two of a two-factor sign-in (#32).
 
@@ -4288,6 +4339,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 "/security/2fa/start": lambda form: self._twofactor(path, form),
                 "/security/2fa/confirm": lambda form: self._twofactor(path, form),
                 "/security/2fa/disable": lambda form: self._twofactor(path, form),
+                "/security/devices/revoke": self._revoke_device,
                 "/telegram/link": lambda form: self._telegram_link(path),
                 "/telegram/unlink": lambda form: self._telegram_link(path),
                 "/digest/frequency": self._digest_frequency,
