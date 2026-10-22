@@ -7332,6 +7332,28 @@ fix is undone. CONTRIBUTING: the pin, its history, and "read the weekly run
 too". The 25 survivors under 3.8.0 are #106, the deliberate upgrade. `.venv`
 now has mutmut 3.7.0.
 
+# 2026-10-22 · #106: mutmut 3.8.0, deliberately
+
+Branch `mutmut-3.8`. Both pins moved to 3.8.0. A local 3.8.0 run on
+today's tree reproduced CI's 2026-10-19 result exactly: 693 points and the
+same 25 new survivors, with the same fingerprints. Every one read at its
+source:
+
+- **16 real**, the branch the suite never took, now pinned in
+  `tests/test_conditional_branches.py`. All 16 mutations were applied
+  through `mutation-probe.py` against that file alone: 16/16 killed.
+  One needed a second look. The `set_member_prefs` survivor is the second
+  `1 if quiet_hours_enabled else 0` - the WHERE clause's change check, not
+  the stored value - so the test changes quiet hours alone.
+- **9 equivalent or unreachable**, added to the ledger with their argument:
+  `.get()` on a dict with no falsy key, an aggregate SELECT, a TypeError
+  already caught, `prune_invalid(None) == {}`, `Decimal(str(d)) == d`, a
+  path `check()` guards, and a row read back from its own UPDATE.
+
+`mutation-check.sh --check` on 3.8.0: 677/693 = 97%, ledger 16, exit 0.
+The floor stays 96. The ledger went from 7 to 16 rows, all argued and none
+`unpinned`.
+
 # 2026-10-22 · The mobile app, started (decision 21), on branch `mobile-app`
 
 `mobile/` was scaffolded with `create-expo-app --template default@sdk-58

@@ -802,7 +802,7 @@ scripts/mutation-check.sh --check    # fail below the floor, raise it on improve
 Restricted to **decision points** — comparison operators, boolean operators,
 `continue`/`break`/`return` — over `sentinel/detectors/` and `sentinel/alerts/`.
 
-**The instrument is pinned: mutmut 3.7.0** (`MUTMUT_VERSION` in
+**The instrument is pinned: mutmut 3.8.0** (`MUTMUT_VERSION` in
 `scripts/mutation-check.sh`, the install line in `ci.yml`; the gate refuses
 any other version, and `tests/test_scheduled_gates.py` keeps the two equal).
 CI used to install whatever was newest. mutmut 3.8.0 was released on
@@ -812,6 +812,9 @@ code that had not changed and stayed red for five weeks, and nobody was told
 (see "After pushing"). A floor and a survivor ledger mean something only
 against one generator. Upgrade deliberately: the new version, its new
 survivors judged (tests or ledger rows), and both pins, in one commit.
+That is how 3.7.0 became 3.8.0 (#106, 2026-10-22). Of the 25 survivors
+3.8.0 found, 16 are now killed by tests in
+`tests/test_conditional_branches.py`, and 9 are ledger rows, each argued.
 
 An unrestricted run produced **588 survivors from 1,322 mutants** and would take
 ~36 hours for the whole package; roughly 60% were cosmetic (mutated log text,
