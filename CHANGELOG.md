@@ -133,6 +133,37 @@ container")._
 
 ### Added
 
+- **The public address: `https://guardian.minastrade.com` (decision 22b,
+  answered 2026-10-23).** A `caddy` service in docker-compose.yml holds
+  ports 80 and 443 - the host's only public listeners - gets and renews
+  the certificate from Let's Encrypt by itself, and forwards to the member
+  portal, its pages and the apps' JSON API under `/api/v1`, and to nothing
+  else: the dashboard stays on Tailscale Serve until it moves under
+  `/admin`, and metrics are never published. Its config is
+  `deploy/caddy/Caddyfile`. The image is pinned to `caddy:2.11.7` and its
+  digest, HTTP/3 is off (nothing on UDP), and the container drops every
+  capability but the one its binary needs to start. Nothing about
+  Tailscale changes: the Funnel address keeps working beside the new one
+  until members have moved. Bringing it up - DNS, the security group,
+  the deploy, and the checks for each - is in docs/deployment.md "The
+  public address", in decision 22e's order.
+
+- **Behind the proxy, the throttles see the visitor, not the proxy
+  (decision 22c item 6).** Behind Caddy every connection arrives from
+  Caddy's address, and a login throttle keyed on that address is one
+  bucket for everybody: five wrong passwords from anyone would have
+  blocked every member's sign-in, the app's included, for fifteen minutes.
+  New setting `SENTINEL_TRUSTED_PROXIES`, exact addresses: from a
+  connection whose source is one of them, the client address is the
+  right-most `X-Forwarded-For` entry that is not itself a trusted proxy;
+  from any other source the header is ignored, so nobody can choose their
+  own address by sending one. The portal, the app's API sign-in and the
+  dashboard all use it, as do the sign-in logs and the operator enrolment
+  record. docker-compose.yml sets it to Caddy's fixed address on a
+  network of its own; unset, nothing is trusted, as before. Visitors on
+  the old Funnel address are not covered and keep sharing one bucket
+  until Funnel goes.
+
 - **Sign-in for the iOS and Android apps (decision 21c).** The member
   portal now serves a JSON API under `/api/v1/` for the customer apps.
   This release carries its sign-in: the web's email, password and TOTP,
@@ -195,6 +226,27 @@ container")._
   `mobile/README.md` has the steps.
 
 ### Changed
+
+- **Every response from the portal and the dashboard carries HSTS and
+  clickjacking protection (decision 22c item 3).** Neither server sent
+  either before. Now every response - pages, redirects, error replies, the
+  logo files, `/healthz`, the JSON API - carries
+  `Strict-Transport-Security: max-age=31536000` (a year; deliberately no
+  `includeSubDomains` and no `preload`, because other minastrade.com hosts
+  are not ours to bind), `Content-Security-Policy: frame-ancestors 'none'`
+  and `X-Frame-Options: DENY`. They are set in one place in the
+  application, so a page added later cannot forget them. Browsers ignore
+  HSTS over plain HTTP, so the SSH tunnel and the demo server are
+  unaffected. One thing to check on upgrade: HSTS holds a host to HTTPS
+  on every port. Once a browser has opened the dashboard or the Funnel
+  address, it will not open a plain-HTTP Tailscale listener on the same
+  `ts.net` name (docs/deployment.md, "The public address", step 7).
+
+- **The ops dashboard's session cookie is marked `Secure` (decision 22c
+  item 2),** like the portal's: a browser returns it over HTTPS only.
+  Over the tailnet's HTTPS nothing changes. The SSH tunnel keeps working
+  at `http://localhost:8390`, because browsers exempt localhost from the
+  HTTPS requirement - open it by that name (docs/deployment.md).
 
 - **The deploy gate accepts release tags only (`v*`).** The iOS and
   Android app now lives in `mobile/` and tags its own releases

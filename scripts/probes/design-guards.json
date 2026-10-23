@@ -1948,5 +1948,175 @@
    "tests/test_surface_styles.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "edge: X-Forwarded-For is believed from any peer, not only a trusted proxy",
+  "file": "sentinel/edge.py",
+  "old": "    if peer_address is None or peer_address not in trusted:",
+  "new": "    if peer_address is None:",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "edge: the client is the left-most X-Forwarded-For entry, which the client wrote",
+  "file": "sentinel/edge.py",
+  "old": "    for hop in reversed(hops):",
+  "new": "    for hop in hops:",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "edge: a malformed X-Forwarded-For entry is skipped and the walk goes on left",
+  "file": "sentinel/edge.py",
+  "old": "\"- using the proxy's own address\", peer, hop[:64])\n            return peer",
+  "new": "\"- using the proxy's own address\", peer, hop[:64])\n            continue",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "edge: only the first X-Forwarded-For field line is read",
+  "file": "sentinel/edge.py",
+  "old": "self.headers.get_all(\"X-Forwarded-For\"), self.trusted_proxies)",
+  "new": "(self.headers.get_all(\"X-Forwarded-For\") or [])[:1], self.trusted_proxies)",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "edge: responses lose Strict-Transport-Security",
+  "file": "sentinel/edge.py",
+  "old": "        super().send_header(\"Strict-Transport-Security\", HSTS)\n",
+  "new": "",
+  "tests": [
+   "tests/test_csrf_origin.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "edge: responses lose X-Frame-Options",
+  "file": "sentinel/edge.py",
+  "old": "        super().send_header(\"X-Frame-Options\", X_FRAME_OPTIONS)\n",
+  "new": "",
+  "tests": [
+   "tests/test_csrf_origin.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "edge: responses lose the frame-ancestors policy",
+  "file": "sentinel/edge.py",
+  "old": "        super().send_header(\"Content-Security-Policy\", with_frame_ancestors(self._route_csp))\n",
+  "new": "",
+  "tests": [
+   "tests/test_csrf_origin.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "edge: HSTS binds every minastrade.com host (includeSubDomains)",
+  "file": "sentinel/edge.py",
+  "old": "HSTS = \"max-age=31536000\"",
+  "new": "HSTS = \"max-age=31536000; includeSubDomains\"",
+  "tests": [
+   "tests/test_csrf_origin.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "edge: a route's own Content-Security-Policy goes out as a second header",
+  "file": "sentinel/edge.py",
+  "old": "        if name == \"content-security-policy\":",
+  "new": "        if name == \"x-not-a-header\":",
+  "tests": [
+   "tests/test_csrf_origin.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "edge: a route can send its own X-Frame-Options or HSTS beside the edge's",
+  "file": "sentinel/edge.py",
+  "old": "        if name in _EDGE_OWNED:\n            return\n",
+  "new": "        if name in _EDGE_OWNED:\n            pass\n",
+  "tests": [
+   "tests/test_csrf_origin.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the session cookie loses Secure",
+  "file": "sentinel/dashboard.py",
+  "old": "Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200\"",
+  "new": "Path=/; HttpOnly; SameSite=Lax; Max-Age=43200\"",
+  "tests": [
+   "tests/test_operator_two_factor.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the operator login throttle keys on the proxy's address",
+  "file": "sentinel/dashboard.py",
+  "old": "            client_ip = self._client_ip()\n            if _login_throttle.blocked(f\"ip:{client_ip}\") or _login_throttle.blocked(f\"user:{username.lower()}\"):",
+  "new": "            client_ip = self.client_address[0]\n            if _login_throttle.blocked(f\"ip:{client_ip}\") or _login_throttle.blocked(f\"user:{username.lower()}\"):",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: the app API is handed the proxy's address, not the client's",
+  "file": "sentinel/portal.py",
+  "old": "                                  self._client_ip(), parse_qs(parsed.query))",
+  "new": "                                  self.client_address[0], parse_qs(parsed.query))",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "compose: the portal trusts an address that is not caddy's",
+  "file": "docker-compose.yml",
+  "old": "      SENTINEL_TRUSTED_PROXIES: \"10.231.0.2\"",
+  "new": "      SENTINEL_TRUSTED_PROXIES: \"10.231.0.3\"",
+  "tests": [
+   "tests/test_bind_address.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "compose: caddy's fixed address is inside the range Docker hands out",
+  "file": "docker-compose.yml",
+  "old": "          ip_range: 10.231.0.128/25",
+  "new": "          ip_range: 10.231.0.0/25",
+  "tests": [
+   "tests/test_bind_address.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "compose: the portal's publish faces every interface",
+  "file": "docker-compose.yml",
+  "old": "      - \"127.0.0.1:8391:8391\"",
+  "new": "      - \"8391:8391\"",
+  "tests": [
+   "tests/test_bind_address.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "caddy: the public proxy forwards to the ops dashboard",
+  "file": "deploy/caddy/Caddyfile",
+  "old": "\treverse_proxy sentinel:8391",
+  "new": "\treverse_proxy sentinel:8390",
+  "tests": [
+   "tests/test_bind_address.py"
+  ],
+  "expect": "killed"
  }
 ]

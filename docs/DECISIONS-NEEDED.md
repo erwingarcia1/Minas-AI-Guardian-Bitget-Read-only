@@ -1383,7 +1383,7 @@ against decision 22's hostname.
 
 ---
 
-## 22. One public address, https://guardian.minastrade.com, and no Tailscale (#88) — **PARTLY ANSWERED 2026-10-22: one hostname for everything, no Tailscale anywhere, host access by SSH; TLS still open**
+## 22. One public address, https://guardian.minastrade.com, and no Tailscale (#88) — **ANSWERED: 2026-10-22 one hostname for everything, no Tailscale anywhere, host access by SSH; 2026-10-23 TLS by Caddy on the instance (22b)**
 
 > **Answer so far (2026-10-22).**
 > - **`https://guardian.minastrade.com` is the project's one address.**
@@ -1395,10 +1395,18 @@ against decision 22's hostname.
 > - **Host access is SSH with the EC2 key pair**, which is already in use.
 >   (22e)
 >
+> **And (2026-10-23): Caddy on the instance, as one more compose
+> service** (22b, as recommended). The owner wants the app API live at the
+> new address the same day: that is 22e steps 1 and 2, the proxy with a
+> certificate and the portal answering behind it. Built that day, branch
+> `public-address`; the steps to bring it up are the owner's, in
+> docs/deployment.md "The public address".
+>
 > This answers #88's open half (the customer-facing address) and
-> supersedes decision 20's exposure model. Still open, with a
-> recommendation: 22b (TLS and the way in). The preconditions in 22c are
-> not options.
+> supersedes decision 20's exposure model. The preconditions in 22c are
+> not options; items 1 and 5 are still the owner's, and both are needed
+> before the dashboard goes public (22e step 3), not before the portal
+> does.
 
 **What it reverses, so nobody reads the old line as current.** Decision
 20 says: "The ops dashboard (8390) and the metrics endpoint (9109) stay
@@ -1453,9 +1461,49 @@ declined. What sharing the hostname takes:
 - **Extra controls apply by path.** Any IP allowlist (22c, item 5) goes
   on `/admin/*` at the proxy.
 
-### 22b. TLS and the way in — open
+### 22b. TLS and the way in — **ANSWERED 2026-10-23: Caddy on the instance, as one more compose service**
 
-**Recommendation: Caddy on the instance**, as one more compose service.
+> **Built 2026-10-23, branch `public-address`** (22e steps 1 and 2: the
+> portal, not yet the dashboard):
+> - **`caddy` in docker-compose.yml.** Image `caddy:2.11.7` pinned with
+>   its digest (the latest stable release, checked that day). Ports 80
+>   and 443 are the host's only public listeners, TCP only (HTTP/3 is
+>   off, so nothing needs UDP). Named volumes `caddy-data` (certificates)
+>   and `caddy-config`; `restart: unless-stopped`; sentinel's hardening as
+>   far as the image allows - every capability dropped except
+>   `NET_BIND_SERVICE`, because the image's binary carries that file
+>   capability and with all of them dropped exec itself fails ("operation
+>   not permitted", measured), plus no-new-privileges, pids, memory and
+>   file limits, and rotated logs.
+> - **`deploy/caddy/Caddyfile`**, mounted read-only:
+>   `guardian.minastrade.com` forwards to `sentinel:8391` - the portal's
+>   pages and `/api/v1` - and to nothing else. No `/admin`, no 8390, no
+>   9109: the dashboard stays on Tailscale Serve until step 3. Checked
+>   with the pinned image: `caddy validate` (valid), `caddy fmt` (clean),
+>   `caddy adapt` (one upstream). `docker compose config` accepts the
+>   compose file.
+> - **The `edge` network**, `10.231.0.0/24`, between Caddy and the portal.
+>   Caddy has the fixed address `10.231.0.2`, outside the range Docker
+>   hands out, which is the one address the servers trust (22c item 6).
+>   This departs from the recommendation below on purpose: Caddy does not
+>   use the portal's `127.0.0.1` publish. A container cannot reach the
+>   host's loopback, and the portal must see Caddy at one fixed address it
+>   can trust. The publish stays as it was, because Funnel uses it.
+> - **End to end, on a private Docker network with nothing published**:
+>   the pinned image and the real site block (a local CA standing in for
+>   Let's Encrypt), and this branch's portal behind it. A client guessing
+>   wrong with a spoofed `X-Forwarded-For` was logged and throttled at
+>   its own address, not the spoofed one and not Caddy's. A second client
+>   behind the same proxy still signed in. Every answer carried the 22c
+>   item 3 headers exactly once. `/healthz` and `/metrics` through Caddy
+>   reached the portal's sign-in page, and port 80 redirected to HTTPS.
+>
+> **Still the owner's, in this order** (docs/deployment.md "The public
+> address"): the DNS `A` record, the security group's 80 and 443, cutting
+> and deploying the release, the checks, and `SENTINEL_PORTAL_URL` in the
+> host's `.env`.
+
+**Recommendation (adopted): Caddy on the instance**, as one more compose service.
 It gets certificates from Let's Encrypt, renews them automatically, and
 proxies `/admin/*` to the dashboard and everything else to the portal,
 both on their existing `127.0.0.1` publishes.
@@ -1489,10 +1537,22 @@ checked:
 1. **Every production operator is enrolled in TOTP.** Mandatory
    two-factor is built (#87, decision 19). Measure enrolment on the box
    before the switch, not after it.
+   **Status 2026-10-23: still the owner's**, and needed before the
+   dashboard goes public (22e step 3), not before the portal does. The
+   measurement is `sudo docker compose exec -T sentinel sentinel operator
+   list`: every active row's 2FA column on.
 2. **The dashboard's session cookie is marked `Secure`.** Today it is
    `HttpOnly; SameSite=Lax` without `Secure` (`sentinel/dashboard.py`,
    `_issue_session`); the portal's cookie has the flag. That is harmless
    over the tailnet's HTTPS and wrong on the internet.
+   **Built 2026-10-23**: `Secure` on the cookie both sign-in paths issue,
+   and on the sign-out that clears it. Pinned by
+   tests/test_operator_two_factor.py `test_the_session_cookie_is_secure`,
+   `test_the_cookie_issued_at_enrolment_is_secure_too` and
+   `test_signing_out_clears_the_cookie_with_the_same_attributes`, and by
+   the probe "dashboard: the session cookie loses Secure". The SSH
+   tunnel's `http://localhost` still signs in: browsers exempt localhost
+   (docs/deployment.md, "Reaching the dashboard").
 3. **Both servers send the security headers they don't send today:**
    `Strict-Transport-Security`, and clickjacking protection
    (`Content-Security-Policy: frame-ancestors 'none'`, or
@@ -1500,12 +1560,34 @@ checked:
    kind either server sets is the portal's `X-Content-Type-Options:
    nosniff`. Set them in the application, where a test can pin them, not
    only at the proxy.
+   **Built 2026-10-23**, both of them rather than either: on every
+   response of both servers - pages, redirects, the standard library's own
+   error replies, the logo files, `/healthz`, the JSON API - from one
+   place, `end_headers` in `sentinel/edge.py`.
+   `Strict-Transport-Security: max-age=31536000` (a year, with no
+   `includeSubDomains` and no `preload`: other minastrade.com hosts are not
+   ours to bind), `Content-Security-Policy: frame-ancestors 'none'`
+   (merged into a route's own policy if one ever sends one, never a second
+   header) and `X-Frame-Options: DENY`. Pinned by tests/test_csrf_origin.py
+   `test_every_kind_of_portal_response_carries_the_edge_headers`,
+   `test_every_kind_of_dashboard_response_carries_the_edge_headers`,
+   `test_a_route_policy_is_merged_and_cannot_weaken_the_edge` and
+   `test_frame_ancestors_is_added_or_replaced_never_duplicated`, and by one
+   probe per header.
 4. **Only the proxy listens publicly.** The host-side publishes in
    docker-compose.yml stay on `127.0.0.1`.
+   **Built 2026-10-23**: Caddy's 80 and 443 are the only publishes not on
+   `127.0.0.1`. Pinned by tests/test_bind_address.py
+   `test_only_the_proxy_listens_publicly` and
+   `test_the_proxy_forwards_to_the_portal_and_nothing_else` (which also
+   holds the `SENTINEL_BIND_GATE` declaration to the proxy).
 5. **Optional, recommended: an IP allowlist on `/admin/*`**, at the
    proxy, for office or VPN addresses. It is a lighter gate than the
    tailnet was, and it keeps password-spraying traffic away from the
    operator login. The owner's call.
+   **Status 2026-10-23: still the owner's call.** Nothing is behind
+   `/admin` yet, so there is nothing to allowlist; it is decided before
+   22e step 3.
 6. **Each server must know the real client address behind the proxy.**
    Both servers take the address from the TCP connection
    (`client_address`), and no code reads a forwarded header (checked
@@ -1517,6 +1599,27 @@ checked:
    This may already be true in production: Funnel and Docker's port
    forwarding are both proxies. UNVERIFIED; the portal logs every failed
    sign-in with its source address, so the server's log answers it.
+   **Built 2026-10-23**: `SENTINEL_TRUSTED_PROXIES`, exact addresses, read
+   once at startup. Unset or blank trusts no proxy, which was the old
+   behaviour. From a trusted peer, the client is the right-most
+   `X-Forwarded-For` address that is not itself a trusted proxy (Caddy
+   writes the last entry; anything left of it is the client's own typing).
+   From any other peer the header is ignored. A malformed entry falls back
+   to the peer, never to anything further left. Every address the servers
+   derive goes through it: the portal's and the dashboard's throttles,
+   their logs, the app's sign-in (`sentinel/api.py`) and the operator
+   enrolment audit row. Compose pins it to Caddy's `10.231.0.2`. Pinned by
+   tests/test_login_lockout.py (the section "the real client behind the
+   proxy": spoofing from an untrusted peer changes nothing; behind the
+   proxy one visitor's failures do not block another on the web sign-in,
+   the app's sign-in or the dashboard's; malformed headers; the enrolment
+   audit row), by tests/test_bind_address.py
+   `test_the_portal_trusts_exactly_the_proxys_fixed_address`, and by
+   probes for trusting an untrusted peer and for taking the left-most
+   address. **The Funnel address is not covered.** Its connections come
+   through the loopback publish, from Docker's gateway, which is not
+   trusted, so its visitors keep sharing one bucket until Funnel goes (22e
+   step 6). The UNVERIFIED line above still stands for that path.
 
 ### 22d. Moving customers to the new address
 
@@ -1567,11 +1670,17 @@ recovery. So:
    describing Tailscale in the release that ships the code for steps 2
    and 3. docs/DEPLOYMENTS.md records each step with its evidence.
 
+**Status 2026-10-23:** the code for steps 1 and 2 is built (22b above),
+and running them is the owner's, in docs/deployment.md "The public
+address". Steps 3 to 8 are untouched, and nothing Tailscale-related was
+removed: Funnel, Serve and Tailscale SSH keep working beside the new
+address until their own steps.
+
 ### What it blocks
 
-The apps (decision 21), which are built against this hostname; #88's
-anti-phishing copy; and every document that describes how the system is
-reached.
+The apps (decision 21), which are built against this hostname - unblocked
+once steps 1 and 2 have been run on the box; #88's anti-phishing copy; and
+every document that describes how the system is reached.
 
 **Related:** decision 19 (operator two-factor, host-access recovery),
 decision 20 (the exposure model this supersedes), decision 21 (the

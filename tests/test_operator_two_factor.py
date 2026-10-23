@@ -111,6 +111,47 @@ def test_a_code_completes_the_sign_in(server, enrolled):
     assert status == 200 and "Accounts" in page
 
 
+def _attributes(set_cookie):
+    return {part.strip().split("=", 1)[0].lower() for part in set_cookie.split(";")[1:]}
+
+
+def test_the_session_cookie_is_secure(server, enrolled):
+    """Decision 22c item 2: the dashboard is going on the internet, and a
+    cookie without Secure would be sent over plain HTTP to anything that
+    answers on the name. The portal's has carried the flag all along.
+    Plain http://localhost (the SSH tunnel) still signs in: browsers treat
+    localhost as a secure context."""
+    secret, _ = enrolled
+    _, _, body = _post(server, "/login", {"username": "erwin", "password": PASSWORD})
+    status, set_cookie, _ = _post(server, "/login/code",
+                                  {"pending": _pending_from(body), "code": _code(secret, offset=STEP_SECONDS)})
+    assert status == 303 and _session_cookie(set_cookie)
+    assert {"secure", "httponly", "samesite", "path", "max-age"} <= _attributes(set_cookie), set_cookie
+
+
+def test_the_cookie_issued_at_enrolment_is_secure_too(server, db, cipher):
+    """The other path that mints a session: confirming first-login
+    enrolment answers 200 with the recovery codes and the cookie."""
+    from sentinel.twofactor import pending_secret
+
+    create_operator(db, "newbie", PASSWORD)
+    _, _, body = _post(server, "/login", {"username": "newbie", "password": PASSWORD})
+    secret = pending_secret(db, cipher, OPERATOR, "newbie")
+    status, set_cookie, _ = _post(server, "/login/enrol", {"pending": _pending_from(body), "code": _code(secret)})
+    assert status == 200 and _session_cookie(set_cookie)
+    assert {"secure", "httponly"} <= _attributes(set_cookie), set_cookie
+
+
+def test_signing_out_clears_the_cookie_with_the_same_attributes(server):
+    conn = http.client.HTTPConnection("127.0.0.1", server, timeout=5)
+    conn.request("GET", "/logout")
+    response = conn.getresponse()
+    response.read()
+    set_cookie = response.getheader("Set-Cookie") or ""
+    assert response.status == 303 and set_cookie.startswith("ops_session=;")
+    assert {"secure", "httponly", "max-age"} <= _attributes(set_cookie), set_cookie
+
+
 def test_a_wrong_code_is_refused_and_counted(server, enrolled):
     _, _, body = _post(server, "/login", {"username": "erwin", "password": PASSWORD})
     pending = _pending_from(body)

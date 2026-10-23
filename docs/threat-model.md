@@ -25,8 +25,9 @@ keys.
   Bitget honoring a write action from a read-only key (exchange-side bug) —
   out of our control, why key scope is non-negotiable.
 - Controls: non-root container; master key injected from KMS/Secrets Manager
-  at boot rather than sitting in a dotfile; no inbound ports except SSH;
-  dashboard/metrics loopback-only.
+  at boot rather than sitting in a dotfile; no inbound ports except SSH and
+  the proxy's 80 and 443 (decision 22b), which reach the member portal and
+  nothing else; dashboard/metrics loopback-only.
 - Response: rotate master key, notify customers to rotate their keys,
   forensics from the append-only event log (which the app can only INSERT
   into by construction).
@@ -92,11 +93,16 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
 - No RBAC on the dashboard (A4) — network-gated instead, acceptable at pilot
   scale, not at 1,000 accounts with staff turnover. Revisit in Phase 3.
 - SQLite file readable by host root until Postgres + disk encryption.
-- The member portal is internet-reachable (Tailscale Funnel, decision 20):
-  its login is exposed to credential stuffing, mitigated by the login
-  throttle and TOTP where enrolled; the portal must never gain an operator
-  capability (tests/test_member_roles.py holds the boundary). The public
-  name resolves to Tailscale's Funnel relay, not to the host, and the
-  portal is also reachable tailnet-only on 8391. Separately, the host's one
-  Elastic IP is the exchanges' allowlisted egress; losing it unmonitors
-  every allowlisted account (2026-09-21) and does not touch the portal.
+- The member portal is internet-reachable (Tailscale Funnel, decision 20;
+  and from decision 22b at `https://guardian.minastrade.com`, through
+  Caddy on the host): its login is exposed to credential stuffing,
+  mitigated by the login throttle and TOTP where enrolled; the portal must
+  never gain an operator capability (tests/test_member_roles.py holds the
+  boundary). Behind Caddy the throttle keys on the real client address,
+  which the servers take from `X-Forwarded-For` only when the connection
+  comes from Caddy's fixed address (22c item 6); visitors on the Funnel
+  name still share one bucket until Funnel goes. The Funnel name resolves
+  to Tailscale's relay; the new name resolves to the host's one Elastic
+  IP, which is also the exchanges' allowlisted egress - losing it
+  unmonitors every allowlisted account (2026-09-21) and takes the new
+  address down until DNS follows.

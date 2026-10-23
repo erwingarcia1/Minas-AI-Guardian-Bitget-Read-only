@@ -37,15 +37,30 @@ services:
       # Declares WHO holds the boundary for the wide binds above, so startup
       # can say so instead of warning on every correct deployment (#76). It
       # describes the `ports:` publishes below - if the publish changes,
-      # change this in the same diff; a test holds the two together.
-      SENTINEL_BIND_GATE: "docker-compose publishes 127.0.0.1:8390 on the host; the container-internal bind is unreachable off-host"
+      # change this in the same diff; a test holds the two together. The
+      # caddy service below is the one public listener and forwards to the
+      # portal only (deploy/caddy/Caddyfile), never to 8390; tests hold that
+      # too.
+      SENTINEL_BIND_GATE: "docker-compose publishes 127.0.0.1:8390 on the host; the container-internal bind is unreachable off-host - the public proxy (caddy, 80/443) forwards to the portal (8391) only"
+      # Decision 22c item 6: behind Caddy every connection comes from Caddy,
+      # and a throttle keyed on that address is one bucket for every visitor
+      # - five wrong passwords from anyone would block every member's
+      # sign-in. X-Forwarded-For is believed from this address and no other:
+      # caddy's fixed ipv4_address on the `edge` network below. Change the
+      # two together; a test holds them equal.
+      SENTINEL_TRUSTED_PROXIES: "10.231.0.2"
     volumes:
       - sentinel-data:/data
       - ./config:/app/config:ro   # rules.yaml stays hot-reloadable from the host
     ports:
       - "127.0.0.1:8390:8390"     # status dashboard - keep behind VPN/SSH tunnel, it has no auth
-      - "127.0.0.1:8391:8391"     # member portal - has its own login; front with TLS before exposing
+      - "127.0.0.1:8391:8391"     # member portal - loopback: Tailscale Funnel uses this until 22e; caddy uses the edge network
       - "127.0.0.1:9109:9109"     # prometheus metrics
+    # `default` as before (the scale profile's postgres and redis live there),
+    # plus `edge`, where caddy reaches the portal as sentinel:8391.
+    networks:
+      default: {}
+      edge: {}
     # The process needs no Linux capabilities and must never gain any: it
     # parses attacker-influenceable exchange API responses while holding
     # decrypted credentials in memory.
@@ -73,6 +88,58 @@ services:
       timeout: 10s
       retries: 3
       start_period: 20s
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+  # The public edge (decision 22b, answered 2026-10-23): TLS for
+  # https://guardian.minastrade.com, certificates from Let's Encrypt, renewed
+  # by Caddy itself. The ONLY public listener on this host (22c item 4):
+  # every other publish in this file is on 127.0.0.1. It forwards to the
+  # member portal and to nothing else - deploy/caddy/Caddyfile, which
+  # docs/deployment.md "The public address" brings up in 22e's order.
+  caddy:
+    # An exact release, and the digest it had when it was checked
+    # (2026-10-23, v2.11.7, the latest stable): a tag can be re-pushed, a
+    # digest cannot. Bump both deliberately, and validate the Caddyfile
+    # against the new image before it ships.
+    image: caddy:2.11.7@sha256:504a44d7d74bd2bc28a66afc4774912fc21223ca8a67734af1c54ab2f999b489
+    restart: unless-stopped
+    ports:
+      - "80:80"     # ACME HTTP challenge, and the redirect to HTTPS
+      - "443:443"   # TCP only: the Caddyfile turns HTTP/3 (UDP) off
+    volumes:
+      # A directory, read-only: the image's docs warn that a single-file
+      # mount misses edits.
+      - ./deploy/caddy:/etc/caddy:ro
+      # Certificates and the ACME account. Persist it: losing it means
+      # re-issuing, and Let's Encrypt rate-limits issuance per hostname.
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      edge:
+        # Fixed, so the portal can trust exactly this address and no other
+        # (SENTINEL_TRUSTED_PROXIES above). Outside the network's ip_range,
+        # so no other container can ever be handed it.
+        ipv4_address: 10.231.0.2
+    # Same posture as sentinel, as far as Caddy allows. The image runs as
+    # root and its binary carries the file capability cap_net_bind_service;
+    # with every capability dropped, exec itself fails ("operation not
+    # permitted", checked 2026-10-23), so exactly that one is added back.
+    # NET_ADMIN, which the image's docs suggest for HTTP/3's UDP buffers, is
+    # not needed with HTTP/3 off.
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 256
+    mem_limit: 256m
+    ulimits:
+      nofile:
+        soft: 8192
+        hard: 8192
     logging:
       driver: json-file
       options:
@@ -117,7 +184,28 @@ services:
         max-size: "20m"
         max-file: "5"
 
+networks:
+  # The hop between caddy and the portal. Its own network, with a subnet
+  # fixed here so caddy's address can be fixed and trusted (22c item 6).
+  # 10.231.0.0/24 is clear of Docker's default pools (172.17-172.31, then
+  # 192.168) and of the default VPC (172.31.0.0/16); check `ip -4 route` on
+  # a new host before the first `up` (docs/deployment.md). IPv4 only: the
+  # trusted address is an IPv4 address, and a connection arriving over IPv6
+  # would come from an address nobody trusts.
+  edge:
+    enable_ipv6: false
+    ipam:
+      config:
+        - subnet: 10.231.0.0/24
+          gateway: 10.231.0.1
+          # Dynamic addresses (sentinel, one-off `compose run` containers)
+          # come from the upper half only, so caddy's fixed .2 is never
+          # handed to anything else.
+          ip_range: 10.231.0.128/25
+
 volumes:
   sentinel-data:
   pg-data:
   redis-data:
+  caddy-data:
+  caddy-config:

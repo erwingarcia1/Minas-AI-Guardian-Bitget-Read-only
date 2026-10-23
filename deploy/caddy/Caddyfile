@@ -1,0 +1,34 @@
+# The public edge: https://guardian.minastrade.com (decision 22b, 2026-10-23).
+#
+# Caddy is the one public listener on this host (22c item 4). It holds ports
+# 80 and 443, gets and renews the certificate from Let's Encrypt by itself,
+# and forwards to the member portal - its pages and the apps' JSON API under
+# /api/v1 - and to nothing else. The ops dashboard (8390) and the metrics
+# endpoint (9109) are not proxied: the dashboard stays on Tailscale Serve until
+# it moves under /admin with every 22c precondition met (22e step 3), and the
+# metrics endpoint is never published. tests/test_bind_address.py holds this
+# file to that.
+#
+# X-Forwarded-For: Caddy trusts no proxy in front of it (no trusted_proxies),
+# so it discards whatever a client sends in X-Forwarded-For and sets it to
+# the address it saw. The portal believes the header only from this
+# container's fixed address on the compose network - SENTINEL_TRUSTED_PROXIES
+# in docker-compose.yml (22c item 6).
+#
+# docker-compose.yml mounts this DIRECTORY read-only at /etc/caddy - not the
+# file: the image's docs warn a single-file mount misses edits. Check a
+# change before it ships:
+#   docker run --rm -v "$PWD/deploy/caddy:/etc/caddy:ro" caddy:2.11.7 \
+#     caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+{
+	servers {
+		# HTTP/1.1 and HTTP/2. HTTP/3 would need UDP 443 published and open in
+		# the security group; without them Caddy would advertise a protocol
+		# nobody can reach.
+		protocols h1 h2
+	}
+}
+
+guardian.minastrade.com {
+	reverse_proxy sentinel:8391
+}
