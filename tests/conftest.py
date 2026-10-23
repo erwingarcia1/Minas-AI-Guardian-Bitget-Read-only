@@ -5,7 +5,7 @@ import os
 import pytest
 from cryptography.fernet import Fernet
 
-from sentinel import twofactor
+from sentinel import outbox, twofactor
 from sentinel.config import RulesConfig
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
@@ -130,7 +130,14 @@ def pinned_totp_clock(monkeypatch):
 def db(tmp_path):
     database = Database(tmp_path / "test.db")
     yield database
-    database.close()
+    # A request answers first and delivers after, on its own thread
+    # (sentinel/outbox.py): nothing a test's requests queued may outlive the
+    # database it was queued against, or log its failure into the next test.
+    # Bounded, like every wait in a test.
+    try:
+        assert outbox.wait_until_sent(10), "a delivery queued by this test was still running 10 s after it ended"
+    finally:
+        database.close()
 
 
 @pytest.fixture

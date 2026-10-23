@@ -144,6 +144,17 @@ def test_a_malformed_code_is_refused_rather_than_raising(code):
     assert verify_code(SECRET, code, at=1_700_000_000) is None
 
 
+@pytest.mark.parametrize("digits", ["٠١٢٣٤٥٦٧٨٩", "０１２３４５６７８９", "⁰¹²³⁴⁵⁶⁷⁸⁹", "𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗"],
+                         ids=["arabic-indic", "fullwidth", "superscript", "mathematical"])
+def test_digits_from_another_script_are_refused_rather_than_raising(digits):
+    """`str.isdigit` accepts these, so they reached compare_digest, which
+    raises on non-ASCII text: behind the right password, the app's sign-in
+    answered Minas's own 500 and the web's dropped the connection. Even the
+    right code, written in them, is refused."""
+    lookalike = "".join(digits[int(c)] for c in totp_at(SECRET, 1_700_000_000))
+    assert verify_code(SECRET, lookalike, at=1_700_000_000) is None
+
+
 def test_a_malformed_secret_fails_closed():
     """A corrupted or truncated secret must reject every code, not accept
     them. Failing open here is the whole game."""
@@ -165,15 +176,23 @@ def test_an_empty_secret_produces_no_code_at_all():
         assert verify_code(empty, "000000", at=1_700_000_000) is None
 
 
-def test_verification_is_constant_time_in_the_comparison():
+def test_verification_is_constant_time_in_the_comparison(monkeypatch):
     """Digit-by-digit comparison leaks the code one character at a time to
-    anyone who can time the endpoint."""
-    import inspect
-
+    anyone who can time the endpoint. Pinned by the call itself, not by a
+    word in the source - a comment that names it must not satisfy this."""
     from sentinel import totp
 
-    source = inspect.getsource(totp)
-    assert "compare_digest" in source
+    compared = []
+    real = totp.hmac.compare_digest
+
+    def spy(a, b):
+        compared.append((a, b))
+        return real(a, b)
+
+    monkeypatch.setattr(totp.hmac, "compare_digest", spy)
+    secret = totp.generate_secret()
+    assert totp.verify_code(secret, totp.totp_at(secret, 1_000_000), at=1_000_000) is not None
+    assert compared, "verify_code compared the code without hmac.compare_digest"
 
 
 # --- recovery codes -----------------------------------------------------------

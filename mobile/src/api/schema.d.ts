@@ -246,10 +246,10 @@ export interface components {
             /** @description Why it is not being watched, in words; null when it is. */
             reason: string | null;
             /**
-             * @description The same judgement as `reason`, as a word to act on; null when it is being watched.
+             * @description The same judgement as `reason`, as a word to act on; null when it is being watched. `key_rejected` is the member's to fix: the key is refused, and replacing it restarts monitoring. `host_auth_failure` is Minas's: the exchange is refusing this key along with others because of a change on Minas's side, so nothing is needed from the member and the key must be left as it is.
              * @enum {string|null}
              */
-            cause: "paused" | "tamper_suspected" | "not_active" | "key_rejected" | "never_checked" | "no_recent_check" | null;
+            cause: "paused" | "tamper_suspected" | "not_active" | "host_auth_failure" | "key_rejected" | "never_checked" | "no_recent_check" | null;
             last_success_at: string | null;
             /**
              * @description What this login may change on it (#25).
@@ -463,6 +463,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
@@ -504,6 +505,7 @@ export interface operations {
                 };
                 content?: never;
             };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
             500: components["responses"]["Error"];
@@ -527,6 +529,7 @@ export interface operations {
                     "application/json": components["schemas"]["Accounts"];
                 };
             };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
@@ -583,6 +586,7 @@ export interface operations {
                     "application/json": components["schemas"]["Incident"];
                 };
             };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
             500: components["responses"]["Error"];
@@ -608,6 +612,7 @@ export interface operations {
                     "application/json": components["schemas"]["Acknowledgement"];
                 };
             };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
             500: components["responses"]["Error"];
@@ -631,6 +636,7 @@ export interface operations {
                     "application/json": components["schemas"]["Activity"];
                 };
             };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
@@ -653,6 +659,7 @@ export interface operations {
                     "application/json": components["schemas"]["Limits"];
                 };
             };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };
@@ -675,6 +682,7 @@ export interface operations {
                     "application/json": components["schemas"]["Security"];
                 };
             };
+            400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             500: components["responses"]["Error"];
         };

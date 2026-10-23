@@ -120,7 +120,10 @@ def verify_code(secret: str, code: str | None, at: float,
     if key is None or not code:
         return None
     candidate = str(code).strip().replace(" ", "")
-    if len(candidate) != DIGITS or not candidate.isdigit():
+    # ASCII digits only: `isdigit` alone accepts '١٢٣٤٥٦' and '²', and the
+    # constant-time comparison below raises on a non-ASCII str - a 500 on the
+    # sign-in path.
+    if len(candidate) != DIGITS or not (candidate.isascii() and candidate.isdigit()):
         return None
 
     current = int(at) // STEP_SECONDS

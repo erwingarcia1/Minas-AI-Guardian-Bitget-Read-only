@@ -30,6 +30,7 @@ from sentinel.dashboard import (
 from sentinel.db import Database
 from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
 from sentinel.naming import display_label
+from sentinel.outbox import answering
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
 from sentinel.passwords import LoginThrottle
 from sentinel.rules_schema import default_for
@@ -1457,7 +1458,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     if pending:
         by_id = {int(r["id"]): r for r in accounts}
         lines = "; ".join(
-            f"{html.escape(str(by_id[aid]['label']))} at {_ts(p['execute_at'])}"
+            f"{html.escape(display_label(by_id[aid]))} at {_ts(p['execute_at'])}"
             for aid, p in sorted(pending.items()))
         pause_banner = (
             '<div class="state state--warn" role="alert" style="margin-bottom:var(--space-5)">'
@@ -1511,7 +1512,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
                 f'<div class="state {cls}" role="alert" style="margin-bottom:var(--space-5)">'
                 f'<span class="state__eyebrow">{icon}Needs your attention — incident #{int(hero["id"])}</span>'
                 f'<p class="state__answer">{_sev_badge(hero["severity"])} {html.escape(hero["rule"])} '
-                f"on {html.escape(hero['label'])}, {_ts(hero['sent_at'])} — not yet acknowledged.</p>"
+                f"on {html.escape(display_label(hero))}, {_ts(hero['sent_at'])} — not yet acknowledged.</p>"
                 f'<p class="state__detail"><a class="acctlink" href="/incident?id={int(hero["id"])}">'
                 "Open the incident and acknowledge it ›</a></p></div>"
             )
@@ -1789,6 +1790,13 @@ _STATUS_REASON = {
     "disabled": "monitoring is switched off for this account",
 }
 
+# The account's coverage alert during a host-level refusal says the same
+# (detectors/heartbeat.py): the cause is ours, and the key is not the problem.
+_HOST_REFUSED_REASON = (
+    "the exchange is refusing our read-only key because of a change on our side — "
+    "nothing is needed from you: leave your key exactly as it is"
+)
+
 
 def member_status(db: Database, email: str, rules=None, now: datetime | None = None) -> dict:
     """What this member's monitoring is actually doing, as data.
@@ -1806,9 +1814,16 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
     A member with no accounts is `not_watching`: nothing is being watched,
     which is the truthful answer and not an error state.
     """
+    from sentinel.alerts.fleet import HOST_AUTH_RULE, host_auth_incident
+
     now = now or datetime.now(timezone.utc)
     window = _stale_after_seconds(rules)
     rows = member_accounts(db, email)
+    # Accounts the exchange is refusing because of a change on our side
+    # (alerts/fleet.py: enough refused together that the only thing they
+    # share is this host). Once per call: it is a fact about the fleet.
+    incident = host_auth_incident(db, rules)
+    refused_by_host = set() if incident is None else set(incident["account_ids"])
 
     accounts, problems = [], []
     watched = 0
@@ -1853,6 +1868,13 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
             )
             cause = {"disabled": "paused", "tamper_suspected": "tamper_suspected"}.get(
                 str(r["status"]), "not_active")
+        elif auth_failing and int(r["id"]) in refused_by_host:
+            # The key is refused because of us, not because of the key:
+            # "replace it" here sends members to rotate working keys during
+            # an outage Minas is already fixing, and a new key would be
+            # refused the same way. The cause word is CAUSE_ADVICE's own.
+            reason = _HOST_REFUSED_REASON
+            cause = HOST_AUTH_RULE
         elif auth_failing:
             # A rejected key is the customer's to replace; an unreachable
             # exchange is not; and telling somebody to re-issue a working
@@ -3567,6 +3589,14 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
         return path == "/api" or path.startswith("/api/")
 
     class Handler(BaseHTTPRequestHandler):
+        def handle_one_request(self):
+            # Answer first, deliver after (sentinel/outbox.py): what this
+            # request owes - an app sign-in's new-device notice, an
+            # acknowledgement's closing notes - is queued while it is handled
+            # and sent once the answer has been written.
+            with answering(db):
+                super().handle_one_request()
+
         def finish(self):
             # Same leak as the dashboard's (#79): the portal serves from the
             # same process and the same fd budget, so its requests leaked into
