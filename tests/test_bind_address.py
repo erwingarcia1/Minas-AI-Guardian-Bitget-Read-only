@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import ipaddress
+import re
 import socket
+from pathlib import Path
 
 import pytest
+import yaml
 
 from sentinel.dashboard import serve_dashboard
+from sentinel.edge import TRUSTED_PROXIES_SETTING, parse_trusted_proxies
 from sentinel.metrics import Metrics
 from sentinel.portal import serve_portal
 
@@ -163,3 +168,121 @@ def test_composes_wide_bind_declares_its_gate_and_the_publish_is_real():
     assert any(p.startswith("127.0.0.1:8390:") for p in ports), (
         "the declared gate promises a loopback publish for 8390 and the ports "
         "list does not contain one")
+
+
+# --- the public edge: one proxy, and only the portal behind it (decision 22) ---
+#
+# Caddy is the first public listener this host has had (22b, 2026-10-23).
+# What makes that safe is a handful of facts spread over two files -
+# docker-compose.yml and deploy/caddy/Caddyfile - and each is held here,
+# because a proxy config is read by nothing in the suite at runtime.
+
+ROOT = Path(__file__).resolve().parent.parent
+CADDYFILE = ROOT / "deploy/caddy/Caddyfile"
+
+
+def _compose() -> dict:
+    return yaml.safe_load((ROOT / "docker-compose.yml").read_text())
+
+
+def _caddy_lines() -> list[str]:
+    """The Caddyfile with comments and blank lines removed."""
+    out = []
+    for raw in CADDYFILE.read_text().splitlines():
+        line = raw.split("#", 1)[0].strip()
+        if line:
+            out.append(line)
+    return out
+
+
+def test_only_the_proxy_listens_publicly():
+    """22c item 4: every publish in the compose file is on 127.0.0.1 except
+    the proxy's two, which are exactly 80 and 443 over TCP (HTTP/3 is off,
+    so nothing on UDP)."""
+    public = {}
+    for name, service in _compose()["services"].items():
+        for port in service.get("ports", []):
+            if not str(port).startswith("127.0.0.1:"):
+                public.setdefault(name, []).append(str(port))
+    assert public == {"caddy": ["80:80", "443:443"]}
+    assert "protocols h1 h2" in _caddy_lines(), "HTTP/3 needs UDP 443, which nothing publishes"
+
+
+def test_the_proxy_forwards_to_the_portal_and_nothing_else():
+    """Caddy reaches the member portal - pages and /api/v1 - and never the
+    ops dashboard (it stays on Tailscale Serve until 22e step 3) or the
+    metrics endpoint (never published). The bind gate's declaration says
+    so, and this is what makes the declaration true."""
+    lines = _caddy_lines()
+    env = _compose()["services"]["sentinel"]["environment"]
+    portal = f"sentinel:{env['SENTINEL_PORTAL_PORT']}"
+    upstreams = [[word for word in line.split()[1:] if word != "{"]
+                 for line in lines if line.split()[0] == "reverse_proxy"]
+    assert upstreams == [[portal]], f"the proxy's upstreams are {upstreams}, not the portal alone"
+    assert "guardian.minastrade.com {" in lines
+    text = "\n".join(lines)
+    for never in (env["SENTINEL_DASHBOARD_PORT"], env["SENTINEL_METRICS_PORT"], "/admin"):
+        assert never not in text, f"the Caddyfile mentions {never}"
+    gate = env["SENTINEL_BIND_GATE"]
+    assert "caddy" in gate and env["SENTINEL_PORTAL_PORT"] in gate, (
+        "the bind gate no longer describes the public proxy it sits beside")
+
+
+def test_the_proxy_makes_a_client_finish_what_it_starts():
+    """One client holding a few hundred requests open - headers sent, body
+    never - kept every thread the portal may start (pids_limit 256) busy:
+    the portal, the app API and the healthcheck all went down (found in
+    review, 2026-10-23). Caddy bounds how long a request may take to
+    arrive, reads a whole body before it calls the portal, and never holds
+    more than a quarter of the portal's threads."""
+    words = [line.split() for line in _caddy_lines()]
+    settings = {w[0]: w[1:] for w in words if w}
+    assert settings.get("read_header") == ["10s"] and settings.get("read_body") == ["15s"]
+    assert settings.get("request_buffers") == ["16KiB"]
+    limit = int(settings["max_conns_per_host"][0])
+    threads = _compose()["services"]["sentinel"]["pids_limit"]
+    assert 0 < limit <= threads // 4, f"the proxy may hold {limit} of the portal's {threads} threads"
+
+
+def test_the_portal_trusts_exactly_the_proxys_fixed_address():
+    """22c item 6, the pairing: X-Forwarded-For is believed from caddy's
+    address and no other, so caddy's address is fixed, on a network both
+    services share, in a subnet compose controls, and outside the range
+    Docker hands out - no other container can ever be given it."""
+    compose = _compose()
+    services = compose["services"]
+    trusted = parse_trusted_proxies(services["sentinel"]["environment"][TRUSTED_PROXIES_SETTING])
+    assert list(services["caddy"]["networks"]) == ["edge"]
+    fixed = ipaddress.ip_address(services["caddy"]["networks"]["edge"]["ipv4_address"])
+    assert trusted == {fixed}
+    assert "edge" in services["sentinel"]["networks"]
+    edge = compose["networks"]["edge"]
+    assert edge.get("enable_ipv6") is False, "a connection over IPv6 would come from an address nobody trusts"
+    [pool] = edge["ipam"]["config"]
+    subnet = ipaddress.ip_network(pool["subnet"])
+    dynamic = ipaddress.ip_network(pool["ip_range"])
+    gateway = ipaddress.ip_address(pool["gateway"])
+    assert fixed in subnet and dynamic.subnet_of(subnet)
+    assert fixed not in dynamic and fixed != gateway
+    # Clear of Docker's default pools and the default VPC (172.16.0.0/12
+    # covers 172.17-172.31), Docker's second pool, and Tailscale's range.
+    for taken in ("172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"):
+        assert not subnet.overlaps(ipaddress.ip_network(taken)), f"{subnet} overlaps {taken}"
+
+
+def test_the_proxy_image_is_pinned_and_its_container_hardened():
+    """An exact release and its digest (a tag can be re-pushed, a digest
+    cannot), and sentinel's posture as far as the image allows: its binary
+    carries cap_net_bind_service, without which exec itself fails, so that
+    one capability and no other comes back."""
+    compose = _compose()
+    caddy = compose["services"]["caddy"]
+    pinned = re.fullmatch(r"caddy:(\d+\.\d+\.\d+)@sha256:[0-9a-f]{64}", caddy["image"])
+    assert pinned, caddy["image"]
+    assert caddy["cap_drop"] == ["ALL"] and caddy["cap_add"] == ["NET_BIND_SERVICE"]
+    assert "no-new-privileges:true" in caddy["security_opt"]
+    assert caddy["restart"] == "unless-stopped"
+    assert {"./deploy/caddy:/etc/caddy:ro", "caddy-data:/data", "caddy-config:/config"} <= set(caddy["volumes"])
+    assert {"caddy-data", "caddy-config"} <= set(compose["volumes"])
+    # The validate command the Caddyfile documents names the same release.
+    assert f"caddy:{pinned.group(1)} " in CADDYFILE.read_text()

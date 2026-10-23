@@ -18,3 +18,6 @@ scripts/
 # The mobile app (decision 21f): its own toolchain, ~900 MB of node_modules,
 # and nothing the server image uses.
 mobile/
+# The proxy's config (decision 22b): docker-compose.yml mounts it into the
+# caddy container; nothing the server image uses.
+deploy/

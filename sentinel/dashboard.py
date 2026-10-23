@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from sentinel.buildinfo import version_line
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
+from sentinel.edge import DASHBOARD_TRUSTED_PROXIES_SETTING, EdgeHandler, trusted_proxies_from_env
 from sentinel.events import append_event
 from sentinel.operators import (
     SESSION_COOKIE,
@@ -1114,8 +1115,10 @@ def serve_dashboard(
 
     # Shared across requests for this server, like the portal's. Throttles by
     # client IP and by username, so neither a single source nor a single
-    # account can be ground down.
+    # account can be ground down. The client IP is edge.py's: behind a proxy
+    # it comes from X-Forwarded-For, believed only from a trusted peer.
     _login_throttle = LoginThrottle()
+    trusted = trusted_proxies_from_env("dashboard", DASHBOARD_TRUSTED_PROXIES_SETTING)
 
     def _same_origin(handler) -> bool:
         """Is this POST from our own pages? (CSRF gate on every state change.)
@@ -1142,7 +1145,11 @@ def serve_dashboard(
             return True  # non-browser clients send neither header
         return urlparse(origin).netloc == (handler.headers.get("Host") or "")
 
-    class Handler(BaseHTTPRequestHandler):
+    class Handler(EdgeHandler, BaseHTTPRequestHandler):
+        # Who is asking, and the headers every response carries: edge.py,
+        # shared with the portal (decision 22c items 3 and 6).
+        trusted_proxies = trusted
+
         def finish(self):
             # This thread dies when the connection does; its DB connection has
             # to die with it, or every request leaks a file descriptor until
@@ -1255,7 +1262,7 @@ def serve_dashboard(
                 self.send_response(303)
                 self.send_header("Location", "/login")
                 self.send_header(
-                    "Set-Cookie", f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; SameSite=Lax"
+                    "Set-Cookie", f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
                 )
                 self.send_header("Content-Length", "0")
                 self.end_headers()
@@ -1566,7 +1573,7 @@ def serve_dashboard(
             username = (form.get("username", [""])[0] or "").strip()
             password = form.get("password", [""])[0] or ""
 
-            client_ip = self.client_address[0] if self.client_address else "?"
+            client_ip = self._client_ip()
             if _login_throttle.blocked(f"ip:{client_ip}") or _login_throttle.blocked(f"user:{username.lower()}"):
                 logger.warning("operator login throttled for %s from %s", username, client_ip)
                 self._send(_render_operator_login("too many attempts - wait and try again").encode(), 429)
@@ -1620,14 +1627,19 @@ def serve_dashboard(
             if username is None:
                 # Expired, forged, or a session cookie presented in its place.
                 logger.warning("operator second step with an invalid pending token from %s",
-                               self.client_address[0] if self.client_address else "?")
+                               self._client_ip())
                 self._send(_render_operator_login("that sign-in expired - start again").encode(), 401)
                 return None
             return username, (form.get("code", [""])[0] or "").strip(), pending
 
         def _issue_session(self, username: str, body: bytes | None = None) -> None:
             token = make_session_token(session_secret(db), username)
-            cookie = f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=43200"
+            # Secure (decision 22c item 2): the browser sends it over HTTPS
+            # only. Harmless over the tailnet's HTTPS, required once the
+            # dashboard is on the internet. The SSH tunnel's plain
+            # http://localhost still signs in: browsers count localhost as a
+            # secure context (docs/deployment.md, "Reaching the dashboard").
+            cookie = f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200"
             if body is None:
                 self.send_response(303)
                 self.send_header("Location", "/")
@@ -1647,7 +1659,7 @@ def serve_dashboard(
             if parsed is None:
                 return
             username, code, pending = parsed
-            client_ip = self.client_address[0] if self.client_address else "?"
+            client_ip = self._client_ip()
             if _login_throttle.blocked(f"ip:{client_ip}") or _login_throttle.blocked(f"user:{username}"):
                 logger.warning("operator second factor throttled for %s from %s", username, client_ip)
                 self._send(_render_operator_code(pending, "too many attempts - wait and try again").encode(), 429)
@@ -1673,7 +1685,7 @@ def serve_dashboard(
             if parsed is None:
                 return
             username, code, pending = parsed
-            client_ip = self.client_address[0] if self.client_address else "?"
+            client_ip = self._client_ip()
             from sentinel.totp import provisioning_uri
             from sentinel.twofactor import OPERATOR, confirm_enrolment, pending_secret
 
