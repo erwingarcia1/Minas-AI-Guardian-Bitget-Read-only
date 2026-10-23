@@ -28,6 +28,7 @@ from sentinel.dashboard import (
     _watch_threshold,
 )
 from sentinel.db import Database
+from sentinel.edge import EdgeHandler, trusted_proxies_from_env
 from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
 from sentinel.naming import display_label
 from sentinel.outbox import answering
@@ -3540,9 +3541,14 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
     serves plain HTTP and its session cookie would cross the network in the
     clear. Reaching customers is the job of a TLS-terminating proxy in front
     of it, not of this socket. Set `SENTINEL_PORTAL_HOST` to widen it
-    deliberately once that proxy exists (G-36)."""
+    deliberately once that proxy exists (G-36).
+
+    Behind that proxy the TCP peer is the proxy, so the client address the
+    throttle keys on comes from sentinel/edge.py: X-Forwarded-For, believed
+    only from a peer in SENTINEL_TRUSTED_PROXIES (decision 22c item 6)."""
     secret = _session_secret(db)
     throttle = LoginThrottle()
+    trusted = trusted_proxies_from_env("portal")
 
     def _throttle_pair(ip: str, identity: str) -> str:
         """Identity-scoped throttling is keyed to (ip, identity), never the
@@ -3588,7 +3594,11 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
     def _is_api(path: str) -> bool:
         return path == "/api" or path.startswith("/api/")
 
-    class Handler(BaseHTTPRequestHandler):
+    class Handler(EdgeHandler, BaseHTTPRequestHandler):
+        # Who is asking, and the headers every response carries: edge.py,
+        # shared with the dashboard (decision 22c items 3 and 6).
+        trusted_proxies = trusted
+
         def handle_one_request(self):
             # Answer first, deliver after (sentinel/outbox.py): what this
             # request owes - an app sign-in's new-device notice, an
@@ -3677,9 +3687,6 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                             f"Path=/; HttpOnly; Secure; SameSite=Lax")
                 return current
             return None
-
-        def _client_ip(self) -> str:
-            return self.client_address[0] if self.client_address else "?"
 
         def _api(self, method: str) -> None:
             """Every `/api/` request, whatever its method (decision 21).

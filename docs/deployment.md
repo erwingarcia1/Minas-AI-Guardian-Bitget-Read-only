@@ -24,8 +24,10 @@ managed-service names differ.
 2. AMI: **Ubuntu Server 24.04 LTS**. Instance type: **t3.small** (or
    t3.micro to start). Disk: 20 GB gp3.
 3. Key pair: create/download one (this is your SSH login).
-4. Security group: inbound **SSH (22) from your IP only**. Nothing else —
-   the dashboard is reached over an SSH tunnel, never opened publicly.
+4. Security group: inbound **SSH (22) from your IP only**, and **TCP 80
+   and 443 from anywhere** for the public address (decision 22b; Caddy
+   holds them - "The public address" below). Nothing else: the dashboard
+   and metrics are never opened publicly.
 5. Advanced details → User data: paste the contents of
    [`scripts/aws-user-data.sh`](../scripts/aws-user-data.sh). It installs
    Docker, adds swap, and enables unattended security updates. It does
@@ -77,8 +79,16 @@ since it needs nothing but the EC2 key pair:
 
 ```bash
 ssh -i your-key.pem -L 8390:127.0.0.1:8390 -L 9109:127.0.0.1:9109 ubuntu@<elastic-ip>
-# then open http://localhost:8390
+# then open http://localhost:8390 - by that name: the cookie exemption below names localhost
 ```
+
+The dashboard's session cookie is marked `Secure` (decision 22c item 2),
+so a browser returns it over HTTPS only - with one exception that keeps
+the tunnel working: per MDN's `Set-Cookie` page, the `https:` requirement
+"is ignored when the `Secure` attribute is set by localhost". Open the
+tunnel as `http://localhost:8390`. Not checked in every browser here: if
+one signs you in and then shows the sign-in page again, it refused the
+cookie - use another browser, or the tailnet address.
 
 **Migrating an existing pilot DB instead of re-onboarding:**
 
@@ -184,6 +194,174 @@ Rules of the road:
   publishes stay exactly as they are, which is the point.
 - New team members reach the dashboard by tailnet invite — remember the
   dashboard trusts the network entirely, so an invite *is* dashboard access.
+
+## The public address: https://guardian.minastrade.com (decision 22, steps 1 and 2)
+
+Decision 22b (answered 2026-10-23): **Caddy on the instance, as one more
+compose service.** It holds ports 80 and 443, the only public listeners
+(22c item 4); it gets and renews the certificate from Let's Encrypt by
+itself; and it forwards to the member portal - its pages and the apps' JSON
+API under `/api/v1` - and to nothing else. The dashboard stays on Tailscale
+Serve until it moves under `/admin` with every 22c precondition met (22e
+step 3), the metrics endpoint is never published, and nothing about
+Tailscale changes here.
+
+What the compose file carries for it:
+
+- **`caddy`**: the image pinned to a release and its digest, config in
+  `deploy/caddy/Caddyfile` (mounted read-only), certificates in the
+  `caddy-data` volume. Keep that volume: re-issuing is rate-limited per
+  hostname. Hardened like `sentinel`: every capability dropped except
+  `NET_BIND_SERVICE`, without which the image's binary does not start at
+  all.
+- **`edge`**: the network between Caddy and the portal, `10.231.0.0/24`,
+  with Caddy fixed at `10.231.0.2`, outside the range Docker hands out.
+- **`SENTINEL_TRUSTED_PROXIES=10.231.0.2`** in sentinel's environment (22c
+  item 6). Behind Caddy every connection comes from Caddy, and a login
+  throttle keyed on that address is one bucket for every visitor: five
+  wrong passwords from anyone would block every member's sign-in, the
+  app's included. So the portal takes the client address from
+  `X-Forwarded-For`, and believes it from `10.231.0.2` only. The dashboard
+  has its own setting, `SENTINEL_DASHBOARD_TRUSTED_PROXIES`, left unset
+  until it moves behind Caddy at `/admin` (22e step 3): until then it
+  believes no proxy's header. Caddy discards
+  whatever a client puts in that header and writes the address it saw.
+
+Bring it up in this order (22e's). Each step says how to tell it worked;
+do not start the next one until it has.
+
+1. **Read the box first** (rule 6's read-only twin). Nothing may hold 80
+   or 443 already, and the `edge` subnet must be free:
+
+   ```bash
+   sudo ss -tlnp '( sport = :80 or sport = :443 )'   # expect: no listener
+   ip -4 route | grep '^10\.231\.'                    # expect: nothing
+   ```
+
+   A route there means something on the host uses that range: stop, and
+   pick another subnet for `edge` in docker-compose.yml (caddy's address
+   and `SENTINEL_TRUSTED_PROXIES` move with it; a test holds the three
+   together).
+
+2. **DNS**, at the registrar: an `A` record for `guardian.minastrade.com`
+   pointing at `57.181.51.14`, the Elastic IP. No `AAAA` record: the edge
+   is IPv4 only. From your laptop:
+
+   ```bash
+   dig +short guardian.minastrade.com A            # expect: 57.181.51.14
+   dig +short guardian.minastrade.com A @1.1.1.1   # the same answer from a public resolver
+   ```
+
+   Wait for both before step 4. Caddy asks for the certificate the moment
+   it starts, and Let's Encrypt validates from several places on the
+   internet.
+
+3. **Security group**, in the AWS console (EC2 → Security groups → the
+   instance's group → Edit inbound rules): add **TCP 80** and **TCP 443**
+   from `0.0.0.0/0`. Leave the SSH rule as it is. From your laptop:
+
+   ```bash
+   nc -vz -w 5 57.181.51.14 443
+   ```
+
+   Before step 4, expect `Connection refused`: the group lets the
+   connection through and nothing listens yet. A timeout means the group
+   still drops it.
+
+4. **Deploy the release that carries this change.** It sits in
+   `[Unreleased]` until a release is cut:
+
+   ```bash
+   sudo /opt/minas-guardian/scripts/deploy.sh vX.Y.Z
+   ```
+
+   Its `docker compose up -d` creates the `edge` network, recreates
+   `sentinel` on it and starts `caddy`. Expect `deploy: OK — vX.Y.Z is live
+   and verified`.
+
+5. **`docker compose up -d`, then read what runs:**
+
+   ```bash
+   cd /opt/minas-guardian
+   sudo docker compose up -d     # after deploy.sh, a no-op that confirms nothing is left down
+   sudo docker compose ps        # expect: caddy Up; sentinel Up (healthy)
+   sudo ss -tlnp | grep -E ':(80|443|8390|8391|9109)\b'
+       # expect: 80 and 443 on 0.0.0.0 (and [::]); 8390, 8391 and 9109 on 127.0.0.1 only
+   sudo docker compose logs sentinel | grep -E 'X-Forwarded-For is believed|no trusted proxy'
+       # expect "portal: X-Forwarded-For is believed from 10.231.0.2 only" and
+       # "dashboard: no trusted proxy (SENTINEL_DASHBOARD_TRUSTED_PROXIES names none) ...
+   sudo docker compose logs caddy | grep -E 'certificate obtained successfully|"level":"error"'
+       # expect: certificate obtained successfully ... "identifier":"guardian.minastrade.com"
+   ```
+
+   No certificate after a few minutes: check DNS from outside (step 2) and
+   the security group (step 3), then `sudo docker compose restart caddy` to
+   try again at once. After a failure Caddy backs off, up to a day between
+   attempts, and retries against Let's Encrypt's staging service so the
+   failures do not use up the real rate limit.
+
+6. **Check the certificate and the answers that matter**, from your laptop:
+
+   ```bash
+   echo | openssl s_client -connect guardian.minastrade.com:443 -servername guardian.minastrade.com 2>/dev/null \
+     | openssl x509 -noout -subject -issuer -dates
+       # expect: subject CN=guardian.minastrade.com; a Let's Encrypt issuer; notAfter about 90 days out
+   curl -sS -o /dev/null -D - https://guardian.minastrade.com/login    # a GET: the portal answers HEAD with 501
+       # expect: HTTP/2 200; strict-transport-security: max-age=31536000;
+       #         x-frame-options: DENY; content-security-policy: frame-ancestors 'none'
+   curl -sS -i https://guardian.minastrade.com/api/v1/limits
+       # expect: HTTP/2 401; www-authenticate: Bearer realm="minas-guardian";
+       #         {"error": "unauthorized", "message": "Sign in again."}
+   curl -sS -o /dev/null -D - http://guardian.minastrade.com/login
+       # expect: HTTP/1.1 308; location: https://guardian.minastrade.com/login
+   curl -sS https://guardian.minastrade.com/healthz | grep -c 'name="password"'
+       # expect: 1 - the portal's sign-in page; the dashboard is not behind Caddy
+   ```
+
+   Then try a wrong password once at `https://guardian.minastrade.com/login`
+   and read the log. It must name YOUR public address, never `10.231.0.2`:
+
+   ```bash
+   sudo docker compose logs --since 10m sentinel | grep 'portal login failed'
+   ```
+
+7. **Nothing on Tailscale moved.** From a tailnet device the dashboard
+   still answers at `https://minas-guardian.<tailnet>.ts.net`, and the
+   Funnel address still serves the portal. On the box, `sudo tailscale
+   serve status` prints the same four lines as in "Remote access:
+   Tailscale" above. Read the scheme on each line too. HSTS (decision 22c
+   item 3) holds a host to HTTPS on every port, so once a browser has
+   opened the dashboard or the Funnel address, it will open any `http://`
+   address on that `ts.net` name as `https://`. A listener served as
+   plain HTTP would stop opening in that browser. UNVERIFIED which scheme
+   the tailnet-only 8391 listener uses: the 2026-09-25 reading above
+   does not show it.
+
+8. **`SENTINEL_PORTAL_URL`** (22e step 2). In `/opt/minas-guardian/.env`
+   set `SENTINEL_PORTAL_URL=https://guardian.minastrade.com`, then:
+
+   ```bash
+   sudo docker compose up -d     # up -d, not restart: a container's environment is fixed when it is created
+   sudo docker compose exec -T sentinel printenv SENTINEL_PORTAL_URL   # expect: https://guardian.minastrade.com
+   ```
+
+   From then on the address in alert SMS and emails, and in password-reset
+   links, is the new one. Moving members off the Funnel address is 22d,
+   not this.
+
+**Tailscale stays through all of this.** Funnel is withdrawn at 22e step
+6, after members have moved; Tailscale itself goes after SSH without it is
+proven (step 4). Until then the portal answers at both addresses. The
+Funnel address does not get the client-address fix: its connections reach
+the portal through the loopback publish, from Docker's gateway, which is
+not a trusted proxy. Its visitors still share one throttle bucket, as they
+always have. That is one more reason to move members (22d).
+
+**Rolling back:** `sudo docker compose stop caddy` takes the public
+listener down at once. The portal stays up on Funnel, and nothing else
+changes. Deploying an older tag does NOT stop Caddy: that tag's compose
+file has no `caddy` service, so compose leaves the container running as an
+orphan, forwarding to a portal it can no longer reach. Stop it first.
 
 ## Before any upgrade: check the config that is already on the box
 
@@ -488,17 +666,21 @@ exchange side, so:
   product now reads that shape as one host-level finding (alerts/fleet.py,
   2026-09-23) and pages the operator once with the address the exchange
   named; it cannot fix an allowlist.
-- **The address is NOT the portal's ingress.** Customers reach the portal
-  through Tailscale's Funnel relay at the `*.ts.net` name (decision 20);
-  the relay, not this address, is what their browsers resolve. Changing
-  the Elastic IP breaks the exchanges' allowlists and nothing about the
-  portal's address. (The first version of this section said the opposite;
-  corrected 2026-09-25 from Tailscale's own description of Funnel.)
+- **From decision 22 the address is also the way in.** The A record for
+  `guardian.minastrade.com` points at it, and Caddy answers there on 80
+  and 443 ("The public address" below). Moving it breaks the exchanges'
+  allowlists AND the public address, until DNS follows. The Funnel address
+  (`*.ts.net`, decision 20) does not depend on it - Funnel enters through
+  Tailscale's relay - and it goes when Tailscale goes (22e). (Until
+  2026-10-23 this bullet said the address was not the portal's ingress,
+  which was true while Funnel was the only way in.)
 - **To move the address on purpose:** allocate the new EIP, add it to every
   affected key's allowlist while the old address still works (both entries
   at once - the exchanges allow more than one), then re-associate, then
-  watch `sentinel` for `host_auth_failure` and the dashboard for auth
-  failures before removing the old entry. Never the other order.
+  change the A record for `guardian.minastrade.com` to the new address,
+  then watch `sentinel` for `host_auth_failure` and the dashboard for auth
+  failures before removing the old entry. Never the other order. The
+  certificate names the host, not the address, so it survives the move.
 
 Daily digest via cron on the host (MEDIUM/LOW alerts route here, per
 `alerting.routing` in rules.yaml). **Use root's crontab** (`sudo crontab -e`)
@@ -510,13 +692,15 @@ crontab fails silently every day and the digest never sends:
 ```
 
 The `postgres` and `redis` services are Phase 2 scale-out targets behind a
-compose profile — the default `up` runs only the monitor. Enable them later
-with `docker compose --profile scale up -d`.
+compose profile — the default `up` runs the monitor and the `caddy` proxy.
+Enable them later with `docker compose --profile scale up -d`.
 
 ## Ports
 
 | Port | What | Exposure rule |
 |---|---|---|
+| 80, 443 | Caddy, the public address (decision 22b) | **The only public listeners** (22c item 4). TLS for `guardian.minastrade.com`, forwarding to the portal and nothing else; 80 answers the certificate challenge and redirects to HTTPS. TCP only: HTTP/3 is off. |
+| 8391 | Member portal | Published on 127.0.0.1 only. The public reaches it through Caddy over the compose `edge` network, and through Tailscale Funnel until 22e removes it. |
 | 8390 | Status dashboard | **Never public.** No auth by design; bind stays on 127.0.0.1, reach it via Tailscale Serve (production) or an SSH tunnel (break-glass). |
 | 9109 | Prometheus metrics | Same rule; scrape over the tailnet or a private network only. |
 

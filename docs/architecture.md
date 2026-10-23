@@ -83,15 +83,21 @@ two `telegram_handle`s, `license`, `status`, timestamps. Baselines live in
 - **AWS EC2, ap-northeast-1 (Tokyo)** — a US region geo-blocks Bybit, Binance
   Global, and OKX Global; Tokyo reaches all four.
 - **Docker Compose**, `restart: unless-stopped`; SQLite on a named volume.
+- **Caddy** (decision 22b, a compose service from 2026-10-23) terminates
+  TLS for `https://guardian.minastrade.com` on ports 80 and 443, the
+  security group's only public ports besides SSH (locked to admin IPs),
+  and forwards to the member portal - its pages and the apps' JSON API -
+  and nothing else. The servers believe `X-Forwarded-For` from Caddy's
+  fixed address on the compose `edge` network only (22c item 6).
 - **Tailscale Serve** publishes the dashboard and metrics as tailnet-only
-  HTTPS; **Tailscale Funnel** publishes the member portal to the internet
-  (decision 20, since August 2026) - the one public HTTP surface, with its
-  own login and TOTP. No public ports on the security group beyond SSH
-  (locked to admin IPs); Funnel enters through Tailscale's relay, which is
-  what the public name resolves to - the portal is reachable publicly on
-  port 8443 and on the tailnet on 8391.
+  HTTPS; **Tailscale Funnel** still publishes the member portal at its
+  `*.ts.net` name (decision 20, since August 2026), through Tailscale's
+  relay - publicly on port 8443 and on the tailnet on 8391 - until members
+  move to the new address and Tailscale goes (decision 22e). The portal is
+  the one public HTTP surface either way, with its own login and TOTP.
 - **One Elastic IP, `57.181.51.14`**, is the egress address every customer
-  key is allowlisted to; it is load-bearing for monitoring and plays no
-  part in how customers reach the portal (docs/deployment.md).
+  key is allowlisted to - load-bearing for monitoring - and, from decision
+  22, the address `guardian.minastrade.com` resolves to
+  (docs/deployment.md).
 - Scale path: raise worker pool → Postgres (`SENTINEL_DB_DSN`, planned) →
   multiple egress IPs / one stack per IP with a Redis-backed queue.

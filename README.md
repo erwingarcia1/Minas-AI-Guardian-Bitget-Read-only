@@ -132,7 +132,11 @@ whose `alert_email` matches (case-insensitive). Properties:
   lookup so timing can't reveal who's registered.
 - **Read-only, and on its own port** — it shares nothing with the network-gated
   ops view. Front it with TLS (Tailscale Serve or a reverse proxy) before
-  exposing it; the container publishes it on `127.0.0.1:8391` only.
+  exposing it; the container publishes it on `127.0.0.1:8391` only. In
+  production that front is the compose file's `caddy` service, at
+  `https://guardian.minastrade.com` (decision 22b); behind it the client
+  address comes from `X-Forwarded-For`, believed only from the proxies named
+  in `SENTINEL_TRUSTED_PROXIES`.
 
 ## Alerting
 
