@@ -10,7 +10,7 @@ from urllib.parse import parse_qs, urlparse
 from sentinel.buildinfo import version_line
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
-from sentinel.edge import EdgeHandler, trusted_proxies_from_env
+from sentinel.edge import DASHBOARD_TRUSTED_PROXIES_SETTING, EdgeHandler, trusted_proxies_from_env
 from sentinel.events import append_event
 from sentinel.operators import (
     SESSION_COOKIE,
@@ -1118,7 +1118,7 @@ def serve_dashboard(
     # account can be ground down. The client IP is edge.py's: behind a proxy
     # it comes from X-Forwarded-For, believed only from a trusted peer.
     _login_throttle = LoginThrottle()
-    trusted = trusted_proxies_from_env("dashboard")
+    trusted = trusted_proxies_from_env("dashboard", DASHBOARD_TRUSTED_PROXIES_SETTING)
 
     def _same_origin(handler) -> bool:
         """Is this POST from our own pages? (CSRF gate on every state change.)

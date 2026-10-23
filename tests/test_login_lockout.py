@@ -29,7 +29,12 @@ import pytest
 
 from sentinel import api as api_module
 from sentinel.dashboard import serve_dashboard
-from sentinel.edge import TRUSTED_PROXIES_SETTING, client_address, parse_trusted_proxies
+from sentinel.edge import (
+    DASHBOARD_TRUSTED_PROXIES_SETTING,
+    TRUSTED_PROXIES_SETTING,
+    client_address,
+    parse_trusted_proxies,
+)
 from sentinel.operators import create_operator, operator_events
 from sentinel.passwords import LoginThrottle
 from sentinel.portal import (
@@ -314,8 +319,10 @@ def test_the_setting_is_exact_addresses_and_absent_trusts_nobody(caplog):
 
 @pytest.fixture
 def behind_the_proxy(monkeypatch):
-    """The servers read the setting once, when they start."""
+    """The servers read their settings once, when they start. The dashboard
+    has its own, set here as it will be once it is behind the proxy."""
     monkeypatch.setenv(TRUSTED_PROXIES_SETTING, "127.0.0.1")
+    monkeypatch.setenv(DASHBOARD_TRUSTED_PROXIES_SETTING, "127.0.0.1")
 
 
 def _portal_login(port, password, forwarded_for):
@@ -481,6 +488,27 @@ def test_the_dashboard_throttles_the_visitor_not_the_proxy(db, cipher, behind_th
         assert status == 429
         status, _ = _dashboard_post(port, "/login", {"username": "other", "password": "x"}, VISITOR_B)
         assert status == 401, "an operator elsewhere was throttled by someone else's guesses"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_the_portals_proxy_is_not_the_dashboards(db, cipher, monkeypatch):
+    """The proxy beside the dashboard on the compose network fronts the
+    portal only, until the dashboard moves under /admin (22e step 3). So the
+    portal's setting names it and the dashboard's own does not: from it, a
+    claimed address is ignored, as from any stranger."""
+    monkeypatch.setenv(TRUSTED_PROXIES_SETTING, "127.0.0.1")
+    monkeypatch.delenv(DASHBOARD_TRUSTED_PROXIES_SETTING, raising=False)
+    server = serve_dashboard(db, cipher, 0)
+    try:
+        port = server.server_address[1]
+        for n in range(5):
+            status, _ = _dashboard_post(port, "/login", {"username": f"guess{n}", "password": "x"},
+                                        f"203.0.113.{n}")
+            assert status == 401
+        status, _ = _dashboard_post(port, "/login", {"username": "other", "password": "x"}, VISITOR_B)
+        assert status == 429, "the dashboard believed the portal's proxy's header"
     finally:
         server.shutdown()
         server.server_close()

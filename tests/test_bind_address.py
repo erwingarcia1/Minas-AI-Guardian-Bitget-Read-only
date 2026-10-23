@@ -216,7 +216,8 @@ def test_the_proxy_forwards_to_the_portal_and_nothing_else():
     lines = _caddy_lines()
     env = _compose()["services"]["sentinel"]["environment"]
     portal = f"sentinel:{env['SENTINEL_PORTAL_PORT']}"
-    upstreams = [line.split()[1:] for line in lines if line.split()[0] == "reverse_proxy"]
+    upstreams = [[word for word in line.split()[1:] if word != "{"]
+                 for line in lines if line.split()[0] == "reverse_proxy"]
     assert upstreams == [[portal]], f"the proxy's upstreams are {upstreams}, not the portal alone"
     assert "guardian.minastrade.com {" in lines
     text = "\n".join(lines)
@@ -225,6 +226,22 @@ def test_the_proxy_forwards_to_the_portal_and_nothing_else():
     gate = env["SENTINEL_BIND_GATE"]
     assert "caddy" in gate and env["SENTINEL_PORTAL_PORT"] in gate, (
         "the bind gate no longer describes the public proxy it sits beside")
+
+
+def test_the_proxy_makes_a_client_finish_what_it_starts():
+    """One client holding a few hundred requests open - headers sent, body
+    never - kept every thread the portal may start (pids_limit 256) busy:
+    the portal, the app API and the healthcheck all went down (found in
+    review, 2026-10-23). Caddy bounds how long a request may take to
+    arrive, reads a whole body before it calls the portal, and never holds
+    more than a quarter of the portal's threads."""
+    words = [line.split() for line in _caddy_lines()]
+    settings = {w[0]: w[1:] for w in words if w}
+    assert settings.get("read_header") == ["10s"] and settings.get("read_body") == ["15s"]
+    assert settings.get("request_buffers") == ["16KiB"]
+    limit = int(settings["max_conns_per_host"][0])
+    threads = _compose()["services"]["sentinel"]["pids_limit"]
+    assert 0 < limit <= threads // 4, f"the proxy may hold {limit} of the portal's {threads} threads"
 
 
 def test_the_portal_trusts_exactly_the_proxys_fixed_address():

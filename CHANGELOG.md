@@ -157,9 +157,15 @@ container")._
   connection whose source is one of them, the client address is the
   right-most `X-Forwarded-For` entry that is not itself a trusted proxy;
   from any other source the header is ignored, so nobody can choose their
-  own address by sending one. The portal, the app's API sign-in and the
-  dashboard all use it, as do the sign-in logs and the operator enrolment
-  record. docker-compose.yml sets it to Caddy's fixed address on a
+  own address by sending one. The portal and the app's API sign-in use
+  it, as do the sign-in logs. The dashboard reads its own
+  `SENTINEL_DASHBOARD_TRUSTED_PROXIES`, left unset until it moves behind
+  the proxy at `/admin`, so for now it believes no proxy's header; its
+  operator enrolment record will carry the visitor's address then. Caddy
+  also makes a client finish what it starts: bounded header and body
+  times, whole bodies read before the portal is called, and at most 64 of
+  the portal's threads held, so one client holding hundreds of requests
+  open cannot take the portal down. docker-compose.yml sets it to Caddy's fixed address on a
   network of its own; unset, nothing is trusted, as before. Visitors on
   the old Funnel address are not covered and keep sharing one bucket
   until Funnel goes.

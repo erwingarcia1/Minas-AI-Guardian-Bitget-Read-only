@@ -26,9 +26,28 @@
 		# the security group; without them Caddy would advertise a protocol
 		# nobody can reach.
 		protocols h1 h2
+		# A client must finish what it starts. Without these, one client
+		# holding a few hundred requests open (headers sent, body never) kept
+		# every thread the portal may start busy - the portal, the app API
+		# and the healthcheck all went down until it let go (found in
+		# review, 2026-10-23).
+		timeouts {
+			read_header 10s
+			read_body 15s
+		}
 	}
 }
 
 guardian.minastrade.com {
-	reverse_proxy sentinel:8391
+	reverse_proxy sentinel:8391 {
+		# Caddy reads the whole body before it calls the portal (whose forms
+		# and API take at most 8 KiB), so an unfinished body never reaches
+		# a portal thread.
+		request_buffers 16KiB
+		transport http {
+			# The proxy never holds more than 64 of the container's 256
+			# threads (pids_limit), whatever shape an attack takes.
+			max_conns_per_host 64
+		}
+	}
 }

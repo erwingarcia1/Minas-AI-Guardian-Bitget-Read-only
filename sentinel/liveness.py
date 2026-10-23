@@ -342,6 +342,8 @@ NOT_A_SWITCH: dict[str, str] = {
     "SENTINEL_PORTAL_URL": "cosmetic: emails carry a link only when set; the alert is delivered either way",
     "SENTINEL_TRUSTED_PROXIES": ("pinned in docker-compose.yml beside the proxy it names, a test holds the two "
                                  "equal; unset trusts no proxy, as before the proxy existed"),
+    "SENTINEL_DASHBOARD_TRUSTED_PROXIES": ("unset until the dashboard is behind the proxy at /admin (22e step 3); "
+                                           "unset trusts no proxy, which is the dashboard's safe state today"),
     "ANTHROPIC_API_KEY": "triage narrative (triage.enabled false by design): additive, never load-bearing",
     "POSTGRES_PASSWORD": "unused by the SQLite deployment; kept for the compose file",
     "triage.enabled": "additive AI narrative, deliberately off; not a mechanism a customer relies on",

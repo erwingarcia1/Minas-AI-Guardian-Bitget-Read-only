@@ -35,6 +35,11 @@ from sentinel.config import env_setting
 logger = logging.getLogger("sentinel.edge")
 
 TRUSTED_PROXIES_SETTING = "SENTINEL_TRUSTED_PROXIES"
+# The dashboard's own, separate on purpose: no proxy fronts it until it moves
+# under /admin (22e step 3), so until then it believes nobody's header -
+# not even that of the proxy beside it on the compose network, which can
+# reach it but does not serve it. Set when /admin ships.
+DASHBOARD_TRUSTED_PROXIES_SETTING = "SENTINEL_DASHBOARD_TRUSTED_PROXIES"
 
 # One year. No includeSubDomains and no preload: this service answers for
 # guardian.minastrade.com alone, and the other minastrade.com hosts are not
@@ -93,16 +98,16 @@ def parse_trusted_proxies(raw: str | None) -> frozenset[Address]:
     return frozenset(trusted)
 
 
-def trusted_proxies_from_env(surface: str) -> frozenset[Address]:
-    """The setting, read once when `surface` starts, and said in the log -
+def trusted_proxies_from_env(surface: str, setting: str = TRUSTED_PROXIES_SETTING) -> frozenset[Address]:
+    """`setting`, read once when `surface` starts, and said in the log -
     what this server believes is a startup fact an operator can check."""
-    trusted = parse_trusted_proxies(env_setting(TRUSTED_PROXIES_SETTING))
+    trusted = parse_trusted_proxies(env_setting(setting))
     if trusted:
         logger.info("%s: X-Forwarded-For is believed from %s only", surface,
                     ", ".join(sorted(str(a) for a in trusted)))
     else:
         logger.info("%s: no trusted proxy (%s names none) - the client address is the TCP peer",
-                    surface, TRUSTED_PROXIES_SETTING)
+                    surface, setting)
     return trusted
 
 

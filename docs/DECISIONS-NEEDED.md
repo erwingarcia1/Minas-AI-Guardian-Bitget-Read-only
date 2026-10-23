@@ -1608,7 +1608,10 @@ checked:
    to the peer, never to anything further left. Every address the servers
    derive goes through it: the portal's and the dashboard's throttles,
    their logs, the app's sign-in (`sentinel/api.py`) and the operator
-   enrolment audit row. Compose pins it to Caddy's `10.231.0.2`. Pinned by
+   enrolment audit row. Compose pins it to Caddy's `10.231.0.2` for the
+   portal. The dashboard reads its own `SENTINEL_DASHBOARD_TRUSTED_PROXIES`,
+   unset until it is behind Caddy at `/admin` (step 3), so today it
+   believes nobody's header, not even Caddy's. Pinned by
    tests/test_login_lockout.py (the section "the real client behind the
    proxy": spoofing from an untrusted peer changes nothing; behind the
    proxy one visitor's failures do not block another on the web sign-in,

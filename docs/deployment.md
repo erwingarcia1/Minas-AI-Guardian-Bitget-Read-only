@@ -220,8 +220,11 @@ What the compose file carries for it:
   item 6). Behind Caddy every connection comes from Caddy, and a login
   throttle keyed on that address is one bucket for every visitor: five
   wrong passwords from anyone would block every member's sign-in, the
-  app's included. So both servers take the client address from
-  `X-Forwarded-For`, and believe it from `10.231.0.2` only. Caddy discards
+  app's included. So the portal takes the client address from
+  `X-Forwarded-For`, and believes it from `10.231.0.2` only. The dashboard
+  has its own setting, `SENTINEL_DASHBOARD_TRUSTED_PROXIES`, left unset
+  until it moves behind Caddy at `/admin` (22e step 3): until then it
+  believes no proxy's header. Caddy discards
   whatever a client puts in that header and writes the address it saw.
 
 Bring it up in this order (22e's). Each step says how to tell it worked;
@@ -284,8 +287,9 @@ do not start the next one until it has.
    sudo docker compose ps        # expect: caddy Up; sentinel Up (healthy)
    sudo ss -tlnp | grep -E ':(80|443|8390|8391|9109)\b'
        # expect: 80 and 443 on 0.0.0.0 (and [::]); 8390, 8391 and 9109 on 127.0.0.1 only
-   sudo docker compose logs sentinel | grep 'X-Forwarded-For is believed'
-       # expect two lines, "portal: ..." and "dashboard: ...", each "believed from 10.231.0.2 only"
+   sudo docker compose logs sentinel | grep -E 'X-Forwarded-For is believed|no trusted proxy'
+       # expect "portal: X-Forwarded-For is believed from 10.231.0.2 only" and
+       # "dashboard: no trusted proxy (SENTINEL_DASHBOARD_TRUSTED_PROXIES names none) ...
    sudo docker compose logs caddy | grep -E 'certificate obtained successfully|"level":"error"'
        # expect: certificate obtained successfully ... "identifier":"guardian.minastrade.com"
    ```

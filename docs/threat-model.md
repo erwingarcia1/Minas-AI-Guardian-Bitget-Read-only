@@ -99,9 +99,14 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
   mitigated by the login throttle and TOTP where enrolled; the portal must
   never gain an operator capability (tests/test_member_roles.py holds the
   boundary). Behind Caddy the throttle keys on the real client address,
-  which the servers take from `X-Forwarded-For` only when the connection
+  which the portal takes from `X-Forwarded-For` only when the connection
   comes from Caddy's fixed address (22c item 6); visitors on the Funnel
-  name still share one bucket until Funnel goes. The Funnel name resolves
+  name still share one bucket until Funnel goes. The Caddy container sits
+  on the compose network beside the dashboard (8390) and the login-less
+  metrics (9109) and can reach both, though it proxies neither: a
+  compromised proxy could read the metrics. The dashboard believes no
+  proxy's `X-Forwarded-For` until it moves behind Caddy at `/admin`
+  (`SENTINEL_DASHBOARD_TRUSTED_PROXIES`, unset; 22e step 3). The Funnel name resolves
   to Tailscale's relay; the new name resolves to the host's one Elastic
   IP, which is also the exchanges' allowlisted egress - losing it
   unmonitors every allowlisted account (2026-09-21) and takes the new
