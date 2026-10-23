@@ -1591,8 +1591,8 @@
  {
   "name": "#103 the dashboard's empty-table waiver comes back (fail-open restored)",
   "file": "sentinel/dashboard.py",
-  "old": "            if self._operator() is not None:\n                return True\n            self._send(_render_operator_login(no_operators=operator_count(db) == 0).encode(), 401)",
-  "new": "            if operator_count(db) == 0 or self._operator() is not None:\n                return True\n            self._send(_render_operator_login(no_operators=operator_count(db) == 0).encode(), 401)",
+  "old": "            if self._operator() is not None:\n                return True\n            # The empty-table hint names a host command.",
+  "new": "            if operator_count(db) == 0 or self._operator() is not None:\n                return True\n            # The empty-table hint names a host command.",
   "tests": [
    "tests/test_operator_identity.py"
   ],
@@ -2226,8 +2226,8 @@
  {
   "name": "dashboard: the session cookie loses Secure",
   "file": "sentinel/dashboard.py",
-  "old": "Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200\"",
-  "new": "Path=/; HttpOnly; SameSite=Lax; Max-Age=43200\"",
+  "old": "HttpOnly; Secure; SameSite=Lax; Max-Age=43200\")",
+  "new": "HttpOnly; SameSite=Lax; Max-Age=43200\")",
   "tests": [
    "tests/test_operator_two_factor.py"
   ],
@@ -2236,8 +2236,8 @@
  {
   "name": "dashboard: the operator login throttle keys on the proxy's address",
   "file": "sentinel/dashboard.py",
-  "old": "            client_ip = self._client_ip()\n            if _login_throttle.blocked(f\"ip:{client_ip}\") or _login_throttle.blocked(f\"user:{username.lower()}\"):",
-  "new": "            client_ip = self.client_address[0]\n            if _login_throttle.blocked(f\"ip:{client_ip}\") or _login_throttle.blocked(f\"user:{username.lower()}\"):",
+  "old": "            password = form.get(\"password\", [\"\"])[0] or \"\"\n\n            client_ip = self._client_ip()\n            account = _account_key(client_ip, username)",
+  "new": "            password = form.get(\"password\", [\"\"])[0] or \"\"\n\n            client_ip = self.client_address[0]\n            account = _account_key(client_ip, username)",
   "tests": [
    "tests/test_login_lockout.py"
   ],
@@ -2276,8 +2276,8 @@
  {
   "name": "dashboard: the operator second-factor throttle keys on the proxy's address",
   "file": "sentinel/dashboard.py",
-  "old": "            client_ip = self._client_ip()\n            if _login_throttle.blocked(f\"ip:{client_ip}\") or _login_throttle.blocked(f\"user:{username}\"):",
-  "new": "            client_ip = self.client_address[0]\n            if _login_throttle.blocked(f\"ip:{client_ip}\") or _login_throttle.blocked(f\"user:{username}\"):",
+  "old": "            username, code, pending = parsed\n            client_ip = self._client_ip()\n            account = _account_key(client_ip, username)",
+  "new": "            username, code, pending = parsed\n            client_ip = self.client_address[0]\n            account = _account_key(client_ip, username)",
   "tests": [
    "tests/test_login_lockout.py"
   ],

@@ -120,6 +120,9 @@ def is_active_operator(db: Database, username: str) -> bool:
 
 
 def check_operator_login(db: Database, username: str, password: str) -> bool:
+    """True when `password` is this active operator's. The password step
+    alone: it records nothing. `touch_last_login` is for the moment a
+    session is issued, after the second factor."""
     username = normalize_username(username)
     with db.cursor() as cur:
         cur.execute(
@@ -133,11 +136,19 @@ def check_operator_login(db: Database, username: str, password: str) -> bool:
         # reveals which usernames exist.
         verify_password(password, DUMMY_HASH)
         return False
-    if not verify_password(password, row["password_hash"]):
-        return False
+    return verify_password(password, row["password_hash"])
+
+
+def touch_last_login(db: Database, username: str) -> None:
+    """Stamps last_login_at: a completed sign-in, which is the session being
+    issued after the second factor verified - never the password step.
+    Stamped there (as it was until 2026-10-24), LAST LOGIN in `sentinel
+    operator list` could not tell a sign-in from a password guess that got
+    no further than the code prompt, and on the public name guesses are
+    the expected traffic."""
     with db.cursor() as cur:
-        cur.execute("UPDATE operators SET last_login_at = ? WHERE username = ?", (_now(), username))
-    return True
+        cur.execute("UPDATE operators SET last_login_at = ? WHERE username = ?",
+                    (_now(), normalize_username(username)))
 
 
 def operator_login_requires_code(db: Database, username: str) -> bool:

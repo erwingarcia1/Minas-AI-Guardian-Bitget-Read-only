@@ -41,17 +41,22 @@
 }
 
 guardian.minastrade.com {
-	# Exactly /admin and everything under /admin/. Not `path /admin*`, which
-	# would also match /administrator, and not `path /admin/*` alone, which
-	# misses the bare /admin a person types. The same path is pinned in
-	# docker-compose.yml as SENTINEL_DASHBOARD_BASE_PATH; a test holds the
-	# two equal.
+	# /admin and everything under /admin/. Not `path /admin*`, which would
+	# also match /administrator, and not `path /admin/*` alone, which misses
+	# the bare /admin a person types. Caddy's path matcher is case-insensitive
+	# and matches the decoded, dot-cleaned path, so /Admin/... and the like
+	# reach the dashboard too, with the path as sent; the dashboard's own
+	# match is exact and it answers 404 to them, never a page. The same path
+	# is pinned in docker-compose.yml as SENTINEL_DASHBOARD_BASE_PATH; a test
+	# holds the two equal.
 	@admin path /admin /admin/*
 	# `handle`, never `handle_path`: the dashboard serves under /admin itself
 	# - its links, form actions, redirects and cookie carry the prefix, and it
-	# answers 404 to a path outside it - so the path must arrive as the
-	# visitor sent it. handle_path would strip the prefix and every request
-	# would reach the dashboard outside its base path.
+	# answers 404 to a path outside it (a bare / is a 303 to /admin/, which
+	# only the SSH tunnel can reach: Caddy never forwards / here) - so the
+	# path must arrive as the visitor sent it. handle_path would strip the
+	# prefix and every request would reach the dashboard outside its base
+	# path.
 	handle @admin {
 		reverse_proxy sentinel:8390 {
 			# request_buffers and the transport are sub-directives of each

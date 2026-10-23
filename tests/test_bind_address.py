@@ -245,7 +245,8 @@ def test_the_proxy_forwards_admin_to_the_dashboard_the_rest_to_the_portal_and_ne
     text = "\n".join(lines)
     assert env["SENTINEL_METRICS_PORT"] not in text, "the Caddyfile mentions the metrics port"
     gate = env["SENTINEL_BIND_GATE"]
-    for named in ("caddy", env["SENTINEL_DASHBOARD_PORT"], env["SENTINEL_PORTAL_PORT"], base):
+    for named in ("caddy", env["SENTINEL_DASHBOARD_PORT"], env["SENTINEL_PORTAL_PORT"],
+                  env["SENTINEL_METRICS_PORT"], base):
         assert named in gate, f"the bind gate no longer describes the public proxy it sits beside: {named!r} missing"
 
 

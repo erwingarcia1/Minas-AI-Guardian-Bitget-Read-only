@@ -47,9 +47,12 @@ container")._
   setting `SENTINEL_DASHBOARD_BASE_PATH`: docker-compose.yml pins it to
   `/admin`, and every link, form action and redirect the dashboard emits,
   and the `Path` of its session cookie, go through it, so a browser that
-  arrives at `/admin` never leaves it. A dashboard POST whose `Referer`
-  names a path outside the base path is refused; a request without one is
-  judged as before, so curl and the tests are unchanged. The Caddyfile
+  arrives at `/admin` never leaves it. A browser's POST to the dashboard -
+  one carrying `Sec-Fetch-Site` or `Origin` - must also carry a `Referer`
+  whose path is under the base path, or it is refused with the reason in
+  the body and the log; that is what tells the dashboard's own forms from
+  one planted on a same-origin portal page. A request carrying neither
+  header is judged as before, so curl and the tests are unchanged. The Caddyfile
   gains a second route: `/admin` and `/admin/*` go to the dashboard with
   the path unchanged and a connection cap of their own, everything else
   goes to the portal as before, and the metrics endpoint is still never
@@ -82,8 +85,10 @@ container")._
 - **Tailscale, from everything that described it.** Funnel for the portal,
   Serve for the dashboard and the metrics, tailnet SSH, the admin-console
   steps, the bootstrap MOTD's install step and the dashboard footer's
-  "Tailscale-gated" are gone from the documents, the comments and the
-  product (decision 22e, step 8). Host access is SSH on port 22 with the
+  "Tailscale-gated" are gone from the comments, the product and every
+  document except the teardown step itself (docs/deployment.md "The
+  public address", step 4) and CONTRIBUTING rule 6's dated example
+  (decision 22e, step 8). Host access is SSH on port 22 with the
   EC2 key pair, from the addresses in the security group's SSH rule; the
   SSH tunnel (`ssh -i <key>.pem -L 8390:127.0.0.1:8390 ubuntu@57.181.51.14`,
   then `http://localhost:8390/admin/`) is the break-glass path to the
@@ -93,6 +98,38 @@ container")._
   members the new address goes out before that step. Decision records,
   docs/DEPLOYMENTS.md and earlier release notes keep their history as
   written.
+
+### Fixed
+
+- **What the review before the dashboard faced the internet found
+  (2026-10-24), each with a test.** The fleet page's sort link wrote the
+  `?state=` filter straight back into an attribute, a reflected script
+  for anyone who could get an operator to open a link: it now echoes only
+  a bucket the page counts, escaped. The operator sign-in throttle keyed a
+  hard lockout on the bare username, a lockout button for any stranger
+  who guessed a name, from any address, that blocked the SSH tunnel too:
+  the account bucket is now (address, username), the portal's shape. The
+  dashboard's responses carry `Cache-Control: no-store`,
+  `X-Content-Type-Options: nosniff` and `X-Robots-Tag: noindex, nofollow`,
+  so a shared machine's back button cannot replay a recovery-codes page
+  or a customer's details after sign-out and the sign-in page is never
+  indexed. `LAST LOGIN` in `sentinel operator list` is stamped when a
+  session is issued, after the second factor, not at the password step,
+  so it no longer reads a password guess as a sign-in. The sign-in pages
+  no longer print the build line, and the "no operator accounts exist -
+  run `sentinel operator add`" hint shows only to a visitor who did not
+  come through the proxy, which on the public name means the SSH tunnel.
+  A `SENTINEL_DASHBOARD_BASE_PATH` with whitespace, `?`, `#` or `//` is
+  refused at startup instead of being written into every link. A
+  refused dashboard POST says why (`cross-origin POST rejected: Referer
+  missing`, `... outside /admin`) and the reason is logged with the
+  visitor's address, so a browser that trims referrers is diagnosable.
+  A bad entry in `SENTINEL_DASHBOARD_TRUSTED_PROXIES` is logged under
+  that name, not the portal's. Left open, and written into
+  docs/threat-model.md: operator sessions have no epoch, so a stolen
+  cookie outlives a password change for up to twelve hours and
+  `disable` then `enable` revives it - the break-glass is to replace
+  `operator_meta.session_secret`.
 
 ## [1.13.0] — 2026-10-23
 

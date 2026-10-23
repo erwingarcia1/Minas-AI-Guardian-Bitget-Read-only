@@ -317,6 +317,13 @@ def test_the_setting_is_exact_addresses_and_absent_trusts_nobody(caplog):
         parsed = parse_trusted_proxies("caddy, 10.231.0.0/24, 10.231.0.2")
     assert parsed == CADDY
     assert "'caddy'" in caplog.text and "'10.231.0.0/24'" in caplog.text
+    # The log blames the setting that was being read: a bad entry in the
+    # dashboard's own setting must not send the operator to the portal's.
+    caplog.clear()
+    with caplog.at_level("ERROR", logger="sentinel.edge"):
+        parse_trusted_proxies("10.231.0.2/32", setting=DASHBOARD_TRUSTED_PROXIES_SETTING)
+    assert DASHBOARD_TRUSTED_PROXIES_SETTING in caplog.text
+    assert f"{TRUSTED_PROXIES_SETTING}:" not in caplog.text
 
 
 @pytest.fixture
@@ -570,6 +577,32 @@ def test_the_dashboard_throttles_the_visitor_not_the_proxy(db, cipher, behind_th
         assert status == 429
         status, _ = _dashboard_post(port, "/login", {"username": "other", "password": "x"}, VISITOR_B)
         assert status == 401, "an operator elsewhere was throttled by someone else's guesses"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_a_strangers_guesses_at_a_username_do_not_lock_the_operator_out(db, cipher, behind_the_proxy):
+    """Found in the review before the dashboard faced the internet
+    (2026-10-24): the account bucket was keyed on the bare username, so
+    anyone who guessed an operator's name could lock them out for the window
+    from any address - and the one bucket blocked the SSH tunnel too. The
+    bucket is now (address, username), the portal's shape: the stranger locks
+    only himself out of that name, and the operator signs in from where they
+    are. The per-address bucket still caps a single source across names."""
+    _enrolled_operator(db, cipher, "erwin")
+    server = serve_dashboard(db, cipher, 0)
+    try:
+        port = server.server_address[1]
+        for _ in range(5):
+            status, _ = _dashboard_post(port, "/login", {"username": "erwin", "password": "x"}, VISITOR_A)
+            assert status == 401
+        status, _ = _dashboard_post(port, "/login", {"username": "erwin", "password": "x"}, VISITOR_A)
+        assert status == 429, "the guesser is throttled on (address, username)"
+        status, body = _dashboard_post(port, "/login", {"username": "erwin", "password": "correct-horse-battery"},
+                                       VISITOR_B)
+        assert status == 200 and 'action="/login/code"' in body, (
+            "the operator's own sign-in from another address must not be locked by a stranger's guesses")
     finally:
         server.shutdown()
         server.server_close()

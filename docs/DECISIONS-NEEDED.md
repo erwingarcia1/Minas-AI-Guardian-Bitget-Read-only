@@ -1565,7 +1565,10 @@ release `test_the_dashboard_does_not_inherit_the_portals_trusted_proxy`,
 the assertion unchanged). In
 docs/deployment.md the places are "Reaching the dashboard", "Remote
 access: Tailscale", "The public address" (step 7 and the closing
-paragraphs) and "Operator accounts and two-factor".
+paragraphs) and "Operator accounts and two-factor" - as the guide stood
+that morning: "Remote access: Tailscale" became "Reaching the box: SSH
+with the EC2 key pair", and the then-step 7 ("Nothing on Tailscale
+moved") became the step-4 teardown in the renumbered section.
 docs/phase0-capability-audit.md is a dated record and is not changed.
 
 The dashboard is the higher-privilege surface (decision 19): it adds
@@ -1825,7 +1828,9 @@ everyone, and recovery is `sentinel operator add` on the box (decision
    `127.0.0.1`. Pinned by tests/test_bind_address.py
    `test_only_the_proxy_listens_publicly` and
    `test_the_proxy_forwards_to_the_portal_and_nothing_else` (which also
-   holds the `SENTINEL_BIND_GATE` declaration to the proxy).
+   holds the `SENTINEL_BIND_GATE` declaration to the proxy; renamed in the
+   `/admin` release
+   `test_the_proxy_forwards_admin_to_the_dashboard_the_rest_to_the_portal_and_never_the_metrics`).
 5. **Optional, recommended: an IP allowlist on `/admin/*`**, at the
    proxy, for office or VPN addresses. It is a lighter gate than the
    tailnet was, and it keeps password-spraying traffic away from the
@@ -1868,7 +1873,9 @@ everyone, and recovery is `sentinel operator add` on the box (decision
    proxy one visitor's failures do not block another on the web sign-in,
    the app's sign-in or the dashboard's; malformed headers; the enrolment
    audit row), by tests/test_bind_address.py
-   `test_the_portal_trusts_exactly_the_proxys_fixed_address`, and by
+   `test_the_portal_trusts_exactly_the_proxys_fixed_address` (renamed in
+   the `/admin` release
+   `test_both_servers_trust_exactly_the_proxys_fixed_address`), and by
    probes for trusting an untrusted peer and for taking the left-most
    address. **The Funnel address is not covered.** Its connections come
    through the loopback publish, from Docker's gateway, which is not
@@ -1880,10 +1887,16 @@ everyone, and recovery is `sentinel operator add` on the box (decision
    and not on Caddy; the startup log line then reads "dashboard:
    X-Forwarded-For is believed from 10.231.0.2 only". The code default
    stays unset: blank still trusts nobody, and `tests/test_login_lockout.py`
-   `test_the_portals_proxy_is_not_the_dashboards` keeps testing exactly
-   that (its docstring stops saying "until");
-   `tests/test_bind_address.py` holds both settings equal to Caddy's
-   fixed address. The Funnel caveat above ends with Funnel, which under
+   `test_the_dashboard_does_not_inherit_the_portals_trusted_proxy`
+   (formerly `test_the_portals_proxy_is_not_the_dashboards`; its docstring
+   stops saying "until") keeps testing exactly that;
+   `tests/test_bind_address.py`
+   `test_both_servers_trust_exactly_the_proxys_fixed_address` holds both
+   settings equal to Caddy's fixed address and to each other. The
+   operator throttle's account bucket is keyed on address and username
+   together from this release (found in review: a bare-username bucket
+   was a lockout button for any stranger who guessed a name, and it
+   blocked the SSH tunnel too). The Funnel caveat above ends with Funnel, which under
    the evening's sequence goes before Caddy starts (22e).
 
 ### 22d. Moving customers to the new address — **2026-10-23: no overlap period; the email goes before Funnel does**
@@ -2028,6 +2041,44 @@ The order of 2026-10-22 above is kept as written; this is the same list
 run with the facts of the evening. "The order matters, because the box
 can be locked out" still holds: step 4's connection is answered before
 anything is removed.
+
+**Run on the box the same night (2026-10-23, UTC):** step 4 - the login
+with the key pair at `57.181.51.14` proven with `git describe --tags` and
+`docker compose ps -a` on the stopped stack; steps 6 and 7 - Funnel and
+Serve reset (`No serve config`), `tailscale down`, the package removed
+and purged, `/var/lib/tailscale` deleted, no `tailscaled` socket, no
+`tailscale0` device (the admin-console removal is the one click left);
+and the runbook's step 5 - `held/` moved to
+`/var/backups/minas-guardian/held-2026-09-28/`, nothing on 80 or 443, the
+`edge` subnet free, the checkout clean. The evidence, command by command,
+is in docs/DEPLOYMENTS.md. Steps 1 to 3 and 8 ship with the release this
+record describes; the box waits for it at the runbook's step 6.
+
+**Reviewed before it faces the internet (2026-10-24).** Four readers went
+through the change adversarially - the prefix code, the proxy and compose
+and their tests, every document against the code, and the exposure
+itself. Fixed in the same release, each with a test: a reflected script
+in the fleet page's sort link (the `?state=` filter written raw into an
+attribute; it now echoes only a bucket the page counts, escaped); the
+operator throttle's bare-username bucket (a lockout button for any
+stranger, which also blocked the SSH tunnel; now keyed on address and
+username); `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`
+and `X-Robots-Tag: noindex, nofollow` on every dashboard response;
+`LAST LOGIN` stamped after the second factor, not at the password step;
+the build line and the empty-table hint kept off the public sign-in page;
+a junk base path refused at startup; the CSRF gate requiring a browser's
+POST to carry a `Referer` under the base path (a planted same-origin form
+can suppress its referrer, so "present and outside" was not enough) and
+saying why it refused, in the body and the log; a stale design-guard
+probe re-anchored. Recorded as open, in docs/threat-model.md: operator
+sessions have no epoch, so a stolen cookie outlives a password change or
+a 2FA reset for up to twelve hours and `disable` then `enable` revives
+it (break-glass: replace `operator_meta.session_secret`); a distributed
+guesser is held by the per-address throttle only; each password check is
+scrypt in the engine's process behind a cap of 32 proxy connections; and
+22c item 1 is a hard gate for the same reason it always was - a `NOT
+YET` operator on a public URL belongs to whoever presents the password
+first.
 
 ### What it blocks
 

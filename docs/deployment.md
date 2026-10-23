@@ -100,10 +100,17 @@ tunnel as `http://localhost:8390/admin/`. Not checked in every browser
 here: if one signs you in and then shows the sign-in page again, it
 refused the cookie - use another browser, or the public address. One
 more, once: a browser that opened the tunnel before this release may
-still hold an `ops_session` cookie with `Path=/`, and it is sent beside
-the new `Path=/admin` one for up to 12 hours; if the first sign-in over
-the tunnel after the upgrade behaves oddly, clear the browser's cookies
-for `localhost` and sign in again.
+still hold an `ops_session` cookie with `Path=/`. It is still a valid
+session for up to 12 hours, and `/admin/logout` cannot clear it (it
+clears `Path=/admin` only), so after the upgrade clear the browser's
+cookies for `localhost` once, or you stay signed in after signing out
+until the old token expires. And a browser or extension that trims
+same-origin referrers to the bare origin is refused on every dashboard
+POST, the sign-in included, with "cross-origin POST rejected: Referer
+outside /admin" (the service log says the same, with your address):
+the dashboard requires a browser's POST to name a page under `/admin`,
+which is what tells its own forms from one planted on a portal page.
+Turn the trimming off for this site.
 
 **Migrating an existing pilot DB instead of re-onboarding:**
 
@@ -229,10 +236,10 @@ What the compose file carries for it:
 Bring it up in this order. Each step says how to tell it worked; do not
 start the next one until it has. The order departs from 22e's, which put
 the teardown after members had moved: step 4 says why it cannot wait that
-long. From step 4 until step 8 the portal is unreachable from the
-internet - do those steps in one sitting, and email members the new
-address beforehand (22d; there is no overlap period, the old address dies
-at step 4).
+long. From step 4 until step 7's certificate the portal is unreachable
+from the internet (step 8 confirms it) - do those steps in one sitting,
+and email members the new address beforehand (22d; there is no overlap
+period, the old address dies at step 4).
 
 1. **Prove SSH with the EC2 key pair** (22e step 4; rule 6's read-only
    twin). From a fresh terminal, by the public address, from the network
@@ -388,7 +395,7 @@ at step 4).
        # expect: HTTP/2 401; www-authenticate: Bearer realm="minas-guardian";
        #         {"error": "unauthorized", "message": "Sign in again."}
    curl -sS -o /dev/null -D - http://guardian.minastrade.com/login
-       # expect: HTTP/1.1 308; location: https://guardian.minastrade.com/login
+       # expect: HTTP/1.1 308; Location: https://guardian.minastrade.com/login (header case as the server sends it)
    curl -sS https://guardian.minastrade.com/healthz | grep -c 'name="password"'
        # expect: 1 - the portal's sign-in page; the dashboard answers only under /admin
    ```
@@ -404,7 +411,9 @@ at step 4).
 
    ```bash
    curl -sS -o /dev/null -D - https://guardian.minastrade.com/admin/login
-       # expect: HTTP/2 200, with the same three security headers as the portal's /login
+       # expect: HTTP/2 200; strict-transport-security, x-frame-options and content-security-policy
+       #         as on the portal's /login, plus cache-control: no-store, x-content-type-options: nosniff
+       #         and x-robots-tag: noindex, nofollow (the dashboard's pages are never cached or indexed)
    curl -sS -o /dev/null -w '%{http_code}\n' https://guardian.minastrade.com/admin
    curl -sS -o /dev/null -w '%{http_code}\n' https://guardian.minastrade.com/admin/
        # expect: 401 and 401 - the sign-in gate, with no session; both spellings reach
@@ -416,11 +425,16 @@ at step 4).
    curl -sS https://guardian.minastrade.com/admin/login | grep -o 'action="[^"]*"'           # expect: action="/admin/login"
    ```
 
-   Measure enrolment before anyone signs in (22c item 1): `sudo docker
-   compose exec -T sentinel sentinel operator list` - every active row's
-   2FA column `on`. An operator still at `NOT YET` is walked through
-   enrolment at first sign-in and cannot get past it ("Operator accounts
-   and two-factor" below), so this is a reading, not a blocker. Then try a
+   Measure enrolment before anyone signs in (22c item 1), and treat it as
+   a gate while `/admin` is public: `sudo docker compose exec -T sentinel
+   sentinel operator list` - every active row's 2FA column `on`. A row at
+   `NOT YET` is a password-only account on a public URL: whoever presents
+   its password first enrols their own authenticator and owns the
+   account, and `LAST LOGIN` then reads as that person's sign-in. So no
+   `NOT YET` row may exist while the address is public - enrol at
+   `sentinel operator add` on the box (the default, interactive path) or
+   over the SSH tunnel before the URL is shared, and never send a password
+   by email ("Operator accounts and two-factor" below). Then try a
    wrong password once at `https://guardian.minastrade.com/admin/login`
    and read the log - the dashboard's throttle keys on this address, so it
    too must name YOUR public address, never `10.231.0.2`:
@@ -463,10 +477,12 @@ everyone. You still reach both through the SSH tunnel; members have no way
 in until Caddy is back. Deploying an older tag does NOT stop Caddy: a tag
 from before Caddy has no `caddy` service in its compose file, so compose
 leaves the container running as an orphan, forwarding to a portal it can
-no longer reach. Stop it first. A tag from before `/admin` takes the
-dashboard off the public address (it serves at `/` again, which Caddy does
-not route to it); the tunnel still reaches it, at `http://localhost:8390/`.
-There is no rolling back step 4: the old address does not come back.
+no longer reach. Stop it first. A tag from before `/admin` leaves Caddy
+forwarding `/admin` to a dashboard that serves at `/`: its sign-in page
+still appears there, but its forms post to bare `/login`, which Caddy hands
+to the portal. Use the tunnel at `http://localhost:8390/` until you roll
+forward. There is no rolling back step 4: the old address does not come
+back.
 
 **Restoring after the 2026-09-28 pause.** Alerting was stopped by hand on
 2026-09-28 20:50 UTC (the owner's decision: beta, credit cost):

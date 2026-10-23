@@ -8,9 +8,8 @@ across **Bitget, Bybit, OKX Global, and Binance Global**.
 > package/CLI codename throughout the code.
 
 [![CI](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/actions/workflows/ci.yml/badge.svg)](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/actions/workflows/ci.yml)
-&nbsp;·&nbsp; last tag **1.0.0** (2026-07-05) ·&nbsp; `main` also carries the
-untagged **member portal** and **member SMS** work ·&nbsp; see
-[CHANGELOG](CHANGELOG.md)
+&nbsp;·&nbsp; releases and what each one changed: [CHANGELOG](CHANGELOG.md)
+(the record; this line is not)
 
 ## The one non-negotiable
 

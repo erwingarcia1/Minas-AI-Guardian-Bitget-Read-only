@@ -66,14 +66,14 @@ cat > /etc/motd <<'MOTD'
            IPs only.
              nc -vz -w 5 <elastic-ip> 443
                # expect: succeeded; a timeout means the group still drops it
-        c. .env: SENTINEL_PORTAL_URL=https://guardian.minastrade.com, then
-             sudo docker compose up -d      # up -d, not restart: a container's
-                                            # environment is fixed at creation
-        d. "docker compose up -d" (step 6) started caddy, which fetches the
+        c. "docker compose up -d" (step 6) started caddy, which fetches the
            certificate itself:
              sudo docker compose logs caddy | grep "certificate obtained"
            Nothing after a few minutes: recheck a and b, then
            "sudo docker compose restart caddy" tries again at once.
+        d. .env: SENTINEL_PORTAL_URL=https://guardian.minastrade.com, then
+             sudo docker compose up -d      # up -d, not restart: a container's
+                                            # environment is fixed at creation
         e. sudo docker compose exec -it sentinel sentinel operator add <name>
            (password, then two-factor enrolment), then sign in at
            https://guardian.minastrade.com/admin

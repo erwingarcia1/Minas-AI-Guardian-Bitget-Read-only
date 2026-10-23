@@ -45,7 +45,8 @@ services:
       SENTINEL_BIND_GATE: "docker-compose publishes 127.0.0.1:8390 on the host; the container-internal bind is unreachable off-host - the public proxy (caddy, 80/443) forwards /admin to the dashboard (8390) and everything else to the portal (8391), never the metrics endpoint (9109)"
       # The dashboard serves under this path (decision 22a): every link, form
       # action, redirect and the session cookie's Path carry it, and a request
-      # for any other path gets 404 - except /healthz, which keeps answering
+      # for any other path gets 404 (a bare GET / answers 303 to the base
+      # path, for the SSH tunnel) - except /healthz, which keeps answering
       # at the bare path for the healthcheck below. Caddy forwards the path
       # unchanged, so this must be the path the Caddyfile's @admin matcher
       # names; a test holds the two equal. Unset, the dashboard answers at

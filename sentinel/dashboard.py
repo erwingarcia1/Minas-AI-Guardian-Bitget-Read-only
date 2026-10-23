@@ -22,6 +22,7 @@ from sentinel.operators import (
     record_operator_event,
     session_operator,
     session_secret,
+    touch_last_login,
     verify_pending_token,
 )
 from sentinel.passwords import LoginThrottle
@@ -52,8 +53,19 @@ def normalize_base_path(raw: str | None) -> str:
     path straight after it without producing '//' or '/adminlogin', and
     `_route` can match on `== base` or `startswith(base + '/')` - which is
     what keeps /administrator out. Surrounding whitespace is dropped, as
-    `env_setting` drops it."""
-    raw = (raw or "").strip().strip("/")
+    `env_setting` drops it.
+
+    Anything else that is not a path - whitespace inside, a '?' or '#', or
+    '//' - is refused with ValueError naming the setting and the value, so
+    the server does not start (the trusted-proxies parser's precedent: bad
+    input is refused loudly, never read as something else). The value is
+    compared byte-for-byte against every request path and written into
+    every link, and '/admin?x' or '/a//b' can be neither."""
+    raw = (raw or "").strip()
+    if any(ch.isspace() for ch in raw) or "?" in raw or "#" in raw or "//" in raw:
+        raise ValueError(f"{BASE_PATH_SETTING}: {raw!r} is not a base path - "
+                         "no whitespace, '?', '#' or '//'; '/admin' is the shape")
+    raw = raw.strip("/")
     return f"/{raw}" if raw else ""
 
 
@@ -230,8 +242,12 @@ def _ts(iso: str | None, fallback: str = "—") -> str:
     return f'<span class="ts" data-utc="{html.escape(iso)}">{html.escape(iso[:19].replace("T", " "))}</span>'
 
 
-def _page(nav_html: str, body_html: str, refresh: bool = True) -> str:
+def _page(nav_html: str, body_html: str, refresh: bool = True, *, signed_in: bool = True) -> str:
     refresh_meta = '<meta http-equiv="refresh" content="30">' if refresh else ""
+    # The build line is for a signed-in operator. The sign-in pages answer
+    # to anyone on the internet at /admin/login, and what is deployed is
+    # not theirs to read.
+    build = f'<span class="build">{html.escape(version_line())}</span>' if signed_in else ""
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
@@ -246,10 +262,10 @@ def _page(nav_html: str, body_html: str, refresh: bool = True) -> str:
         # The build line is here rather than tucked in a status page because
         # "what is deployed" is a question asked while looking at something
         # else - an alert that should have fired, a fix that should have
-        # landed. Showing it on every page means the answer is never a guess
-        # about whether the last deploy took.
+        # landed. Showing it on every signed-in page means the answer is
+        # never a guess about whether the last deploy took.
         + '<footer><span>Internal ops view · operator sign-in with two-factor · Minas staff only</span>'
-        + f'<span class="build">{html.escape(version_line())}</span></footer></div>'
+        + build + "</footer></div>"
         + _LOCAL_TIME_SCRIPT + "</body></html>"
     )
 
@@ -338,7 +354,7 @@ def _render_operator_login(error: str | None = None, *, no_operators: bool = Fal
         '<button class="submit" type="submit">Sign in</button></div>'
         "</form></div></section>"
     )
-    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False)
+    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False, signed_in=False)
 
 
 def _render_operator_code(pending: str, error: str | None = None) -> str:
@@ -357,7 +373,7 @@ def _render_operator_code(pending: str, error: str | None = None) -> str:
         '<div style="margin-top:18px"><button class="submit" type="submit">Sign in</button></div>'
         "</form></div></section>"
     )
-    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False)
+    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False, signed_in=False)
 
 
 def _render_operator_enrol(pending: str, secret: str, uri: str, error: str | None = None) -> str:
@@ -381,7 +397,7 @@ def _render_operator_enrol(pending: str, secret: str, uri: str, error: str | Non
         '<div style="margin-top:18px"><button class="submit" type="submit">Turn on two-factor and sign in</button></div>'
         "</form></div></section>"
     )
-    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False)
+    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False, signed_in=False)
 
 
 def _render_operator_recovery_codes(codes: list[str]) -> str:
@@ -502,9 +518,16 @@ def _render(db: Database, rules=None, qs=None) -> str:
     def _filter_link(value: str, label: str, n: int | None = None) -> str:
         current = " style='font-weight:700;text-decoration:underline'" if value == state_filter else ""
         suffix = f" ({n})" if n is not None else f" ({len(accounts)})"
-        query = f"?state={value}" if value else "?"
+        query = f"?state={html.escape(value)}" if value else "?"
         return f"<a class='acctlink'{current} href='{_url('/')}{query}'>{label}{suffix}</a>"
 
+    # The sort link keeps the current filter - but only a bucket this page
+    # counts, and escaped even then. `state_filter` comes straight off the
+    # query string, and written raw into the href it was a reflected
+    # script: /admin/?state='><img src=x onerror=...> rendered the payload
+    # (found 2026-10-24, the review before the page faced the internet). An
+    # unknown value already selected nothing; it now also prints nothing.
+    kept_state = f"&state={html.escape(state_filter)}" if state_filter in counts else ""
     filter_row = (
         "<p class='count' style='margin:0 0 8px'>Show: "
         + _filter_link("", "All")
@@ -513,7 +536,7 @@ def _render(db: Database, rules=None, qs=None) -> str:
         + " · " + _filter_link("paused", "Paused", counts["paused"])
         + " — sorted by " + ("name" if sort == "label" else "problem state, trouble first")
         + f" (<a class='acctlink' href='{_url('/')}?sort={'problem' if sort == 'label' else 'label'}"
-        + (f"&state={state_filter}" if state_filter else "") + "'>"
+        + kept_state + "'>"
         + ("sort by problem" if sort == "label" else "sort by name") + "</a>)</p>"
     )
 
@@ -1161,8 +1184,9 @@ def serve_dashboard(
     plus Caddy's /admin matcher are what gate it instead."""
 
     # Shared across requests for this server, like the portal's. Throttles by
-    # client IP and by username, so neither a single source nor a single
-    # account can be ground down. The client IP is edge.py's: behind a proxy
+    # client IP and by (client IP, username) - `_account_key` - so neither a
+    # single source nor a single account can be ground down, and nobody can
+    # lock an account from afar. The client IP is edge.py's: behind a proxy
     # it comes from X-Forwarded-For, believed only from a trusted peer.
     _login_throttle = LoginThrottle()
     trusted = trusted_proxies_from_env("dashboard", DASHBOARD_TRUSTED_PROXIES_SETTING)
@@ -1175,10 +1199,22 @@ def serve_dashboard(
         logger.info("dashboard: served under %s - every link, form and redirect carries it; "
                     "the bare /healthz still answers for the container probe", _base_path)
     else:
-        logger.info("dashboard: served at the root (%s is unset)", BASE_PATH_SETTING)
+        logger.info("dashboard: served at the root (%s is blank or unset)", BASE_PATH_SETTING)
 
-    def _same_origin(handler) -> bool:
-        """Is this POST from our own pages? (CSRF gate on every state change.)
+    def _account_key(client_ip: str, username: str) -> str:
+        """The account bucket is the pair (address, username) - the portal's
+        #31 shape - never the bare username. Keyed on the name alone, anyone
+        on the internet who guessed an operator's username could lock them
+        out for the window from any address, and the one bucket blocked the
+        SSH tunnel too. The per-IP bucket still caps a single source across
+        every name; the deliberate residue is that a DISTRIBUTED guesser is
+        throttled per address only, because the alternative hands every
+        stranger a lockout button."""
+        return f"{client_ip}|{username.lower()}"
+
+    def _cross_origin_reason(handler) -> str | None:
+        """Why this POST is NOT from our own pages, or None when it is: the
+        CSRF gate on every state change, and the reason names the 403.
 
         Sec-Fetch-Site is the PRIMARY signal: the browser sets it and a page
         cannot forge it (a forbidden header). `same-origin` is our own form;
@@ -1194,27 +1230,53 @@ def serve_dashboard(
         measures colliding; the referrer policy is now `same-origin` so
         Origin stays populated, and this check no longer depends on it alone.
         """
-        # Under a base path (decision 22a) the Referer's PATH counts too, when
-        # there is one. On one hostname a portal page is same-origin to this
-        # server, so neither Sec-Fetch-Site nor Origin can tell our own form
-        # from one planted on a portal page; the Referer path can, because
-        # ours start with the base path and `_send`'s Referrer-Policy:
-        # same-origin makes every browser send it on our own posts. No
-        # Referer stays accepted, as before: curl and the tests send none,
-        # and the checks below still refuse every cross-site browser.
+        fetch_site = (handler.headers.get("Sec-Fetch-Site") or "").lower()
+        origin = handler.headers.get("Origin")
+        # Under a base path (decision 22a) the Referer's PATH counts too. On
+        # one hostname a portal page is same-origin to this server, so
+        # neither Sec-Fetch-Site nor Origin can tell our own form from one
+        # planted on a portal page; the Referer path can, because ours start
+        # with the base path and `_send`'s Referrer-Policy: same-origin makes
+        # every browser send it on our own posts. A browser sends
+        # Sec-Fetch-Site or Origin on every form POST and a page can suppress
+        # neither - it CAN suppress its Referer (referrerpolicy="no-referrer",
+        # a meta referrer tag) - so with either signal present a Referer is
+        # REQUIRED, and it must sit under the base path. That is the whole of
+        # what this stops: a planted same-origin form, because the browser
+        # carrying it always sends one of the two. A sender that forges
+        # neither is not a browser and is bound by nothing here: curl and the
+        # tests send none and are accepted as before (a Referer they do send
+        # is still read). At the root nothing changes.
         if _base_path:
             referer = handler.headers.get("Referer")
+            referer_path = None
+            refused = None
             if referer:
-                referer_path = urlparse(referer).path
+                try:
+                    referer_path = urlparse(referer).path
+                except ValueError:  # not even a URL, so not one of our pages
+                    referer_path = ""
                 if not (referer_path == _base_path or referer_path.startswith(_base_path + "/")):
-                    return False
-        fetch_site = (handler.headers.get("Sec-Fetch-Site") or "").lower()
+                    refused = f"Referer outside {_base_path}"
+            elif fetch_site or origin:
+                refused = "Referer missing"
+            if refused:
+                logger.warning("cross-origin POST rejected: %s - request path %s, Referer path %s, "
+                               "base path %s, from %s", refused, urlparse(handler.path).path,
+                               "absent" if referer_path is None else repr(referer_path[:200]),
+                               _base_path, handler._client_ip())
+                return refused
         if fetch_site:
-            return fetch_site in ("same-origin", "none")
-        origin = handler.headers.get("Origin")
+            return None if fetch_site in ("same-origin", "none") else "Sec-Fetch-Site names another site"
         if not origin:
-            return True  # non-browser clients send neither header
-        return urlparse(origin).netloc == (handler.headers.get("Host") or "")
+            return None  # non-browser clients send neither header
+        try:
+            origin_host = urlparse(origin).netloc
+        except ValueError:
+            origin_host = ""
+        if origin_host == (handler.headers.get("Host") or ""):
+            return None
+        return "Origin is null" if origin == "null" else "Origin is another host"
 
     class Handler(EdgeHandler, BaseHTTPRequestHandler):
         # Who is asking, and the headers every response carries: edge.py,
@@ -1230,6 +1292,19 @@ def serve_dashboard(
             finally:
                 db.release_thread_connection()
 
+        def _private_headers(self):
+            """On every response with a body. Never cached: a shared
+            machine's back button must not replay a customer's contact
+            details or a recovery-codes page. Never content-sniffed. Never
+            indexed: /admin/login answers to anyone on the internet, and a
+            sign-in page in a search index is an invitation. The portal
+            sends the first two on its pages and keeps its logo files
+            cacheable, which is why these live here and not in
+            EdgeHandler.end_headers."""
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("X-Robots-Tag", "noindex, nofollow")
+
         def _send(self, body: bytes, status: int = 200):
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -1241,8 +1316,19 @@ def serve_dashboard(
             # POSTs kept working; now the choice is explicit instead of an
             # accident of omission.
             self.send_header("Referrer-Policy", "same-origin")
+            self._private_headers()
             self.end_headers()
             self.wfile.write(body)
+
+        def _refused_cross_origin(self) -> bool:
+            """The CSRF gate, answered: True when this POST is not from our
+            own pages and the 403 naming why has gone out. Asked once at the
+            chokepoint in do_POST and again inside the handlers, as depth."""
+            reason = _cross_origin_reason(self)
+            if reason is None:
+                return False
+            self._send(f"cross-origin POST rejected: {reason}".encode(), 403)
+            return True
 
         def _operator(self) -> str | None:
             """The signed-in operator, or None.
@@ -1316,6 +1402,7 @@ def serve_dashboard(
             self.send_response(status)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self._private_headers()
             self.end_headers()
             self.wfile.write(body)
             return verdict
@@ -1334,7 +1421,12 @@ def serve_dashboard(
             table and no session, and the login page says so."""
             if self._operator() is not None:
                 return True
-            self._send(_render_operator_login(no_operators=operator_count(db) == 0).encode(), 401)
+            # The empty-table hint names a host command. It is for the owner
+            # on the SSH tunnel - whose TCP peer is no trusted proxy - and
+            # not for whoever reaches /admin/login through Caddy; the startup
+            # log and the CLI tell the owner the same thing.
+            no_operators = operator_count(db) == 0 and not self._peer_is_trusted_proxy()
+            self._send(_render_operator_login(no_operators=no_operators).encode(), 401)
             return False
 
         def do_GET(self):
@@ -1386,6 +1478,7 @@ def serve_dashboard(
                 self.send_response(200)
                 self.send_header("Content-Type", ctype)
                 self.send_header("Content-Length", str(len(body)))
+                self._private_headers()
                 self.end_headers()
                 self.wfile.write(body)
             elif path == "/metrics":
@@ -1422,8 +1515,7 @@ def serve_dashboard(
             # pattern): a cross-site login POST is login-CSRF, and gating
             # only the action routes left it open here - found by #92's
             # refusal tests. The per-handler checks below remain as depth.
-            if not _same_origin(self):
-                self._send(b"cross-origin POST rejected", 403)
+            if self._refused_cross_origin():
                 return
             post_path = self._route()
             if post_path is None:
@@ -1452,8 +1544,7 @@ def serve_dashboard(
             if post_path != "/add":
                 self._send(b"not found", 404)
                 return
-            if not _same_origin(self):
-                self._send(b"cross-origin POST rejected", 403)
+            if self._refused_cross_origin():
                 return
             length = int(self.headers.get("Content-Length", 0))
             if length <= 0 or length > 64 * 1024:
@@ -1518,8 +1609,7 @@ def serve_dashboard(
             `acknowledged_at` - the escalation ladder is the customer's, not
             the operator's to tidy away.
             """
-            if not _same_origin(self):
-                self._send(b"cross-origin POST rejected", 403)
+            if self._refused_cross_origin():
                 return
             length = int(self.headers.get("Content-Length", 0))
             if length <= 0 or length > 16 * 1024:
@@ -1550,8 +1640,7 @@ def serve_dashboard(
         def _portal_access(self):
             """Generate/reset the member-portal password for an account's
             customer email; the password is rendered exactly once."""
-            if not _same_origin(self):
-                self._send(b"cross-origin POST rejected", 403)
+            if self._refused_cross_origin():
                 return
             length = int(self.headers.get("Content-Length", 0))
             if length <= 0 or length > 4 * 1024:
@@ -1670,7 +1759,7 @@ def serve_dashboard(
             try:
                 changed = (grant_account if action == "grant" else revoke_account)(db, email, aid, actor)
             except ValueError as exc:
-                self._send(str(exc).encode(), 400)
+                self._send(html.escape(str(exc)).encode(), 400)  # the body is text/html
                 return
             verb = "now opens" if action == "grant" else "no longer opens"
             notice = (f'<div class="banner ok">✓ <b>{html.escape(email)}</b> {verb} this account.'
@@ -1687,14 +1776,15 @@ def serve_dashboard(
             password = form.get("password", [""])[0] or ""
 
             client_ip = self._client_ip()
-            if _login_throttle.blocked(f"ip:{client_ip}") or _login_throttle.blocked(f"user:{username.lower()}"):
+            account = _account_key(client_ip, username)
+            if _login_throttle.blocked(f"ip:{client_ip}") or _login_throttle.blocked(account):
                 logger.warning("operator login throttled for %s from %s", username, client_ip)
                 self._send(_render_operator_login("too many attempts - wait and try again").encode(), 429)
                 return
 
             if not check_operator_login(db, username, password):
                 _login_throttle.record_failure(f"ip:{client_ip}")
-                _login_throttle.record_failure(f"user:{username.lower()}")
+                _login_throttle.record_failure(account)
                 logger.warning("failed operator login for %r from %s", username, client_ip)
                 # One message for a bad username and a bad password alike, so
                 # the form is not an oracle for which accounts exist.
@@ -1702,7 +1792,7 @@ def serve_dashboard(
                 return
 
             _login_throttle.reset(f"ip:{client_ip}")
-            _login_throttle.reset(f"user:{username.lower()}")
+            _login_throttle.reset(account)
             # The password alone mints NO session (#87, decision 19). It
             # mints a five-minute pending token, and the second step - a
             # code, or first-login enrolment - is what signs in.
@@ -1746,6 +1836,10 @@ def serve_dashboard(
             return username, (form.get("code", [""])[0] or "").strip(), pending
 
         def _issue_session(self, username: str, body: bytes | None = None) -> None:
+            # The sign-in completes here and nowhere earlier - the second
+            # factor has just verified - so LAST LOGIN is stamped here, not
+            # in the password check.
+            touch_last_login(db, username)
             token = make_session_token(session_secret(db), username)
             # Secure (decision 22c item 2): the browser sends it over HTTPS
             # only - Caddy's, on the public name. The SSH tunnel's plain
@@ -1769,6 +1863,7 @@ def serve_dashboard(
             self.send_header("Content-Type", "text/html; charset=utf-8")
             self.send_header("Set-Cookie", cookie)
             self.send_header("Content-Length", str(len(body)))
+            self._private_headers()
             self.end_headers()
             self.wfile.write(body)
 
@@ -1778,7 +1873,8 @@ def serve_dashboard(
                 return
             username, code, pending = parsed
             client_ip = self._client_ip()
-            if _login_throttle.blocked(f"ip:{client_ip}") or _login_throttle.blocked(f"user:{username}"):
+            account = _account_key(client_ip, username)
+            if _login_throttle.blocked(f"ip:{client_ip}") or _login_throttle.blocked(account):
                 logger.warning("operator second factor throttled for %s from %s", username, client_ip)
                 self._send(_render_operator_code(pending, "too many attempts - wait and try again").encode(), 429)
                 return
@@ -1789,12 +1885,12 @@ def serve_dashboard(
                 # million guesses, and a code endpoint that accepts them as
                 # fast as they arrive is not a second factor.
                 _login_throttle.record_failure(f"ip:{client_ip}")
-                _login_throttle.record_failure(f"user:{username}")
+                _login_throttle.record_failure(account)
                 logger.warning("operator second factor rejected for %s from %s", username, client_ip)
                 self._send(_render_operator_code(pending, "that code was not accepted").encode(), 401)
                 return
             _login_throttle.reset(f"ip:{client_ip}")
-            _login_throttle.reset(f"user:{username}")
+            _login_throttle.reset(account)
             logger.info("operator %s signed in from %s", username, client_ip)
             self._issue_session(username)
 
