@@ -9,6 +9,8 @@ answered `{"code":"40018","msg":"Invalid IP,Current request IP 57.181.51.14"}`.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from sentinel.alerts.fleet import (
     FLEET_RULE,
     HOST_AUTH_RULE,
@@ -414,6 +416,31 @@ def test_members_coverage_notices_say_the_cause_is_ours_and_ask_for_nothing(db, 
     with db.cursor() as cur:
         cur.execute("SELECT evidence_json FROM alerts WHERE rule = 'account_unreachable'")
         assert all(HOST_AUTH_RULE in (r["evidence_json"] or "") for r in cur.fetchall()), "the cause is stored"
+
+
+def test_the_status_judgement_draws_the_incidents_bar_where_the_operator_set_it(db, monkeypatch, tmp_path):
+    """member_status asks host_auth_incident with the RUNNING rules - the bar
+    the poller pages and advises by (fleet_coverage_min_accounts). Asked with
+    the defaults instead, an operator who raised the bar to four would see
+    three refusals advised "replace your key" by the alert and "leave it" by
+    the status page, the home card, the digest and the app."""
+    from sentinel.portal import member_status
+
+    raised = tmp_path / "rules.yaml"
+    raised.write_text(Path(rules_yaml()).read_text().replace(
+        'fleet_coverage_min_accounts: "3"', 'fleet_coverage_min_accounts: "4"'))
+    assert 'fleet_coverage_min_accounts: "4"' in raised.read_text()
+    channel, pager = _Recording(), _Pager()
+    rows, poller = _fleet(db, monkeypatch, channel=channel, pager=pager,
+                          spec=[("a", "bitget"), ("b", "bybit"), ("c", "okx")])
+    for _ in range(5):
+        for _, row in rows:
+            poller.run_fast_loop(row)
+    member = rows[0][1]["alert_email"]
+    [by_default] = member_status(db, member, RulesConfig(rules_yaml()))["accounts"]
+    [by_the_raised_bar] = member_status(db, member, RulesConfig(str(raised)))["accounts"]
+    assert by_default["cause"] == HOST_AUTH_RULE  # three together: an incident at the default bar
+    assert by_the_raised_bar["cause"] == "key_rejected"  # but not at four
 
 
 def test_a_member_of_the_incident_is_never_told_to_replace_the_key(db, monkeypatch):

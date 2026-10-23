@@ -2082,5 +2082,45 @@
    "tests/test_api_session.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "outbox: a request that raises (an answer that could not be written) never starts what it queued",
+  "file": "sentinel/outbox.py",
+  "old": "    finally:\n        _request.queue = outer\n        if queue:\n            _start(db, queue)",
+  "new": "    finally:\n        _request.queue = outer\n    if queue:\n        _start(db, queue)",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "outbox: with no thread to be had, what was owed is lost",
+  "file": "sentinel/outbox.py",
+  "old": "        _deliver(db, queue)\n",
+  "new": "        raise\n",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "outbox: one delivery that raises costs every delivery after it",
+  "file": "sentinel/outbox.py",
+  "old": "            try:\n                deliver(*args)\n            except Exception:",
+  "new": "            if True:\n                deliver(*args)\n            if False:",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "member status: the host-incident check ignores the operator's fleet settings",
+  "file": "sentinel/portal.py",
+  "old": "    incident = host_auth_incident(db, rules)",
+  "new": "    incident = host_auth_incident(db, None)",
+  "tests": [
+   "tests/test_host_auth_incident.py"
+  ],
+  "expect": "killed"
  }
 ]

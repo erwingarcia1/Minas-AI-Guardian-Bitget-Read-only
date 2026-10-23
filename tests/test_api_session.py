@@ -145,6 +145,62 @@ def test_the_sign_in_answers_before_its_notice_is_sent(server, db, alice, monkey
     assert emails == [ALICE] and "Alice's iPhone" in message
 
 
+def test_a_sign_in_whose_answer_cannot_be_written_still_sends_its_notice(server, alice, notices, monkeypatch):
+    """The app gave up, or its network dropped, while the server was still
+    answering, so writing the answer raises. The device exists all the same,
+    so its notice - decision 21c's tripwire - must still go out: that is
+    outbox.answering's `finally`."""
+    import http.server
+
+    real_end_headers = http.server.BaseHTTPRequestHandler.end_headers
+
+    def broken_pipe(self):
+        if self.command == "POST" and self.path.startswith("/api/v1/session"):
+            raise BrokenPipeError(32, "Broken pipe")
+        return real_end_headers(self)
+
+    monkeypatch.setattr(http.server.BaseHTTPRequestHandler, "end_headers", broken_pipe)
+    # The client sees the connection drop (an OSError: reset, or closed
+    # without an answer).
+    with pytest.raises(OSError):
+        server.sign_in(ALICE, alice, device_name="Alice's iPhone")
+    assert outbox.wait_until_sent(5), "what the sign-in queued never finished"
+    assert notices == [(ALICE, "Alice's iPhone")]
+
+
+def test_with_no_thread_to_be_had_the_notice_is_still_sent(server, alice, notices, monkeypatch):
+    """docker-compose.yml's pids_limit means a thread can be refused. The
+    answer has gone by then, so the notice is sent on the request's own
+    thread rather than lost."""
+    import types
+
+    class NoThread(threading.Thread):
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    # Only the outbox's own view of `threading`: the server keeps its threads.
+    monkeypatch.setattr(outbox, "threading", types.SimpleNamespace(Thread=NoThread))
+    status, _body, _ = server.sign_in(ALICE, alice, device_name="Alice's iPhone")
+    assert status == 200
+    assert outbox.wait_until_sent(5), "what the sign-in queued never finished"
+    assert notices == [(ALICE, "Alice's iPhone")]
+
+
+def test_one_delivery_that_raises_does_not_cost_the_next(db):
+    """Each delivery guards itself today; the queue guards each one again, so
+    the next that forgets cannot cost the sibling closing notes behind it."""
+    ran = []
+
+    def raises():
+        raise RuntimeError("unguarded")
+
+    with outbox.answering(db):
+        outbox.later(raises)
+        outbox.later(lambda: ran.append("second"))
+    assert outbox.wait_until_sent(5)
+    assert ran == ["second"]
+
+
 def test_a_wrong_password_and_a_wrong_code_get_the_same_answer(server, db, alice):
     bad_password = server.sign_in(ALICE, alice, password="not-the-password")
     bad_code = server.request("POST", "/api/v1/session",

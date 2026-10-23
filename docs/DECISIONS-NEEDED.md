@@ -1301,8 +1301,8 @@ memory, and it gives a refresh 30 seconds before it stops waiting. When
 the secure store reports that writing the new token failed, the app
 removes the replaced one from storage. That is best effort: a failed
 removal is not retried. And on Android, expo-secure-store does not report
-a failed disk write at all, so a phone whose storage is full can still
-restart on the replaced token. A lost answer can only be fixed on the
+a failed write of a token to disk, so a phone whose storage is full can
+still restart on the replaced token. A lost answer can only be fixed on the
 server. The options:
 
 - **(a) Keep 21c as it is.** Every replay revokes. This is the simplest
@@ -1325,8 +1325,10 @@ server. The options:
 None of (a)-(c) closes the Android case above. The replay comes after a
 restart, possibly hours later, which is outside (b)'s 60 seconds, and
 under (c) the new pair has already been used, so the replay counts as
-theft. Only a change to expo-secure-store that checks the result of its
-disk write would close it.
+theft. Nothing on the phone closes it either. A secure-store change that
+reported the failed write would only trigger the delete, and the delete is
+a disk write too, so it fails the same way on a full disk. (The store does
+report a failed delete; it is the failed write it does not report.)
 
 ### 21i. Does turning two-factor off end the app's sign-ins? — open (raised 2026-10-23)
 

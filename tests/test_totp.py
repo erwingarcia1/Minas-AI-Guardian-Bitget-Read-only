@@ -176,15 +176,23 @@ def test_an_empty_secret_produces_no_code_at_all():
         assert verify_code(empty, "000000", at=1_700_000_000) is None
 
 
-def test_verification_is_constant_time_in_the_comparison():
+def test_verification_is_constant_time_in_the_comparison(monkeypatch):
     """Digit-by-digit comparison leaks the code one character at a time to
-    anyone who can time the endpoint."""
-    import inspect
-
+    anyone who can time the endpoint. Pinned by the call itself, not by a
+    word in the source - a comment that names it must not satisfy this."""
     from sentinel import totp
 
-    source = inspect.getsource(totp)
-    assert "compare_digest" in source
+    compared = []
+    real = totp.hmac.compare_digest
+
+    def spy(a, b):
+        compared.append((a, b))
+        return real(a, b)
+
+    monkeypatch.setattr(totp.hmac, "compare_digest", spy)
+    secret = totp.generate_secret()
+    assert totp.verify_code(secret, totp.totp_at(secret, 1_000_000), at=1_000_000) is not None
+    assert compared, "verify_code compared the code without hmac.compare_digest"
 
 
 # --- recovery codes -----------------------------------------------------------
