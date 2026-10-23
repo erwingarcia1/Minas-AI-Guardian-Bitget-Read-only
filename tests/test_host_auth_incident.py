@@ -416,13 +416,73 @@ def test_members_coverage_notices_say_the_cause_is_ours_and_ask_for_nothing(db, 
         assert all(HOST_AUTH_RULE in (r["evidence_json"] or "") for r in cur.fetchall()), "the cause is stored"
 
 
+def test_a_member_of_the_incident_is_never_told_to_replace_the_key(db, monkeypatch):
+    """The judgement behind the portal's /status page, the home card, the
+    digest and the app's accounts took the plain auth-failure branch during
+    a host-level refusal: "our monitoring key is being rejected - replace
+    it", on the same screen as the coverage alert saying leave your key
+    exactly as it is. Members would rotate working keys during an outage
+    Minas is already fixing. The judgement now knows the incident and says
+    what the alert says, as the cause word the app acts on (2026-10-23)."""
+    import json
+
+    from sentinel.alerts.digest import build_member_digest
+    from sentinel.api import Api, access_key, create_device, make_access_token
+    from sentinel.passwords import LoginThrottle
+    from sentinel.portal import _render_home, _render_status, _session_secret, member_status, set_member_password
+
+    channel, pager = _Recording(), _Pager()
+    rows, poller = _fleet(db, monkeypatch, channel=channel, pager=pager)
+    rules = RulesConfig(rules_yaml())
+    for _ in range(5):  # past the coverage threshold: the alert saying "leave your key" is out
+        for _, row in rows:
+            poller.run_fast_loop(row)
+    account_id, row = rows[0]
+    member = row["alert_email"]
+    assert in_host_auth_incident(db, rules, account_id)
+
+    [account] = member_status(db, member, rules)["accounts"]
+    assert (account["cause"], account["watched"]) == (HOST_AUTH_RULE, False)
+    assert "nothing is needed from you: leave your key exactly as it is" in account["reason"]
+    assert "replace" not in account["reason"].lower()
+
+    set_member_password(db, member, "a-long-enough-password", notify=None)
+    with db.cursor() as cur:
+        cur.execute("SELECT session_epoch FROM portal_members WHERE email = ?", (member,))
+        epoch = cur.fetchone()["session_epoch"]
+    secret = _session_secret(db)
+    device_id, _ = create_device(db, member, "phone", epoch)
+    api = Api(db, secret, LoginThrottle(), lambda ip, who: f"{ip}|{who}", rules=rules)
+    answer = api.handle("GET", "/api/v1/accounts",
+                        {"Authorization": f"Bearer {make_access_token(access_key(secret), device_id)}"},
+                        b"", "127.0.0.1")
+    assert answer.status == 200
+    [returned] = answer.body["accounts"]
+    assert (returned["cause"], returned["reason"]) == (HOST_AUTH_RULE, account["reason"])
+    assert answer.body["attention"]["rule"] == "account_unreachable", "the coverage alert is on the same screen"
+    assert "replace" not in json.dumps(answer.body).lower(), "nothing the app reads for the account says replace"
+
+    # The surfaces that share the judgement say the same.
+    status_page = _render_status(db, member, rules)
+    assert "leave your key exactly as it is" in status_page and "Replace API key" not in status_page
+    home = _render_home(db, member, rules)
+    assert "leave your key exactly as it is" in home and "replace it" not in home
+    digest, _ = build_member_digest(db, member, rules)
+    assert "leave your key exactly as it is" in digest and "replace" not in digest.lower()
+
+
 def test_an_isolated_refusal_keeps_the_rules_own_coverage_advice(db, monkeypatch):
+    from sentinel.portal import member_status
+
     channel, pager = _Recording(), _Pager()
     rows, poller = _fleet(db, monkeypatch, channel=channel, pager=pager, spec=[("alone", "bitget")])
     for _ in range(5):
         poller.run_fast_loop(rows[0][1])
     notice = [a for a in channel.sent if a.rule == "account_unreachable"][0]
     assert "cause" not in notice.evidence and "Re-issue a read-only API key" in notice.message
+    [account] = member_status(db, "alone@example.com", RulesConfig(rules_yaml()))["accounts"]
+    assert account["cause"] == "key_rejected" and "replace it" in account["reason"], (
+        "alone, the key is the member's to replace")
 
 
 # --- item 6: never accuse on the first eligible failure ----------------------------

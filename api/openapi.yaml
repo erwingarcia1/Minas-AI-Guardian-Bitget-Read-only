@@ -6,6 +6,9 @@
 # gives is validated against the schema for its status. Objects are closed
 # (additionalProperties: false), so a field the server adds without adding it
 # here fails the build, and so does a documented field it stops sending.
+# The portal answers any /api/ request whose body length is invalid or over
+# 8 KiB with 400 `invalid_request` before the route runs, so every operation
+# documents a 400.
 # The app's client is generated from this file.
 openapi: 3.1.0
 info:
@@ -47,6 +50,7 @@ paths:
       summary: End this device's sign-in
       responses:
         "204": {description: 'Signed out.'}
+        "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "500": {$ref: "#/components/responses/Error"}
   /api/v1/session/refresh:
@@ -75,6 +79,7 @@ paths:
         - {$ref: "#/components/parameters/Id"}
       responses:
         "204": {description: 'Signed out.'}
+        "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
         "500": {$ref: "#/components/responses/Error"}
@@ -88,6 +93,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Accounts"}
+        "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "500": {$ref: "#/components/responses/Error"}
   /api/v1/alerts:
@@ -122,6 +128,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Incident"}
+        "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
         "500": {$ref: "#/components/responses/Error"}
@@ -137,6 +144,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Acknowledgement"}
+        "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "404": {$ref: "#/components/responses/Error"}
         "500": {$ref: "#/components/responses/Error"}
@@ -150,6 +158,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Activity"}
+        "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "500": {$ref: "#/components/responses/Error"}
   /api/v1/limits:
@@ -162,6 +171,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Limits"}
+        "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "500": {$ref: "#/components/responses/Error"}
   /api/v1/security:
@@ -174,6 +184,7 @@ paths:
           content:
             application/json:
               schema: {$ref: "#/components/schemas/Security"}
+        "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "500": {$ref: "#/components/responses/Error"}
 components:
@@ -290,8 +301,13 @@ components:
         reason: {type: [string, "null"], description: 'Why it is not being watched, in words; null when it is.'}
         cause:
           type: [string, "null"]
-          enum: [paused, tamper_suspected, not_active, key_rejected, never_checked, no_recent_check, null]
-          description: 'The same judgement as `reason`, as a word to act on; null when it is being watched.'
+          enum: [paused, tamper_suspected, not_active, host_auth_failure, key_rejected, never_checked, no_recent_check,
+                 null]
+          description: >-
+            The same judgement as `reason`, as a word to act on; null when it is being watched.
+            `key_rejected` is the member's to fix: the key is refused, and replacing it restarts monitoring.
+            `host_auth_failure` is Minas's: the exchange is refusing this key along with others because of a
+            change on Minas's side, so nothing is needed from the member and the key must be left as it is.
         last_success_at: {type: [string, "null"]}
         role: {type: string, enum: [primary, non-primary], description: 'What this login may change on it (#25).'}
     AlertList:

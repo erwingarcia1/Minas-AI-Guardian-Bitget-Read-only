@@ -9,11 +9,14 @@ acknowledgement is the one that stands.
 from __future__ import annotations
 
 import http.client
+import threading
+import time
 import urllib.parse
 
 import pytest
 
 from sentinel import api as api_module
+from sentinel import outbox
 from sentinel.portal import _session_secret, make_session_token, serve_portal
 from tests.conftest import PINNED_TOTP_NOW
 from tests.helpers.api_client import ApiClient, add_account, add_alert, enrolled_member
@@ -87,6 +90,42 @@ def test_acknowledging_reads_like_the_web_on_the_incident(server, db, cipher, fl
     server.request("POST", f"/api/v1/alerts/{fleet['alice_alert']}/acknowledge", token=alice)
     _, incident, _ = server.request("GET", f"/api/v1/alerts/{fleet['alice_alert']}", token=alice)
     assert incident["acknowledged_by"] == ALICE and incident["acknowledged_at"]
+
+
+def test_the_acknowledgement_answers_before_its_closing_notes_are_sent(server, db, cipher, fleet, monkeypatch):
+    """Answer first, deliver after (2026-10-23). The emergency contact's
+    closing note (decision 1) went out by email and SMS before the answer,
+    one per acknowledged CRITICAL, so a slow provider held an
+    acknowledgement that had already stopped the escalation past the app's
+    deadline, and the app said "Not acknowledged". The answer now goes
+    first; the notes follow it - this alert's, then its sibling's (#99),
+    in the order they were owed."""
+    withdrawal = '{"order_id": "424427676"}'
+    first = add_alert(db, fleet["a1"], evidence=withdrawal, sent_at="2026-08-28T01:00:00+00:00")
+    sibling = add_alert(db, fleet["a1"], rule="withdrawal_to_unseen_address", evidence=withdrawal,
+                        sent_at="2026-08-28T01:00:07+00:00")
+    alice = _token(server, db, cipher, ALICE)["access_token"]
+    entered, release, notes = threading.Event(), threading.Event(), []
+
+    def stalled(router, detection, account_label, emails, phones, **kwargs):
+        notes.append((detection.evidence["alert_id"], list(emails)))
+        entered.set()
+        release.wait(10)  # a provider that never answers; bounded, so the test always ends
+
+    monkeypatch.setattr("sentinel.alerts.contact.ContactRouter.send", stalled)
+    try:
+        started = time.monotonic()
+        status, body, _ = server.request("POST", f"/api/v1/alerts/{first}/acknowledge", token=alice)
+        elapsed = time.monotonic() - started
+        assert entered.wait(5), "the closing note was never sent"
+        # The first note is stuck in its provider: only the deliveries wait.
+        assert _ack_state(db, sibling)[1] == ALICE, "the sibling is acknowledged with the alert, not after its note"
+    finally:
+        release.set()
+    assert status == 200 and body["newly_acknowledged"] is True
+    assert elapsed < 2, f"the acknowledgement answered after {elapsed:.1f} s: it waited for its notes"
+    assert outbox.wait_until_sent(5)
+    assert notes == [(first, [KIN]), (sibling, [KIN])]
 
 
 # --- signing a phone out from the browser --------------------------------------------

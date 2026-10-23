@@ -47,6 +47,11 @@ container")._
   anything wrong with your key. Nothing is needed from you: leave your key
   exactly as it is. Minas is putting it right and will tell you when the
   checks succeed again." An isolated refusal keeps the rule's own advice.
+  The portal contradicted it: for the same account, the /status page, the
+  home page's account card and the digest read "our monitoring key is
+  being rejected — replace it", beside the alert saying leave it. They now
+  say the cause is ours and nothing is needed - leave your key exactly as
+  it is - and the /status page offers no "Replace API key" button for it.
 
 - **A simultaneous authentication failure across accounts is one host-level
   finding, not N tamper accusations.** On 2026-09-21 nine accounts on four
@@ -143,10 +148,19 @@ container")._
   replaced refresh token presented again ends that sign-in at once, and a
   password change signs every phone out, as it already signed out every
   browser. Every app sign-in emails the member and appears on their
-  activity page with the device's name, as does every sign-out.
+  activity page with the device's name, as does every sign-out. The email
+  goes after the app has its answer: sent before it, a slow mail provider
+  held a sign-in that had already been made - the device created, the
+  code spent - past the app's 15-second deadline, and the app reported a
+  connection problem. A body the API cannot read is refused as
+  `invalid_json` before anything else runs, including text that JSON
+  allows and Unicode does not (a lone surrogate); and a code typed in
+  another script's digits (`١٢٣٤٥٦`) is a wrong code, counted on the
+  throttle. Both used to end in Minas's own 500; on the web's sign-in the
+  second dropped the connection.
   `GET /api/v1/security` lists the live sign-ins; a member can end any of
   their own (`DELETE /api/v1/devices/{id}`) and never anyone else's.
-  Nothing changes for the web portal or for alerting. New table:
+  Nothing else changes for the web portal or for alerting. New table:
   `api_devices` (additive; erased with the member, listed in the data
   export without its token hashes).
 
@@ -164,19 +178,32 @@ container")._
   sensitivity table, and the activity page's wording are now data that
   the page and the app both render, so the two cannot disagree. Every read is scoped to the
   member's own accounts, and another member's alert is a 404
-  indistinguishable from one that does not exist. A filter the API cannot
-  understand is refused, never ignored. Quantities stay strings, never
-  floats. A handler that breaks answers a 500 in the API's own error shape
-  (`internal_error`), with the traceback in the log and nothing of it in
-  the answer, so the app always has a sentence to show.
+  indistinguishable from one that does not exist. The home page's two
+  banners - the incident nobody has acknowledged, and a pending pause -
+  name the connection by the member's own name, as the app, the account
+  cards and the alert email do; they printed the operator's slug. An
+  account refused as part of a host-level incident has the cause
+  `host_auth_failure` - the cause is ours and nothing is needed - never
+  `key_rejected`, whose advice is to replace the key; an isolated refusal
+  is still `key_rejected`. A filter the API cannot understand is refused,
+  never ignored. Quantities stay strings, never floats. A handler that
+  breaks answers a 500 in the API's own error shape (`internal_error`),
+  with the traceback in the log and nothing of it in the answer, so the
+  app always has a sentence to show.
 
 - **Acknowledging from the app, and signing a phone out from the browser
   (decisions 21c, 21d).** `POST /api/v1/alerts/{id}/acknowledge` runs
   through the portal's own scoped writer, so it stops a CRITICAL's
   escalation exactly as the web button does, any contact on the account
-  may use it (#25), and the first acknowledgement stands. The portal's
-  Security page lists every phone signed in to the login, with a button
-  to sign each one out; it appears only once a phone has signed in.
+  may use it (#25), and the first acknowledgement stands. It answers
+  first: the emergency contact's closing note for a CRITICAL goes by email
+  and SMS after the answer - from the web button too - so a slow provider
+  no longer holds an acknowledgement that has already stopped the
+  escalation past the app's deadline, where the app said "Not
+  acknowledged". The notes for an alert and its siblings keep their order.
+  The portal's Security page lists every phone signed in to the login,
+  with a button to sign each one out; it appears only once a phone has
+  signed in.
 
 - **The app API's contract, `api/openapi.yaml` (decision 21f).** The one
   description the server and the apps share; the apps' client is to be
@@ -184,7 +211,10 @@ container")._
   the served ones, and every answer the server gives on every route,
   success and error, must match the file's schema for its status, with
   closed objects, so an undocumented field fails the build as surely as
-  a missing one.
+  a missing one. That includes the portal's own 400 (`invalid_request`),
+  answered on every route before the route runs when a body's length is
+  invalid or over 8 KiB; eight of the eleven operations did not document
+  it.
 
 - **A demo server for trying the app on a phone (`scripts/dev-server.py`).**
   It runs the portal and the app API against a throwaway database with a

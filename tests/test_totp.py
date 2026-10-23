@@ -144,6 +144,17 @@ def test_a_malformed_code_is_refused_rather_than_raising(code):
     assert verify_code(SECRET, code, at=1_700_000_000) is None
 
 
+@pytest.mark.parametrize("digits", ["٠١٢٣٤٥٦٧٨٩", "０１２３４５６７８９", "⁰¹²³⁴⁵⁶⁷⁸⁹", "𝟎𝟏𝟐𝟑𝟒𝟓𝟔𝟕𝟖𝟗"],
+                         ids=["arabic-indic", "fullwidth", "superscript", "mathematical"])
+def test_digits_from_another_script_are_refused_rather_than_raising(digits):
+    """`str.isdigit` accepts these, so they reached compare_digest, which
+    raises on non-ASCII text: behind the right password, the app's sign-in
+    answered Minas's own 500 and the web's dropped the connection. Even the
+    right code, written in them, is refused."""
+    lookalike = "".join(digits[int(c)] for c in totp_at(SECRET, 1_700_000_000))
+    assert verify_code(SECRET, lookalike, at=1_700_000_000) is None
+
+
 def test_a_malformed_secret_fails_closed():
     """A corrupted or truncated secret must reject every code, not accept
     them. Failing open here is the whole game."""
