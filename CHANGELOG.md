@@ -15,6 +15,33 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+### Added
+
+- **The sign-in page names the one address, once the server has one (#88,
+  decision 22d).** With `SENTINEL_PORTAL_URL` set, the password hint reads
+  "Open guardian.minastrade.com directly" and the anti-phishing note says
+  "Our only address is guardian.minastrade.com" - the sentence the
+  anti-phishing story has been missing since #88, because "open the site
+  yourself" could not say which site. The name comes from the setting and
+  nowhere else (`tests/test_portal_address.py` holds that no module under
+  `sentinel/` carries the domain as a literal), and it is shown as text to
+  type, never as a link. A sign-in page reached by any other name - the
+  old Funnel address, today - says "Our address has changed" and names the
+  new one: 22d's notice for the old address, which goes up by itself the
+  moment the setting is set. Unset, every page reads exactly as before, so
+  nothing shows until step 8 of docs/deployment.md "The public address".
+
+### Changed
+
+- **Three more throttles are pinned to the visitor behind the proxy
+  (#116, decision 22c item 6).** The member two-factor step, the
+  password-reset request and the operator second factor already took the
+  visitor's address through the proxy; now tests hold them to it, and a
+  design-guard probe for each reads the socket's address instead and is
+  killed. The reset request mattered most: its throttled answer looks like
+  any other, so a regression there would have stopped reset emails for
+  everyone without a visible error.
+
 ### Fixed
 
 - **Caddy's public ports bind to one host address, `SENTINEL_EDGE_BIND`,
@@ -37,17 +64,6 @@ container")._
   2026-09-28 pause": alerting was stopped by hand that day (the owner's
   decision: beta, credit cost) and the note recording it, with its
   restore order, lived only on the box.
-
-### Changed
-
-- **Three more throttles are pinned to the visitor behind the proxy
-  (#116, decision 22c item 6).** The member two-factor step, the
-  password-reset request and the operator second factor already took the
-  visitor's address through the proxy; now tests hold them to it, and a
-  design-guard probe for each reads the socket's address instead and is
-  killed. The reset request mattered most: its throttled answer looks like
-  any other, so a regression there would have stopped reset emails for
-  everyone without a visible error.
 
 ## [1.13.0] — 2026-10-23
 

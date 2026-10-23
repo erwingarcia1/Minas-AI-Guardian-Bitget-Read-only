@@ -8,12 +8,13 @@ threshold.
 
 ## Try it on your phone
 
-The app needs a server with the app API (`/api/v1/`). The released server
-does not have it yet, and `https://guardian.minastrade.com` does not
-resolve yet, so a plain `npm start` has nothing to sign in to. Run the
-demo server on your computer instead and point the app at it. The demo
-server has a demo login, fake accounts and alerts, and makes no outside
-connections.
+The app talks to `https://guardian.minastrade.com` unless told otherwise,
+and the app API (`/api/v1/`) ships in the server from v1.13.0. Until that
+release is deployed and the address answers, a plain `npm start` has
+nothing to sign in to; once it is, signing in there needs a real member
+login with two-factor on. For either case, run the demo server on your
+computer instead and point the app at it. The demo server has a demo
+login, fake accounts and alerts, and makes no outside connections.
 
 1. **Phone and computer on the same Wi-Fi.**
 2. **Expo Go 58 or later** on the phone, from the App Store or Google Play.

@@ -364,8 +364,17 @@ do not start the next one until it has.
    ```
 
    From then on the address in alert SMS and emails, and in password-reset
-   links, is the new one. Moving members off the Funnel address is 22d,
-   not this.
+   links, is the new one. Once a release carrying the sign-in copy is
+   deployed (CHANGELOG, "The sign-in page names the one address"), the
+   sign-in page names it too, and the Funnel address's sign-in page tells
+   visitors the address has changed:
+
+   ```bash
+   curl -s https://guardian.minastrade.com/login | grep -c 'Our only address'       # expect: 1
+   curl -s https://guardian.minastrade.com/login | grep -c 'Our address has changed' # expect: 0
+   ```
+
+   Moving members off the Funnel address is 22d, not this.
 
 **Tailscale stays through all of this.** Funnel is withdrawn at 22e step
 6, after members have moved; Tailscale itself goes after SSH without it is
