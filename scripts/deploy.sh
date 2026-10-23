@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-command production deploy for Minas AI Guardian. Run on the server:
 #
-#   ssh ubuntu@minas-guardian
+#   ssh -i your-key.pem ubuntu@<elastic-ip>
 #   sudo /opt/minas-guardian/scripts/deploy.sh            # latest release tag
 #   sudo /opt/minas-guardian/scripts/deploy.sh v1.5.0     # that specific tag
 #

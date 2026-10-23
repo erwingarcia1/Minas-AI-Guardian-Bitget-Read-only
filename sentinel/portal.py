@@ -42,10 +42,12 @@ from sentinel.watching import counter, counter_columns_sql
 logger = logging.getLogger("sentinel.portal")
 
 # The member portal runs as a SEPARATE HTTP server from the ops dashboard on
-# purpose: the ops view is network-gated with no login of its own, so members
-# must never share its surface. Everything here is read-only and every query
-# is filtered by the authenticated member's email - there is no route that
-# can return another customer's data.
+# purpose: the ops view is Minas staff's, behind its own operator sign-in
+# with a mandatory second factor and reached through Caddy at /admin, and
+# members must never share its surface, its routes or its session cookie.
+# Everything here is read-only and every query is filtered by the
+# authenticated member's email - there is no route that can return another
+# customer's data.
 
 SESSION_COOKIE = "minas_portal"
 # Two clocks on every session (#31): an idle window that activity slides

@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from sentinel.buildinfo import version_line
+from sentinel.config import env_setting
 from sentinel.crypto import CredentialCipher
 from sentinel.db import Database
 from sentinel.edge import DASHBOARD_TRUSTED_PROXIES_SETTING, EdgeHandler, trusted_proxies_from_env
@@ -28,6 +29,42 @@ from sentinel.rules_schema import default_for
 from sentinel.watching import FAILURE_COUNTERS, counter, counter_columns_sql, failures_total, is_unwatched
 
 logger = logging.getLogger("sentinel.dashboard")
+
+# Where the browser finds this dashboard (decision 22a; 22e step 3). Caddy
+# forwards /admin and /admin/* to this server with the path UNCHANGED and
+# everything else to the member portal, on one hostname. So every link, form
+# action, redirect and cookie path this module emits must carry the base
+# path - a sign-in form posting to a bare /login would reach the PORTAL's
+# /login and fail without a word - and every request must have it taken off
+# before the route literals are compared. One module global, set by every
+# serve_dashboard start: one process runs exactly one dashboard (cli.py),
+# and the renderers are module-level functions with no handler in hand.
+# Blank serves the root exactly as before the setting existed: the bare
+# `sentinel run`, the demo server and the existing tests.
+BASE_PATH_SETTING = "SENTINEL_DASHBOARD_BASE_PATH"
+_base_path = ""
+
+
+def normalize_base_path(raw: str | None) -> str:
+    """'' and '/' -> '' (the root); 'admin', '/admin' and '/admin/' -> '/admin'.
+
+    One leading slash and no trailing one, so `_url` can put an app-relative
+    path straight after it without producing '//' or '/adminlogin', and
+    `_route` can match on `== base` or `startswith(base + '/')` - which is
+    what keeps /administrator out. Surrounding whitespace is dropped, as
+    `env_setting` drops it."""
+    raw = (raw or "").strip().strip("/")
+    return f"/{raw}" if raw else ""
+
+
+def _url(path: str = "/") -> str:
+    """The ONE place an app-relative path ('/', '/login', '/account?id=3',
+    '/?state=trouble') becomes the path a browser must request. Feed it
+    app-relative paths only - never a request path, a stored URL or another
+    `_url` result, or the base path is doubled (tests/test_dashboard_prefix.py
+    looks for '/admin/admin' on every page)."""
+    return _base_path + path
+
 
 # Plain CSS constant (single braces): pages are assembled by concatenation, so
 # the stylesheet never passes through str.format / f-strings and needs no
@@ -211,7 +248,7 @@ def _page(nav_html: str, body_html: str, refresh: bool = True) -> str:
         # else - an alert that should have fired, a fix that should have
         # landed. Showing it on every page means the answer is never a guess
         # about whether the last deploy took.
-        + '<footer><span>Internal ops view · Tailscale-gated · operator sign-in with two-factor</span>'
+        + '<footer><span>Internal ops view · operator sign-in with two-factor · Minas staff only</span>'
         + f'<span class="build">{html.escape(version_line())}</span></footer></div>'
         + _LOCAL_TIME_SCRIPT + "</body></html>"
     )
@@ -291,7 +328,7 @@ def _render_operator_login(error: str | None = None, *, no_operators: bool = Fal
         banner
         + '<section><div class="card"><div class="card-head"><h2>Operator sign-in</h2>'
         '<span class="count">Minas staff only</span></div>'
-        '<form class="addf" method="post" action="/login">'
+        f'<form class="addf" method="post" action="{_url("/login")}">'
         '<div class="grid2">'
         '<div class="fld"><label>Username</label>'
         '<input type="text" name="username" autocomplete="username" required></div>'
@@ -313,7 +350,7 @@ def _render_operator_code(pending: str, error: str | None = None) -> str:
         banner
         + '<section><div class="card"><div class="card-head"><h2>Second factor</h2>'
         '<span class="count">Minas staff only</span></div>'
-        '<form class="addf" method="post" action="/login/code">'
+        f'<form class="addf" method="post" action="{_url("/login/code")}">'
         f'<input type="hidden" name="pending" value="{html.escape(pending)}">'
         '<div class="fld"><label>Code from your authenticator app, or a recovery code</label>'
         '<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus></div>'
@@ -337,7 +374,7 @@ def _render_operator_enrol(pending: str, secret: str, uri: str, error: str | Non
         "Two-factor is required for the ops dashboard; you cannot sign in without it.</p>"
         f'<p class="mono" id="totp-secret">{html.escape(secret)}</p>'
         f'<p class="mono">{html.escape(uri)}</p>'
-        '<form class="addf" method="post" action="/login/enrol">'
+        f'<form class="addf" method="post" action="{_url("/login/enrol")}">'
         f'<input type="hidden" name="pending" value="{html.escape(pending)}">'
         '<div class="fld"><label>Code from your app</label>'
         '<input type="text" name="code" inputmode="numeric" autocomplete="one-time-code" required autofocus></div>'
@@ -355,7 +392,7 @@ def _render_operator_recovery_codes(codes: list[str]) -> str:
         "hashed, so this is the only time they can be shown. If all of them are gone too, "
         "the reset is <code>sentinel operator reset-2fa</code> on the host - it is recorded.</p>"
         '<p class="mono">' + "<br>".join(html.escape(c) for c in codes) + "</p>"
-        '<p style="margin-top:18px"><a class="submit" href="/">Continue to the dashboard</a></p>'
+        f'<p style="margin-top:18px"><a class="submit" href="{_url("/")}">Continue to the dashboard</a></p>'
         "</div></section>"
     )
     return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False)
@@ -466,7 +503,7 @@ def _render(db: Database, rules=None, qs=None) -> str:
         current = " style='font-weight:700;text-decoration:underline'" if value == state_filter else ""
         suffix = f" ({n})" if n is not None else f" ({len(accounts)})"
         query = f"?state={value}" if value else "?"
-        return f"<a class='acctlink'{current} href='/{query}'>{label}{suffix}</a>"
+        return f"<a class='acctlink'{current} href='{_url('/')}{query}'>{label}{suffix}</a>"
 
     filter_row = (
         "<p class='count' style='margin:0 0 8px'>Show: "
@@ -475,13 +512,13 @@ def _render(db: Database, rules=None, qs=None) -> str:
         + " · " + _filter_link("watching", "Watching", counts["watching"])
         + " · " + _filter_link("paused", "Paused", counts["paused"])
         + " — sorted by " + ("name" if sort == "label" else "problem state, trouble first")
-        + f" (<a class='acctlink' href='/?sort={'problem' if sort == 'label' else 'label'}"
+        + f" (<a class='acctlink' href='{_url('/')}?sort={'problem' if sort == 'label' else 'label'}"
         + (f"&state={state_filter}" if state_filter else "") + "'>"
         + ("sort by problem" if sort == "label" else "sort by name") + "</a>)</p>"
     )
 
     account_rows = "".join(
-        f"<tr><td><a class='acctlink' href='/account?id={r['id']}'>{html.escape(r['label'])} ›</a></td>"
+        f"<tr><td><a class='acctlink' href='{_url('/account')}?id={r['id']}'>{html.escape(r['label'])} ›</a></td>"
         f"<td class='mono'>{html.escape((r['exchange'] if 'exchange' in r.keys() else 'bitget') or 'bitget')}</td>"
         f"<td class='mono'>{_account_type_label(r['topology'])}</td><td>{_status_pill(r['status'])}</td>"
         f"<td class='mono'>{_ts(r['last_success_at'])}</td>"
@@ -501,9 +538,9 @@ def _render(db: Database, rules=None, qs=None) -> str:
     ) or "<tr><td colspan=5 class='empty'>No alerts — all clear</td></tr>"
 
     nav = (
-        '<a class="live" href="/triage">Triage queue</a>'
-        '<a class="live primary" href="/add">+ Add customer</a>'
-        '<a class="live" href="/metrics">Metrics</a>'
+        f'<a class="live" href="{_url("/triage")}">Triage queue</a>'
+        f'<a class="live primary" href="{_url("/add")}">+ Add customer</a>'
+        f'<a class="live" href="{_url("/metrics")}">Metrics</a>'
         f'<span class="live"><span class="dot"></span> Live · <span id="liveclock">{now.strftime("%H:%M:%S UTC")}</span></span>'
     )
     body = (
@@ -730,7 +767,7 @@ def _portal_access_row(db: Database, account_id: int, email: str | None, contact
         action = "revoke" if opens_this else "grant"
         button = "Remove access to this account" if opens_this else "Grant this account"
         grant_control = (
-            f'<form method="post" action="/portal-grant" style="padding:0 22px 10px">'
+            f'<form method="post" action="{_url("/portal-grant")}" style="padding:0 22px 10px">'
             f'<input type="hidden" name="account_id" value="{account_id}">'
             f'<input type="hidden" name="contact" value="{contact}">'
             f'<input type="hidden" name="action" value="{action}">'
@@ -749,7 +786,7 @@ def _portal_access_row(db: Database, account_id: int, email: str | None, contact
     return (
         f'<div class="det"><span class="desc">{title} — <b>{html.escape(email)}</b> · {status}</span></div>'
         + scope +
-        f'<form method="post" action="/portal-access" style="padding:0 22px 14px">'
+        f'<form method="post" action="{_url("/portal-access")}" style="padding:0 22px 14px">'
         f'<input type="hidden" name="account_id" value="{account_id}">'
         f'<input type="hidden" name="contact" value="{contact}">'
         f'<button class="submit" type="submit">{label}</button> '
@@ -818,14 +855,14 @@ def _render_triage(db: Database, rules=None, show_handled: bool = False) -> str:
         note = html.escape(a["note"][:80]) if a["note"] else ""
         rows += (
             f"<tr><td class='mono'>{_ts(a['sent_at'])}</td>"
-            f"<td class='lbl'><a class='acctlink' href='/account?id={a['account_id']}'>"
+            f"<td class='lbl'><a class='acctlink' href='{_url('/account')}?id={a['account_id']}'>"
             f"{html.escape(a['label'])} \u203a</a></td>"
             f"<td><span class='pill sev-{a['severity']}'>{a['severity']}</span></td>"
             f"<td class='rule'>{html.escape(a['rule'])}</td>"
             + age_cell +
             f"<td class='mono'>{html.escape(', '.join(flags))}</td>"
             "<td>"
-            f"<form method='post' action='/triage' style='display:flex;gap:6px;margin:0'>"
+            f"<form method='post' action='{_url('/triage')}' style='display:flex;gap:6px;margin:0'>"
             f"<input type='hidden' name='alert_id' value='{a['alert_id']}'>"
             f"<input type='text' name='note' value='{note}' placeholder='note' "
             "style='width:150px;background:var(--bg);color:inherit;border:1px solid var(--line);"
@@ -839,15 +876,15 @@ def _render_triage(db: Database, rules=None, show_handled: bool = False) -> str:
         rows = "<tr><td colspan=7 class='empty'>Nothing waiting \u2014 every alert is acknowledged</td></tr>"
 
     muted_rows = "".join(
-        f"<tr><td class='lbl'><a class='acctlink' href='/account?id={m['account_id']}'>"
+        f"<tr><td class='lbl'><a class='acctlink' href='{_url('/account')}?id={m['account_id']}'>"
         f"{html.escape(m['label'])} \u203a</a></td>"
         f"<td>{html.escape(', '.join(m['snoozed_rules']) or chr(0x2014))}</td>"
         f"<td>{'SMS off' if m['sms_off'] else chr(0x2014)}</td></tr>"
         for m in muted
     ) or "<tr><td colspan=3 class='empty'>Nobody is muting anything</td></tr>"
 
-    toggle = ('<a class="acctlink" href="/triage">hide handled \u203a</a>' if show_handled
-              else '<a class="acctlink" href="/triage?handled=1">show handled too \u203a</a>')
+    toggle = (f'<a class="acctlink" href="{_url("/triage")}">hide handled \u203a</a>' if show_handled
+              else f'<a class="acctlink" href="{_url("/triage?handled=1")}">show handled too \u203a</a>')
 
     body = (
         '<section><div class="card"><div class="card-head"><h2>Unacknowledged alerts \u2014 all customers</h2>'
@@ -860,7 +897,7 @@ def _render_triage(db: Database, rules=None, show_handled: bool = False) -> str:
         "<table><thead><tr><th>Account</th><th>Snoozed rules (live)</th><th>Channels</th></tr></thead>"
         f"<tbody>{muted_rows}</tbody></table></div></section>"
     )
-    nav = '<a class="live" href="/">\u2190 Dashboard</a>'
+    nav = f'<a class="live" href="{_url("/")}">\u2190 Dashboard</a>'
     return _page(nav, body)
 
 
@@ -988,7 +1025,7 @@ def _render_account(db: Database, account_id: int, notice_html: str = "") -> str
         for r in alerts
     ) or "<tr><td colspan=4 class='empty'>No alerts — all clear</td></tr>"
 
-    nav = '<a class="live" href="/">← Dashboard</a>'
+    nav = f'<a class="live" href="{_url("/")}">← Dashboard</a>'
     body = (
         notice_html
         + '<section><div class="card"><div class="card-head">'
@@ -1061,7 +1098,7 @@ def _render_add_form(values: dict | None = None, error: str | None = None, ok: s
     body = (
         banner + '<div class="card"><div class="card-head"><h2>Add customer</h2>'
         '<span class="count">read-only key is verified before storing</span></div>'
-        '<form class="addf" method="post" action="/add"><div class="grid2">'
+        f'<form class="addf" method="post" action="{_url("/add")}"><div class="grid2">'
         + _input("name", "Name", values, required=True)
         + f'<div class="fld"><label>License</label><input type="text" name="license" '
         f'value="{html.escape(values.get("license", "") or "")}" autocomplete="off"></div>'
@@ -1083,7 +1120,7 @@ def _render_add_form(values: dict | None = None, error: str | None = None, ok: s
         '<span class="hint">The key is checked for read-only scope on the exchange; a trade/withdraw key is rejected.</span>'
         "</div></form></div>"
     )
-    nav = '<a class="live" href="/">← Dashboard</a>'
+    nav = f'<a class="live" href="{_url("/")}">← Dashboard</a>'
     # No auto-refresh on the form (don't wipe a half-filled form).
     return _page(nav, body, refresh=False)
 
@@ -1098,20 +1135,30 @@ def _render_result(label: str, exchange: str, account_id: int) -> str:
 
 def serve_dashboard(
     db: Database, cipher: CredentialCipher, port: int, host: str = "127.0.0.1", rules=None,
-    operator_alerter=None,
+    operator_alerter=None, base_path: str | None = None,
 ) -> ThreadingHTTPServer:
-    """Internal ops page. Network-gated (Tailscale), and since #54/#87 behind an
-    operator sign-in with a mandatory second factor. Historically it had no login of its
-    own by design. The /add form runs the same fail-closed read-only gate as
-    the CLI, so a trade/withdraw key can never be stored through it.
+    """Internal ops page, Minas staff only: behind an operator sign-in with a
+    mandatory second factor (#54/#87, decision 19) and a login throttle keyed
+    on the visitor's address. On the public name it is reached through Caddy
+    at /admin (decision 22e step 3); the break-glass path is an SSH tunnel to
+    the host (port 22, the EC2 key pair) and http://localhost:8390/admin/.
+    Historically it had no login of its own by design. The /add form runs the
+    same fail-closed read-only gate as the CLI, so a trade/withdraw key can
+    never be stored through it.
 
-    `host` defaults to loopback because this page has no login: on any other
-    default, following the quickstart puts an unauthenticated "add customer"
-    form — and every customer's name, email and phone — on every interface of
-    whatever machine it runs on (G-36). Widening it is a deliberate act:
-    `SENTINEL_DASHBOARD_HOST`, and only behind a VPN, an SSH tunnel or an
-    authenticating proxy. In Docker the container sets `0.0.0.0` and the
-    loopback *publish* in docker-compose.yml is what gates it instead."""
+    `base_path` is where the browser finds these pages: "/admin" under
+    compose, where Caddy forwards /admin and /admin/* with the path intact.
+    None reads SENTINEL_DASHBOARD_BASE_PATH once, here, at startup; blank is
+    the root, exactly as before the setting existed. It is set on EVERY
+    start, so a later default server is back at the root.
+
+    `host` defaults to loopback: on any other default, following the
+    quickstart puts the sign-in page - and behind it every customer's name,
+    email and phone - on every interface of whatever machine it runs on
+    (G-36). Widening it is a deliberate act: `SENTINEL_DASHBOARD_HOST`, and
+    only behind an SSH tunnel or an authenticating proxy. In Docker the
+    container sets `0.0.0.0`, and the loopback *publish* in docker-compose.yml
+    plus Caddy's /admin matcher are what gate it instead."""
 
     # Shared across requests for this server, like the portal's. Throttles by
     # client IP and by username, so neither a single source nor a single
@@ -1119,6 +1166,16 @@ def serve_dashboard(
     # it comes from X-Forwarded-For, believed only from a trusted peer.
     _login_throttle = LoginThrottle()
     trusted = trusted_proxies_from_env("dashboard", DASHBOARD_TRUSTED_PROXIES_SETTING)
+    # The base path: read once like the proxies and said in the log for the
+    # same reason - where the dashboard answers is a startup fact an operator
+    # can check. Set on every start (module state; see the top of the file).
+    global _base_path
+    _base_path = normalize_base_path(env_setting(BASE_PATH_SETTING) if base_path is None else base_path)
+    if _base_path:
+        logger.info("dashboard: served under %s - every link, form and redirect carries it; "
+                    "the bare /healthz still answers for the container probe", _base_path)
+    else:
+        logger.info("dashboard: served at the root (%s is unset)", BASE_PATH_SETTING)
 
     def _same_origin(handler) -> bool:
         """Is this POST from our own pages? (CSRF gate on every state change.)
@@ -1137,6 +1194,20 @@ def serve_dashboard(
         measures colliding; the referrer policy is now `same-origin` so
         Origin stays populated, and this check no longer depends on it alone.
         """
+        # Under a base path (decision 22a) the Referer's PATH counts too, when
+        # there is one. On one hostname a portal page is same-origin to this
+        # server, so neither Sec-Fetch-Site nor Origin can tell our own form
+        # from one planted on a portal page; the Referer path can, because
+        # ours start with the base path and `_send`'s Referrer-Policy:
+        # same-origin makes every browser send it on our own posts. No
+        # Referer stays accepted, as before: curl and the tests send none,
+        # and the checks below still refuse every cross-site browser.
+        if _base_path:
+            referer = handler.headers.get("Referer")
+            if referer:
+                referer_path = urlparse(referer).path
+                if not (referer_path == _base_path or referer_path.startswith(_base_path + "/")):
+                    return False
         fetch_site = (handler.headers.get("Sec-Fetch-Site") or "").lower()
         if fetch_site:
             return fetch_site in ("same-origin", "none")
@@ -1185,6 +1256,22 @@ def serve_dashboard(
                 if name == SESSION_COOKIE:
                     return session_operator(db, value)
             return None
+
+        def _route(self) -> str | None:
+            """The app-relative path the route literals compare against: the
+            request path with the base path taken off and trailing slashes
+            dropped, "/" for the root. None when the request is outside the
+            base path - a portal path that reached this server, or
+            /administrator, which matches neither `== base` nor
+            `startswith(base + "/")`. At the root (no base path) every
+            request is inside, exactly as before."""
+            path = urlparse(self.path).path
+            if _base_path:
+                if path == _base_path or path.startswith(_base_path + "/"):
+                    path = path[len(_base_path):]
+                else:
+                    return None
+            return path.rstrip("/") or "/"
 
         def _healthz(self) -> str:
             """Container liveness, exempt from the operator gate BY DESIGN and
@@ -1251,18 +1338,41 @@ def serve_dashboard(
             return False
 
         def do_GET(self):
-            path = urlparse(self.path).path.rstrip("/") or "/"
-            if path == "/healthz":
+            # The compose healthcheck probes the BARE path from inside the
+            # container (http://127.0.0.1:8390/healthz, docker-compose.yml)
+            # whatever base path the pages live under, so it is answered
+            # before any routing. Caddy forwards the base path alone, so the
+            # probe never faces the internet; and under the base path
+            # /healthz is no route at all - /admin/healthz meets the sign-in
+            # gate like any other page, so the engine's liveness cannot be
+            # read from outside.
+            raw_path = urlparse(self.path).path
+            if raw_path.rstrip("/") == "/healthz":
                 self._healthz()
+                return
+            path = self._route()
+            if path is None:
+                if raw_path == "/":
+                    # Only reachable off the proxy - the SSH tunnel's
+                    # http://localhost:8390/ - where the base path is the one
+                    # thing to know, so it is said rather than 404'd. Caddy
+                    # never sends a bare / here.
+                    self.send_response(303)
+                    self.send_header("Location", _url("/"))
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                self._send(b"not found", 404)
                 return
             if path == "/login":
                 self._send(_render_operator_login().encode())
                 return
             if path == "/logout":
                 self.send_response(303)
-                self.send_header("Location", "/login")
+                self.send_header("Location", _url("/login"))
                 self.send_header(
-                    "Set-Cookie", f"{SESSION_COOKIE}=; Path=/; Max-Age=0; HttpOnly; Secure; SameSite=Lax"
+                    "Set-Cookie",
+                    f"{SESSION_COOKIE}=; Path={_base_path or '/'}; Max-Age=0; HttpOnly; Secure; SameSite=Lax",
                 )
                 self.send_header("Content-Length", "0")
                 self.end_headers()
@@ -1281,7 +1391,7 @@ def serve_dashboard(
             elif path == "/metrics":
                 from sentinel.metrics import render_metrics_html
 
-                self._send(render_metrics_html(dash_port=port).encode())
+                self._send(render_metrics_html(base_path=_base_path).encode())
             elif path == "/triage":
                 qs = parse_qs(urlparse(self.path).query)
                 show_handled = qs.get("handled", ["0"])[0] == "1"
@@ -1296,12 +1406,12 @@ def serve_dashboard(
                     aid = 0
                 page = _render_account(db, aid)
                 if page is None:
-                    self._send(_page('<a class="live" href="/">← Dashboard</a>',
+                    self._send(_page(f'<a class="live" href="{_url("/")}">← Dashboard</a>',
                                      '<section><div class="card"><div class="empty">Account not found</div></div></section>',
                                      refresh=False).encode(), 404)
                 else:
                     self._send(page.encode())
-            elif self.path == "/favicon.ico":
+            elif path == "/favicon.ico":
                 self.send_response(204)
                 self.end_headers()
             else:
@@ -1315,7 +1425,10 @@ def serve_dashboard(
             if not _same_origin(self):
                 self._send(b"cross-origin POST rejected", 403)
                 return
-            post_path = urlparse(self.path).path.rstrip("/")
+            post_path = self._route()
+            if post_path is None:
+                self._send(b"not found", 404)
+                return
             if post_path == "/login":
                 self._login()
                 return
@@ -1430,7 +1543,7 @@ def serve_dashboard(
                 self._send(b"no such alert", 404)
                 return
             self.send_response(303)
-            self.send_header("Location", "/triage")
+            self.send_header("Location", _url("/triage"))
             self.send_header("Content-Length", "0")
             self.end_headers()
 
@@ -1635,14 +1748,19 @@ def serve_dashboard(
         def _issue_session(self, username: str, body: bytes | None = None) -> None:
             token = make_session_token(session_secret(db), username)
             # Secure (decision 22c item 2): the browser sends it over HTTPS
-            # only. Harmless over the tailnet's HTTPS, required once the
-            # dashboard is on the internet. The SSH tunnel's plain
+            # only - Caddy's, on the public name. The SSH tunnel's plain
             # http://localhost still signs in: browsers count localhost as a
             # secure context (docs/deployment.md, "Reaching the dashboard").
-            cookie = f"{SESSION_COOKIE}={token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=43200"
+            # Path is the base path (22a): under /admin the browser sends the
+            # cookie with the dashboard's requests and never with a portal
+            # page's. The sign-out clears it with the same Path, because a
+            # cookie is keyed by name, domain AND path - a clear with another
+            # path would leave the session in the browser.
+            cookie = (f"{SESSION_COOKIE}={token}; Path={_base_path or '/'}; "
+                      "HttpOnly; Secure; SameSite=Lax; Max-Age=43200")
             if body is None:
                 self.send_response(303)
-                self.send_header("Location", "/")
+                self.send_header("Location", _url("/"))
                 self.send_header("Set-Cookie", cookie)
                 self.send_header("Content-Length", "0")
                 self.end_headers()

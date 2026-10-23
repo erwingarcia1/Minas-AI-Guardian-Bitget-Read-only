@@ -38,26 +38,41 @@ services:
       # can say so instead of warning on every correct deployment (#76). It
       # describes the `ports:` publishes below - if the publish changes,
       # change this in the same diff; a test holds the two together. The
-      # caddy service below is the one public listener and forwards to the
-      # portal only (deploy/caddy/Caddyfile), never to 8390; tests hold that
-      # too.
-      SENTINEL_BIND_GATE: "docker-compose publishes 127.0.0.1:8390 on the host; the container-internal bind is unreachable off-host - the public proxy (caddy, 80/443) forwards to the portal (8391) only"
+      # caddy service below is the one public listener: it forwards /admin
+      # and /admin/* to the dashboard (8390) and everything else to the
+      # portal (8391), never the metrics endpoint (9109) -
+      # deploy/caddy/Caddyfile; tests hold that too.
+      SENTINEL_BIND_GATE: "docker-compose publishes 127.0.0.1:8390 on the host; the container-internal bind is unreachable off-host - the public proxy (caddy, 80/443) forwards /admin to the dashboard (8390) and everything else to the portal (8391), never the metrics endpoint (9109)"
+      # The dashboard serves under this path (decision 22a): every link, form
+      # action, redirect and the session cookie's Path carry it, and a request
+      # for any other path gets 404 - except /healthz, which keeps answering
+      # at the bare path for the healthcheck below. Caddy forwards the path
+      # unchanged, so this must be the path the Caddyfile's @admin matcher
+      # names; a test holds the two equal. Unset, the dashboard answers at
+      # the root, as the bare `sentinel run` quickstart does.
+      SENTINEL_DASHBOARD_BASE_PATH: "/admin"
       # Decision 22c item 6: behind Caddy every connection comes from Caddy,
       # and a throttle keyed on that address is one bucket for every visitor
       # - five wrong passwords from anyone would block every member's
-      # sign-in. X-Forwarded-For is believed from this address and no other:
-      # caddy's fixed ipv4_address on the `edge` network below. Change the
-      # two together; a test holds them equal.
+      # sign-in, and five wrong operator passwords every operator's.
+      # X-Forwarded-For is believed from this address and no other: caddy's
+      # fixed ipv4_address on the `edge` network below. The portal and the
+      # dashboard each have their own setting, so neither inherits the
+      # other's trust; the code's default for both is blank (no proxy).
+      # Change the three together with caddy's fixed address; a test holds
+      # them equal.
       SENTINEL_TRUSTED_PROXIES: "10.231.0.2"
+      SENTINEL_DASHBOARD_TRUSTED_PROXIES: "10.231.0.2"
     volumes:
       - sentinel-data:/data
       - ./config:/app/config:ro   # rules.yaml stays hot-reloadable from the host
     ports:
-      - "127.0.0.1:8390:8390"     # status dashboard - keep behind VPN/SSH tunnel, it has no auth
-      - "127.0.0.1:8391:8391"     # member portal - loopback: Tailscale Funnel uses this until 22e; caddy uses the edge network
-      - "127.0.0.1:9109:9109"     # prometheus metrics
+      - "127.0.0.1:8390:8390"     # ops dashboard - loopback: the break-glass path is an SSH tunnel to this port, then http://localhost:8390/admin/; caddy reaches it over the edge network
+      - "127.0.0.1:8391:8391"     # member portal - loopback: nothing on the host needs it; caddy reaches it over the edge network
+      - "127.0.0.1:9109:9109"     # prometheus metrics - loopback only: never proxied, read through an SSH tunnel
     # `default` as before (the scale profile's postgres and redis live there),
-    # plus `edge`, where caddy reaches the portal as sentinel:8391.
+    # plus `edge`, where caddy reaches the portal as sentinel:8391 and the
+    # dashboard as sentinel:8390.
     networks:
       default: {}
       edge: {}
@@ -97,9 +112,11 @@ services:
   # The public edge (decision 22b, answered 2026-10-23): TLS for
   # https://guardian.minastrade.com, certificates from Let's Encrypt, renewed
   # by Caddy itself. The ONLY public listener on this host (22c item 4):
-  # every other publish in this file is on 127.0.0.1. It forwards to the
-  # member portal and to nothing else - deploy/caddy/Caddyfile, which
-  # docs/deployment.md "The public address" brings up in 22e's order.
+  # every other publish in this file is on 127.0.0.1. It forwards /admin and
+  # /admin/* to the ops dashboard (sentinel:8390, path unchanged) and
+  # everything else to the member portal (sentinel:8391), never the metrics
+  # endpoint - deploy/caddy/Caddyfile; docs/deployment.md says how it is
+  # brought up.
   caddy:
     # An exact release, and the digest it had when it was checked
     # (2026-10-23, v2.11.7, the latest stable): a tag can be re-pushed, a
@@ -120,9 +137,10 @@ services:
       - caddy-config:/config
     networks:
       edge:
-        # Fixed, so the portal can trust exactly this address and no other
-        # (SENTINEL_TRUSTED_PROXIES above). Outside the network's ip_range,
-        # so no other container can ever be handed it.
+        # Fixed, so both servers can trust exactly this address and no other
+        # (SENTINEL_TRUSTED_PROXIES and SENTINEL_DASHBOARD_TRUSTED_PROXIES
+        # above). Outside the network's ip_range, so no other container can
+        # ever be handed it.
         ipv4_address: 10.231.0.2
     # Same posture as sentinel, as far as Caddy allows. The image runs as
     # root and its binary carries the file capability cap_net_bind_service;
@@ -185,8 +203,9 @@ services:
         max-file: "5"
 
 networks:
-  # The hop between caddy and the portal. Its own network, with a subnet
-  # fixed here so caddy's address can be fixed and trusted (22c item 6).
+  # The hop between caddy and the two servers it fronts. Its own network,
+  # with a subnet fixed here so caddy's address can be fixed and trusted
+  # (22c item 6).
   # 10.231.0.0/24 is clear of Docker's default pools (172.17-172.31, then
   # 192.168) and of the default VPC (172.31.0.0/16); check `ip -4 route` on
   # a new host before the first `up` (docs/deployment.md). IPv4 only: the

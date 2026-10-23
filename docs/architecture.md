@@ -7,7 +7,7 @@ capability research behind it, see
 ## System overview
 
 ```
-                 Tailscale (HTTPS, tailnet-only)
+          Caddy :443, /admin and /admin/* (operator sign-in + 2FA)
    operator/VAs ─────────────────────────────►  Dashboard :8390  ── /            (fleet + accounts)
                                                  (sentinel/         ── /add         (onboarding form)
                                                   dashboard.py)     ── /account?id  (drill-down)
@@ -34,6 +34,10 @@ capability research behind it, see
                                                         accounts, baselines, append-only
                                                         event log, alerts, poll_state
 ```
+
+The dashboard's routes are drawn app-relative. In production they sit under
+`/admin` (`SENTINEL_DASHBOARD_BASE_PATH`, pinned in docker-compose.yml; blank
+by default, which serves them at the root as the diagram shows).
 
 ## Components
 
@@ -66,7 +70,8 @@ capability research behind it, see
   dispatch, cannot suppress a rule.
 - **`dashboard.py` / `metrics.py`** — one HTTP server (port 8390) serves the
   dashboard, add-customer form, account drill-down, styled metrics, and raw
-  Prometheus at `/metrics/raw`; a separate `:9109` serves scrapers.
+  Prometheus at `/metrics/raw`, all under `SENTINEL_DASHBOARD_BASE_PATH`
+  when it is set; a separate `:9109` serves scrapers.
 - **`db.py` + `schema.sql`** — SQLite with online `ALTER` migrations;
   append-only `events` log; `Decimal` and UTC throughout.
 
@@ -86,15 +91,23 @@ two `telegram_handle`s, `license`, `status`, timestamps. Baselines live in
 - **Caddy** (decision 22b, a compose service from 2026-10-23) terminates
   TLS for `https://guardian.minastrade.com` on ports 80 and 443, the
   security group's only public ports besides SSH (locked to admin IPs),
-  and forwards to the member portal - its pages and the apps' JSON API -
-  and nothing else. The servers believe `X-Forwarded-For` from Caddy's
-  fixed address on the compose `edge` network only (22c item 6).
-- **Tailscale Serve** publishes the dashboard and metrics as tailnet-only
-  HTTPS; **Tailscale Funnel** still publishes the member portal at its
-  `*.ts.net` name (decision 20, since August 2026), through Tailscale's
-  relay - publicly on port 8443 and on the tailnet on 8391 - until members
-  move to the new address and Tailscale goes (decision 22e). The portal is
-  the one public HTTP surface either way, with its own login and TOTP.
+  and forwards `/admin` and `/admin/*` to the ops dashboard, with the path
+  unchanged, and everything else to the member portal - its pages and the
+  apps' JSON API. The metrics endpoint is never proxied. Both servers
+  believe `X-Forwarded-For` from Caddy's fixed address on the compose
+  `edge` network only (22c item 6: `SENTINEL_TRUSTED_PROXIES` for the
+  portal, `SENTINEL_DASHBOARD_TRUSTED_PROXIES` for the dashboard).
+- **The ops dashboard** (8390) answers at
+  `https://guardian.minastrade.com/admin` through that route, behind
+  operator sign-in with mandatory two-factor and the login throttle;
+  `SENTINEL_DASHBOARD_BASE_PATH=/admin` in the compose file is what puts
+  every link, form action, redirect and the session cookie under the
+  prefix (decisions 22a, 22e). The metrics endpoint (9109) is never
+  published: it stays on `127.0.0.1`, and the dashboard's Metrics page is
+  the operators' view. Nothing else listens publicly. The host is reached
+  by SSH on port 22 with the EC2 key pair, from the addresses in the
+  security group's SSH rule; an SSH tunnel to `127.0.0.1:8390`, then
+  `http://localhost:8390/admin/`, is the break-glass path to the dashboard.
 - **One Elastic IP, `57.181.51.14`**, is the egress address every customer
   key is allowlisted to - load-bearing for monitoring - and, from decision
   22, the address `guardian.minastrade.com` resolves to

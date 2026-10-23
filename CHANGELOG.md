@@ -25,11 +25,11 @@ container")._
   yourself" could not say which site. The name comes from the setting and
   nowhere else (`tests/test_portal_address.py` holds that no module under
   `sentinel/` carries the domain as a literal), and it is shown as text to
-  type, never as a link. A sign-in page reached by any other name - the
-  old Funnel address, today - says "Our address has changed" and names the
+  type, never as a link. A sign-in page reached by any other name - an
+  old address, a raw IP - says "Our address has changed" and names the
   new one: 22d's notice for the old address, which goes up by itself the
   moment the setting is set. Unset, every page reads exactly as before, so
-  nothing shows until step 8 of docs/deployment.md "The public address".
+  nothing shows until step 9 of docs/deployment.md "The public address".
 
 ### Changed
 
@@ -41,6 +41,58 @@ container")._
   killed. The reset request mattered most: its throttled answer looks like
   any other, so a regression there would have stopped reset emails for
   everyone without a visible error.
+
+- **The ops dashboard answers at `https://guardian.minastrade.com/admin`,
+  behind its sign-in and second factor (decisions 22a and 22e).** New
+  setting `SENTINEL_DASHBOARD_BASE_PATH`: docker-compose.yml pins it to
+  `/admin`, and every link, form action and redirect the dashboard emits,
+  and the `Path` of its session cookie, go through it, so a browser that
+  arrives at `/admin` never leaves it. A dashboard POST whose `Referer`
+  names a path outside the base path is refused; a request without one is
+  judged as before, so curl and the tests are unchanged. The Caddyfile
+  gains a second route: `/admin` and `/admin/*` go to the dashboard with
+  the path unchanged and a connection cap of their own, everything else
+  goes to the portal as before, and the metrics endpoint is still never
+  proxied. `SENTINEL_DASHBOARD_TRUSTED_PROXIES` is pinned to Caddy's
+  address beside `SENTINEL_TRUSTED_PROXIES`, so the operator sign-in
+  throttle keys on the visitor and not on Caddy: without it, one visitor's
+  wrong passwords would have locked every operator out. The container
+  healthcheck keeps probing the bare `/healthz`, which answers unprefixed;
+  `/admin/healthz` is an ordinary gated path. `tests/test_dashboard_prefix.py`
+  and `tests/test_bind_address.py` pin all of it. With the setting blank -
+  the default, the demo server and a bare `sentinel run` - nothing changes
+  at the root.
+
+- **docs/deployment.md "The public address" is now the whole move, in the
+  order the box allows.** It starts by proving SSH with the EC2 key pair by
+  the Elastic IP, with a read-only command, and then tears Tailscale down -
+  Funnel and Serve withdrawn, the package removed, the machine deleted from
+  the admin console - before Caddy is brought up: `tailscaled` held 443 on
+  the Tailscale address when the box was read on 2026-10-23, so Caddy
+  cannot take the port until Serve is gone, and the daily way onto a box
+  is not withdrawn before the other way is proven. The steps already there
+  - DNS, the security group, the certificate, `SENTINEL_PORTAL_URL` -
+  follow, each with the check that says it worked, and end at the first
+  sign-in at `/admin`. It also records the 2026-09-28 pause and the order
+  in which the stack is restored from it, which until now lived only in a
+  README on the box.
+
+### Removed
+
+- **Tailscale, from everything that described it.** Funnel for the portal,
+  Serve for the dashboard and the metrics, tailnet SSH, the admin-console
+  steps, the bootstrap MOTD's install step and the dashboard footer's
+  "Tailscale-gated" are gone from the documents, the comments and the
+  product (decision 22e, step 8). Host access is SSH on port 22 with the
+  EC2 key pair, from the addresses in the security group's SSH rule; the
+  SSH tunnel (`ssh -i <key>.pem -L 8390:127.0.0.1:8390 ubuntu@57.181.51.14`,
+  then `http://localhost:8390/admin/`) is the break-glass path to the
+  dashboard; the metrics endpoint stays on `127.0.0.1`, unpublished and
+  unproxied. There is no overlap period for the old Funnel address: it
+  stops answering the moment Funnel is withdrawn, so the email that tells
+  members the new address goes out before that step. Decision records,
+  docs/DEPLOYMENTS.md and earlier release notes keep their history as
+  written.
 
 ## [1.13.0] — 2026-10-23
 

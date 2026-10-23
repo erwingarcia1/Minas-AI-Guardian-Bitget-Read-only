@@ -343,8 +343,11 @@ NOT_A_SWITCH: dict[str, str] = {
                             "set; the alert is delivered either way"),
     "SENTINEL_TRUSTED_PROXIES": ("pinned in docker-compose.yml beside the proxy it names, a test holds the two "
                                  "equal; unset trusts no proxy, as before the proxy existed"),
-    "SENTINEL_DASHBOARD_TRUSTED_PROXIES": ("unset until the dashboard is behind the proxy at /admin (22e step 3); "
-                                           "unset trusts no proxy, which is the dashboard's safe state today"),
+    "SENTINEL_DASHBOARD_TRUSTED_PROXIES": ("pinned in docker-compose.yml to the same proxy address as "
+                                           "SENTINEL_TRUSTED_PROXIES (Caddy fronts the dashboard at /admin), a test "
+                                           "holds the two equal; unset trusts no proxy"),
+    "SENTINEL_DASHBOARD_BASE_PATH": ("a URL path, not a mechanism: compose pins /admin, where Caddy forwards; "
+                                     "blank serves the root"),
     "ANTHROPIC_API_KEY": "triage narrative (triage.enabled false by design): additive, never load-bearing",
     "POSTGRES_PASSWORD": "unused by the SQLite deployment; kept for the compose file",
     "triage.enabled": "additive AI narrative, deliberately off; not a mechanism a customer relies on",

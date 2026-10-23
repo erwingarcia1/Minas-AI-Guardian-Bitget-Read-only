@@ -36,10 +36,12 @@ from sentinel.config import env_setting
 logger = logging.getLogger("sentinel.edge")
 
 TRUSTED_PROXIES_SETTING = "SENTINEL_TRUSTED_PROXIES"
-# The dashboard's own, separate on purpose: no proxy fronts it until it moves
-# under /admin (22e step 3), so until then it believes nobody's header -
-# not even that of the proxy beside it on the compose network, which can
-# reach it but does not serve it. Set when /admin ships.
+# The dashboard's own, separate on purpose, so the two surfaces can sit
+# behind different hops without one setting speaking for the other. Under
+# docker compose both name the same address - Caddy forwards /admin and
+# /admin/* to the dashboard (22e step 3) and everything else to the portal -
+# and a test holds the two equal. Unset trusts no proxy: the bare `sentinel
+# run` and the demo server have none in front of them.
 DASHBOARD_TRUSTED_PROXIES_SETTING = "SENTINEL_DASHBOARD_TRUSTED_PROXIES"
 
 # One year. No includeSubDomains and no preload: this service answers for

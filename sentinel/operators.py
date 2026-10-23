@@ -317,10 +317,11 @@ def reset_second_factor(db: Database, username: str, actor: str) -> bool:
 
     This is the one path that removes an operator's 2FA - `twofactor.disable`
     refuses for operators, and the dashboard exposes nothing for it - and it
-    is reachable only from a shell on the host, which the tailnet already
-    gates and which is the root of trust for everything else. It is recorded
-    with who did it, because the person who reaches for this is either the
-    locked-out operator themselves or somebody who should not have."""
+    is reachable only from a shell on the host (SSH on port 22 with the EC2
+    key pair, from an address the security group admits), which is the root
+    of trust for everything else. It is recorded with who did it, because
+    the person who reaches for this is either the locked-out operator
+    themselves or somebody who should not have."""
     from sentinel.twofactor import OPERATOR
 
     username = normalize_username(username)

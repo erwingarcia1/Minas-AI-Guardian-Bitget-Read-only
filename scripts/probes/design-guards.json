@@ -2294,6 +2294,26 @@
   "expect": "killed"
  },
  {
+  "name": "compose: the dashboard trusts an address that is not caddy's",
+  "file": "docker-compose.yml",
+  "old": "      SENTINEL_DASHBOARD_TRUSTED_PROXIES: \"10.231.0.2\"",
+  "new": "      SENTINEL_DASHBOARD_TRUSTED_PROXIES: \"10.231.0.3\"",
+  "tests": [
+   "tests/test_bind_address.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "compose: the dashboard's base path is not the path caddy forwards",
+  "file": "docker-compose.yml",
+  "old": "      SENTINEL_DASHBOARD_BASE_PATH: \"/admin\"",
+  "new": "      SENTINEL_DASHBOARD_BASE_PATH: \"/ops\"",
+  "tests": [
+   "tests/test_bind_address.py"
+  ],
+  "expect": "killed"
+ },
+ {
   "name": "compose: caddy's fixed address is inside the range Docker hands out",
   "file": "docker-compose.yml",
   "old": "          ip_range: 10.231.0.128/25",
@@ -2314,10 +2334,20 @@
   "expect": "killed"
  },
  {
-  "name": "caddy: the public proxy forwards to the ops dashboard",
+  "name": "caddy: the portal's route forwards to the ops dashboard",
   "file": "deploy/caddy/Caddyfile",
   "old": "\treverse_proxy sentinel:8391",
   "new": "\treverse_proxy sentinel:8390",
+  "tests": [
+   "tests/test_bind_address.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "caddy: the /admin route forwards to the portal",
+  "file": "deploy/caddy/Caddyfile",
+  "old": "\treverse_proxy sentinel:8390",
+  "new": "\treverse_proxy sentinel:8391",
   "tests": [
    "tests/test_bind_address.py"
   ],
