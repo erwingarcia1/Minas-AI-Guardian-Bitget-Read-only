@@ -15,6 +15,17 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+### Changed
+
+- **Three more throttles are pinned to the visitor behind the proxy
+  (#116, decision 22c item 6).** The member two-factor step, the
+  password-reset request and the operator second factor already took the
+  visitor's address through the proxy; now tests hold them to it, and a
+  design-guard probe for each reads the socket's address instead and is
+  killed. The reset request mattered most: its throttled answer looks like
+  any other, so a regression there would have stopped reset emails for
+  everyone without a visible error.
+
 ## [1.13.0] — 2026-10-23
 
 ### Changed detection behaviour
