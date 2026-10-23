@@ -203,3 +203,31 @@ def test_no_api_get_writes_anything(server, signed_in, db, route):
     assert status == 200
     server.request("GET", path)
     assert _dump(db._path) == before
+
+
+# --- a handler that breaks ------------------------------------------------------------
+
+INTERNAL = {"error": "internal_error", "message": "Something went wrong on Minas's side. Try again in a moment."}
+
+
+def _breaks(*_args, **_kwargs):
+    raise RuntimeError("database is locked: a detail that must stay in the log")
+
+
+def test_a_read_that_breaks_answers_in_the_apis_own_shape_and_logs_why(server, signed_in, monkeypatch, caplog):
+    import sentinel.portal as portal
+
+    monkeypatch.setattr(portal, "member_status", _breaks)
+    with caplog.at_level("ERROR", logger="sentinel.api"):
+        status, body, _ = server.request("GET", "/api/v1/accounts", token=signed_in["access_token"])
+    # The app can show the member a sentence; nothing of the failure reaches them.
+    assert (status, body) == (500, INTERNAL)
+    assert "a detail that must stay in the log" in caplog.text
+
+
+def test_a_sign_in_that_breaks_answers_in_the_apis_own_shape(server, monkeypatch):
+    import sentinel.portal as portal
+
+    monkeypatch.setattr(portal, "check_member_login", _breaks)
+    status, body, _ = server.request("POST", "/api/v1/session", {"email": ALICE, "password": "x", "code": "1"})
+    assert (status, body) == (500, INTERNAL)

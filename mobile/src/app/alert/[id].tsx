@@ -56,6 +56,11 @@ function Record({
       <KV label="Detected">{when(incident.sent_at)}</KV>
       <KV label="Account">{`${capitalise(incident.exchange)} — ${incident.account_name}`}</KV>
       <KV label="Incident">{`#${incident.id} · ${incident.rule} · confidence ${incident.confidence ?? '—'}`}</KV>
+      {incident.repeat_count ? (
+        <KV label="Still firing">
+          {`Repeated ${incident.repeat_count}× since${incident.last_repeat_at ? `, last ${when(incident.last_repeat_at)}` : ''}`}
+        </KV>
+      ) : null}
 
       {/* What to do comes first, as on the portal: read, then act. */}
       {incident.advice ? (

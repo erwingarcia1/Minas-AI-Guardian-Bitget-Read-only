@@ -1888,5 +1888,65 @@
    "tests/test_api_acknowledge.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "api: the attention block reads past the member's own accounts",
+  "file": "sentinel/portal.py",
+  "old": "f\"WHERE al.account_id IN ({marks}) AND al.acknowledged_at IS NULL \"",
+  "new": "f\"WHERE (al.account_id IN ({marks}) OR 1) AND al.acknowledged_at IS NULL \"",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: the attention block names an alert somebody has acknowledged",
+  "file": "sentinel/portal.py",
+  "old": "f\"WHERE al.account_id IN ({marks}) AND al.acknowledged_at IS NULL \"",
+  "new": "f\"WHERE al.account_id IN ({marks}) \"",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: pending pauses are read past the member's own accounts",
+  "file": "sentinel/api.py",
+  "old": "sorted(pending_pauses_for(self.db, ids).items())",
+  "new": "sorted(pending_pauses_for(self.db, list(range(1, 1000))).items())",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: a handler that breaks answers with no body the app can read",
+  "file": "sentinel/api.py",
+  "old": "        except Exception:\n            # A handler that breaks still answers in the API's own shape",
+  "new": "        except ZeroDivisionError:\n            # A handler that breaks still answers in the API's own shape",
+  "tests": [
+   "tests/test_api_routes.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "member status: a rejected key is not named key_rejected",
+  "file": "sentinel/portal.py",
+  "old": "            cause = \"key_rejected\"",
+  "new": "            cause = \"no_recent_check\"",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: a card's fact labels fall back under AA contrast",
+  "file": "sentinel/portal.py",
+  "old": "text-transform:uppercase; color:var(--text-muted); }",
+  "new": "text-transform:uppercase; color:var(--text-subtle); }",
+  "tests": [
+   "tests/test_surface_styles.py"
+  ],
+  "expect": "killed"
  }
 ]

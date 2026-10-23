@@ -51,6 +51,8 @@ MAX_BODY_BYTES = 8 * 1024
 ALERTS_PAGE_DEFAULT = 50
 ALERTS_PAGE_MAX = 200
 
+INTERNAL_ERROR_MESSAGE = "Something went wrong on Minas's side. Try again in a moment."
+
 # Why a sign-in ended, in the words the activity page shows the member.
 REVOKE_REASONS = {
     "signed_out": "signed out in the app",
@@ -420,13 +422,20 @@ class Api:
                              [("Allow", ", ".join(allowed))])
             return error(404, "not_found", "There is no such API route.")
         request = Request(method, path, params, query or {}, headers, body, client_ip)
-        if route in PRE_AUTH:
-            return self.handlers[route](request, None)
-        device = authenticate(self.db, self.key, headers.get("Authorization"))
-        if device is None:
-            return error(401, "unauthorized", "Sign in again.",
-                         [("WWW-Authenticate", 'Bearer realm="minas-guardian"')])
-        return self.handlers[route](request, device)
+        try:
+            if route in PRE_AUTH:
+                return self.handlers[route](request, None)
+            device = authenticate(self.db, self.key, headers.get("Authorization"))
+            if device is None:
+                return error(401, "unauthorized", "Sign in again.",
+                             [("WWW-Authenticate", 'Bearer realm="minas-guardian"')])
+            return self.handlers[route](request, device)
+        except Exception:
+            # A handler that breaks still answers in the API's own shape: the
+            # app can only put in front of a member a sentence it can parse.
+            # The traceback goes to the log and nowhere else.
+            logger.exception("api: %s %s failed", method, path)
+            return error(500, "internal_error", INTERNAL_ERROR_MESSAGE)
 
     def _tokens(self, device_id: int, refresh: str) -> dict:
         return {
@@ -543,15 +552,38 @@ class Api:
     # from one that does not exist.
 
     def _accounts(self, _request: Request, device) -> Response:
-        from sentinel.portal import member_accounts, member_role, member_status
+        from sentinel.naming import display_label
+        from sentinel.pause import pending_pauses_for
+        from sentinel.portal import member_accounts, member_role, member_status, newest_unacknowledged
 
         email = device["email"]
         status = member_status(self.db, email, self.rules)
-        exchanges = {int(r["id"]): r["exchange"] for r in member_accounts(self.db, email)}
+        rows = member_accounts(self.db, email)
+        exchanges = {int(r["id"]): r["exchange"] for r in rows}
+        names = {int(r["id"]): display_label(r) for r in rows}
+        ids = list(names)
+        # What the home page shows above everything else: the newest incident
+        # nobody has acknowledged (decision 16), and any pause about to stop
+        # monitoring (#98) - the same queries, so the app cannot disagree.
+        hero = newest_unacknowledged(self.db, ids)
         return Response(200, {
             "overall": status["overall"],
             "checked_at": status["checked_at"],
             "stale_after_seconds": status["stale_after_seconds"],
+            "attention": None if hero is None else {
+                "id": int(hero["id"]),
+                "account_id": int(hero["account_id"]),
+                "account_name": display_label(hero),
+                "severity": hero["severity"],
+                "rule": hero["rule"],
+                "message": hero["message"],
+                "sent_at": hero["sent_at"],
+            },
+            "pending_pauses": [{
+                "account_id": account_id,
+                "account_name": names[account_id],
+                "execute_at": pause["execute_at"],
+            } for account_id, pause in sorted(pending_pauses_for(self.db, ids).items())],
             "accounts": [{
                 "id": a["account_id"],
                 "name": a["label"],
@@ -559,6 +591,7 @@ class Api:
                 "status": a["status"],
                 "watched": a["watched"],
                 "reason": a["reason"],
+                "cause": a["cause"],
                 "last_success_at": a["last_success_at"],
                 # #25: what this login may change on the account.
                 "role": member_role(self.db, email, a["account_id"]),
@@ -657,6 +690,9 @@ class Api:
             LIMITS_CANNOT,
             LIMITS_DOES,
             LIMITS_HEADLINE,
+            LIMITS_LEAD,
+            LIMITS_WHY,
+            LIMITS_WHY_TITLE,
             RETENTION_REVIEWED,
             member_sensitivity,
             polling_cadence,
@@ -665,7 +701,10 @@ class Api:
 
         fast, slow = polling_cadence(self.rules)
         return Response(200, {
+            "lead": LIMITS_LEAD,
             "headline": {"title": LIMITS_HEADLINE[0], "text": LIMITS_HEADLINE[1]},
+            # The page's emphasis is markup; the app gets the plain sentence.
+            "why": {"title": LIMITS_WHY_TITLE, "text": "".join(text for text, _bold in LIMITS_WHY)},
             "does": [{"title": t, "text": x} for t, x in LIMITS_DOES],
             # `see_status`: the sentence points at "am I being watched?".
             "cannot": [{"title": t, "text": x, "see_status": see} for t, x, see in LIMITS_CANNOT],

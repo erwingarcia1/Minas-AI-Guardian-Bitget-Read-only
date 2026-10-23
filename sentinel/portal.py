@@ -796,7 +796,7 @@ _PORTAL_STYLE = """
   .kv__row:first-child { border-top:0; padding-top:var(--space-3); }
   .kv__row:last-child { padding-bottom:0; }
   .kv dt { font-size:var(--text-xs); font-weight:700; letter-spacing:var(--tracking-wide);
-           text-transform:uppercase; color:var(--text-subtle); }
+           text-transform:uppercase; color:var(--text-muted); }
   .kv dd { margin:0; font-size:var(--text-base); color:var(--text); }
   .kv dd.muted { color:var(--text-muted); }
   @media (min-width:40rem) {
@@ -1376,6 +1376,24 @@ def _watch_state(watch: dict | None) -> tuple[str, str]:
     return ("badge--danger", "Trouble")
 
 
+def newest_unacknowledged(db: Database, account_ids: list[int]):
+    """The newest alert on these accounts that nobody has acknowledged, or
+    None: what the home page puts above the fold (decision 16) and the app's
+    Accounts tab puts first (decision 21). One query, so the page and the
+    app cannot name different incidents."""
+    if not account_ids:
+        return None
+    marks = ",".join("?" for _ in account_ids)
+    with db.cursor() as cur:
+        cur.execute(
+            f"SELECT al.id, al.account_id, al.rule, al.severity, al.message, al.sent_at, "
+            f"ac.label, ac.member_name "
+            f"FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
+            f"WHERE al.account_id IN ({marks}) AND al.acknowledged_at IS NULL "
+            f"ORDER BY al.sent_at DESC, al.id DESC LIMIT 1", list(account_ids))
+        return cur.fetchone()
+
+
 def _render_home(db: Database, email: str, rules=None) -> str:
     accounts = member_accounts(db, email)
     ids = [r["id"] for r in accounts]
@@ -1485,14 +1503,7 @@ def _render_home(db: Database, email: str, rules=None) -> str:
     # block's number.
     incident_hero = ""
     if ids:
-        marks2 = ",".join("?" for _ in ids)
-        with db.cursor() as cur:
-            cur.execute(
-                f"SELECT al.id, al.rule, al.severity, al.sent_at, ac.label "
-                f"FROM alerts al JOIN accounts ac ON ac.id = al.account_id "
-                f"WHERE al.account_id IN ({marks2}) AND al.acknowledged_at IS NULL "
-                f"ORDER BY al.sent_at DESC, al.id DESC LIMIT 1", ids)
-            hero = cur.fetchone()
+        hero = newest_unacknowledged(db, ids)
         if hero is not None:
             cls = "state--danger" if hero["severity"] in ("CRITICAL", "HIGH") else "state--warn"
             icon = _EYE_DANGER if cls == "state--danger" else _EYE_WARN
@@ -1827,6 +1838,9 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
         # one that raised the flag, so the key advice would win every time.
         # The next signal that freezes when polling stops belongs below the
         # status check too.
+        # `cause` is the same judgement as a word a program can act on
+        # (the app says where a rejected key is replaced); `reason` is what
+        # the customer reads.
         if r["status"] != "active":
             # This account is not being watched - including
             # `tamper_suspected`, which is the alarming one: the account we
@@ -1837,17 +1851,23 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
             reason = _STATUS_REASON.get(
                 r["status"], f"this account is {r['status']}, so it is not being checked"
             )
+            cause = {"disabled": "paused", "tamper_suspected": "tamper_suspected"}.get(
+                str(r["status"]), "not_active")
         elif auth_failing:
             # A rejected key is the customer's to replace; an unreachable
             # exchange is not; and telling somebody to re-issue a working
             # key is wrong advice (G-6).
             reason = "our monitoring key is being rejected — replace it and monitoring restarts"
+            cause = "key_rejected"
         elif last_ok is None:
             reason = "this account has never completed a check"
+            cause = "never_checked"
         elif not fresh:
             reason = "no successful check recently — the exchange may be unreachable"
+            cause = "no_recent_check"
         else:
             reason = None
+            cause = None
 
         if fresh and not auth_failing:
             watched += 1
@@ -1861,6 +1881,7 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
             "last_success_at": last_ok,
             "watched": bool(fresh and not auth_failing),
             "reason": reason,
+            "cause": cause,
             # The raw column, so a consumer can tell a deliberate pause
             # (disabled) from trouble - the home screen's tri-state (#34/#10)
             # needs the distinction and must not re-derive it.
@@ -2147,6 +2168,22 @@ LIMITS_CANNOT = (
      "There is no reversal. The Guardian shortens the time between a "
      "theft starting and you knowing about it. That is the whole product.", False),
 )
+# The page's opening line, and why the product is built this way: the app's
+# limits screen (decision 21d) reads the same words. The why is (text, bold)
+# runs, so the page keeps its emphasis and the app gets the plain sentence.
+LIMITS_LEAD = (
+    "A monitoring product, not a brake. Knowing the difference changes how fast "
+    "you act when an alert arrives."
+)
+LIMITS_WHY_TITLE = "Why it is built this way"
+LIMITS_WHY = (
+    ("The key we hold is read-only, on purpose.", True),
+    (" It cannot trade, withdraw, or move anything. That means a compromise of Minas "
+     "itself still cannot cost you money — we are not a way in to your funds. ", False),
+    ("The cost of that guarantee is this page:", True),
+    (" a key that cannot move your money also cannot be used to rescue it. We chose the "
+     "side that cannot hurt you.", False),
+)
 # Flipped only by the legal review decision 6 is waiting on; the page's
 # "not yet reviewed" notice and the app's flag both read it.
 RETENTION_REVIEWED = False
@@ -2209,8 +2246,7 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
     body = (
         '<div class="page-head"><span class="eyebrow">Read this first</span>'
         "<h1>What the Guardian can and cannot do</h1>"
-        '<p class="lead">A monitoring product, not a brake. Knowing the difference changes '
-        "how fast you act when an alert arrives.</p></div>"
+        f'<p class="lead">{html.escape(LIMITS_LEAD)}</p></div>'
         '<div class="callout-danger" role="note">'
         f"<h2>{LIMITS_HEADLINE[0]}</h2>"
         f"<p>{LIMITS_HEADLINE[1]}</p></div>"
@@ -2218,13 +2254,11 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
         f'<ul class="feature-list">{does}</ul></section>'
         '<section class="panel" aria-labelledby="cannot-title"><h2 id="cannot-title">What it cannot do</h2>'
         f'<ul class="feature-list">{cannot}</ul></section>'
-        '<section class="panel" aria-labelledby="why-title"><h2 id="why-title">Why it is built this way</h2>'
-        '<div class="stack">'
-        "<p><strong>The key we hold is read-only, on purpose.</strong> It cannot trade, "
-        "withdraw, or move anything. That means a compromise of Minas itself still cannot "
-        "cost you money — we are not a way in to your funds. <strong>The cost of that "
-        "guarantee is this page:</strong> a key that cannot move your money also cannot be "
-        "used to rescue it. We chose the side that cannot hurt you.</p></div></section>"
+        '<section class="panel" aria-labelledby="why-title">'
+        f'<h2 id="why-title">{html.escape(LIMITS_WHY_TITLE)}</h2><div class="stack"><p>'
+        + "".join(f"<strong>{html.escape(text)}</strong>" if bold else html.escape(text)
+                  for text, bold in LIMITS_WHY)
+        + "</p></div></section>"
         '<section class="panel" aria-labelledby="timing-title"><h2 id="timing-title">Honest timing</h2>'
         '<div class="stack">'
         f"<p>Your balances and recent movements are checked about every <strong>{fast} "
@@ -2681,6 +2715,9 @@ def incident_record(db: Database, email: str, alert_id: int) -> dict | None:
         "delivered_to": int(alert["delivered_to"] or 0),
         "acknowledged_at": alert["acknowledged_at"],
         "acknowledged_by": alert["acknowledged_by"],
+        # Still firing (#22): repeats the cooldown folded into this alert.
+        "repeat_count": alert["repeat_count"],
+        "last_repeat_at": alert["last_repeat_at"],
         # Decisions 3 and 9: the SAME steps the alert email carries, and only
         # for a rule that carries them (RULE_ADVICE); None otherwise.
         "advice": {

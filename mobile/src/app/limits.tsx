@@ -16,6 +16,7 @@ export default function Limits() {
       <Loaded data={data} error={error} loading={loading}>
         {(limits) => (
           <>
+            <Body muted>{limits.lead}</Body>
             <Notice tone="danger" title={limits.headline.title}>
               {limits.headline.text}
             </Notice>
@@ -37,6 +38,10 @@ export default function Limits() {
                   {item.see_status ? <Body muted>The Accounts tab says whether you are being watched right now.</Body> : null}
                 </Card>
               ))}
+            </Section>
+
+            <Section title={limits.why.title}>
+              <Body>{limits.why.text}</Body>
             </Section>
 
             <Section title="Honest timing">

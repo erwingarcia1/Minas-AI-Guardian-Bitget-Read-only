@@ -28,11 +28,13 @@ export const ACCOUNTS = {
   overall: 'degraded',
   checked_at: '2026-10-22T10:00:00+00:00',
   stale_after_seconds: 225,
+  attention: null as object | null,
+  pending_pauses: [] as object[],
   accounts: [
     { id: 1, name: 'Binance - savings', exchange: 'binance', status: 'active', watched: true, reason: null,
-      last_success_at: '2026-10-22T10:00:00+00:00', role: 'primary' },
+      cause: null, last_success_at: '2026-10-22T10:00:00+00:00', role: 'primary' },
     { id: 2, name: 'Bitget - trading', exchange: 'bitget', status: 'active', watched: false, reason: REFUSED_REASON,
-      last_success_at: '2026-10-22T07:00:00+00:00', role: 'primary' },
+      cause: 'key_rejected', last_success_at: '2026-10-22T07:00:00+00:00', role: 'primary' },
   ],
 };
 
@@ -53,7 +55,9 @@ export const SECURITY = {
 };
 
 export const LIMITS = {
+  lead: 'A monitoring product, not a brake.',
   headline: { title: 'Minas AI Guardian cannot stop an attack.', text: 'It watches and tells you.' },
+  why: { title: 'Why it is built this way', text: 'The key we hold is read-only, on purpose.' },
   does: [], cannot: [], timing: { balances_every_seconds: 45, permissions_every_seconds: 600 }, retention: [],
   retention_reviewed: false, sensitivity: [],
 };
@@ -86,7 +90,11 @@ export function defaultServer() {
   on('POST', '/api/v1/session', () => json(200, tokens(1)));
   on('POST', '/api/v1/session/refresh', () => json(200, tokens(++issued)));
   on('DELETE', '/api/v1/session', () => json(204));
-  on('GET', '/api/v1/accounts', () => json(200, ACCOUNTS));
+  // The incident nobody has acknowledged comes first, as on the server.
+  on('GET', '/api/v1/accounts', () => json(200, { ...ACCOUNTS, attention: server.acknowledged.has(42) ? null : {
+    id: 42, account_id: 1, account_name: 'Binance - savings', severity: 'CRITICAL',
+    rule: 'withdrawal_to_unseen_address', message: 'Withdrawal #42 to a new address',
+    sent_at: '2026-10-22T09:48:00+00:00' } }));
   on('GET', '/api/v1/alerts', () => json(200, { total: 1, limit: 50, offset: 0, alerts: [summary(42)] }));
   on('GET', '/api/v1/alerts/{id}', (_r, [id]) => json(200, incident(Number(id))));
   on('POST', '/api/v1/alerts/{id}/acknowledge', (_r, [id]) => {

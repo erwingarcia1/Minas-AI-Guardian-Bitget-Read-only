@@ -106,6 +106,8 @@ test('the links from Security open the activity record and the limits page', asy
   await testRouter.back('/settings');
   await fireEvent.press(await screen.findByRole('button', { name: 'What the Guardian can and cannot do' }));
   expect(await screen.findByText(LIMITS.headline.title)).toBeTruthy();
+  expect(screen.getByText(LIMITS.lead)).toBeTruthy();
+  expect(screen.getByText(LIMITS.why.text)).toBeTruthy();
   expect(screen.getByText(/we cannot be faster than the source we read\.$/)).toBeTruthy();
 });
 

@@ -3,7 +3,7 @@
  * "Am I being watched?" - the first screen, and the one that must never show
  * an old or invented "yes".
  */
-import { act, screen, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, screen, testRouter, waitFor } from 'expo-router/testing-library';
 
 import { ACCOUNTS, openSignedIn, pullToRefresh, REFUSED_REASON, signedIn, useDemoServer } from '@/test-utils/app';
 import { calls, json, offline, on } from '@/test-utils/server';
@@ -93,4 +93,38 @@ test('a refresh that fails keeps what was shown, saying it is the last known', a
   expect(await screen.findByText('Showing what we had last.')).toBeTruthy();
   expect(screen.getByText('Binance - savings')).toBeTruthy();
   await waitFor(() => expect(screen.getByText("Something went wrong on Minas's side (503). Try again in a moment.")).toBeTruthy());
+});
+
+test('the incident nobody has acknowledged comes first, one tap from its record, and goes once acknowledged', async () => {
+  const app = await signedIn();
+  await fireEvent.press(screen.getByRole('link', { name: /^Needs your attention — incident #42\./ }));
+  expect(app.getPathname()).toBe('/alert/42');
+  await fireEvent.press(await screen.findByRole('button', { name: 'Acknowledge alert' }));
+  await screen.findByText(/^By demo@minas\.example at/);
+  await testRouter.back('/');
+  await waitFor(() => expect(screen.queryByText('Needs your attention — incident #42')).toBeNull());
+});
+
+test('a pause about to stop monitoring is said first, with how to stop it', async () => {
+  on('GET', '/api/v1/accounts', accounts({
+    pending_pauses: [{ account_id: 2, account_name: 'Bitget - trading', execute_at: '2026-10-23T10:00:00+00:00' }],
+  }));
+  await openSignedIn();
+  expect(await screen.findByText('Monitoring is about to stop.')).toBeTruthy();
+  expect(screen.getByText(/^Bitget - trading at .*\. Cancel it on the member portal, on the account's page/)).toBeTruthy();
+});
+
+test('trouble says what can be done about it, and by whom', async () => {
+  const trouble = (id: number, cause: string, role: string) => ({ id, name: `Account ${id}`, exchange: 'bitget',
+    status: 'active', watched: false, reason: `reason ${id}`, cause, last_success_at: null, role });
+  on('GET', '/api/v1/accounts', accounts({ accounts: [
+    trouble(1, 'key_rejected', 'primary'),
+    trouble(2, 'key_rejected', 'non-primary'),
+    trouble(3, 'no_recent_check', 'primary'),
+    trouble(4, 'tamper_suspected', 'primary'),
+  ] }));
+  await openSignedIn();
+  expect(await screen.findByText("You can fix this: replace the API key on the member portal, on this account's page.")).toBeTruthy();
+  expect(screen.getByText('The account holder can fix this by replacing the API key on the member portal.')).toBeTruthy();
+  expect(screen.getAllByText('If this lasts, contact the Minas team.')).toHaveLength(1); // not for the investigation
 });

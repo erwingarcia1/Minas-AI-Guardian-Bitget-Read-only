@@ -73,7 +73,7 @@ plain HTTP for `localhost` only.
 | Screen | API |
 |---|---|
 | Sign in: email, password and two-factor code | `POST /api/v1/session` |
-| Accounts: "Am I being watched?", the portal's exact words | `GET /api/v1/accounts` |
+| Accounts: the incident needing attention, any pending pause, and "Am I being watched?" in the portal's exact words | `GET /api/v1/accounts` |
 | Alerts: newest first, with older ones on request | `GET /api/v1/alerts` |
 | Incident: evidence, timeline, balances, what to do next, acknowledge | `GET /api/v1/alerts/{id}`, `POST .../acknowledge` |
 | Security: two-factor state, signed-in phones, sign out | `GET /api/v1/security`, `DELETE /api/v1/devices/{id}`, `DELETE /api/v1/session` |
@@ -85,9 +85,9 @@ plain HTTP for `localhost` only.
 - **The API types are generated** from `../api/openapi.yaml`, the contract
   `tests/test_api_contract.py` holds the server to. Run `npm run gen:api`
   and commit the result. CI regenerates the file and fails on any
-  difference. The generator runs through `npx` at pinned versions with its
-  own TypeScript 5, because `openapi-typescript` does not support
-  TypeScript 6 yet.
+  difference. The generator is installed from its own lockfile
+  (`tools/openapi/`), down to its last dependency, with its own TypeScript
+  5, because `openapi-typescript` does not support TypeScript 6 yet.
 - **Sign-in:** the refresh token lives in the Keychain or Keystore
   (`expo-secure-store`), on this phone only and readable only while it
   is unlocked. It is stored per server, so a development build never

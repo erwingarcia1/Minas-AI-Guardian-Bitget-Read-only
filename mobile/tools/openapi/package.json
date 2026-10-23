@@ -1,0 +1,9 @@
+{
+  "name": "minas-guardian-api-types",
+  "private": true,
+  "description": "The generator for src/api/schema.d.ts, locked to the last dependency: `npm run gen:api` installs from package-lock.json here. openapi-typescript does not support TypeScript 6 yet, so it carries its own TypeScript 5.",
+  "devDependencies": {
+    "openapi-typescript": "7.13.0",
+    "typescript": "5.9.3"
+  }
+}
