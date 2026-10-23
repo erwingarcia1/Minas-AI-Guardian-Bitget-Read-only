@@ -2254,6 +2254,36 @@
   "expect": "killed"
  },
  {
+  "name": "portal: the member two-factor throttle keys on the proxy's address",
+  "file": "sentinel/portal.py",
+  "old": "            email = verify_pending_token(secret, pending)\n            ip = self._client_ip()",
+  "new": "            email = verify_pending_token(secret, pending)\n            ip = self.client_address[0]",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: the reset-request throttle keys on the proxy's address",
+  "file": "sentinel/portal.py",
+  "old": "            ip = self._client_ip()\n            if throttle.blocked(_throttle_pair(ip, address)) or throttle.blocked(ip):",
+  "new": "            ip = self.client_address[0]\n            if throttle.blocked(_throttle_pair(ip, address)) or throttle.blocked(ip):",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the operator second-factor throttle keys on the proxy's address",
+  "file": "sentinel/dashboard.py",
+  "old": "            client_ip = self._client_ip()\n            if _login_throttle.blocked(f\"ip:{client_ip}\") or _login_throttle.blocked(f\"user:{username}\"):",
+  "new": "            client_ip = self.client_address[0]\n            if _login_throttle.blocked(f\"ip:{client_ip}\") or _login_throttle.blocked(f\"user:{username}\"):",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
   "name": "compose: the portal trusts an address that is not caddy's",
   "file": "docker-compose.yml",
   "old": "      SENTINEL_TRUSTED_PROXIES: \"10.231.0.2\"",

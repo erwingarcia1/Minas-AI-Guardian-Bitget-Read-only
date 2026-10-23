@@ -402,6 +402,85 @@ def test_a_spoofed_forwarded_for_from_an_untrusted_peer_changes_nothing(db):
         server.server_close()
 
 
+def _portal_post(port, path, fields, forwarded_for):
+    """A form POST to the portal through the proxy: (status, body)."""
+    conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+    conn.request("POST", path, body=urllib.parse.urlencode(fields),
+                 headers={"Content-Type": "application/x-www-form-urlencoded",
+                          "X-Forwarded-For": forwarded_for})
+    resp = conn.getresponse()
+    body = resp.read().decode()
+    conn.close()
+    return resp.status, body
+
+
+def _pending_from(body):
+    """The pending token a password step hands to the code step."""
+    marker = 'name="pending" value="'
+    start = body.index(marker) + len(marker)
+    return body[start:body.index('"', start)]
+
+
+def test_behind_the_proxy_one_visitors_wrong_codes_do_not_block_another(db, cipher, behind_the_proxy):
+    """The member's code step counts its failures on the same throttle, by
+    the same address. A visitor who has the password and guesses at the
+    code is throttled after five; the member, through the same proxy from
+    somewhere else, still finishes signing in."""
+    from sentinel.totp import totp_at
+    from tests.conftest import PINNED_TOTP_NOW
+    from tests.helpers.api_client import PASSWORD, enrolled_member
+
+    _account(db)
+    secret = enrolled_member(db, cipher, ALICE)
+    server = serve_portal(db, 0, host="127.0.0.1", cipher=cipher)
+    try:
+        port = server.server_address[1]
+
+        def password_step(forwarded_for):
+            status, body = _portal_post(port, "/login", {"email": ALICE, "password": PASSWORD}, forwarded_for)
+            assert status == 200 and 'action="/login-code"' in body
+            return _pending_from(body)
+
+        pending = password_step(VISITOR_A)
+        for _ in range(5):
+            status, _ = _portal_post(port, "/login-code", {"pending": pending, "code": "000000"}, VISITOR_A)
+            assert status == 200  # refused, asked again
+        status, _ = _portal_post(port, "/login-code", {"pending": pending, "code": "000000"}, VISITOR_A)
+        assert status == 429
+        pending = password_step(VISITOR_B)
+        status, _ = _portal_post(port, "/login-code", {"pending": pending, "code": totp_at(secret, PINNED_TOTP_NOW)},
+                                 VISITOR_B)
+        assert status == 303, "a visitor through the same proxy was throttled by someone else's wrong codes"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def test_behind_the_proxy_one_visitors_reset_requests_do_not_block_another(db, behind_the_proxy, monkeypatch):
+    """The reset request is throttled the same way, and by design its
+    throttled answer is the ordinary one - so whether the email went is the
+    only sign of whose requests were counted. Keyed on the proxy, five
+    requests from anyone would stop every member's reset email for fifteen
+    minutes, behind a page saying it is on its way."""
+    sent = []
+    monkeypatch.setattr("sentinel.portal._send_reset_email", lambda _db, address, _token: sent.append(address))
+    monkeypatch.setattr("sentinel.portal._RESET_RESPONSE_FLOOR_SECONDS", 0)  # the timing floor is not under test
+    _account(db)
+    set_member_password(db, ALICE, "correct horse", notify=None)
+    server = serve_portal(db, 0, host="127.0.0.1")
+    try:
+        port = server.server_address[1]
+        for _ in range(6):
+            assert _portal_post(port, "/forgot", {"email": ALICE}, VISITOR_A)[0] == 200
+        assert sent == [ALICE] * 5, "the sixth request from one visitor was not throttled"
+        assert _portal_post(port, "/forgot", {"email": ALICE}, VISITOR_B)[0] == 200
+        assert sent == [ALICE] * 6, (
+            "a visitor through the same proxy got no reset email because of someone else's requests")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def _api_sign_in(client, password, forwarded_for, secret=None):
     from sentinel.totp import totp_at
     from tests.conftest import PINNED_TOTP_NOW
@@ -488,6 +567,57 @@ def test_the_dashboard_throttles_the_visitor_not_the_proxy(db, cipher, behind_th
         assert status == 429
         status, _ = _dashboard_post(port, "/login", {"username": "other", "password": "x"}, VISITOR_B)
         assert status == 401, "an operator elsewhere was throttled by someone else's guesses"
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+def _enrolled_operator(db, cipher, name):
+    """An operator with a confirmed second factor; returns its secret.
+    Confirmed with the previous step's code, so the pinned step is still
+    unspent for a sign-in: a code is good once."""
+    from sentinel.totp import STEP_SECONDS, totp_at
+    from sentinel.twofactor import OPERATOR, begin_enrolment, confirm_enrolment
+    from tests.conftest import PINNED_TOTP_NOW
+
+    create_operator(db, name, "correct-horse-battery")
+    secret, _ = begin_enrolment(db, cipher, OPERATOR, name)
+    assert confirm_enrolment(db, cipher, OPERATOR, name, totp_at(secret, PINNED_TOTP_NOW - STEP_SECONDS))
+    return secret
+
+
+def test_the_dashboards_second_factor_throttles_the_visitor_not_the_proxy(db, cipher, behind_the_proxy):
+    """The operator's code step keys on the address as well as the name. A
+    visitor past the password step for two operators who sends five wrong
+    codes for one is refused at the other's as well - the address is
+    throttled, not only the name - and an operator through the same proxy
+    from somewhere else still signs in."""
+    from sentinel.totp import totp_at
+    from tests.conftest import PINNED_TOTP_NOW
+
+    _enrolled_operator(db, cipher, "olive")
+    _enrolled_operator(db, cipher, "oscar")
+    secret = _enrolled_operator(db, cipher, "erwin")
+    server = serve_dashboard(db, cipher, 0)
+    try:
+        port = server.server_address[1]
+
+        def password_step(name, forwarded_for):
+            status, body = _dashboard_post(port, "/login", {"username": name, "password": "correct-horse-battery"},
+                                           forwarded_for)
+            assert status == 200 and 'action="/login/code"' in body
+            return _pending_from(body)
+
+        olive, oscar = password_step("olive", VISITOR_A), password_step("oscar", VISITOR_A)
+        for _ in range(5):
+            status, _ = _dashboard_post(port, "/login/code", {"pending": olive, "code": "000000"}, VISITOR_A)
+            assert status == 401
+        status, _ = _dashboard_post(port, "/login/code", {"pending": oscar, "code": "000000"}, VISITOR_A)
+        assert status == 429, "five wrong codes did not throttle the address they came from"
+        erwin = password_step("erwin", VISITOR_B)
+        status, _ = _dashboard_post(port, "/login/code", {"pending": erwin, "code": totp_at(secret, PINNED_TOTP_NOW)},
+                                    VISITOR_B)
+        assert status == 303, "an operator elsewhere was throttled by someone else's wrong codes"
     finally:
         server.shutdown()
         server.server_close()
