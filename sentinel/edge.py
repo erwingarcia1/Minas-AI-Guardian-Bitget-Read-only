@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+from urllib.parse import urlsplit
 
 from sentinel.config import env_setting
 
@@ -149,6 +150,54 @@ def client_address(peer: str | None, forwarded_for: list[str] | None,
     return peer
 
 
+# The portal's one public address (decision 22, #88). Read per call, like
+# every reader of the setting before it, so a test can set it without
+# restarting the server and nothing on the box has to restart to learn it.
+PORTAL_URL_SETTING = "SENTINEL_PORTAL_URL"
+
+
+def portal_url() -> str | None:
+    """`SENTINEL_PORTAL_URL` with no trailing slash, or None while the box
+    has no public address: the base of every link the product writes."""
+    url = env_setting(PORTAL_URL_SETTING)
+    return url.rstrip("/") if url else None
+
+
+def _hostname(authority: str) -> str | None:
+    """The host of `authority` - `host`, `host:port` or `[v6]:port` -
+    lower-cased, or None if it cannot be read as one."""
+    try:
+        return urlsplit("//" + authority.strip()).hostname or None
+    except ValueError:  # an unbalanced IPv6 bracket
+        return None
+
+
+def portal_host() -> str | None:
+    """The hostname of portal_url(): the one string the anti-phishing copy
+    may name. #88's rule is that the domain exists in exactly one place,
+    the setting, and never inline in copy; this is how copy gets it. None
+    while there is no address. (Not SENTINEL_PORTAL_HOST, which is the
+    interface the raw :8391 server binds.)"""
+    url = portal_url()
+    if url is None:
+        return None
+    try:
+        host = urlsplit(url).hostname
+    except ValueError:
+        return None
+    return host or _hostname(url)  # a setting written without its scheme
+
+
+def request_host(host_header: str | None) -> str | None:
+    """The name a request was addressed to, from its Host header, or None
+    when there is none or it cannot be read. Caddy passes the client's Host
+    through, so behind it this is the name the visitor typed; against
+    portal_host() it tells an old address from the one address (22d)."""
+    if not host_header:
+        return None
+    return _hostname(host_header)
+
+
 def with_frame_ancestors(policy: str | None) -> str:
     """One Content-Security-Policy: `policy`'s directives, with
     frame-ancestors 'none' in place of any frame-ancestors it had."""
@@ -176,6 +225,9 @@ class EdgeHandler:
     def _client_ip(self) -> str:
         peer = self.client_address[0] if self.client_address else None
         return client_address(peer, self.headers.get_all("X-Forwarded-For"), self.trusted_proxies)
+
+    def _request_host(self) -> str | None:
+        return request_host(self.headers.get("Host"))
 
     def send_header(self, keyword, value):
         name = keyword.lower()

@@ -7512,3 +7512,82 @@ threads.
 - **Edit `mobile/` in a worktree while the owner may have Metro running.**
   A save hot-reloads their phone, and a reload during a refresh can sign
   it out (21h).
+
+# 2026-10-23 · After the cut: the owner's checkout, PR #118, and the address in the sign-in copy (22d)
+
+The session after the owner's machine restarted. State found: v1.13.0 cut
+and released, not deployed - the DNS record for guardian.minastrade.com was
+still absent at 18:30, and the owner was blocked on the GoDaddy and AWS
+logins. PR #118 (the three throttle call sites, tests only) open and green;
+its merge was refused to this session by the permission classifier, so it
+is the owner's click. The owner's checkout was on `mobile-app` (merged) with
+an uncommitted edit to CONTRIBUTING.md that was plainly accidental - half of
+"Falsy sentinels" replaced by runs of spaces, timed 15:12, after the last
+session ended. The diff was saved to the session's scratchpad, the file
+restored, the checkout moved to `main`, and seven merged local branches
+deleted. Metro and the demo server did not survive the reboot and were not
+restarted: the owner asked for the state, not the servers.
+
+**Built on branch `address-copy`** (worktree `/home/jimrox/projects/
+mg-address`, so the owner's checkout stays on main): decision 22d's copy and
+its notice, behind `SENTINEL_PORTAL_URL`. `sentinel/edge.py` gains
+`portal_url()`, `portal_host()` and `request_host()`, and `EdgeHandler`
+`_request_host()`. The portal's `_render_login` takes the request's host;
+`Handler._login_page` is its one caller (21 call sites repointed, a test
+counts them), so every path to the sign-in page - the wrong-password answer
+included - can tell the old address from the one address. With the setting:
+"Open guardian.minastrade.com directly" in the hint, "Our only address is
+guardian.minastrade.com" in the anti-phishing note, both as text; on any
+other name, "Our address has changed". Without it, the page is byte-for-byte
+what it was. `_reset_url` reads the same accessor. The host is compared by
+name, without port or case; an absent or unreadable Host header gets no
+verdict and no error. `tests/test_portal_address.py` (20 tests) also scans
+every module under `sentinel/` for the domain as a string literal outside a
+docstring - #88's rule that the domain lives in config - after proving it
+can see the one docstring that names it. Probes: two re-anchored on
+`_login_page`, three added (a literal instead of the setting; the notice
+removed; the raw Host header compared), 5/5 killed. Ruff clean; 268 tests
+across the twelve files that touch the page, the edge headers, the
+disclosure registry or string-check portal.py. The first push went out unchecked and CI was
+red twice over: this clone has NO git hooks installed (`.git/hooks`
+holds only the samples; `scripts/install-hooks.sh` was never run on this
+machine), so the pre-push suite the process relies on has never run
+here. CI caught (1) the new test file missing from the mutation
+selection's exclusion list, and (2) a stale row in
+`mobile/audit-allowlist.json`: GitHub withdrew the braces advisory
+GHSA-vfj7-8cjw-p6xm at 12:53Z today, `npm audit` stopped reporting it,
+and `audit-check.mjs` refused the stale entry as designed. Both fixed;
+the full suite was run locally before the second push. Also on the
+branch: `mobile/README.md` no longer says the released
+server lacks the API, and docs/deployment.md step 8 gains the two `curl`
+checks for the copy once a release carrying it is deployed.
+
+Later the same evening the owner merged #118 (20:45Z; #116 closed with
+it) and set the DNS record: `guardian.minastrade.com` answers
+`57.181.51.14` from GoDaddy's own nameservers and from 1.1.1.1 and
+8.8.8.8, no AAAA, and ports 80 and 443 on the Elastic IP answer
+"Connection refused" - the security group is open and nothing listens yet,
+exactly what steps 2 and 3 of "The public address" expect before the
+deploy. The #118 worktree and both copies of its branch were removed. That
+merge put this PR into conflict (both sides added to `[Unreleased]`);
+`origin/main` was merged in, keeping both sections, ruff and the full
+suite run here before the push (2,073 passed). CI's test job passed on
+that head and the Mobile job did not: zod picked up GHSA-mrhx-c7xc-m3w5
+(high) between the two runs, unrelated to anything here and due on main's
+next Mobile run too. zod 3.25.76 is in the tree for `@expo/cli` alone, at
+build and dev time; the patch is 4.6.6, a different major the CLI's
+`^3.25.76` cannot take, and no later 3.x is patched, so it gets an
+allowlist row with that reason and the review date rather than a blind
+major override on a build tool. `audit-check` passes locally again; the
+lockfile is unchanged. The owner then asked for the deploy to be run from
+this session and said to add the allow rule for it; the permission
+classifier refused the deploy, a directory listing in its service, and
+the rule itself (self-modification), so both stay the owner's: the rule by
+hand, then the deploy, or the runbook's commands typed with `!`.
+
+**Still the owner's:** merge #119; the deploy of v1.13.0 on the box
+(docs/deployment.md "The public address", steps 1 and 4 to 7, then step 8
+sets `SENTINEL_PORTAL_URL`); the `ufw` rules for 8391 and 8081 from the
+phone test, which survive a reboot (`sudo ufw status numbered`); decisions
+21h, 21i and #113; the store enrolments; and the stated period and email
+to members for the old address (22d).

@@ -8,7 +8,6 @@ import html
 import io
 import json
 import logging
-import os
 import secrets
 import threading
 import time
@@ -28,7 +27,7 @@ from sentinel.dashboard import (
     _watch_threshold,
 )
 from sentinel.db import Database
-from sentinel.edge import EdgeHandler, trusted_proxies_from_env
+from sentinel.edge import EdgeHandler, portal_host, portal_url, trusted_proxies_from_env
 from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
 from sentinel.naming import display_label
 from sentinel.outbox import answering
@@ -1272,7 +1271,11 @@ def _auth_brand() -> str:
     )
 
 
-def _render_login(error: str | None = None) -> str:
+def _render_login(error: str | None = None, host: str | None = None) -> str:
+    """The sign-in page. `host` is the name the request was addressed to;
+    `Handler._login_page` passes it, and is the only caller, so that when
+    the server has a public address and this is not it, the page can say
+    so (decision 22d)."""
     invalid = ' aria-invalid="true"' if error else ""
     notice = ""
     if error:
@@ -1281,6 +1284,30 @@ def _render_login(error: str | None = None) -> str:
             + f'<div><p class="notice__title">{html.escape(error)}</p>'
             '<p class="notice__body">Please try again. Caps Lock may be on. If you have '
             'forgotten your password, reset it rather than retrying.</p></div></div>'
+        )
+    ours = portal_host()
+    if ours:
+        # The sentence the anti-phishing story waited two months for (#88):
+        # "open the site yourself" finally says which site. The name comes
+        # from the setting and is shown as text, never as a link - the page
+        # teaches typing it, not clicking.
+        shown = f'<strong style="color:var(--text)">{html.escape(ours)}</strong>'
+        where = f"Open {shown} directly."
+        rule = (f"Our only address is {shown}. Always type it in yourself to check your "
+                "accounts — never click through from an email or a message.")
+    else:
+        where = "Open the portal address you were given directly."
+        rule = ("Always open this site and sign in to check your accounts — don't click "
+                "through from email or messages.")
+    if ours and host and host != ours:
+        # 22d's notice for the old address. It goes up by itself, on every
+        # name that is not the one address, the moment the setting is set;
+        # the stated period and the email to members stay the owner's.
+        notice += (
+            '<div class="notice notice--info" role="status">' + _ICON_INFO
+            + '<div><p class="notice__title">Our address has changed.</p>'
+            f'<p class="notice__body">From now on, sign in at {shown} and update any bookmark '
+            "you have. This older address will be switched off later.</p></div></div>"
         )
     body = (
         '<section class="auth-card" aria-labelledby="signin-title">' + _auth_brand()
@@ -1297,14 +1324,13 @@ def _render_login(error: str | None = None) -> str:
         f'<input class="input" type="password" id="password" name="password" required '
         f'autocomplete="current-password"{invalid}>'
         '<span class="hint">Never enter your password after following a link from an '
-        "email. Open the portal address you were given directly.</span></div>"
+        f"email. {where}</span></div>"
         '<button type="submit" class="btn btn--primary btn--block">Sign in</button>'
         "</form>"
         '<div class="phish" style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border)">'
         + _ICON_SHIELD
         + '<p><strong style="color:var(--text)">Minas will never email you a link asking '
-        "for your API key.</strong> Always open this site and sign in to check your "
-        "accounts — don't click through from email or messages.</p></div>"
+        f"for your API key.</strong> {rule}</p></div>"
         "</section>"
     )
     return _page(body, title="Sign in — Minas AI Guardian", shell=True)
@@ -2902,7 +2928,7 @@ _RESET_ACK = (
 
 
 def _reset_url(token: str) -> str:
-    base = (os.environ.get("SENTINEL_PORTAL_URL") or "").strip().rstrip("/")
+    base = portal_url()
     return f"{base}/reset?token={token}" if base else f"/reset?token={token}"
 
 
@@ -3640,6 +3666,12 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             self.end_headers()
             self.wfile.write(body)
 
+        def _login_page(self, error: str | None = None) -> str:
+            # Every sign-in page knows the name it was asked for, so the old
+            # address can say it has moved (decision 22d). The bare renderer
+            # is called from here and nowhere else; a test holds that.
+            return _render_login(error, host=self._request_host())
+
         def _redirect(self, location: str, extra_headers: list[tuple[str, str]] | None = None):
             self.send_response(303)
             self.send_header("Location", location)
@@ -3758,10 +3790,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     if token:
                         self._send(_render_reset_form(token).encode())
                     else:
-                        self._send(_render_login().encode())
+                        self._send(self._login_page().encode())
                     return
                 # Every other unauthenticated GET lands on the login page.
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             if path == "/":
                 self._send(_render_home(db, email, rules).encode())
@@ -3837,7 +3869,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             does not exist."""
             member = self._session_email()
             if member is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             try:
                 account_id = int((form.get("account_id") or [""])[0])
@@ -3864,7 +3896,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             events and alerts, as JSON, before erasure."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             import json as _json
 
@@ -3884,7 +3916,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             confirmation sent, session ended."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             from sentinel.erasure import confirmation_text, erase_member
             from sentinel.twofactor import MEMBER as _MEMBER
@@ -3932,7 +3964,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             member, because a drill is a real message to a real phone."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             from sentinel.drill import last_drill, run_drill
 
@@ -3967,7 +3999,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             takes effect on the next alert."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             from sentinel.alerts.preferences import CHANNELS, SEVERITIES, set_member_prefs
 
@@ -3995,7 +4027,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             unrecognized value changes nothing rather than guessing."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             from sentinel.alerts.digest import DIGEST_FREQUENCIES, set_digest_frequency
 
@@ -4018,7 +4050,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             their own chat."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             from sentinel.alerts.telegram_link import create_link_code, disconnect
 
@@ -4048,7 +4080,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             login."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             if cipher is None:
                 self._send(_render_security(
@@ -4104,7 +4136,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             another login's device is the same not-found as no device."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             from sentinel.api import revoke_device
 
@@ -4133,12 +4165,12 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             if email is None:
                 # Expired, forged, or a session token presented in its place.
                 logger.warning("two-factor step 2 with an invalid pending token from %s", ip)
-                self._send(_render_login(error="That sign-in expired. Please start again.").encode())
+                self._send(self._login_page(error="That sign-in expired. Please start again.").encode())
                 return
 
             if throttle.blocked(_throttle_pair(ip, email)) or throttle.blocked(ip):
                 logger.warning("two-factor throttled for %s from %s", email, ip)
-                self._send(_render_login(error="Too many attempts — try again later.").encode(), 429)
+                self._send(self._login_page(error="Too many attempts — try again later.").encode(), 429)
                 return
 
             if cipher is None or not check_second_factor(db, cipher, TWOFACTOR_MEMBER, email, code):
@@ -4241,7 +4273,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             volume one id at a time."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             try:
                 alert_id = int((form.get("alert_id") or [""])[0])
@@ -4278,7 +4310,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             past, not asking for silence."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             try:
                 alert_id = int((form.get("alert_id") or [""])[0])
@@ -4315,7 +4347,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             types."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             try:
                 alert_id = int((form.get("alert_id") or [""])[0])
@@ -4351,7 +4383,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             too, and it is repeated here because this is where they arrive."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             try:
                 account_id = int((form.get("account_id") or [""])[0])
@@ -4412,7 +4444,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             length = int(self.headers.get("Content-Length", 0))
             if length < 0 or length > 8 * 1024:
-                self._send(_render_login(error="Invalid request").encode(), 400)
+                self._send(self._login_page(error="Invalid request").encode(), 400)
                 return
             form = parse_qs(self.rfile.read(length).decode("utf-8")) if length else {}
 
@@ -4508,7 +4540,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             the member's own scope, never by any name."""
             email = self._session_email()
             if email is None:
-                self._send(_render_login().encode())
+                self._send(self._login_page().encode())
                 return
             try:
                 account_id = int((form.get("account_id") or [""])[0])
@@ -4540,7 +4572,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             ip = self._client_ip()
             if throttle.blocked(_throttle_pair(ip, email)) or throttle.blocked(ip):
                 logger.warning("portal login throttled for %s from %s", email or "<empty>", ip)
-                self._send(_render_login(error="Too many attempts — try again later.").encode(), 429)
+                self._send(self._login_page(error="Too many attempts — try again later.").encode(), 429)
                 return
             if email and password and check_member_login(db, email, password):
                 throttle.reset(_throttle_pair(ip, email))
@@ -4566,7 +4598,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             throttle.record_failure(ip)
             logger.warning("portal login failed for %s from %s", email or "<empty>", ip)
             # Identical message whether the email exists or not.
-            self._send(_render_login(error="Invalid email or password.").encode(), 200)
+            self._send(self._login_page(error="Invalid email or password.").encode(), 200)
 
         def log_message(self, *args):  # keep stdout JSON-clean
             pass

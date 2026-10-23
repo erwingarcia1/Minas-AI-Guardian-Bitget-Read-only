@@ -15,6 +15,22 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+### Added
+
+- **The sign-in page names the one address, once the server has one (#88,
+  decision 22d).** With `SENTINEL_PORTAL_URL` set, the password hint reads
+  "Open guardian.minastrade.com directly" and the anti-phishing note says
+  "Our only address is guardian.minastrade.com" - the sentence the
+  anti-phishing story has been missing since #88, because "open the site
+  yourself" could not say which site. The name comes from the setting and
+  nowhere else (`tests/test_portal_address.py` holds that no module under
+  `sentinel/` carries the domain as a literal), and it is shown as text to
+  type, never as a link. A sign-in page reached by any other name - the
+  old Funnel address, today - says "Our address has changed" and names the
+  new one: 22d's notice for the old address, which goes up by itself the
+  moment the setting is set. Unset, every page reads exactly as before, so
+  nothing shows until step 8 of docs/deployment.md "The public address".
+
 ### Changed
 
 - **Three more throttles are pinned to the visitor behind the proxy

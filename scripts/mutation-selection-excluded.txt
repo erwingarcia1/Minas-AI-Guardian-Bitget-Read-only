@@ -55,6 +55,7 @@ tests/test_operator_two_factor.py: imports cli, dashboard, db, operators, totp, 
 tests/test_password_reset.py: imports portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_portal.py: imports dashboard, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_portal_access_scope.py: imports dashboard, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_portal_address.py: imports edge, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_portal_alert_history.py: imports portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_portal_key_replacement.py: imports portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_portal_snooze.py: imports portal, snooze - nothing under the mutated paths (alerts/, detectors/, config.py)

@@ -5,6 +5,25 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
 
 ## [Unreleased]
 
+### Changed
+
+- **The `braces` advisory left the audit allowlist.** GitHub withdrew
+  GHSA-vfj7-8cjw-p6xm on 2026-10-23, so `npm audit` no longer reports it
+  and `audit-check.mjs` refused the stale entry, as it is built to: an
+  allowlist row that nothing matches is a claim nobody is checking. The
+  lockfile is unchanged (braces 3.0.3). node-forge stays listed, with its
+  reason.
+
+- **The `zod` advisory joined the audit allowlist.** GHSA-mrhx-c7xc-m3w5
+  (high: memory exhaustion while validating oversized constrained
+  collections) started appearing in `npm audit` on 2026-10-23 and failed
+  the check as unlisted. zod 3.25.76 is in the tree for `@expo/cli` alone,
+  which validates its own config and manifests at build and dev time; it is
+  not in the app bundle. The patched release is 4.6.6, a different major
+  that the CLI's `^3.25.76` cannot take, and no later 3.x release is
+  patched, so the row records the reason and the review date instead of a
+  blind major override on a build tool. The lockfile is unchanged.
+
 ### Added
 
 - **The first version of the app (decision 21).** Expo SDK 58 and React
