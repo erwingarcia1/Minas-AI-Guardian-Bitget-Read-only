@@ -7562,9 +7562,20 @@ branch: `mobile/README.md` no longer says the released
 server lacks the API, and docs/deployment.md step 8 gains the two `curl`
 checks for the copy once a release carrying it is deployed.
 
-**Still the owner's:** merge #118; the DNS record; the deploy of v1.13.0
-(docs/deployment.md "The public address", then step 8 sets
-`SENTINEL_PORTAL_URL`); the `ufw` rules for 8391 and 8081 from the phone
-test, which survive a reboot (`sudo ufw status numbered`); decisions 21h,
-21i and #113; the store enrolments; and the stated period and email to
-members for the old address (22d).
+Later the same evening the owner merged #118 (20:45Z; #116 closed with
+it) and set the DNS record: `guardian.minastrade.com` answers
+`57.181.51.14` from GoDaddy's own nameservers and from 1.1.1.1 and
+8.8.8.8, no AAAA, and ports 80 and 443 on the Elastic IP answer
+"Connection refused" - the security group is open and nothing listens yet,
+exactly what steps 2 and 3 of "The public address" expect before the
+deploy. The #118 worktree and both copies of its branch were removed. That
+merge put this PR into conflict (both sides added to `[Unreleased]`);
+`origin/main` was merged in, keeping both sections, ruff and the full
+suite run here before the push.
+
+**Still the owner's:** merge #119; the deploy of v1.13.0 on the box
+(docs/deployment.md "The public address", steps 1 and 4 to 7, then step 8
+sets `SENTINEL_PORTAL_URL`); the `ufw` rules for 8391 and 8081 from the
+phone test, which survive a reboot (`sudo ufw status numbered`); decisions
+21h, 21i and #113; the store enrolments; and the stated period and email
+to members for the old address (22d).
