@@ -180,6 +180,14 @@ container")._
   closed objects, so an undocumented field fails the build as surely as
   a missing one.
 
+- **A demo server for trying the app on a phone (`scripts/dev-server.py`).**
+  It runs the portal and the app API against a throwaway database with a
+  demo login (two-factor on, the live code printed every 30 seconds), two
+  accounts (one with a refused key), alerts of every severity, and an
+  activity record. It makes no outside connections (it runs under the test
+  suite's network guard) and deletes its database on exit.
+  `mobile/README.md` has the steps.
+
 ### Changed
 
 - **The deploy gate accepts release tags only (`v*`).** The iOS and
