@@ -335,6 +335,33 @@ def test_deploy_gate_export_emits_the_build_args(repo: Path):
     assert "export GIT_TAG=v1.0.0" in result.stdout
 
 
+def test_deploy_gate_refuses_a_commit_carrying_only_an_app_tag(repo: Path):
+    """The mobile app tags its releases `mobile-vX.Y.Z` in this same repo
+    (decision 21f). Such a tag is not a server release and has no server
+    notes; it must not open the gate."""
+    (repo / "code.py").write_text("# an app-only commit\n")
+    _git(repo, "add", "-A")
+    _git(repo, "commit", "-q", "-m", "app release")
+    _git(repo, "tag", "-a", "mobile-v1.0.0", "-m", "mobile-v1.0.0")
+
+    result = _run(repo, "deploy-gate.sh")
+
+    assert result.returncode == 1, result.stdout
+    assert "REFUSED" in result.stderr
+
+
+def test_an_app_tag_beside_a_release_tag_never_becomes_the_build_tag(repo: Path):
+    """Both kinds on one commit: the image must report the server release,
+    or deploy.sh's assertion that the container names the deployed tag
+    fails after the switchover."""
+    _git(repo, "tag", "-a", "mobile-v9.9.9", "-m", "mobile-v9.9.9")
+
+    result = _run(repo, "deploy-gate.sh", "--export")
+
+    assert result.returncode == 0, result.stderr
+    assert "export GIT_TAG=v1.0.0" in result.stdout
+
+
 def test_deploy_gate_exports_nothing_when_it_refuses(repo: Path):
     """--export must not become the way around the gate."""
     (repo / "code.py").write_text("x\n")

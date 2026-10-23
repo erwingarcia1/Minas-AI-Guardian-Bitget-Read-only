@@ -30,6 +30,10 @@ Android's own pages, 2026-10-22):
     design/brand/android-monochrome.png  1024 px, white silhouette, same
                                           geometry - Android themed icons
     design/brand/splash.png              1024 px, transparent - Expo splash
+
+The app in mobile/ gets byte-identical copies of the four store files under
+the names its app.json uses (mobile/assets/images/): Metro serves only what
+is inside the app's folder. tests/test_mobile_app.py fails if a copy drifts.
 """
 from __future__ import annotations
 
@@ -44,6 +48,13 @@ MASTER = ROOT / "design" / "brand" / "minas-logo.png"
 # square (app icon, home-screen icon, adaptive background).
 BACKGROUND = (13, 15, 19)
 ALPHA_FLOOR = 12  # the supplied backdrop's alpha, noise included
+# design/brand file -> the name mobile/app.json refers to it by.
+MOBILE_COPIES = {
+    "app-icon.png": "icon.png",
+    "android-foreground.png": "android-icon-foreground.png",
+    "android-monochrome.png": "android-icon-monochrome.png",
+    "splash.png": "splash-icon.png",
+}
 
 
 def _resize(im: Image.Image, size: int) -> Image.Image:
@@ -104,6 +115,11 @@ def derive() -> None:
     for path, image in outputs.items():
         image.save(path, optimize=True)
         print(f"wrote {path.relative_to(ROOT)} {image.size} {image.mode} {path.stat().st_size} bytes")
+    app = ROOT / "mobile" / "assets" / "images"
+    app.mkdir(parents=True, exist_ok=True)
+    for source, name in MOBILE_COPIES.items():
+        (app / name).write_bytes((brand / source).read_bytes())
+        print(f"copied design/brand/{source} -> mobile/assets/images/{name}")
 
 
 if __name__ == "__main__":

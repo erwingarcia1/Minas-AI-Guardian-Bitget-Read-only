@@ -31,3 +31,8 @@ setup.cfg
 # scripts/health-check.sh keeps the output of every run, passes included, so a
 # green can be audited without re-running it. Self-pruning after 14 days.
 .health-check-logs/
+
+# The owner's drop folder for source material (logos, documents). Originals
+# stay here; what the product uses is derived and committed elsewhere (e.g.
+# design/brand/ from files/minaslogo.png via scripts/brand-assets.py).
+/files/
