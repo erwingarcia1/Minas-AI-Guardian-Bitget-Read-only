@@ -4,5 +4,11 @@
     "package": "node-forge",
     "reason": "RSA PKCS#1 v1.5 signature verification accepts extra nested DigestAlgorithm elements. node-forge is used by @expo/cli to sign expo-updates manifests at build time; it is not in the app bundle, and the app does not use expo-updates. No fixed release exists: 1.4.0 is the latest, and vulnerable.",
     "reviewed": "2026-10-22"
+  },
+  {
+    "advisory": "https://github.com/advisories/GHSA-mrhx-c7xc-m3w5",
+    "package": "zod",
+    "reason": "Zod can exhaust memory while validating oversized constrained collections. zod is a dependency of @expo/cli alone, which validates its own config and manifests at build and dev time; it is not in the app bundle, and the app validates nothing with it. No in-range fix exists: the patched release is 4.6.6, a different major, and @expo/cli 58.1.14 (the latest for SDK 58) still requires ^3.25.76; no 3.x release after 3.25.76 is patched. npm's only offer is a downgrade to expo 44.",
+    "reviewed": "2026-10-23"
   }
 ]

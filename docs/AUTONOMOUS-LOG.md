@@ -7571,7 +7571,19 @@ exactly what steps 2 and 3 of "The public address" expect before the
 deploy. The #118 worktree and both copies of its branch were removed. That
 merge put this PR into conflict (both sides added to `[Unreleased]`);
 `origin/main` was merged in, keeping both sections, ruff and the full
-suite run here before the push.
+suite run here before the push (2,073 passed). CI's test job passed on
+that head and the Mobile job did not: zod picked up GHSA-mrhx-c7xc-m3w5
+(high) between the two runs, unrelated to anything here and due on main's
+next Mobile run too. zod 3.25.76 is in the tree for `@expo/cli` alone, at
+build and dev time; the patch is 4.6.6, a different major the CLI's
+`^3.25.76` cannot take, and no later 3.x is patched, so it gets an
+allowlist row with that reason and the review date rather than a blind
+major override on a build tool. `audit-check` passes locally again; the
+lockfile is unchanged. The owner then asked for the deploy to be run from
+this session and said to add the allow rule for it; the permission
+classifier refused the deploy, a directory listing in its service, and
+the rule itself (self-modification), so both stay the owner's: the rule by
+hand, then the deploy, or the runbook's commands typed with `!`.
 
 **Still the owner's:** merge #119; the deploy of v1.13.0 on the box
 (docs/deployment.md "The public address", steps 1 and 4 to 7, then step 8
