@@ -141,9 +141,13 @@ test('trouble says what can be done about it, and by whom', async () => {
     trouble(2, 'key_rejected', 'non-primary'),
     trouble(3, 'no_recent_check', 'primary'),
     trouble(4, 'tamper_suspected', 'primary'),
+    trouble(5, 'host_auth_failure', 'primary'),
   ] }));
   await openSignedIn();
   expect(await screen.findByText("You can fix this: replace the API key on the member portal, on this account's page.")).toBeTruthy();
   expect(screen.getByText('The account holder can fix this by replacing the API key on the member portal.')).toBeTruthy();
   expect(screen.getAllByText('If this lasts, contact the Minas team.')).toHaveLength(1); // not for the investigation
+  // A refusal on Minas's side: leave the key alone - and nothing on the card says to replace it.
+  expect(screen.getByText('Nothing is needed from you: leave your key exactly as it is. Minas is putting it right.')).toBeTruthy();
+  expect(screen.getAllByText(/replac/i)).toHaveLength(2); // only the two key_rejected lines
 });

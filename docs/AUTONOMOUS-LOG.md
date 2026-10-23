@@ -7398,3 +7398,117 @@ two tests that fail on the old gate.
 Not done: push (21e); bundle id and package (owner: publishing entity);
 store accounts. Nothing has run on a device yet - that needs Expo Go or a
 simulator, and a reachable API.
+
+# 2026-10-23 · The app reviewed twice, fixed, and run on the owner's iPhone
+
+**Shipped:**
+- **#111, the app.** The owner merged it at 4cd7a08 after testing it on an
+  iPhone.
+- **#114, the API side of the review.** The owner merged it at dedb846.
+- **#115, the second review's fixes.**
+- **#116, the public address:** Caddy at `https://guardian.minastrade.com`,
+  with the 22c preconditions the portal needs.
+
+The owner instructed v1.13.0 to be cut from these (2026-10-23).
+
+**First review (before the phone test).** Six reviewers covered auth,
+router, data, portal parity, the device runtime and the tests. A second
+agent then tried to refute each finding, and a critic looked for gaps.
+All 50 findings stood. The ones that mattered on a phone:
+- a sign-in button stuck under the iOS number pad;
+- tabs that never refreshed, so an old "You're being watched." stayed up;
+- no request deadline anywhere: a dead network spun a screen, and every
+  request queued behind a refresh, for minutes;
+- a failed keychain read that held the splash screen forever;
+- two-factor always shown as "On";
+- duplicate and lost rows when paging alerts;
+- a double tap that reported a failure.
+
+Fixed in e2daad0, with a test that fails without each fix (27 probes,
+each breaking one fix in a copy).
+
+**Phone test.** The owner ran it in Expo Go 58 against
+`scripts/dev-server.py`, and it worked. That needed three things the repo
+did not make obvious, now in `mobile/README.md`:
+- **Expo Go must match the SDK.** 58.0.5 reached the stores on
+  2026-10-22.
+- **On an iPhone, Expo Go and `npx expo login` must use the same
+  account.**
+- **This machine's `ufw` drops incoming connections.** Ports 8391 and
+  8081 must be opened to the LAN for the test, and closed after.
+
+**The API side (#114).** `attention` and `pending_pauses` on
+`/api/v1/accounts` come from the same helper as the home page's blocks.
+Each account gets a `cause` beside its `reason`. `/limits` carries its
+lead and "why" from shared constants; the pages render byte-identical,
+checked by rendering them from the old and new code. A handler that
+breaks answers a JSON 500 (`internal_error`). The portal's card labels
+now pass AA contrast. That adds six design-guard probes, all killed.
+
+**Second review (of every fix).** Five reviewers, each with a skeptic,
+covered tokens, screens, server, device runtime, and closure of the first
+50. All 22 findings were confirmed, and most were bugs in the fixes
+themselves.
+
+The high one: signing out while a refresh was stuck, then signing in again
+within its 30 seconds, ended the *new* sign-in on the server. Calls in
+flight now belong to the sign-in they started under, by an epoch check
+after every wait.
+
+The device reviewer read expo/fetch's Android sources and found two more:
+- **A deadline that fires as the answer lands can leave a read that never
+  ends.** The deadline is now kept in JavaScript.
+- **A dropped connection comes back as a short 200.** A body shorter than
+  its `Content-Length` now counts as a dropped connection.
+
+The server had been holding sign-in and acknowledge answers behind
+synchronous SMTP and SMS sends. A slow mail provider made every app
+sign-in fail and spent its code. Delivery now runs after the answer.
+
+The rest:
+- expired Accounts cards no longer stay green;
+- the alerts list is no longer cut back to 200 on return;
+- a host-level key refusal tells members to leave the key alone;
+- the docs' overstatements are corrected.
+
+The app's probes: 21 for this round, each catching its fix. Two first
+missed, which exposed two test gaps; both are now covered.
+
+**The owner's answers today:**
+- **22b:** Caddy on the instance.
+- **21f:** the app is published as `com.minastrade.guardian`.
+- **Store accounts:** neither the Apple nor the Google one exists yet, so
+  the app cannot reach customers through a store until enrolment
+  finishes.
+
+**The public address, and its skeptic.** The dashboard stays on
+Tailscale until `/admin`; the portal is what goes public. Its security
+skeptic found that one client holding about 300 unfinished requests
+through Caddy took every thread the container may start (pids_limit 256).
+Caddy now bounds header and body time, buffers whole bodies, and holds at
+most 64 portal connections; the same attack then left the app at 13
+threads.
+
+**Decisions opened:**
+- **21h:** a refresh whose answer is lost. The server revokes the device
+  when the phone presents the replaced token. Recommended: a 60-second
+  grace window.
+- **21i:** turning two-factor off does not sign phones out. Recommended:
+  it should.
+- **Issue #113:** `--text-subtle` is under AA on card surfaces. It needs a
+  token choice.
+
+**Worth knowing next time:**
+- **Under Jest, the global `fetch` is Expo's.** It cannot read Node's
+  `Request` (its body is a stream), so live tests against a real server
+  need a fetch over `node:http`. Send a `Content-Length`: the portal reads
+  no body without one.
+- **RNTL 14's `fireEvent.press` waits for the handler's promise.** Two
+  presses without awaiting overlap their `act()` scopes and break every
+  later test in the file. For a same-frame double tap, call the handler
+  (found through the fiber chain) twice inside one `act`.
+- **The React Compiler memoises `Date.now()` in render**, so a staleness
+  check needs the time as state (`useNow`).
+- **Edit `mobile/` in a worktree while the owner may have Metro running.**
+  A save hot-reloads their phone, and a reload during a refresh can sign
+  it out (21h).

@@ -58,6 +58,11 @@ function fix(account: Schemas['Account']): string | null {
       return account.role === 'primary'
         ? "You can fix this: replace the API key on the member portal, on this account's page."
         : 'The account holder can fix this by replacing the API key on the member portal.';
+    case 'host_auth_failure':
+      // The refusal is on Minas's side (a change to its address): the one
+      // thing a frightened member might do - replace the key - would
+      // deepen the outage. The product's own words for it.
+      return 'Nothing is needed from you: leave your key exactly as it is. Minas is putting it right.';
     case 'never_checked':
     case 'no_recent_check':
     case 'not_active':
