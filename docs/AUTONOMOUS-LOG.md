@@ -7512,3 +7512,50 @@ threads.
 - **Edit `mobile/` in a worktree while the owner may have Metro running.**
   A save hot-reloads their phone, and a reload during a refresh can sign
   it out (21h).
+
+# 2026-10-23 · After the cut: the owner's checkout, PR #118, and the address in the sign-in copy (22d)
+
+The session after the owner's machine restarted. State found: v1.13.0 cut
+and released, not deployed - the DNS record for guardian.minastrade.com was
+still absent at 18:30, and the owner was blocked on the GoDaddy and AWS
+logins. PR #118 (the three throttle call sites, tests only) open and green;
+its merge was refused to this session by the permission classifier, so it
+is the owner's click. The owner's checkout was on `mobile-app` (merged) with
+an uncommitted edit to CONTRIBUTING.md that was plainly accidental - half of
+"Falsy sentinels" replaced by runs of spaces, timed 15:12, after the last
+session ended. The diff was saved to the session's scratchpad, the file
+restored, the checkout moved to `main`, and seven merged local branches
+deleted. Metro and the demo server did not survive the reboot and were not
+restarted: the owner asked for the state, not the servers.
+
+**Built on branch `address-copy`** (worktree `/home/jimrox/projects/
+mg-address`, so the owner's checkout stays on main): decision 22d's copy and
+its notice, behind `SENTINEL_PORTAL_URL`. `sentinel/edge.py` gains
+`portal_url()`, `portal_host()` and `request_host()`, and `EdgeHandler`
+`_request_host()`. The portal's `_render_login` takes the request's host;
+`Handler._login_page` is its one caller (21 call sites repointed, a test
+counts them), so every path to the sign-in page - the wrong-password answer
+included - can tell the old address from the one address. With the setting:
+"Open guardian.minastrade.com directly" in the hint, "Our only address is
+guardian.minastrade.com" in the anti-phishing note, both as text; on any
+other name, "Our address has changed". Without it, the page is byte-for-byte
+what it was. `_reset_url` reads the same accessor. The host is compared by
+name, without port or case; an absent or unreadable Host header gets no
+verdict and no error. `tests/test_portal_address.py` (20 tests) also scans
+every module under `sentinel/` for the domain as a string literal outside a
+docstring - #88's rule that the domain lives in config - after proving it
+can see the one docstring that names it. Probes: two re-anchored on
+`_login_page`, three added (a literal instead of the setting; the notice
+removed; the raw Host header compared), 5/5 killed. Ruff clean; 268 tests
+across the twelve files that touch the page, the edge headers, the
+disclosure registry or string-check portal.py. The full suite runs on the
+push. Also on the branch: `mobile/README.md` no longer says the released
+server lacks the API, and docs/deployment.md step 8 gains the two `curl`
+checks for the copy once a release carrying it is deployed.
+
+**Still the owner's:** merge #118; the DNS record; the deploy of v1.13.0
+(docs/deployment.md "The public address", then step 8 sets
+`SENTINEL_PORTAL_URL`); the `ufw` rules for 8391 and 8081 from the phone
+test, which survive a reboot (`sudo ufw status numbered`); decisions 21h,
+21i and #113; the store enrolments; and the stated period and email to
+members for the old address (22d).
