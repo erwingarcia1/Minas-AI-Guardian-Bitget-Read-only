@@ -15,6 +15,29 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+### Fixed
+
+- **Caddy's public ports bind to one host address, `SENTINEL_EDGE_BIND`,
+  so v1.13.0's edge can start on the production box.** Read on the box on
+  2026-10-23, at step 1 of docs/deployment.md "The public address":
+  tailscaled already listens on 443 at the Tailscale address (the
+  dashboard on Serve), and Linux refuses a wildcard bind beside a specific
+  one - a probe binding `0.0.0.0:443` answered "Address already in use", so
+  the plain `443:443` publish in v1.13.0 cannot come up there and the
+  release was not deployed. The host side of both publishes is now
+  `${SENTINEL_EDGE_BIND:-0.0.0.0}`: blank, every interface, as before; on
+  the box, its primary private IPv4 (`172.31.2.189`, the address the
+  Elastic IP is translated to), beside which tailscaled's listener is no
+  conflict. Sentinel never reads the name; `.env.example` documents it,
+  the liveness registry excuses it, and a test holds the publish, the
+  example and the runbook together. The runbook's step 1 now expects
+  tailscaled's listener, reads the private address, checks the checkout
+  is clean (deploy.sh refuses an untracked file), and sets the value;
+  step 5's expected listeners follow. It also gains "Restoring after the
+  2026-09-28 pause": alerting was stopped by hand that day (the owner's
+  decision: beta, credit cost) and the note recording it, with its
+  restore order, lived only on the box.
+
 ### Changed
 
 - **Three more throttles are pinned to the visitor behind the proxy

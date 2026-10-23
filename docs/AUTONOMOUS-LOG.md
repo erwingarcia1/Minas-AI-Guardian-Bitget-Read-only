@@ -7512,3 +7512,76 @@ threads.
 - **Edit `mobile/` in a worktree while the owner may have Metro running.**
   A save hot-reloads their phone, and a reload during a refresh can sign
   it out (21h).
+
+# 2026-10-23 · The deploy that stopped at step 1: tailscaled holds 443, and alerting has been paused since 2026-09-28
+
+The owner set the DNS record (GoDaddy's own nameservers, 1.1.1.1 and
+8.8.8.8 all answer 57.181.51.14; ports 80 and 443 on the Elastic IP answer
+"Connection refused", so the security group is open) and then asked for the
+deploy of v1.13.0 to be run from the session, with the SSH key in the
+project root (`Minas-AI-Guardian-Key-Tokyo.pem`, git-ignored; the box is
+`ubuntu@57.181.51.14`). The session could not run it: the auto-mode
+permission classifier refused the ssh command as a production deploy, a
+bare `ls` in its service, the settings skill when asked to add an allow
+rule, and then the allow-listed ssh command itself as "Auto-Mode Bypass".
+So the owner typed each runbook command with the `!` prefix and the
+session read every answer. Step 1 of "The public address" stopped the
+deploy, three times over:
+
+1. **tailscaled already listens on 443**, on the Tailscale address only
+   (the dashboard on Serve). Caddy in v1.13.0 publishes `443:443` on every
+   interface, and Linux refuses a wildcard bind beside a specific one: a
+   probe binding `0.0.0.0:443` with SO_REUSEADDR answered "Address already
+   in use". v1.13.0 cannot come up on this box as cut. The runbook's "no
+   listener" expectation was written without reading the box for 443.
+2. **An untracked `held/` directory in the checkout**, which `deploy.sh`
+   refuses by design (#85). It holds `README-2026-09-28.txt` and
+   `root-cron-2026-09-28.bak`, 12 KB.
+3. **The stack was not running at all**: the sentinel container exited 137
+   on 2026-09-28 at 20:48 UTC and never came back. First read as an
+   outage; the README in `held/` says otherwise, and it was right to read
+   before starting anything: "ALL ALERTING STOPPED (owner, beta, credit
+   cost)" - the liveness and restart-on-unhealthy timers disabled, the
+   container stopped (`PRAGMA integrity_check` ok), root's `sentinel
+   digest` cron commented out; at the stop nine accounts had been dark for
+   169.6 hours (the 2026-09-21 Elastic IP event) and were raising 391
+   tamper alerts a day. Its restore order: (1) the nine exchange allowlists
+   carry 57.181.51.14 again, (2) cut and deploy 1.13.0, (3) then start. A
+   `docker compose up -d` before step 1 of that order would have restarted
+   the alert flood the owner paused to avoid. Not run.
+
+**Built, on branch `edge-bind`:** the host side of Caddy's two publishes is
+`${SENTINEL_EDGE_BIND:-0.0.0.0}` in docker-compose.yml; blank or empty it
+is every interface as before, on the box it is the instance's primary
+private IPv4, `172.31.2.189` (ens5), the address the Elastic IP is
+translated to, beside which tailscaled's listener is no conflict (rendered
+with `docker compose config` in all three states). `.env.example`
+documents it, `NOT_A_SWITCH` excuses it (compose alone reads it), and
+`tests/test_bind_address.py` holds the publish, the example and the
+runbook's public-address section together. docs/deployment.md step 1 now
+expects tailscaled's listener, reads the private address, checks the
+checkout is clean, and sets the value; step 5's expected listeners follow;
+and a new paragraph, "Restoring after the 2026-09-28 pause", records the
+pause and its restore order, which until now lived only on the box.
+CHANGELOG `[Unreleased]` gains the "### Fixed" entry. Ruff clean; the full
+suite run here (this clone has no hooks). The release that restores the
+service is therefore the next one, not v1.13.0; its cut is the owner's.
+
+**Also this evening:** the owner merged #118 (20:45Z; #116 closed); the
+#118 worktree and both branch copies removed. PR #119 was put in conflict
+by that merge (both sides added to `[Unreleased]`); `origin/main` merged
+in with both sections kept. Its Mobile job then failed on a new advisory,
+zod GHSA-mrhx-c7xc-m3w5 (high), in the tree for `@expo/cli` alone at build
+time; no patched 3.x exists and the patch is a different major, so it has
+an allowlist row with that reason. #119 is green and mergeable.
+
+**Still the owner's, in the README's order:** (1) the nine allowlists -
+only the owner can say whether that is done; (2) merge #119 and the
+edge-bind PR, instruct the cut of the next release, then the deploy per
+the runbook: move `held/` to `/var/backups/minas-guardian/held-2026-09-28/`,
+set `SENTINEL_EDGE_BIND=172.31.2.189` in `/opt/minas-guardian/.env`, run
+`deploy.sh`, the checks, step 8's `SENTINEL_PORTAL_URL`; (3) re-enable the
+two timers and the digest cron line. The deploy commands run as the
+owner's `!` lines (or with the session out of auto mode); the session
+verifies each gate. Decisions 21h, 21i, #113, the store enrolments and the
+`ufw` rules from the phone test remain.

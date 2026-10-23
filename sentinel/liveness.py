@@ -344,6 +344,8 @@ NOT_A_SWITCH: dict[str, str] = {
                                  "equal; unset trusts no proxy, as before the proxy existed"),
     "SENTINEL_DASHBOARD_TRUSTED_PROXIES": ("unset until the dashboard is behind the proxy at /admin (22e step 3); "
                                            "unset trusts no proxy, which is the dashboard's safe state today"),
+    "SENTINEL_EDGE_BIND": ("the host address compose publishes caddy's 80 and 443 on, read by compose for the "
+                           "substitution and never by sentinel; unset is every interface, as before it existed"),
     "ANTHROPIC_API_KEY": "triage narrative (triage.enabled false by design): additive, never load-bearing",
     "POSTGRES_PASSWORD": "unused by the SQLite deployment; kept for the compose file",
     "triage.enabled": "additive AI narrative, deliberately off; not a mechanism a customer relies on",

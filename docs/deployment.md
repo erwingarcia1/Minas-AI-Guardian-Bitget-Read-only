@@ -231,17 +231,34 @@ Bring it up in this order (22e's). Each step says how to tell it worked;
 do not start the next one until it has.
 
 1. **Read the box first** (rule 6's read-only twin). Nothing may hold 80
-   or 443 already, and the `edge` subnet must be free:
+   or 443 on the address Caddy will be published on, the checkout must be
+   clean, and the `edge` subnet must be free:
 
    ```bash
-   sudo ss -tlnp '( sport = :80 or sport = :443 )'   # expect: no listener
+   sudo ss -tlnp '( sport = :80 or sport = :443 )'   # expect: tailscaled on the Tailscale address (100.x) at most
+   ip -4 -o addr show scope global | awk '{print $2, $4}'   # the primary private IPv4 (ens5) - the value for SENTINEL_EDGE_BIND
+   cd /opt/minas-guardian && sudo git status --short      # expect: nothing - deploy.sh refuses an untracked file too
    ip -4 route | grep '^10\.231\.'                    # expect: nothing
    ```
 
-   A route there means something on the host uses that range: stop, and
-   pick another subnet for `edge` in docker-compose.yml (caddy's address
-   and `SENTINEL_TRUSTED_PROXIES` move with it; a test holds the three
-   together).
+   tailscaled listening on 443 at the Tailscale address is expected: that
+   is the dashboard on Serve. It is also why Caddy's two publishes are
+   bound to `SENTINEL_EDGE_BIND` and not to every interface: Linux refuses
+   a wildcard bind beside a specific one (read on the box 2026-10-23,
+   "Address already in use"), so a plain `443:443` cannot start. In
+   `/opt/minas-guardian/.env` set
+
+   ```
+   SENTINEL_EDGE_BIND=172.31.2.189
+   ```
+
+   the instance's primary private IPv4, the address the Elastic IP is
+   translated to; the deploy's `docker compose up -d` reads it. A listener
+   on 80 or 443 bound to that address, or to every interface, is a stop.
+   A route in `10.231.0.0/24` means something on the host uses that
+   range: stop, and pick another subnet for `edge` in docker-compose.yml
+   (caddy's address and `SENTINEL_TRUSTED_PROXIES` move with it; a test
+   holds the three together).
 
 2. **DNS**, at the registrar: an `A` record for `guardian.minastrade.com`
    pointing at `57.181.51.14`, the Elastic IP. No `AAAA` record: the edge
@@ -286,7 +303,8 @@ do not start the next one until it has.
    sudo docker compose up -d     # after deploy.sh, a no-op that confirms nothing is left down
    sudo docker compose ps        # expect: caddy Up; sentinel Up (healthy)
    sudo ss -tlnp | grep -E ':(80|443|8390|8391|9109)\b'
-       # expect: 80 and 443 on 0.0.0.0 (and [::]); 8390, 8391 and 9109 on 127.0.0.1 only
+       # expect: 80 and 443 on SENTINEL_EDGE_BIND's address (172.31.2.189 on the production box),
+       #         tailscaled's 443 on 100.x as before; 8390, 8391 and 9109 on 127.0.0.1 only
    sudo docker compose logs sentinel | grep -E 'X-Forwarded-For is believed|no trusted proxy'
        # expect "portal: X-Forwarded-For is believed from 10.231.0.2 only" and
        # "dashboard: no trusted proxy (SENTINEL_DASHBOARD_TRUSTED_PROXIES names none) ...
@@ -362,6 +380,25 @@ listener down at once. The portal stays up on Funnel, and nothing else
 changes. Deploying an older tag does NOT stop Caddy: that tag's compose
 file has no `caddy` service, so compose leaves the container running as an
 orphan, forwarding to a portal it can no longer reach. Stop it first.
+
+**Restoring after the 2026-09-28 pause.** Alerting was stopped by hand on
+2026-09-28 20:50 UTC (the owner's decision: beta, credit cost):
+`minas-liveness.timer` and `minas-restart-on-unhealthy.timer` disabled,
+the sentinel container stopped (exit 137 after the 10-second grace; the
+database's `PRAGMA integrity_check` was ok), and root's `sentinel digest`
+cron line commented out. The note recording it,
+`held/README-2026-09-28.txt`, was left in the checkout with the cron
+backup; both belong in `/var/backups/minas-guardian/held-2026-09-28/`
+(an untracked file in the checkout stops `deploy.sh`, step 1 above). Its
+restore order, which the steps above sit inside: (1) every exchange key's
+allowlist carries `57.181.51.14` again - at the stop nine accounts had
+been dark for a week and were raising 391 tamper alerts a day, which is
+exactly the cost a restart before this step brings back; (2) the deploy,
+whose `up -d` starts the container; (3) then
+`sudo systemctl enable --now minas-liveness.timer minas-restart-on-unhealthy.timer`
+and the cron line uncommented (`sudo crontab -e`). Read
+`sudo systemctl list-timers --all | grep minas` and `sudo crontab -l`
+afterwards: both timers listed with a next run, the digest line live.
 
 ## Before any upgrade: check the config that is already on the box
 

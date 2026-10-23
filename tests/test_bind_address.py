@@ -10,6 +10,7 @@ import yaml
 
 from sentinel.dashboard import serve_dashboard
 from sentinel.edge import TRUSTED_PROXIES_SETTING, parse_trusted_proxies
+from sentinel.liveness import NOT_A_SWITCH
 from sentinel.metrics import Metrics
 from sentinel.portal import serve_portal
 
@@ -195,17 +196,40 @@ def _caddy_lines() -> list[str]:
     return out
 
 
+EDGE_BIND_SETTING = "SENTINEL_EDGE_BIND"
+EDGE_BIND = "${%s:-0.0.0.0}" % EDGE_BIND_SETTING
+
+
 def test_only_the_proxy_listens_publicly():
     """22c item 4: every publish in the compose file is on 127.0.0.1 except
     the proxy's two, which are exactly 80 and 443 over TCP (HTTP/3 is off,
-    so nothing on UDP)."""
+    so nothing on UDP). Their host address is the setting the next test
+    holds."""
     public = {}
     for name, service in _compose()["services"].items():
         for port in service.get("ports", []):
             if not str(port).startswith("127.0.0.1:"):
                 public.setdefault(name, []).append(str(port))
-    assert public == {"caddy": ["80:80", "443:443"]}
+    assert public == {"caddy": [f"{EDGE_BIND}:80:80", f"{EDGE_BIND}:443:443"]}
     assert "protocols h1 h2" in _caddy_lines(), "HTTP/3 needs UDP 443, which nothing publishes"
+
+
+def test_the_proxys_host_address_is_a_setting_that_defaults_wide():
+    """On the production box tailscaled already holds 443 on the Tailscale
+    address (the dashboard on Serve), and Linux refuses a wildcard bind
+    beside a specific one: v1.13.0's plain `443:443` could not start there
+    (read on the box 2026-10-23: "Address already in use"). So the host
+    side of both publishes is SENTINEL_EDGE_BIND, which the box sets to its
+    primary private IPv4. Unset, the publish is on every interface as it
+    was; the name is documented where settings live and excused in the
+    liveness registry, since compose alone reads it; and the runbook's
+    public-address section says where it is set."""
+    assert re.search(rf"^{EDGE_BIND_SETTING}=", (ROOT / ".env.example").read_text(), re.M), \
+        f"{EDGE_BIND_SETTING} is not in .env.example"
+    assert EDGE_BIND_SETTING in NOT_A_SWITCH
+    runbook = (ROOT / "docs/deployment.md").read_text()
+    section = runbook.split("## The public address", 1)[1].split("\n## ", 1)[0]
+    assert f"{EDGE_BIND_SETTING}=" in section, "the runbook's public-address section does not set it"
 
 
 def test_the_proxy_forwards_to_the_portal_and_nothing_else():

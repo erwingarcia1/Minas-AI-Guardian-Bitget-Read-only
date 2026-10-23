@@ -107,9 +107,18 @@ services:
     # against the new image before it ships.
     image: caddy:2.11.7@sha256:504a44d7d74bd2bc28a66afc4774912fc21223ca8a67734af1c54ab2f999b489
     restart: unless-stopped
+    # The host side of both publishes is SENTINEL_EDGE_BIND from .env; unset
+    # or empty, every interface. The production box needs it: tailscaled
+    # already listens on 443 at the Tailscale address (the dashboard on
+    # Serve), and Linux refuses a wildcard bind beside a specific one -
+    # v1.13.0's plain "443:443" could not start there (read on the box
+    # 2026-10-23: "Address already in use"). Bound to the instance's primary
+    # private IPv4, the address the Elastic IP is translated to, the two
+    # listeners coexist. Sentinel never reads the name; a test holds the
+    # publish, the .env example and the runbook together.
     ports:
-      - "80:80"     # ACME HTTP challenge, and the redirect to HTTPS
-      - "443:443"   # TCP only: the Caddyfile turns HTTP/3 (UDP) off
+      - "${SENTINEL_EDGE_BIND:-0.0.0.0}:80:80"     # ACME HTTP challenge, and the redirect to HTTPS
+      - "${SENTINEL_EDGE_BIND:-0.0.0.0}:443:443"   # TCP only: the Caddyfile turns HTTP/3 (UDP) off
     volumes:
       # A directory, read-only: the image's docs warn that a single-file
       # mount misses edits.
