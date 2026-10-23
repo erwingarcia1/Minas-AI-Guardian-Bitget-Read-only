@@ -5,6 +5,15 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
 
 ## [Unreleased]
 
+### Changed
+
+- **The `braces` advisory left the audit allowlist.** GitHub withdrew
+  GHSA-vfj7-8cjw-p6xm on 2026-10-23, so `npm audit` no longer reports it
+  and `audit-check.mjs` refused the stale entry, as it is built to: an
+  allowlist row that nothing matches is a claim nobody is checking. The
+  lockfile is unchanged (braces 3.0.3). One advisory stays listed,
+  node-forge, with its reason.
+
 ### Added
 
 - **The first version of the app (decision 21).** Expo SDK 58 and React
