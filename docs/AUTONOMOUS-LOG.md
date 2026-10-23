@@ -7548,8 +7548,17 @@ can see the one docstring that names it. Probes: two re-anchored on
 `_login_page`, three added (a literal instead of the setting; the notice
 removed; the raw Host header compared), 5/5 killed. Ruff clean; 268 tests
 across the twelve files that touch the page, the edge headers, the
-disclosure registry or string-check portal.py. The full suite runs on the
-push. Also on the branch: `mobile/README.md` no longer says the released
+disclosure registry or string-check portal.py. The first push went out unchecked and CI was
+red twice over: this clone has NO git hooks installed (`.git/hooks`
+holds only the samples; `scripts/install-hooks.sh` was never run on this
+machine), so the pre-push suite the process relies on has never run
+here. CI caught (1) the new test file missing from the mutation
+selection's exclusion list, and (2) a stale row in
+`mobile/audit-allowlist.json`: GitHub withdrew the braces advisory
+GHSA-vfj7-8cjw-p6xm at 12:53Z today, `npm audit` stopped reporting it,
+and `audit-check.mjs` refused the stale entry as designed. Both fixed;
+the full suite was run locally before the second push. Also on the
+branch: `mobile/README.md` no longer says the released
 server lacks the API, and docs/deployment.md step 8 gains the two `curl`
 checks for the copy once a release carrying it is deployed.
 
