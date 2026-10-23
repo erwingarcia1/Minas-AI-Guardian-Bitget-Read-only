@@ -21,6 +21,74 @@ Newest entry first.
 
 ---
 
+## 2026-10-23 · The box read before the public address: v1.12.0 on disk, the container stopped since 2026-09-28, Tailscale torn down (22e steps 4, 6 and 7)
+
+No deploy. These are the readings that decided the order of
+docs/deployment.md "The public address", and the teardown that step 4 of
+it records. Every command was typed by the owner over SSH with the EC2
+key pair at `57.181.51.14` (22e step 4: the key-pair login proven from the
+network the rest was run from) and its output read by the session; the
+address answered on the first try, which settles the stale
+`ec2-54-168-212-44…` hostname question - the Elastic IP is current.
+
+**Disk and container** (21:38 UTC): `git describe --tags` → `v1.12.0`,
+checkout clean apart from `?? held/`. `docker compose ps` → no running
+service; `docker compose ps -a` → `minas-guardian-sentinel-1 … Exited
+(137) 3 weeks ago`; `docker inspect` → `exit=137 oom=false
+finished=2026-09-28T20:48:42Z started=2026-09-22T12:26:51Z
+restart=unless-stopped`; the Docker journal for that minute: `Container
+failed to exit within 10s of signal 15 - using the force` - a `docker
+stop`, not a crash, so the restart policy rightly left it down. Host up
+109 days, no reboot. One SSH login that evening: `ubuntu` from
+`105.112.176.210`, 2026-09-28 20:44-23:06 UTC. The container's last log
+lines (20:46-20:48 UTC) are `breaker open, skipping account N` for nine
+accounts. `held/README-2026-09-28.txt`, verbatim: "2026-09-28 20:50 UTC -
+ALL ALERTING STOPPED (owner, beta, credit cost). Disabled:
+minas-liveness.timer, minas-restart-on-unhealthy.timer (disable --now,
+symlinks removed). Stopped: minas-guardian-sentinel-1 (Exited 137; PRAGMA
+integrity_check = ok). Commented: root cron 'sentinel digest' 08:00 UTC.
+Backup: root-cron-2026-09-28.bak in this folder. State at stop: 9
+accounts dark 169.6h; 391 tamper alerts in prior 24h. RESTORE ORDER: 1)
+nine exchange allowlists get 57.181.51.14 2) cut+deploy 1.13.0 3) then
+start." Root's crontab carries the digest line commented out with a
+"PAUSED 2026-09-28" note. The owner confirmed the allowlists (restore
+step 1) done on 2026-10-23. This file had not recorded v1.12.0 or the
+pause; the deploys between v1.7.0 and v1.12.0 are still unrecorded here.
+
+**Why Caddy could not start on v1.13.0:** `ss -tlnp '( sport = :80 or
+sport = :443 )'` → `tailscaled` LISTEN on `100.76.169.10:443` and the
+Tailscale IPv6 address; `python3 -c "…socket().bind(('0.0.0.0',443))"`
+with `SO_REUSEADDR` → `OSError: [Errno 98] Address already in use`.
+v1.13.0 was cut (2026-10-23 14:40) and never deployed. Primary private
+IPv4 `172.31.2.189/20` on `ens5`; `ip -4 route | grep '^10\.231\.'` →
+nothing; volumes: `minas-guardian_sentinel-data` only.
+
+**Teardown** (later that evening UTC; 22e steps 6 and 7, run before Caddy
+for the reason above - nothing was serving, so nothing was lost):
+`tailscale serve status` before → the four listeners of the 2026-09-25
+reading (`:8443` Funnel → 8391; `:8391`, `/` → 8390, `:9109` tailnet-only).
+`tailscale funnel reset; tailscale serve reset` → `serve status`: `No
+serve config`. `tailscale down` → `tailscale status`: `Tailscale is
+stopped.` `apt-get remove -y tailscale` → `Removing tailscale (1.102.2)`;
+`apt-get purge -y tailscale` → `Purging configuration files`;
+`rm -rf /var/lib/tailscale` (the node key: there is no coming back to the
+old name). After, in a fresh session: `/usr/bin/tailscale` and
+`/usr/sbin/tailscaled` → `No such file or directory`; `systemctl
+is-active tailscaled` → `inactive`; `ss -tlnp | grep -c tailscaled` → `0`;
+`ip -4 addr show tailscale0` → `Device "tailscale0" does not exist.`
+(In the teardown shell `command -v tailscale` still printed the path: the
+shell's command hash from the `tailscale status` run a moment earlier,
+not the file.) Still to do in the Tailscale admin console: Machines →
+minas-guardian → Remove.
+
+**Step 5 of the runbook, read afterwards:** `held/` moved to
+`/var/backups/minas-guardian/held-2026-09-28/` (both files listed there);
+`ss` on 80/443 → no listener; `ip -4 route | grep '^10\.231\.'` → none;
+`git status --short` in `/opt/minas-guardian` → nothing. The box is ready
+for step 6, the deploy of the release that carries `/admin`.
+
+---
+
 ## 2026-08-22 · v1.7.0 (current), and the four deploys this file missed
 
 Discovered 2026-08-22 during an autonomous-run verification pass: the file's
