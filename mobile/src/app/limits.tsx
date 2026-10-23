@@ -9,10 +9,10 @@ import { Badge, Body, Card, KV, Loaded, Notice, Screen, Section, Title } from '@
 // can stop an attack will not act on an alert with the urgency it needs.
 export default function Limits() {
   const load = useCallback(() => api.GET('/api/v1/limits'), []);
-  const { data, error, loading, reload } = useRequest(load);
+  const { data, error, loading, refreshing, reload } = useRequest(load);
 
   return (
-    <Screen refreshing={loading} onRefresh={reload}>
+    <Screen refreshing={refreshing} onRefresh={reload}>
       <Loaded data={data} error={error} loading={loading}>
         {(limits) => (
           <>
@@ -43,7 +43,9 @@ export default function Limits() {
               <Body>
                 {`Your balances and recent movements are checked about every ${limits.timing.balances_every_seconds} ` +
                   `seconds; permissions and allowlists about every ${Math.round(limits.timing.permissions_every_seconds / 60)} ` +
-                  'minutes. That is measured from when the exchange reports a movement, not from when it happened.'}
+                  'minutes. An alert is sent as soon as a check finds something, so in normal conditions you hear ' +
+                  'within a minute or so of the exchange showing it. That is measured from when the exchange reports ' +
+                  'it, not from when it happened — we cannot be faster than the source we read.'}
               </Body>
             </Section>
 

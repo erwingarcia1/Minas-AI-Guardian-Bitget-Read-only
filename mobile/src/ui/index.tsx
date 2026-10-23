@@ -1,9 +1,11 @@
 // The portal's primitives, for a phone (docs/portal-design.md): flat dark
 // surfaces, one gold primary per screen, status as a dot AND a word (never
 // colour alone), key/value rows instead of tables.
-import type { ReactNode } from 'react';
+import { type ReactNode, useEffect } from 'react';
 import {
+  AccessibilityInfo,
   ActivityIndicator,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -115,6 +117,8 @@ export function Button({
   return (
     <Pressable
       accessibilityRole="button"
+      // Named even while the spinner replaces the word: "Sign in, busy".
+      accessibilityLabel={label}
       accessibilityState={{ disabled: !!inactive, busy: !!busy }}
       disabled={inactive}
       onPress={onPress}
@@ -143,6 +147,13 @@ export function Button({
 
 export function Notice({ tone = 'neutral', title, children }: { tone?: Tone; title: string; children?: ReactNode }) {
   const t = tones[tone];
+  const urgent = tone === 'danger' || tone === 'warn';
+  const text = typeof children === 'string' ? children : '';
+  useEffect(() => {
+    // A problem that appears is said aloud, once: someone using a screen
+    // reader hears it without having to go looking for it.
+    if (urgent) AccessibilityInfo.announceForAccessibility(text ? `${title} ${text}` : title);
+  }, [urgent, title, text]);
   return (
     <View style={[styles.notice, { backgroundColor: t.bg, borderColor: t.line }]} accessibilityRole="alert">
       <Text style={[styles.noticeTitle, { color: tone === 'neutral' ? colors.text : t.fg }]}>{title}</Text>
@@ -195,7 +206,15 @@ const styles = StyleSheet.create({
   },
   body: { color: colors.text, fontSize: type.base, lineHeight: type.base * 1.55 },
   muted: { color: colors.textMuted },
-  mono: { color: colors.text, fontSize: type.sm, fontFamily: 'monospace' },
+  // SF Mono on iOS ('monospace' is not an iOS font and would fall back to the
+  // proportional one), as the portal's ui-monospace: an address is checked
+  // character by character, and l/1 and O/0 must not look alike.
+  mono: {
+    color: colors.text,
+    fontSize: type.sm,
+    fontFamily: Platform.select({ ios: 'ui-monospace', default: 'monospace' }),
+    fontVariant: ['tabular-nums'],
+  },
   card: {
     backgroundColor: colors.surface,
     borderColor: colors.border,
@@ -219,7 +238,8 @@ const styles = StyleSheet.create({
   dot: { width: 8, height: 8, borderRadius: 4 },
   badgeText: { fontSize: type.sm, fontWeight: '600' },
   kv: { gap: 2 },
-  kvLabel: { color: colors.textSubtle, fontSize: type.xs, letterSpacing: 0.5, textTransform: 'uppercase' },
+  // Muted, not subtle: the subtle tier is under 4.5:1 on a card's surface.
+  kvLabel: { color: colors.textMuted, fontSize: type.xs, fontWeight: '700', letterSpacing: 0.5, textTransform: 'uppercase' },
   button: {
     minHeight: 48,
     borderRadius: radius.md,

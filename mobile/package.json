@@ -42,14 +42,16 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "gen:api": "npx --yes --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts",
-    "typecheck": "tsc --noEmit",
+    "typecheck": "expo customize tsconfig.json && tsc --noEmit",
     "test": "jest",
-    "audit:check": "node scripts/audit-check.mjs",
-    "lint": "expo lint"
+    "audit:check": "node scripts/audit-check.mjs"
   },
   "private": true,
   "jest": {
-    "preset": "jest-expo"
+    "preset": "jest-expo",
+    "setupFiles": [
+      "<rootDir>/src/test-utils/setup.ts"
+    ]
   },
   "allowScripts": {
     "@parcel/watcher": false,

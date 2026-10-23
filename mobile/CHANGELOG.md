@@ -19,5 +19,11 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   - the activity record and the limits page.
 
   The refresh token is kept in the Keychain or Keystore and refreshed one
-  trade at a time. The app wears the Minas logo and the portal's colours.
-  It has no push notifications yet (21e).
+  trade at a time. It is stored per server, on this phone only, and is
+  readable only while the phone is unlocked. Every call has a deadline, so
+  a dead network shows a message, not a spinner, and signing out of the
+  phone never waits on the network. Screens reload by themselves when they
+  come back into view or the app comes back to the front. The Accounts tab
+  asks again every 30 seconds and never shows a verdict older than its
+  monitoring window. The app wears the Minas logo and the portal's
+  colours. It has no push notifications yet (21e).

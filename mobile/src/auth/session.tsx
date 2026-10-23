@@ -1,9 +1,9 @@
 import * as Device from 'expo-device';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
-import { api, describeError, publicApi } from '@/api/client';
+import { describeError, publicApi } from '@/api/client';
 
-import { forget, hasStoredSession, onSessionChange, storeTokens } from './tokens';
+import { type Ending, hasStoredSession, onSessionChange, signOut as endSession, storeTokens } from './tokens';
 
 type State = 'loading' | 'signed-in' | 'signed-out';
 
@@ -11,6 +11,9 @@ export type SignInResult = { ok: true } | { ok: false; code: string; message: st
 
 type Session = {
   state: State;
+  /** The server ended the last sign-in (rather than the member signing out),
+   * so the sign-in screen can say so. */
+  ended: boolean;
   signIn: (email: string, password: string, code: string) => Promise<SignInResult>;
   signOut: () => Promise<void>;
 };
@@ -19,11 +22,17 @@ const SessionContext = createContext<Session | null>(null);
 
 export function SessionProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<State>('loading');
+  const [ending, setEnding] = useState<Ending | null>(null);
 
   useEffect(() => {
     let live = true;
+    // Never rejects - a store that cannot be read counts as no sign-in - so
+    // the app always leaves its splash screen.
     hasStoredSession().then((stored) => live && setState(stored ? 'signed-in' : 'signed-out'));
-    const unsubscribe = onSessionChange((signedIn) => setState(signedIn ? 'signed-in' : 'signed-out'));
+    const unsubscribe = onSessionChange((signedIn, how) => {
+      setState(signedIn ? 'signed-in' : 'signed-out');
+      setEnding(signedIn ? null : (how ?? null));
+    });
     return () => {
       live = false;
       unsubscribe();
@@ -41,23 +50,22 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         await storeTokens(data);
         return { ok: true };
       }
+      if (response.status === 404 && typeof error !== 'object') {
+        // Not the API's 404 (that one is JSON): a server without the app API.
+        return { ok: false, code: 'not_found', message: "This server doesn't offer the app's sign-in." };
+      }
       return { ok: false, code: error?.error ?? 'unknown', message: describeError(error, response) };
-    } catch {
-      return { ok: false, code: 'network', message: describeError(undefined) };
+    } catch (thrown) {
+      return { ok: false, code: 'network', message: describeError(undefined, undefined, thrown) };
     }
   }, []);
 
-  const signOut = useCallback(async () => {
-    try {
-      await api.DELETE('/api/v1/session');
-    } catch {
-      // Offline: the phone forgets anyway. The server-side sign-in then ends
-      // when its refresh token goes unused, or from the portal's Security page.
-    }
-    await forget();
-  }, []);
+  const signOut = useCallback(() => endSession(), []);
 
-  const value = useMemo(() => ({ state, signIn, signOut }), [state, signIn, signOut]);
+  const value = useMemo(
+    () => ({ state, ended: ending === 'ended', signIn, signOut }),
+    [state, ending, signIn, signOut],
+  );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }
 

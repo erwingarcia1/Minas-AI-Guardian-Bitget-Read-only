@@ -22,7 +22,11 @@ jobs:
       run:
         working-directory: mobile
     steps:
+      # No token left in .git/config: nothing after this pushes, and the
+      # API-type generator runs registry code.
       - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - uses: actions/setup-node@v4
         with:
@@ -42,6 +46,8 @@ jobs:
           git diff --exit-code -- src/api/schema.d.ts \
             || { echo "::error::src/api/schema.d.ts is stale - run npm run gen:api in mobile/ and commit"; exit 1; }
 
+      # Generates the typed routes first, so a link to a screen that does not
+      # exist fails here rather than on a phone.
       - name: Typecheck
         run: npm run typecheck
 

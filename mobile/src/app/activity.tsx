@@ -8,10 +8,10 @@ import { Body, Card, KV, Loaded, Screen, Title, when } from '@/ui';
 // reached, including Minas's own. Append-only; nothing here is ever edited.
 export default function Activity() {
   const load = useCallback(() => api.GET('/api/v1/activity'), []);
-  const { data, error, loading, reload } = useRequest(load);
+  const { data, error, loading, refreshing, reload } = useRequest(load);
 
   return (
-    <Screen refreshing={loading} onRefresh={reload}>
+    <Screen refreshing={refreshing} onRefresh={reload}>
       <Loaded data={data} error={error} loading={loading}>
         {(activity) => (
           <>

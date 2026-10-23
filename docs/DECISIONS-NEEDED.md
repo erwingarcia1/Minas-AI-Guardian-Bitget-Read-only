@@ -1060,7 +1060,7 @@ chosen. This row records the exposure model only.
 
 ---
 
-## 21. Native iOS and Android apps, and the JSON API they need — **PARTLY ANSWERED 2026-10-22: audience, framework, repository, branding, sign-in and API scope decided; push and the web portal still open**
+## 21. Native iOS and Android apps, and the JSON API they need — **PARTLY ANSWERED 2026-10-22: audience, framework, repository, branding, sign-in and API scope decided; push, the web portal, lost refresh answers and two-factor-off still open**
 
 > **Answer so far (2026-10-22).**
 > - **The apps are for customers** (members). Operators keep the web
@@ -1078,7 +1078,8 @@ chosen. This row records the exposure model only.
 >   22).
 >
 > Still open, each with a recommendation below: 21b (does the web portal
-> change) and 21e (push). Neither blocks the API.
+> change), 21e (push), 21h (a refresh whose answer is lost) and 21i (does
+> turning two-factor off end app sign-ins). None blocks the API.
 
 **What this changes.** The portal's first rule (docs/portal-design.md;
 owner, 2026-08-19, on #82) reads: "No framework. Plain server-rendered
@@ -1282,6 +1283,56 @@ What that takes:
   not be usable to impersonate a customer page, and that matters more
   now that both share one address (decision 22).
 
+### 21h. A refresh whose answer is lost — open (raised 2026-10-23)
+
+21c revokes a device when its replaced refresh token comes back. The
+server commits the new token before it sends the answer. If the answer
+never reaches the phone, the phone still holds the replaced token, and
+presenting it again revokes the device. That happens when the connection
+drops at the wrong moment, when the app is killed or reloaded during a
+refresh, or when the answer arrives cut short. The member then has to sign
+in again with password and code. Their activity record says the sign-in
+"was used from two places at once", a false theft alarm that teaches them
+to ignore the real one. A development reload during app start-up
+reproduces it.
+
+The app already does what a client can. It keeps the newest token in
+memory and never leaves a replaced token in storage, and it gives a
+refresh 30 seconds before it stops waiting. A lost answer can only be
+fixed on the server. The options:
+
+- **(a) Keep 21c as it is.** Every replay revokes. This is the simplest
+  option, and its cost is the false alarms above.
+- **(b) A short grace window — recommended.** If the replaced token comes
+  back within 60 seconds of its rotation, the server rotates again instead
+  of revoking. Racing retries are handled with a conditional update, so
+  only one wins. Outside the window, a replay revokes as now. This covers
+  a retry, a reload and a quick reopen. The change is confined to
+  `rotate_refresh`. The trade-offs: a thief who replays within the same
+  60 seconds gets a working token rather than tripping the alarm, and a
+  token that was never delivered becomes a plain refusal rather than a
+  reuse alarm.
+- **(c) Re-rotate until the new pair is first used.** The server would
+  record the first use of an access token from the newest pair, and treat
+  a replay as theft only after that. This covers every lost answer, at any
+  delay. It needs a write on every authenticated read, which `authenticate`
+  forbids on purpose ("no GET may write"), so it reopens that rule.
+
+### 21i. Does turning two-factor off end the app's sign-ins? — open (raised 2026-10-23)
+
+21c makes two-factor the condition for signing in to the app. Today it is
+checked at sign-in only. A member who turns two-factor off on the portal
+stays signed in on every phone, for up to 30 days of each phone's use.
+The app's Security tab now shows the true state ("Off") and says the
+phone cannot sign in again until it is turned back on.
+
+- **(a) Leave it.** Two-factor gates new sign-ins only.
+- **(b) Turning it off signs every phone out — recommended.** The portal's
+  two-factor disable would revoke the login's app devices, with an
+  activity entry and the usual email. The condition 21c set then holds
+  for the whole of a session, and it closes a stolen portal session's
+  route to a quieter phone session.
+
 ### What it blocks
 
 The apps, end to end. Nothing blocks the API now that 21c and 21d are
@@ -1314,6 +1365,10 @@ against decision 22's hostname.
   its own changelog. The deploy gate now accepts only `v*` tags, the
   precondition 21f set for the first `mobile-v*` tag. `mobile/` is in
   `.dockerignore`. See `mobile/README.md`.
+- **The app was reviewed before its first phone test (2026-10-23).** Six
+  reviewers covered it, with every finding checked by a second agent. The
+  fixes are in `mobile/` and `mobile/CHANGELOG.md`. Two of the findings
+  need the owner's answer: 21h and 21i.
 - **Not built yet:**
   - push (21e);
   - the primary-only writes (v2);
