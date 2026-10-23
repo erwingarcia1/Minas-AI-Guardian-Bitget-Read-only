@@ -33,3 +33,7 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   stop monitoring, and a refused key says where it is replaced and by
   whom. The app wears the Minas logo and the portal's colours. It has no
   push notifications yet (21e).
+
+  The app is published as `com.minastrade.guardian` (21f), with EAS build
+  profiles for a directly installable Android preview and for the
+  stores.

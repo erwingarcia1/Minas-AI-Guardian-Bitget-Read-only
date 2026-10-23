@@ -1247,6 +1247,14 @@ organisation includes identity verification, which takes time, so start
 it now, before the app is ready. Which legal entity publishes is the
 owner's call.
 
+> **Answered 2026-10-23: the app is published as
+> `com.minastrade.guardian`**, the iOS bundle identifier and the Android
+> package both. `tests/test_mobile_app.py` pins it, because a store ties
+> an app to it for good. Neither publisher account exists yet (checked
+> with the owner, 2026-10-23); enrolment is the next step, and the app
+> cannot reach customers through a store until both are done.
+> `mobile/eas.json` holds the build profiles for when they are.
+
 **App review.** The app shows exchange account activity and moves no
 funds. Read the current App Store Review Guidelines on cryptocurrency
 apps before submitting. UNVERIFIED: how those guidelines apply to a

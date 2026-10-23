@@ -139,15 +139,31 @@ npm run audit:check
 npx expo export --platform ios --platform android   # both bundles compile
 ```
 
+## Building for the stores
+
+`eas.json` has two profiles, built with EAS Build (`npx eas-cli@latest`,
+signed in to the Expo account):
+
+```bash
+npx eas-cli@latest build --profile preview --platform android   # an APK to install directly, for testing
+npx eas-cli@latest build --profile production --platform all    # store builds, numbered by EAS
+npx eas-cli@latest submit --profile production --platform ios   # to App Store Connect (TestFlight first)
+```
+
+The production build talks to `https://guardian.minastrade.com`, so that
+address must be serving a release with the app API first. An iOS build
+of any kind needs the Apple Developer Program account. The Android
+preview APK needs neither store account.
+
 ## Not done yet
 
 - **Push notifications:** waiting on decision 21e.
-- **App identity:** the iOS bundle identifier and Android package name
-  depend on which legal entity publishes the app, which is the owner's
-  call (21f). They are needed before the first store build.
-- **Store accounts and builds:** Apple Developer Program, Google Play, and
-  EAS Build. The publisher's identity verification takes time, so start it
-  early.
+- **Store accounts.** The app is published as `com.minastrade.guardian`
+  (21f), but neither the Apple Developer Program nor the Google Play
+  account exists yet. Enrol the company in both; identity verification
+  takes days. Google also asks a new personal account for a 14-day
+  closed test before production, and an organisation account avoids
+  that.
 - **Account changes:** the settings only the account's main contact may
   change come with API v2.
 
