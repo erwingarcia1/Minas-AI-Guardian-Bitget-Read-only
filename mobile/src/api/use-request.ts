@@ -99,11 +99,17 @@ export function useRequest<T>(load: () => Promise<Result<T>>, options: Options =
   return { data, error, loading, refreshing, receivedAt, reload, refetch, setData };
 }
 
-/** The time now, read again every `ms` while the screen is in view and
- * whenever the app comes back to the front: for judging how old what is on
- * screen has become. (Date.now() during render would be memoised away.) */
-export function useNow(ms: number): number {
+/** The time now, read again every `ms` while the screen is in view, whenever
+ * the app comes back to the front, and at `wakeAt` (a moment something on
+ * screen goes out of date): for judging how old what is on screen has become.
+ * (Date.now() during render would be memoised away.) */
+export function useNow(ms: number, wakeAt: number | null = null): number {
   const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (wakeAt === null) return undefined;
+    const timer = setTimeout(() => setNow(Date.now()), Math.max(0, wakeAt - Date.now()) + 1);
+    return () => clearTimeout(timer);
+  }, [wakeAt]);
   useFocusEffect(
     useCallback(() => {
       setNow(Date.now());

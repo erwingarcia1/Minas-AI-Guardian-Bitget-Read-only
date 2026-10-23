@@ -7,11 +7,14 @@ revocation or a replayed refresh token ends the sign-in on the next request.
 """
 from __future__ import annotations
 
+import logging
+import threading
 import time
 
 import pytest
 
 from sentinel import api as api_module
+from sentinel import outbox
 from sentinel.api import (
     ACCESS_TTL_SECONDS,
     REFRESH_TTL_SECONDS,
@@ -31,6 +34,12 @@ from tests.helpers.api_client import PASSWORD, ApiClient, add_account, enrolled_
 
 ALICE = "alice@example.com"
 BOB = "bob@example.com"
+# The real notice, before any fixture stands a recorder in for it.
+REAL_NOTICE = api_module.send_new_device_email
+
+
+def _errors(caplog) -> list[str]:
+    return [r.getMessage() for r in caplog.records if r.levelno >= logging.ERROR]
 
 
 @pytest.fixture
@@ -87,6 +96,7 @@ def test_password_and_code_issue_both_tokens_and_record_the_device(server, db, a
 def test_every_sign_in_tells_the_member_and_lands_on_their_activity_page(server, db, alice, notices):
     status, _, _ = server.sign_in(ALICE, alice, device_name="Alice's iPhone")
     assert status == 200
+    assert outbox.wait_until_sent(5), "the notice is sent after the answer, and within seconds of it"
     assert notices == [(ALICE, "Alice's iPhone")]
     with db.cursor() as cur:
         cur.execute("SELECT payload_json, actor FROM events WHERE event_type = 'member_app_signed_in'")
@@ -95,13 +105,100 @@ def test_every_sign_in_tells_the_member_and_lands_on_their_activity_page(server,
     assert rows[0]["actor"] == ALICE
 
 
-def test_a_failed_notice_does_not_undo_the_sign_in(server, alice, monkeypatch):
+def test_a_failed_notice_does_not_undo_the_sign_in(server, alice, monkeypatch, caplog):
     def boom(db, address, name):
         raise RuntimeError("smtp down")
 
     monkeypatch.setattr(api_module, "send_new_device_email", boom)
     status, body, _ = server.sign_in(ALICE, alice)
     assert status == 200 and body["access_token"]
+    assert outbox.wait_until_sent(5)
+    assert _errors(caplog) == [f"new-device notice to {ALICE} failed: smtp down"]
+
+
+def test_the_sign_in_answers_before_its_notice_is_sent(server, db, alice, monkeypatch):
+    """Answer first, deliver after (2026-10-23). smtplib's 15 seconds apply to
+    each socket operation, so a slow mail provider held this answer past
+    the app's 15-second deadline - after the device was created and the
+    member's code spent - and the app said it could not reach Minas. The
+    answer now goes first, and the notice still follows it."""
+    entered, release, sent = threading.Event(), threading.Event(), []
+
+    def stalled(router, detection, account_label, emails, phones, **kwargs):
+        sent.append((list(emails), detection.message))
+        entered.set()
+        release.wait(10)  # a provider that never answers; bounded, so the test always ends
+
+    monkeypatch.setattr(api_module, "send_new_device_email", REAL_NOTICE)
+    monkeypatch.setattr("sentinel.alerts.contact.ContactRouter.send", stalled)
+    try:
+        started = time.monotonic()
+        status, body, _ = server.sign_in(ALICE, alice, device_name="Alice's iPhone")
+        elapsed = time.monotonic() - started
+        assert entered.wait(5), "the notice was never sent"
+    finally:
+        release.set()
+    assert status == 200 and body["access_token"]
+    assert elapsed < 2, f"the sign-in answered after {elapsed:.1f} s: it waited for its notice"
+    assert outbox.wait_until_sent(5)
+    [(emails, message)] = sent
+    assert emails == [ALICE] and "Alice's iPhone" in message
+
+
+def test_a_sign_in_whose_answer_cannot_be_written_still_sends_its_notice(server, alice, notices, monkeypatch):
+    """The app gave up, or its network dropped, while the server was still
+    answering, so writing the answer raises. The device exists all the same,
+    so its notice - decision 21c's tripwire - must still go out: that is
+    outbox.answering's `finally`."""
+    import http.server
+
+    real_end_headers = http.server.BaseHTTPRequestHandler.end_headers
+
+    def broken_pipe(self):
+        if self.command == "POST" and self.path.startswith("/api/v1/session"):
+            raise BrokenPipeError(32, "Broken pipe")
+        return real_end_headers(self)
+
+    monkeypatch.setattr(http.server.BaseHTTPRequestHandler, "end_headers", broken_pipe)
+    # The client sees the connection drop (an OSError: reset, or closed
+    # without an answer).
+    with pytest.raises(OSError):
+        server.sign_in(ALICE, alice, device_name="Alice's iPhone")
+    assert outbox.wait_until_sent(5), "what the sign-in queued never finished"
+    assert notices == [(ALICE, "Alice's iPhone")]
+
+
+def test_with_no_thread_to_be_had_the_notice_is_still_sent(server, alice, notices, monkeypatch):
+    """docker-compose.yml's pids_limit means a thread can be refused. The
+    answer has gone by then, so the notice is sent on the request's own
+    thread rather than lost."""
+    import types
+
+    class NoThread(threading.Thread):
+        def start(self):
+            raise RuntimeError("can't start new thread")
+
+    # Only the outbox's own view of `threading`: the server keeps its threads.
+    monkeypatch.setattr(outbox, "threading", types.SimpleNamespace(Thread=NoThread))
+    status, _body, _ = server.sign_in(ALICE, alice, device_name="Alice's iPhone")
+    assert status == 200
+    assert outbox.wait_until_sent(5), "what the sign-in queued never finished"
+    assert notices == [(ALICE, "Alice's iPhone")]
+
+
+def test_one_delivery_that_raises_does_not_cost_the_next(db):
+    """Each delivery guards itself today; the queue guards each one again, so
+    the next that forgets cannot cost the sibling closing notes behind it."""
+    ran = []
+
+    def raises():
+        raise RuntimeError("unguarded")
+
+    with outbox.answering(db):
+        outbox.later(raises)
+        outbox.later(lambda: ran.append("second"))
+    assert outbox.wait_until_sent(5)
+    assert ran == ["second"]
 
 
 def test_a_wrong_password_and_a_wrong_code_get_the_same_answer(server, db, alice):
@@ -154,6 +251,34 @@ def test_a_body_that_is_not_a_json_object_is_refused(server, alice):
     for raw in (b"not json", b"[1, 2]", b"\xff\xfe"):
         status, body, _ = server.request("POST", "/api/v1/session", raw)
         assert status == 400 and body["error"] == "invalid_json"
+
+
+@pytest.mark.parametrize("path, body", [
+    ("/api/v1/session/refresh", {"refresh_token": "\ud800"}),
+    ("/api/v1/session", {"email": "\ud800@example.com", "password": PASSWORD, "code": "123456"}),
+    ("/api/v1/session", {"email": ALICE, "password": PASSWORD, "code": "\ud800"}),
+], ids=["refresh token", "sign-in email", "sign-in code"])
+def test_text_that_unicode_cannot_hold_is_a_malformed_body_not_a_failure_of_ours(server, alice, caplog, path, body):
+    """JSON allows a lone surrogate; Unicode does not. Parsed and passed on,
+    it failed deep in a handler - the token's hash, the address's database
+    bind, the code check behind the right password - and was answered as
+    Minas's own 500, with a traceback, to anyone, with no account."""
+    status, answer, _ = server.request("POST", path, body)
+    assert status == 400 and answer["error"] == "invalid_json"
+    assert _errors(caplog) == []
+
+
+def test_a_code_in_another_scripts_digits_is_a_wrong_code_and_is_counted(server, alice, caplog):
+    """'١٢٣٤٥٦' is six digits to `str.isdigit` and not to compare_digest,
+    which raised: behind the right password that was Minas's own 500, and
+    the failed sign-in was never counted on the throttle."""
+    for _ in range(5):
+        status, body, _ = server.request("POST", "/api/v1/session",
+                                         {"email": ALICE, "password": PASSWORD, "code": "١٢٣٤٥٦"})
+        assert status == 401 and body["error"] == "invalid_credentials"
+    status, body, _ = server.sign_in(ALICE, alice)
+    assert status == 429 and body["error"] == "too_many_attempts", "each one counted on the login throttle"
+    assert _errors(caplog) == []
 
 
 # --- the access token -------------------------------------------------------------

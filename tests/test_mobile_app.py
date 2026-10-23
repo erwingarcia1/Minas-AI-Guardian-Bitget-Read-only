@@ -66,6 +66,16 @@ def test_the_app_config_wears_them():
     assert "expo-secure-store" in expo["plugins"], "the refresh token's storage (21c) is not configured"
 
 
+def test_the_apps_identity_is_the_publishers_and_never_changes():
+    """Decision 21f, answered 2026-10-23: the app is published as
+    com.minastrade.guardian. The stores tie an app to this identifier for
+    good - a change after the first upload is a different app, and every
+    installed copy is orphaned - so it is pinned here."""
+    expo = json.loads((MOBILE / "app.json").read_text())["expo"]
+    assert expo["ios"]["bundleIdentifier"] == "com.minastrade.guardian"
+    assert expo["android"]["package"] == "com.minastrade.guardian"
+
+
 def test_the_generated_client_knows_exactly_the_servers_routes():
     """The Mobile workflow regenerates the file and fails on a difference;
     this is the server suite's own view of the same fact."""

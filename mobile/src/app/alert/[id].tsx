@@ -3,6 +3,7 @@ import { type ReactNode, useCallback, useState } from 'react';
 import { View } from 'react-native';
 
 import { api, describeError, type Schemas } from '@/api/client';
+import { isTimeout } from '@/api/network';
 import { useRequest } from '@/api/use-request';
 import { severityTone, space } from '@/theme';
 import { Badge, Body, Button, Card, KV, Loaded, Mono, Notice, Screen, Section, Title, when } from '@/ui';
@@ -160,7 +161,10 @@ function Acknowledge({
       .catch((caught: unknown) => ({ data: undefined, error: undefined, response: undefined, thrown: caught }));
     setBusy(false);
     if (data) onAcknowledged(data);
-    else setFailure(describeError(error, response, thrown));
+    else if (isTimeout(thrown)) {
+      // Minas may have recorded it before the answer was lost.
+      setFailure("Minas didn't answer in time. The acknowledgement may still have been recorded: pull down to check.");
+    } else setFailure(describeError(error, response, thrown));
   }
 
   return (

@@ -1,5 +1,5 @@
 import { Link } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Alert as Confirm } from 'react-native';
 
 import { api, describeError } from '@/api/client';
@@ -13,6 +13,9 @@ export default function Security() {
   const { data, error, loading, refreshing, reload, refetch } = useRequest(load);
   const [failure, setFailure] = useState<string | null>(null);
   const [leaving, setLeaving] = useState(false);
+  // A list that has landed since is the answer now: an old "Not signed out."
+  // above it would describe a list the phone has already left.
+  useEffect(() => setFailure(null), [data]);
   // Which phones are being signed out right now. The ref is what stops a
   // second tap: it lands before the re-render that would disable the button.
   const inFlight = useRef(new Set<number>());
@@ -53,12 +56,7 @@ export default function Security() {
   }
 
   return (
-    <Screen
-      refreshing={refreshing}
-      onRefresh={() => {
-        setFailure(null);
-        reload();
-      }}>
+    <Screen refreshing={refreshing} onRefresh={reload}>
       <Loaded data={data} error={error} loading={loading}>
         {(security) => (
           <>

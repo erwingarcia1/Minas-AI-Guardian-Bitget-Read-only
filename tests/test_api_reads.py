@@ -110,17 +110,25 @@ def test_each_account_names_its_trouble_as_a_word_the_app_can_act_on(server, db,
     paused = add_account(db, ALICE, "alice-paused")
     flagged = add_account(db, ALICE, "alice-flagged")
     silent = add_account(db, ALICE, "alice-silent")
+    # Three refused in the same minute: the exchange is refusing every key
+    # at once because of a change on our side (alerts/fleet.py). `rejected`
+    # has been refused on its own since long before.
+    refused_together = [add_account(db, ALICE, f"alice-refused-{i}") for i in range(3)]
     with db.cursor() as cur:
-        cur.execute("UPDATE poll_state SET last_success_at = ?, consecutive_auth_failures = 3 WHERE account_id = ?",
-                    (now, rejected))
+        cur.execute("UPDATE poll_state SET last_success_at = ?, consecutive_auth_failures = 3, "
+                    "auth_failing_since = '2026-09-01T00:00:00+00:00' WHERE account_id = ?", (now, rejected))
         cur.execute("UPDATE accounts SET status = 'disabled' WHERE id = ?", (paused,))
         cur.execute("UPDATE accounts SET status = 'tamper_suspected' WHERE id = ?", (flagged,))
         cur.execute("UPDATE poll_state SET last_success_at = '2026-01-01T00:00:00+00:00' WHERE account_id = ?",
                     (silent,))
+        for account_id in refused_together:
+            cur.execute("UPDATE poll_state SET last_success_at = ?, consecutive_auth_failures = 2, "
+                        "auth_failing_since = '2026-09-21T19:10:00+00:00' WHERE account_id = ?", (now, account_id))
     _, body, _ = server.request("GET", "/api/v1/accounts", token=alice)
     causes = {a["id"]: a["cause"] for a in body["accounts"]}
     assert causes == {fleet["a1"]: None, fleet["a2"]: "never_checked", rejected: "key_rejected",
-                      paused: "paused", flagged: "tamper_suspected", silent: "no_recent_check"}
+                      paused: "paused", flagged: "tamper_suspected", silent: "no_recent_check",
+                      **{account_id: "host_auth_failure" for account_id in refused_together}}
     # The status page's own judgement, so the two cannot disagree.
     assert causes == {a["account_id"]: a["cause"] for a in member_status(db, ALICE, rules)["accounts"]}
 
@@ -164,6 +172,26 @@ def test_a_pending_pause_is_listed_until_it_is_cancelled(server, db, alice, flee
         {"account_id": fleet["a2"], "account_name": "Savings", "execute_at": execute_at}]
     assert cancel_pause(db, fleet["a2"], ALICE)
     assert _accounts(server, alice)["pending_pauses"] == []
+
+
+def test_the_home_pages_banners_name_the_connection_as_the_app_does(server, db, alice, fleet, rules):
+    """One query each for the incident and the pause, so the page and the
+    app cannot name different ones - and the page's two banners printed
+    the operator's slug where the app, the account cards beside them and
+    the alert email all use the member's own name for the connection (#8)."""
+    from sentinel.pause import request_pause
+    from sentinel.portal import _render_home
+
+    request_pause(db, fleet["a2"], ALICE)
+    body = _accounts(server, alice)
+    page = _render_home(db, ALICE, rules)
+    hero = page.split("Needs your attention", 1)[1].split("</div>", 1)[0]
+    pause = page.split("Pause pending", 1)[1].split("</div>", 1)[0]
+    assert body["attention"]["account_name"] == "Savings"
+    assert f" on {body['attention']['account_name']}, " in hero
+    assert [p["account_name"] for p in body["pending_pauses"]] == ["Savings"]
+    assert f"about to stop: {body['pending_pauses'][0]['account_name']} at " in pause
+    assert "alice-2" not in hero + pause, "the slug is the operator's word, not the member's"
 
 
 # --- alerts ------------------------------------------------------------------------

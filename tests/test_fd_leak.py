@@ -162,3 +162,31 @@ def test_a_released_thread_reconnects_on_next_use(db):
     with db.cursor() as cur:
         cur.execute("SELECT count(*) c FROM accounts")
         assert cur.fetchone()["c"] == 0
+
+
+def test_a_delivery_after_the_answer_runs_on_its_own_thread_and_leaves_no_connection(db):
+    """What a request owes - a new-device notice, a closing note - is sent
+    after the answer on a thread of its own (sentinel/outbox.py): one more
+    short-lived thread that queries the database, so one more that must
+    release its connection, or every sign-in and acknowledgement costs a
+    descriptor the way every request once did. Outside a request the
+    delivery is made at once, on the caller's thread, as before."""
+    from sentinel.outbox import answering, later, wait_until_sent
+
+    ran = []
+
+    def deliver():
+        with db.cursor() as cur:
+            cur.execute("SELECT count(*) c FROM accounts")
+        ran.append(threading.current_thread())
+
+    later(deliver)
+    assert ran == [threading.current_thread()], "outside a request: at once, here"
+
+    pool = len(db._all_conns)
+    with answering(db):
+        later(deliver)
+        assert len(ran) == 1, "inside a request: not before the answer"
+    assert wait_until_sent(5), "the delivery never finished"
+    assert len(ran) == 2 and ran[1] is not threading.current_thread()
+    assert len(db._all_conns) == pool, "the delivery thread kept its connection"

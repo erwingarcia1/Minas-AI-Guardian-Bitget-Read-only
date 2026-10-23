@@ -37,6 +37,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
 from sentinel.db import Database
+from sentinel.outbox import later
 
 logger = logging.getLogger("sentinel.api")
 
@@ -319,6 +320,15 @@ def send_new_device_email(db: Database, address: str, name: str) -> None:
     )
 
 
+def _new_device_notice(db: Database, email: str, name: str) -> None:
+    """The notice a sign-in owes, under its guard. Queued by `_sign_in`
+    and sent after the answer (sentinel/outbox.py)."""
+    try:
+        send_new_device_email(db, email, name)
+    except Exception as exc:  # noqa: BLE001 - the sign-in has happened; the notice must not undo it
+        logger.error("new-device notice to %s failed: %s", email, exc)
+
+
 # --- requests ------------------------------------------------------------------
 
 @dataclass
@@ -332,9 +342,17 @@ class Request:
     client_ip: str
 
     def json(self) -> dict | None:
-        """The body as a JSON object, or None if it is not one."""
+        """The body as a JSON object, or None if it is not one.
+
+        JSON can carry text that Unicode cannot: a lone surrogate such as
+        `"\\ud800"` parses, then fails deep in a handler - at a hash, a
+        database bind, a code check - and was answered as Minas's own 500,
+        with a traceback, before a failed sign-in was counted. Encoding the
+        parsed value back to UTF-8 refuses it here, as the malformed body
+        it is (UnicodeEncodeError is a ValueError)."""
         try:
             loaded = json.loads(self.body.decode("utf-8")) if self.body else {}
+            json.dumps(loaded, ensure_ascii=False).encode("utf-8")
         except (ValueError, UnicodeDecodeError):
             return None
         return loaded if isinstance(loaded, dict) else None
@@ -495,10 +513,11 @@ class Api:
         device_id, refresh = create_device(self.db, email, name, epoch)
         logger.info("api sign-in for %s from %s: device %d (%s)", email, ip, device_id, name)
         _record(self.db, email, "member_app_signed_in", {"device": name})
-        try:
-            send_new_device_email(self.db, email, name)
-        except Exception as exc:  # noqa: BLE001 - the sign-in has happened; the notice must not undo it
-            logger.error("new-device notice to %s failed: %s", email, exc)
+        # After the answer (sentinel/outbox.py). Sent before it, a slow mail
+        # provider held a sign-in that had already created the device and
+        # spent the member's code past the app's deadline, and the app said
+        # it could not reach Minas.
+        later(_new_device_notice, self.db, email, name)
         return Response(200, self._tokens(device_id, refresh))
 
     def _refresh(self, request: Request, _device) -> Response:

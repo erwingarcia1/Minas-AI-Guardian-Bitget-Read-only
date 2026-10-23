@@ -165,6 +165,15 @@ def test_every_operation_documents_the_catch_all_500():
     assert not missing
 
 
+def test_every_operation_documents_the_wrappers_400():
+    """The portal answers any /api/ request whose body length is invalid or
+    over 8 KiB with 400 `invalid_request`, before Api.handle runs - so on
+    every route, signed in or not - and every route says so."""
+    missing = [(m, p) for p, item in SPEC["paths"].items() for m, op in item.items()
+               if m in METHODS and "400" not in op["responses"]]
+    assert not missing, f"operations that do not document the wrapper's 400: {missing}"
+
+
 def test_every_answer_the_server_gives_is_the_contracts(server, db, cipher, monkeypatch):
     a1 = add_account(db, ALICE, "alice-1")
     add_account(db, BOB, "bob-1")
@@ -179,8 +188,8 @@ def test_every_answer_the_server_gives_is_the_contracts(server, db, cipher, monk
     set_member_password(db, BOB, PASSWORD, notify=None)
     seen: set[tuple[str, str, int]] = set()
 
-    def call(method, template, path=None, body=None, token=None):
-        status, data, _ = server.request(method, path or template, body, token=token)
+    def call(method, template, path=None, body=None, token=None, headers=None):
+        status, data, _ = server.request(method, path or template, body, token=token, headers=headers)
         check(method, template, status, data)
         seen.add((method, template, status))
         return status, data
@@ -206,6 +215,10 @@ def test_every_answer_the_server_gives_is_the_contracts(server, db, cipher, monk
     status, accounts = call("GET", "/api/v1/accounts", token=token)
     assert status == 200 and accounts["attention"] is not None and accounts["pending_pauses"]
     assert call("GET", "/api/v1/accounts")[0] == 401
+    # The portal's wrapper, ahead of the route and of the token: a body length
+    # it will not read is refused on every route.
+    status, refused = call("GET", "/api/v1/accounts", token=token, headers={"Content-Length": "9000"})
+    assert status == 400 and refused["error"] == "invalid_request"
     with monkeypatch.context() as broken:
         broken.setattr("sentinel.portal.member_status", lambda *a, **k: 1 / 0)
         assert call("GET", "/api/v1/accounts", token=token)[0] == 500

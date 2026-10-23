@@ -1,6 +1,6 @@
 import { Link } from 'expo-router';
-import { useCallback } from 'react';
-import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { useCallback, useEffect } from 'react';
+import { AccessibilityInfo, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { api, type Schemas } from '@/api/client';
 import { useNow, useRequest } from '@/api/use-request';
@@ -58,6 +58,11 @@ function fix(account: Schemas['Account']): string | null {
       return account.role === 'primary'
         ? "You can fix this: replace the API key on the member portal, on this account's page."
         : 'The account holder can fix this by replacing the API key on the member portal.';
+    case 'host_auth_failure':
+      // The refusal is on Minas's side (a change to its address): the one
+      // thing a frightened member might do - replace the key - would
+      // deepen the outage. The product's own words for it.
+      return 'Nothing is needed from you: leave your key exactly as it is. Minas is putting it right.';
     case 'never_checked':
     case 'no_recent_check':
     case 'not_active':
@@ -72,7 +77,8 @@ export default function Accounts() {
   // Re-asked every 30 seconds while this tab is in view: it is the one
   // screen that must never show an old "yes".
   const { data, error, loading, refreshing, receivedAt, reload } = useRequest(load, { every: 30_000 });
-  const now = useNow(15_000);
+  // Woken at the moment the answer goes out of date, not up to 15 s after.
+  const now = useNow(15_000, receivedAt !== null && data ? receivedAt + data.stale_after_seconds * 1000 : null);
 
   return (
     <Screen refreshing={refreshing} onRefresh={reload}>
@@ -108,7 +114,10 @@ export default function Accounts() {
               )}
               <Eyebrow>{`${expired ? 'Last answer' : overall.eyebrow} · checked ${when(accounts.checked_at)}`}</Eyebrow>
               {accounts.accounts.map((account) => {
-                const state = watchState(account);
+                // An expired answer's "yes" is not shown as current: the card
+                // and the verdict above it expire together.
+                const state: { tone: Tone; label: string } =
+                  expired && account.watched ? { tone: 'neutral', label: 'Last known: Watching' } : watchState(account);
                 return (
                   <Card key={account.id}>
                     <Title>{account.name}</Title>
@@ -143,6 +152,11 @@ function Attention({ alert }: { alert: Schemas['Attention'] }) {
   const t = tones[alert.severity === 'CRITICAL' || alert.severity === 'HIGH' ? 'danger' : 'warn'];
   const title = `Needs your attention — incident #${alert.id}`;
   const detail = `${alert.severity}: ${alert.message} on ${alert.account_name}, ${when(alert.sent_at)} — not yet acknowledged.`;
+  useEffect(() => {
+    // The most urgent thing on the screen is said aloud when it appears, in
+    // turn with the notices below it rather than cut off by them.
+    AccessibilityInfo.announceForAccessibilityWithOptions(`${title}. ${detail}`, { queue: true });
+  }, [title, detail]);
   return (
     <Link href={{ pathname: '/alert/[id]', params: { id: String(alert.id) } }} asChild>
       <Pressable accessibilityRole="link" accessibilityLabel={`${title}. ${detail} Open the incident.`}>

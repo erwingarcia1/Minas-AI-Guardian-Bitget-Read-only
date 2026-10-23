@@ -1948,5 +1948,179 @@
    "tests/test_surface_styles.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "outbox: the portal serves outside `answering`, so what a request owes holds its answer",
+  "file": "sentinel/portal.py",
+  "old": "            with answering(db):\n                super().handle_one_request()\n",
+  "new": "            super().handle_one_request()\n",
+  "tests": [
+   "tests/test_api_session.py",
+   "tests/test_api_acknowledge.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: the new-device notice is sent before the sign-in answers",
+  "file": "sentinel/api.py",
+  "old": "        later(_new_device_notice, self.db, email, name)\n",
+  "new": "        _new_device_notice(self.db, email, name)\n",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: the new-device notice loses its own guard and log line",
+  "file": "sentinel/api.py",
+  "old": "    try:\n        send_new_device_email(db, email, name)\n    except Exception as exc:  # noqa: BLE001 - the sign-in has happened; the notice must not undo it\n        logger.error(\"new-device notice to %s failed: %s\", email, exc)\n",
+  "new": "    send_new_device_email(db, email, name)\n",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "escalation: the closing note is sent before the member's acknowledgement answers",
+  "file": "sentinel/alerts/escalation.py",
+  "old": "    later(_closing_note, db, alert_id, rules)\n",
+  "new": "    _closing_note(db, alert_id, rules)\n",
+  "tests": [
+   "tests/test_api_acknowledge.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "outbox: the deliveries after an answer run out of the order they were owed",
+  "file": "sentinel/outbox.py",
+  "old": "        for deliver, args in queue:\n",
+  "new": "        for deliver, args in reversed(queue):\n",
+  "tests": [
+   "tests/test_api_acknowledge.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "outbox: the delivery thread keeps its database connection (#79)",
+  "file": "sentinel/outbox.py",
+  "old": "        db.release_thread_connection()\n        _owed.add(-len(queue))\n",
+  "new": "        _owed.add(-len(queue))\n",
+  "tests": [
+   "tests/test_fd_leak.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "outbox: outside a request a delivery is dropped, so `sentinel ack` exits with the closing note unsent",
+  "file": "sentinel/outbox.py",
+  "old": "    if queue is None:\n        deliver(*args)\n        return\n",
+  "new": "    if queue is None:\n        return\n",
+  "tests": [
+   "tests/test_secondary_contact_escalation.py",
+   "tests/test_fd_leak.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "outbox: what a request queued is never started after its answer",
+  "file": "sentinel/outbox.py",
+  "old": "        if queue:\n            _start(db, queue)\n",
+  "new": "        if False:\n            _start(db, queue)\n",
+  "tests": [
+   "tests/test_fd_leak.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "member status: an account refused in a host-level incident is told to replace its key",
+  "file": "sentinel/portal.py",
+  "old": "        elif auth_failing and int(r[\"id\"]) in refused_by_host:\n",
+  "new": "        elif False:\n",
+  "tests": [
+   "tests/test_host_auth_incident.py",
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal home: the incident banner names the connection by the operator's slug",
+  "file": "sentinel/portal.py",
+  "old": "on {html.escape(display_label(hero))}, ",
+  "new": "on {html.escape(hero['label'])}, ",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal home: the pause banner names the connection by the operator's slug",
+  "file": "sentinel/portal.py",
+  "old": "{html.escape(display_label(by_id[aid]))} at ",
+  "new": "{html.escape(str(by_id[aid]['label']))} at ",
+  "tests": [
+   "tests/test_api_reads.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "api: a body with text Unicode cannot hold reaches the handler and is Minas's 500",
+  "file": "sentinel/api.py",
+  "old": "            json.dumps(loaded, ensure_ascii=False).encode(\"utf-8\")\n",
+  "new": "",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "totp: a code in another script's digits reaches compare_digest, which raises",
+  "file": "sentinel/totp.py",
+  "old": "not (candidate.isascii() and candidate.isdigit())",
+  "new": "not candidate.isdigit()",
+  "tests": [
+   "tests/test_totp.py",
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "outbox: a request that raises (an answer that could not be written) never starts what it queued",
+  "file": "sentinel/outbox.py",
+  "old": "    finally:\n        _request.queue = outer\n        if queue:\n            _start(db, queue)",
+  "new": "    finally:\n        _request.queue = outer\n    if queue:\n        _start(db, queue)",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "outbox: with no thread to be had, what was owed is lost",
+  "file": "sentinel/outbox.py",
+  "old": "        _deliver(db, queue)\n",
+  "new": "        raise\n",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "outbox: one delivery that raises costs every delivery after it",
+  "file": "sentinel/outbox.py",
+  "old": "            try:\n                deliver(*args)\n            except Exception:",
+  "new": "            if True:\n                deliver(*args)\n            if False:",
+  "tests": [
+   "tests/test_api_session.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "member status: the host-incident check ignores the operator's fleet settings",
+  "file": "sentinel/portal.py",
+  "old": "    incident = host_auth_incident(db, rules)",
+  "new": "    incident = host_auth_incident(db, None)",
+  "tests": [
+   "tests/test_host_auth_incident.py"
+  ],
+  "expect": "killed"
  }
 ]

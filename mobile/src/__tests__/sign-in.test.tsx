@@ -6,10 +6,10 @@
  */
 import * as SecureStore from 'expo-secure-store';
 import * as SplashScreen from 'expo-splash-screen';
-import { fireEvent, renderRouter, screen, testRouter, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, renderRouter, screen, testRouter, waitFor } from 'expo-router/testing-library';
 
-import { openSignedIn, pullToRefresh, signedIn, SIGN_IN_LINE, useDemoServer } from '@/test-utils/app';
-import { bodies, calls, json, offline, on, REFRESH_KEY, store } from '@/test-utils/server';
+import { onPressOf, openSignedIn, pullToRefresh, signedIn, SIGN_IN_LINE, useDemoServer } from '@/test-utils/app';
+import { bodies, calls, json, offline, on, REFRESH_KEY, silence, store } from '@/test-utils/server';
 
 jest.mock('expo-splash-screen', () => ({
   preventAutoHideAsync: jest.fn(async () => true),
@@ -124,4 +124,47 @@ test('a secure store that cannot be read at launch opens on sign-in, not a splas
   expect(await screen.findByText(SIGN_IN_LINE)).toBeTruthy();
   expect(app.getPathname()).toBe('/sign-in');
   await waitFor(() => expect(SplashScreen.hideAsync).toHaveBeenCalled());
+});
+
+test('a sign-in Minas does not answer in time says the code may already be spent, not "check your connection"', async () => {
+  on('POST', '/api/v1/session', silence);
+  await renderRouter('./src/app', { initialUrl: '/' });
+  await fireEvent.changeText(await screen.findByLabelText('Email'), 'demo@minas.example');
+  await fireEvent.changeText(screen.getByLabelText('Password'), 'minas-demo-password');
+  await fireEvent.changeText(screen.getByLabelText('Code from your authenticator app'), '123456');
+  const button = screen.getByRole('button', { name: 'Sign in' });
+  // The tap settles only at the 45-second deadline: tap, and run the clock, in one act.
+  await act(async () => {
+    const tapped = onPressOf(button)();
+    await jest.advanceTimersByTimeAsync(45_000);
+    await tapped;
+  });
+  expect(await screen.findByText(/^Minas didn't answer in time\. Your sign-in may still have gone through: wait for the next code/)).toBeTruthy();
+  expect(store.has(REFRESH_KEY)).toBe(false);
+});
+
+test('a sign-in answered with something that is not a token pair stores nothing and says so', async () => {
+  on('POST', '/api/v1/session', () => json(200, { welcome: 'to the hotel' }));
+  await renderRouter('./src/app', { initialUrl: '/' });
+  await fillIn('demo@minas.example', 'minas-demo-password', '123456');
+  expect(await screen.findByText("Minas's answer didn't arrive in a form this app can read. Try again in a moment, or on another network.")).toBeTruthy();
+  expect(store.has(REFRESH_KEY)).toBe(false);
+});
+
+test('a sign-in Minas answers slowly, inside the sign-in deadline, still signs in', async () => {
+  on('POST', '/api/v1/session', () => new Promise<Response>((resolve) => setTimeout(() => resolve(json(200, {
+    token_type: 'Bearer', access_token: 'access-1', expires_in: 900, refresh_token: 'refresh-1',
+    refresh_expires_in: 2592000, device_id: 7 })), 20_000)));
+  await renderRouter('./src/app', { initialUrl: '/' });
+  await fireEvent.changeText(await screen.findByLabelText('Email'), 'demo@minas.example');
+  await fireEvent.changeText(screen.getByLabelText('Password'), 'minas-demo-password');
+  await fireEvent.changeText(screen.getByLabelText('Code from your authenticator app'), '123456');
+  const button = screen.getByRole('button', { name: 'Sign in' });
+  await act(async () => {
+    const tapped = onPressOf(button)();
+    await jest.advanceTimersByTimeAsync(20_000); // past a read's 15 s
+    await tapped;
+  });
+  expect(await screen.findByText('Some of your accounts are not being watched.')).toBeTruthy();
+  expect(store.get(REFRESH_KEY)).toBe('refresh-1');
 });

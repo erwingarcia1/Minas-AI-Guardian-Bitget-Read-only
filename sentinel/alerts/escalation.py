@@ -494,7 +494,20 @@ def send_critical_ack_closing_note(db: Database, alert_id: int, *, rules=None) -
     An account with no secondary contact returns without recording anything:
     a deliberate silence is not a delivery failure (#57's distinction). The
     router is called with account_id=None so no sms_deliveries bookkeeping
-    rows are written against the original alert for this side-channel note."""
+    rows are written against the original alert for this side-channel note.
+
+    Sent after the answer when a request is being answered
+    (sentinel/outbox.py): a member acknowledging in the portal or the app
+    gets their answer first - a slow mail or SMS provider must not hold an
+    acknowledgement that has already stopped the escalation - and the notes
+    for the alert and its siblings follow in the order they were owed.
+    Anywhere else (`sentinel ack`, the dashboard) it is sent at once."""
+    from sentinel.outbox import later
+
+    later(_closing_note, db, alert_id, rules)
+
+
+def _closing_note(db: Database, alert_id: int, rules) -> None:
     from sentinel.alerts.contact import ContactRouter
 
     try:

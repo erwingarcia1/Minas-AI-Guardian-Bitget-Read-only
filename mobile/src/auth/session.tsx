@@ -2,8 +2,9 @@ import * as Device from 'expo-device';
 import { createContext, type ReactNode, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 
 import { describeError, publicApi } from '@/api/client';
+import { isTimeout } from '@/api/network';
 
-import { type Ending, hasStoredSession, onSessionChange, signOut as endSession, storeTokens } from './tokens';
+import { type Ending, hasStoredSession, onSessionChange, parseTokens, signOut as endSession, storeTokens } from './tokens';
 
 type State = 'loading' | 'signed-in' | 'signed-out';
 
@@ -47,7 +48,11 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         body: { email: email.trim(), password, code: code.trim(), device_name: deviceName },
       });
       if (data) {
-        await storeTokens(data);
+        const tokens = parseTokens(data);
+        if (tokens === null) {
+          return { ok: false, code: 'unreadable', message: describeError(undefined, undefined, new SyntaxError()) };
+        }
+        await storeTokens(tokens);
         return { ok: true };
       }
       if (response.status === 404 && typeof error !== 'object') {
@@ -56,6 +61,17 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       }
       return { ok: false, code: error?.error ?? 'unknown', message: describeError(error, response) };
     } catch (thrown) {
+      if (isTimeout(thrown)) {
+        // Minas may have signed the phone in, and spent the code, before the
+        // answer was lost: the same code will not work twice.
+        return {
+          ok: false,
+          code: 'timeout',
+          message:
+            "Minas didn't answer in time. Your sign-in may still have gone through: wait for the next code in your " +
+            'authenticator app before you try again.',
+        };
+      }
       return { ok: false, code: 'network', message: describeError(undefined, undefined, thrown) };
     }
   }, []);

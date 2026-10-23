@@ -4,6 +4,7 @@
  * an old or invented "yes".
  */
 import { act, fireEvent, screen, testRouter, waitFor } from 'expo-router/testing-library';
+import { AccessibilityInfo } from 'react-native';
 
 import { ACCOUNTS, openSignedIn, pullToRefresh, REFUSED_REASON, signedIn, useDemoServer } from '@/test-utils/app';
 import { calls, json, offline, on } from '@/test-utils/server';
@@ -58,12 +59,24 @@ test('a login with no accounts is told so, without a false alarm', async () => {
   expect(screen.queryByText('Your accounts are NOT being watched.')).toBeNull();
 });
 
-test('an answer too old to trust is not shown as a verdict', async () => {
-  await signedIn();
+test('an answer too old to trust is shown as no verdict - not in the headline, not on a card - until a fresh one comes', async () => {
+  const allWatched = { ...ACCOUNTS, overall: 'watching',
+    accounts: ACCOUNTS.accounts.map((a) => ({ ...a, watched: true, reason: null, cause: null })) };
+  on('GET', '/api/v1/accounts', () => json(200, allWatched));
+  await openSignedIn();
+  expect(await screen.findByText("You're being watched.")).toBeTruthy();
+  expect(screen.getAllByText('Watching')).toHaveLength(2);
   on('GET', '/api/v1/accounts', offline); // every later check fails
-  await act(() => jest.advanceTimersByTimeAsync(240_000)); // past the 225-second window
-  expect(await screen.findByText('Checking again…')).toBeTruthy();
-  expect(screen.queryByText('Some of your accounts are not being watched.')).toBeNull();
+  await act(() => jest.advanceTimersByTimeAsync(226_000)); // a second past the 225-second window, not 15
+  expect(screen.getByText('Checking again…')).toBeTruthy();
+  expect(screen.queryByText("You're being watched.")).toBeNull();
+  expect(screen.queryByText('Watching')).toBeNull();
+  expect(screen.getAllByText('Last known: Watching')).toHaveLength(2);
+
+  on('GET', '/api/v1/accounts', () => json(200, allWatched)); // Minas answers again
+  await act(() => jest.advanceTimersByTimeAsync(30_000));
+  expect(await screen.findByText("You're being watched.")).toBeTruthy();
+  expect(screen.getAllByText('Watching')).toHaveLength(2);
 });
 
 test('the tab asks again every 30 seconds while it is in view', async () => {
@@ -77,7 +90,7 @@ test.each([
   ['a server error', () => json(500), "Something went wrong on Minas's side (500). Try again in a moment."],
   ['no network', offline, "Can't reach Minas right now. Check your connection and try again."],
   ['a page that is not the API', () => new Response('<html>Hotel Wi-Fi</html>', { status: 200 }),
-    "Minas sent an answer this app can't read. If you're on a hotel or café Wi-Fi, sign in to the network first, then try again."],
+    "Minas's answer didn't arrive in a form this app can read. Try again in a moment, or on another network."],
   ['the server\'s own words', () => json(400, { error: 'invalid_request', message: 'The server says no.' }), 'The server says no.'],
 ])('%s is said plainly', async (_what, answer, sentence) => {
   on('GET', '/api/v1/accounts', answer);
@@ -97,6 +110,9 @@ test('a refresh that fails keeps what was shown, saying it is the last known', a
 
 test('the incident nobody has acknowledged comes first, one tap from its record, and goes once acknowledged', async () => {
   const app = await signedIn();
+  // Said aloud, queued behind nothing it would cut off.
+  expect(AccessibilityInfo.announceForAccessibilityWithOptions).toHaveBeenCalledWith(
+    expect.stringMatching(/^Needs your attention — incident #42\. CRITICAL: Withdrawal #42/), { queue: true });
   await fireEvent.press(screen.getByRole('link', { name: /^Needs your attention — incident #42\./ }));
   expect(app.getPathname()).toBe('/alert/42');
   await fireEvent.press(await screen.findByRole('button', { name: 'Acknowledge alert' }));
@@ -112,6 +128,9 @@ test('a pause about to stop monitoring is said first, with how to stop it', asyn
   await openSignedIn();
   expect(await screen.findByText('Monitoring is about to stop.')).toBeTruthy();
   expect(screen.getByText(/^Bitget - trading at .*\. Cancel it on the member portal, on the account's page/)).toBeTruthy();
+  // Said aloud in turn with the verdict that appears with it, not cut off by it.
+  expect(AccessibilityInfo.announceForAccessibilityWithOptions).toHaveBeenCalledWith(
+    expect.stringMatching(/^Monitoring is about to stop\. Bitget - trading at /), { queue: true });
 });
 
 test('trouble says what can be done about it, and by whom', async () => {
@@ -122,9 +141,13 @@ test('trouble says what can be done about it, and by whom', async () => {
     trouble(2, 'key_rejected', 'non-primary'),
     trouble(3, 'no_recent_check', 'primary'),
     trouble(4, 'tamper_suspected', 'primary'),
+    trouble(5, 'host_auth_failure', 'primary'),
   ] }));
   await openSignedIn();
   expect(await screen.findByText("You can fix this: replace the API key on the member portal, on this account's page.")).toBeTruthy();
   expect(screen.getByText('The account holder can fix this by replacing the API key on the member portal.')).toBeTruthy();
   expect(screen.getAllByText('If this lasts, contact the Minas team.')).toHaveLength(1); // not for the investigation
+  // A refusal on Minas's side: leave the key alone - and nothing on the card says to replace it.
+  expect(screen.getByText('Nothing is needed from you: leave your key exactly as it is. Minas is putting it right.')).toBeTruthy();
+  expect(screen.getAllByText(/replac/i)).toHaveLength(2); // only the two key_rejected lines
 });

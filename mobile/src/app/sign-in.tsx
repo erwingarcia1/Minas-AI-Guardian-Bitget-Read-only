@@ -71,8 +71,9 @@ export default function SignIn() {
           {ended && !problem ? (
             <Notice tone="warn" title="This phone was signed out.">
               That happens when the app goes 30 days unopened, when this phone is signed out from the portal&apos;s
-              Security page or another phone, or after a password change. If none of those was you, change your
-              password on the member portal.
+              Security page or another phone, after a password change, or when Minas sees this phone&apos;s sign-in
+              used from two places at once. If you don&apos;t recognise any of these, change your password on the
+              member portal.
             </Notice>
           ) : null}
           {problem ? (

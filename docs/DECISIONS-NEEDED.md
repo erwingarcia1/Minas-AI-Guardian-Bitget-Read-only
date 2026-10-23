@@ -1247,6 +1247,14 @@ organisation includes identity verification, which takes time, so start
 it now, before the app is ready. Which legal entity publishes is the
 owner's call.
 
+> **Answered 2026-10-23: the app is published as
+> `com.minastrade.guardian`**, the iOS bundle identifier and the Android
+> package both. `tests/test_mobile_app.py` pins it, because a store ties
+> an app to it for good. Neither publisher account exists yet (checked
+> with the owner, 2026-10-23); enrolment is the next step, and the app
+> cannot reach customers through a store until both are done.
+> `mobile/eas.json` holds the build profiles for when they are.
+
 **App review.** The app shows exchange account activity and moves no
 funds. Read the current App Store Review Guidelines on cryptocurrency
 apps before submitting. UNVERIFIED: how those guidelines apply to a
@@ -1297,9 +1305,13 @@ to ignore the real one. A development reload during app start-up
 reproduces it.
 
 The app already does what a client can. It keeps the newest token in
-memory and never leaves a replaced token in storage, and it gives a
-refresh 30 seconds before it stops waiting. A lost answer can only be
-fixed on the server. The options:
+memory, and it gives a refresh 30 seconds before it stops waiting. When
+the secure store reports that writing the new token failed, the app
+removes the replaced one from storage. That is best effort: a failed
+removal is not retried. And on Android, expo-secure-store does not report
+a failed write of a token to disk, so a phone whose storage is full can
+still restart on the replaced token. A lost answer can only be fixed on the
+server. The options:
 
 - **(a) Keep 21c as it is.** Every replay revokes. This is the simplest
   option, and its cost is the false alarms above.
@@ -1318,13 +1330,25 @@ fixed on the server. The options:
   delay. It needs a write on every authenticated read, which `authenticate`
   forbids on purpose ("no GET may write"), so it reopens that rule.
 
+None of (a)-(c) closes the Android case above. The replay comes after a
+restart, possibly hours later, which is outside (b)'s 60 seconds, and
+under (c) the new pair has already been used, so the replay counts as
+theft. Nothing on the phone closes it either. A secure-store change that
+reported the failed write would only trigger the delete, and the delete is
+a disk write too, so it fails the same way on a full disk. (The store does
+report a failed delete; it is the failed write it does not report.)
+
 ### 21i. Does turning two-factor off end the app's sign-ins? — open (raised 2026-10-23)
 
 21c makes two-factor the condition for signing in to the app. Today it is
 checked at sign-in only. A member who turns two-factor off on the portal
-stays signed in on every phone, for up to 30 days of each phone's use.
-The app's Security tab now shows the true state ("Off") and says the
-phone cannot sign in again until it is turned back on.
+stays signed in on every phone for as long as that phone keeps being
+opened: each refresh starts a fresh 30 days, so only a phone left
+unopened for 30 days signs out. Until then, only signing the phone out
+(in the app, or from the portal's Security page) or a password change
+ends those sign-ins. The app's Security tab now shows the true state
+("Off") and says the phone cannot sign in again until it is turned back
+on.
 
 - **(a) Leave it.** Two-factor gates new sign-ins only.
 - **(b) Turning it off signs every phone out — recommended.** The portal's
