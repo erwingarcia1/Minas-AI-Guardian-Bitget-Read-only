@@ -15,6 +15,8 @@ or Twilio credentials, terminate the retired us-east-1 instance, install the
 #81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
 container")._
 
+## [1.13.0] — 2026-10-23
+
 ### Changed detection behaviour
 
 - **A tamper accusation is never sent on the first eligible failure while
@@ -3193,7 +3195,8 @@ Initial MVP (Phases 0–3, Bitget only).
 - Branded status dashboard + Prometheus metrics; Docker Compose; docs (threat
   model, customer runbook, deployment, data retention).
 
-[Unreleased]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.12.0...HEAD
+[Unreleased]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.13.0...HEAD
+[1.13.0]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.12.0...v1.13.0
 [1.12.0]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.11.1...v1.12.0
 [1.11.1]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.11.0...v1.11.1
 [1.11.0]: https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/compare/v1.10.0...v1.11.0
