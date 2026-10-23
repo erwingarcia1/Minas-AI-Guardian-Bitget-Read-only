@@ -146,11 +146,16 @@ test('a token in its last minute is still used when it cannot be renewed', async
   expect(sent.at(-1)?.authorization).toBe('Bearer access-1');
 });
 
-test('a 200 that is not the API (a Wi-Fi sign-in page) keeps the sign-in', async () => {
-  on('POST', '/api/v1/session/refresh', () => new Response('<html>Welcome to Hotel Wi-Fi</html>', { status: 200 }));
+test.each([
+  ['a page that is not the API', () => new Response('<html>Welcome to Hotel Wi-Fi</html>', { status: 200 })],
+  ['JSON of another shape', () => json(200, { hello: 'world' })],
+])('a refresh answered 200 with %s keeps the sign-in, stores nothing and is said to be unreadable', async (_what, answer) => {
+  on('POST', '/api/v1/session/refresh', answer);
   store.set(REFRESH_KEY, 'refresh-1');
-  expect(await refresh()).toBe('unreachable');
+  expect(await refresh()).toBe('garbled');
   expect(store.get(REFRESH_KEY)).toBe('refresh-1');
+  await expect(authedFetch(new Request(ACCOUNTS_URL))).rejects.toThrow(SyntaxError); // the unreadable sentence
+  expect(sent.filter((r) => r.authorization !== null)).toEqual([]); // never 'Bearer undefined'
 });
 
 // --- what is stored, and where -----------------------------------------------------------
@@ -167,7 +172,8 @@ test('the refresh token is kept per server, on this phone only, while it is unlo
 
 test('a token stored for another server is never presented to this one', async () => {
   const server = rotatingServer();
-  store.set('minas-guardian.refresh-token.http___192.168.1.20_8391', 'refresh-for-the-laptop');
+  // Built from this server's own address, so it can never be this one's key.
+  store.set(`minas-guardian.refresh-token.${`${API_URL}.other`.replace(/[^\w.-]/g, '_')}`, 'refresh-for-the-laptop');
   expect(await hasStoredSession()).toBe(false);
   expect(await refresh()).toBe('none');
   expect(server.presented).toEqual([]);
@@ -199,7 +205,7 @@ test('a call with no answer gives up after 15 seconds, as a connection problem',
   on('GET', '/api/v1/accounts', silence);
   await storeTokens(tokens(1));
   const call = authedFetch(new Request(ACCOUNTS_URL));
-  const outcome = expect(call).rejects.toThrow('aborted');
+  const outcome = expect(call).rejects.toMatchObject({ name: 'TimeoutError' });
   await jest.advanceTimersByTimeAsync(15_000);
   await outcome;
 });
@@ -255,4 +261,46 @@ test('a refresh still in flight when the phone signs out does not sign it back i
   expect(changes).toEqual(['signed-out:signed-out']);
   // The pair the server issued is ended there too.
   expect(sent.filter((r) => r.call === 'DELETE /api/v1/session').map((r) => r.authorization)).toEqual(['Bearer access-2']);
+});
+
+// --- one sign-in never lends its token to another -----------------------------------------
+
+test.each([
+  ['times out', 'timeout'],
+  ['is answered with a new pair', 'ok'],
+  ['is refused', 'refused'],
+])('signing out during a stuck refresh, then in again: when the old refresh %s, nothing goes out on the new token', async (_how, ending) => {
+  jest.useFakeTimers();
+  let answer: (response: Response) => void = () => {};
+  on('POST', '/api/v1/session/refresh', () => new Promise<Response>((resolve) => (answer = resolve)));
+  on('GET', '/api/v1/accounts', () => json(200, { ok: true }));
+  on('DELETE', '/api/v1/session', () => json(204));
+  store.set(REFRESH_KEY, 'refresh-1');
+  const old = authedFetch(new Request(ACCOUNTS_URL)); // waits on the refresh
+  const leaving = signOut(); // so does sign-out's own token request
+  await jest.advanceTimersByTimeAsync(5_000);
+  await leaving; // the phone has forgotten
+  await storeTokens(tokens(9)); // and the member signs in again
+  if (ending === 'timeout') await jest.advanceTimersByTimeAsync(30_000);
+  else answer(ending === 'ok' ? json(200, tokens(2)) : json(401, { error: 'invalid_refresh_token', message: 'x' }));
+  await old.catch(() => undefined);
+  await jest.advanceTimersByTimeAsync(0);
+  expect(sent.filter((r) => r.authorization === 'Bearer access-9')).toEqual([]);
+  expect(store.get(REFRESH_KEY)).toBe('refresh-9'); // the new sign-in stands
+  expect(await accessToken()).toBe('access-9');
+});
+
+test("a new sign-in's refresh does not wait on the old sign-in's stuck one", async () => {
+  jest.useFakeTimers();
+  on('POST', '/api/v1/session/refresh', async (request) => {
+    const { refresh_token } = (await request.json()) as { refresh_token: string };
+    return refresh_token === 'refresh-1' ? silence() : json(200, tokens(10));
+  });
+  store.set(REFRESH_KEY, 'refresh-1');
+  void refresh(); // the old sign-in's, stuck
+  const leaving = signOut();
+  await jest.advanceTimersByTimeAsync(5_000);
+  await leaving;
+  await storeTokens(tokens(9), Date.now() - 3_600_000); // a new sign-in whose access token is already due
+  expect(await accessToken()).toBe('access-10'); // its own refresh, answered at once
 });

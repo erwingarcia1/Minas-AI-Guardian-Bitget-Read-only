@@ -3,10 +3,10 @@
  * Alerts and incidents: the list, its older pages, one incident, and the
  * app's one account-facing write - acknowledge.
  */
-import { fireEvent, screen, testRouter, waitFor } from 'expo-router/testing-library';
+import { act, fireEvent, screen, testRouter, waitFor } from 'expo-router/testing-library';
 
-import { alertSummary, openSignedIn, signedIn, useDemoServer } from '@/test-utils/app';
-import { calls, json, on, sent } from '@/test-utils/server';
+import { alertSummary, onPressOf, openSignedIn, pullToRefresh, server as demo, signedIn, useDemoServer } from '@/test-utils/app';
+import { calls, json, on, sent, silence } from '@/test-utils/server';
 
 jest.setTimeout(30_000);
 
@@ -84,13 +84,26 @@ test('an alert that reached nobody, or is still firing, says so in the list and 
 /** A server with `count` alerts, newest (highest id) first, paging as the API does. */
 function manyAlerts(count: number) {
   const ids = Array.from({ length: count }, (_, i) => count - i);
+  const held: (() => void)[] = [];
+  let holding = false;
   on('GET', '/api/v1/alerts', (request) => {
     const query = new URL(request.url).searchParams;
     const limit = Number(query.get('limit') ?? 50);
     const offset = Number(query.get('offset') ?? 0);
-    return json(200, { total: ids.length, limit, offset, alerts: ids.slice(offset, offset + limit).map((id) => alertSummary(id)) });
+    const answer = () => json(200, { total: ids.length, limit, offset, alerts: ids.slice(offset, offset + limit).map((id) =>
+      alertSummary(id, demo.acknowledged.has(id)
+        ? { acknowledged_at: '2026-10-22T10:05:00+00:00', acknowledged_by: 'demo@minas.example' } : {})) });
+    if (!holding) return answer();
+    return new Promise<Response>((resolve) => held.push(() => resolve(answer())));
   });
-  return { arrive: () => ids.unshift(ids.length + 1) };
+  return {
+    arrive: () => ids.unshift(ids.length + 1),
+    /** Hold every answer until released, in the order given. */
+    hold: () => {
+      holding = true;
+    },
+    release: (order: number[]) => order.map((i) => held[i]).forEach((go) => go()),
+  };
 }
 
 const alertQueries = () => sent.filter((r) => r.call === 'GET /api/v1/alerts').map((r) => r.query);
@@ -106,23 +119,76 @@ test('older alerts load a page at a time until there are none left', async () =>
   await fireEvent.press(screen.getByRole('button', { name: 'Show older alerts' }));
   await waitFor(() => expect(screen.getAllByText(ROW)).toHaveLength(120));
   expect(screen.queryByRole('button', { name: 'Show older alerts' })).toBeNull();
-  expect(alertQueries()).toEqual(['limit=50', 'limit=50&offset=50', 'limit=50&offset=100']);
+  // Each time, everything asked for, fresh from the top.
+  expect(alertQueries()).toEqual(['limit=50', 'limit=100', 'limit=150']);
 });
 
-test('an alert arriving between pages shows each alert once, and says new ones are waiting', async () => {
+test('an alert arriving between pages shows at the top, and every alert once', async () => {
   const errors = jest.spyOn(console, 'error');
   const server = manyAlerts(60);
   await signedIn();
   await openAlertsTab();
   await waitFor(() => expect(screen.getAllByText(ROW)).toHaveLength(50));
-  server.arrive(); // alert 61, on top: the next page now starts one row earlier
+  server.arrive(); // alert 61, on top
   await fireEvent.press(screen.getByRole('button', { name: 'Show older alerts' }));
-  await waitFor(() => expect(screen.getAllByText(ROW)).toHaveLength(60));
+  await waitFor(() => expect(screen.getAllByText(ROW)).toHaveLength(61));
   const shown = screen.getAllByText(ROW).map((node) => node.props.children);
+  expect(shown[0]).toBe('Withdrawal #61 to a new address');
   expect(new Set(shown).size).toBe(shown.length); // no alert twice
-  expect(screen.getByText('New alerts have arrived.')).toBeTruthy();
   expect(errors.mock.calls.flat().join(' ')).not.toMatch(/same key/);
   errors.mockRestore();
+});
+
+test('past 200 rows, coming back from an incident keeps every row, the one handled included', async () => {
+  manyAlerts(260);
+  await signedIn();
+  await openAlertsTab();
+  await waitFor(() => expect(screen.getAllByText(ROW)).toHaveLength(50));
+  for (const rows of [100, 150, 200, 250, 260]) {
+    await fireEvent.press(screen.getByRole('button', { name: 'Show older alerts' }));
+    await waitFor(() => expect(screen.getAllByText(ROW)).toHaveLength(rows));
+  }
+  await fireEvent.press(screen.getByText('Withdrawal #3 to a new address'));
+  await fireEvent.press(await screen.findByRole('button', { name: 'Acknowledge alert' }));
+  await screen.findByText(/^By demo@minas\.example at/);
+  await testRouter.back('/alerts');
+  await waitFor(() => expect(screen.getByText('Acknowledged by demo@minas.example')).toBeTruthy());
+  expect(screen.getAllByText(ROW)).toHaveLength(260);
+  // Read in two, as the API serves at most 200 at a time.
+  expect(alertQueries().slice(-2)).toEqual(['limit=200', 'limit=100&offset=200']);
+});
+
+test.each([
+  ['the reload answers first', [1, 0]],
+  ['the older page answers first', [0, 1]],
+])('a reload that overlaps "Show older alerts" loses neither (%s)', async (_order, order) => {
+  const server = manyAlerts(120);
+  await signedIn();
+  await openAlertsTab();
+  await waitFor(() => expect(screen.getAllByText(ROW)).toHaveLength(50));
+  server.hold();
+  await act(async () => {
+    void fireEvent.press(screen.getByRole('button', { name: 'Show older alerts' }));
+  });
+  await pullToRefresh();
+  await act(async () => server.release(order));
+  await waitFor(() => expect(screen.getAllByText(ROW)).toHaveLength(100));
+  expect(screen.getByRole('button', { name: 'Show older alerts' })).toBeTruthy();
+});
+
+test('an acknowledgement Minas does not answer in time is not reported as refused', async () => {
+  on('POST', '/api/v1/alerts/{id}/acknowledge', silence);
+  await openSignedIn('/alert/42');
+  const button = await screen.findByRole('button', { name: 'Acknowledge alert' });
+  // The tap settles only when the acknowledgement does, which takes the
+  // 45-second deadline: tap, and let the clock run, inside one act.
+  await act(async () => {
+    const tapped = onPressOf(button)();
+    await jest.advanceTimersByTimeAsync(45_000);
+    await tapped;
+  });
+  expect(await screen.findByText(
+    "Minas didn't answer in time. The acknowledgement may still have been recorded: pull down to check.")).toBeTruthy();
 });
 
 test('coming back to the list reads everything already on it, in one call', async () => {
@@ -137,4 +203,41 @@ test('coming back to the list reads everything already on it, in one call', asyn
   await testRouter.back('/alerts');
   await waitFor(() => expect(alertQueries().at(-1)).toBe('limit=100'));
   expect(screen.getAllByText(ROW)).toHaveLength(100);
+});
+
+test('an acknowledgement Minas answers slowly, inside the write deadline, still lands', async () => {
+  on('POST', '/api/v1/alerts/{id}/acknowledge', (_r, [id]) => new Promise<Response>((resolve) => setTimeout(() => {
+    demo.acknowledged.add(Number(id));
+    resolve(json(200, { id: Number(id), newly_acknowledged: true, acknowledged_at: '2026-10-22T10:05:00+00:00',
+      acknowledged_by: 'demo@minas.example' }));
+  }, 20_000)));
+  await openSignedIn('/alert/42');
+  const button = await screen.findByRole('button', { name: 'Acknowledge alert' });
+  await act(async () => {
+    const tapped = onPressOf(button)();
+    await jest.advanceTimersByTimeAsync(20_000); // past a read's 15 s, inside a write's 45
+    await tapped;
+  });
+  expect(await screen.findByText(/^By demo@minas\.example at/)).toBeTruthy();
+});
+
+test('past 200 rows, a reload whose second read fails keeps the whole list it had, never part of a new one', async () => {
+  manyAlerts(260);
+  await signedIn();
+  await openAlertsTab();
+  await waitFor(() => expect(screen.getAllByText(ROW)).toHaveLength(50));
+  for (const rows of [100, 150, 200, 250, 260]) {
+    await fireEvent.press(screen.getByRole('button', { name: 'Show older alerts' }));
+    await waitFor(() => expect(screen.getAllByText(ROW)).toHaveLength(rows));
+  }
+  const all = [...Array(260)].map((_, i) => 260 - i);
+  on('GET', '/api/v1/alerts', (request) => {
+    const query = new URL(request.url).searchParams;
+    if (query.get('offset') === '200') return json(500);
+    const limit = Number(query.get('limit'));
+    return json(200, { total: 260, limit, offset: 0, alerts: all.slice(0, limit).map((id) => alertSummary(id)) });
+  });
+  await pullToRefresh();
+  expect(await screen.findByText('Showing what we had last.')).toBeTruthy();
+  expect(screen.getAllByText(ROW)).toHaveLength(260);
 });

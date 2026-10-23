@@ -89,18 +89,26 @@ plain HTTP for `localhost` only.
   (`tools/openapi/`), down to its last dependency, with its own TypeScript
   5, because `openapi-typescript` does not support TypeScript 6 yet.
 - **Sign-in:** the refresh token lives in the Keychain or Keystore
-  (`expo-secure-store`), on this phone only and readable only while it
-  is unlocked. It is stored per server, so a development build never
-  presents the real server's token to a laptop. The 15-minute access
+  (`expo-secure-store`), and is never restored onto another phone from a
+  backup. On an iPhone it is readable only while the phone is unlocked;
+  Android's Keystore key, as expo-secure-store builds it, can be read on
+  a locked phone once it has been unlocked since boot. It is stored per
+  server, so a development build never presents the real server's token
+  to a laptop. The 15-minute access
   token lives in memory only. The server revokes a device whose replaced
   refresh token comes back, so the app makes only one refresh at a time,
-  and every waiting request shares it. A request is never sent without a
-  token. When none can be had, the screen says why: no connection,
+  and every waiting request shares it. Everything in flight belongs to
+  the sign-in it started under: after a sign-out, nothing from the old
+  sign-in goes out on a new one's token. A request is never sent without
+  a token, and a token pair is checked before it is stored. When none can be had, the screen says why: no connection,
   Minas's trouble, or the sign-in has ended. See `src/auth/tokens.ts` and
   its tests.
-- **Every call has a deadline** (`src/api/network.ts`): 15 seconds, or 30
-  seconds for a refresh. Signing out of the phone never waits more than
-  5 seconds on the network.
+- **Every call has a deadline** (`src/api/network.ts`): 15 seconds for a
+  read, 30 for a refresh, and 45 for signing in and other writes, which
+  the server may answer only after delivering something. The deadline is
+  kept in JavaScript, not left to the platform's cancellation, and an
+  answer shorter than its `Content-Length` counts as a dropped connection.
+  Signing out of the phone waits at most 5 seconds for the server.
 - **Screens keep themselves current** (`src/api/use-request.ts`): each one
   reloads, without a spinner, when it comes back into view or the app
   comes back to the front. The Accounts tab also asks again every 30

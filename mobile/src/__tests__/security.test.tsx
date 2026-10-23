@@ -6,7 +6,7 @@
 import { act, fireEvent, screen, testRouter, waitFor } from 'expo-router/testing-library';
 import { Alert, AppState } from 'react-native';
 
-import { LIMITS, SECURITY, signedIn, SIGN_IN_LINE, useDemoServer } from '@/test-utils/app';
+import { LIMITS, onPressOf, SECURITY, signedIn, SIGN_IN_LINE, useDemoServer } from '@/test-utils/app';
 import { calls, json, offline, on, REFRESH_KEY, silence, store } from '@/test-utils/server';
 
 jest.setTimeout(30_000);
@@ -16,18 +16,6 @@ useDemoServer();
 async function openSecurity() {
   await signedIn();
   await fireEvent.press(screen.getByRole('button', { name: /^Security, tab/ }));
-}
-
-type Fiber = { memoizedProps?: { onPress?: unknown } | null; return: Fiber | null };
-
-/** What a tap on this element runs (found the way the testing library finds
- * it), so two taps can land in the same frame. */
-function onPressOf(element: object): () => unknown {
-  for (let fiber = (element as { unstable_fiber: Fiber | null }).unstable_fiber; fiber; fiber = fiber.return) {
-    const onPress = fiber.memoizedProps?.onPress;
-    if (typeof onPress === 'function') return onPress as () => unknown;
-  }
-  throw new Error('nothing handles a press here');
 }
 
 /** Answer "Sign out" in the confirmation, as a member would. */
@@ -149,4 +137,17 @@ test.each([
   expect(await screen.findByText(SIGN_IN_LINE)).toBeTruthy();
   expect(store.has(REFRESH_KEY)).toBe(false);
   confirm.mockRestore();
+});
+
+test('a "Not signed out." notice goes once the list has moved on', async () => {
+  on('DELETE', '/api/v1/devices/{id}', () => json(500));
+  await openSecurity();
+  await fireEvent.press(await screen.findByRole('button', { name: 'Sign out this phone' }));
+  expect(await screen.findByText('Not signed out.')).toBeTruthy();
+  // The tablet is signed out from the portal; the member looks away and back.
+  on('GET', '/api/v1/security', () => json(200, { ...SECURITY, devices: [SECURITY.devices[0]] }));
+  await fireEvent.press(screen.getByRole('button', { name: /^Accounts, tab/ }));
+  await fireEvent.press(screen.getByRole('button', { name: /^Security, tab/ }));
+  await waitFor(() => expect(screen.queryByText('Old tablet')).toBeNull());
+  expect(screen.queryByText('Not signed out.')).toBeNull();
 });

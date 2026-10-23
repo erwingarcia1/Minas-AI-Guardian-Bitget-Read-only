@@ -151,8 +151,9 @@ export function Notice({ tone = 'neutral', title, children }: { tone?: Tone; tit
   const text = typeof children === 'string' ? children : '';
   useEffect(() => {
     // A problem that appears is said aloud, once: someone using a screen
-    // reader hears it without having to go looking for it.
-    if (urgent) AccessibilityInfo.announceForAccessibility(text ? `${title} ${text}` : title);
+    // reader hears it without having to go looking for it. Queued, so two
+    // that appear together are both heard (iOS cuts one off otherwise).
+    if (urgent) AccessibilityInfo.announceForAccessibilityWithOptions(text ? `${title} ${text}` : title, { queue: true });
   }, [urgent, title, text]);
   return (
     <View style={[styles.notice, { backgroundColor: t.bg, borderColor: t.line }]} accessibilityRole="alert">

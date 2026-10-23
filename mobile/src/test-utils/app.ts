@@ -144,3 +144,15 @@ export async function pullToRefresh() {
   if (scrollers.length !== 1) throw new Error(`expected one refreshable screen in view, found ${scrollers.length}`);
   await userEvent.setup().pullToRefresh(scrollers[0]);
 }
+
+type Fiber = { memoizedProps?: { onPress?: unknown } | null; return: Fiber | null };
+
+/** What a tap on this element runs (found the way the testing library finds
+ * it), so two taps can land in the same frame. */
+export function onPressOf(element: object): () => unknown {
+  for (let fiber = (element as { unstable_fiber: Fiber | null }).unstable_fiber; fiber; fiber = fiber.return) {
+    const onPress = fiber.memoizedProps?.onPress;
+    if (typeof onPress === 'function') return onPress as () => unknown;
+  }
+  throw new Error('nothing handles a press here');
+}
