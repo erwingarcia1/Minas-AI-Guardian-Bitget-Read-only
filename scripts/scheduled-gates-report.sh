@@ -25,10 +25,18 @@
 #   mutation floor (scripts/mutation-check.sh --check):
 #     regression  - "dropped below the floor": mutants ran, the score is
 #                   real, and it is lower than the recorded floor.
+#     regression  - "survivor(s) not in scripts/mutation-known-survivors.txt"
+#                   (scripts/mutation_survivors.py): mutants ran, the score
+#                   is real, and a survivor is one the ledger does not
+#                   accept - a decision no test pins, whatever the score.
+#                   Until 2026-10-22 this fell through to "no result", and
+#                   #110 was titled "produced no result" for a run that had
+#                   produced one.
 #     no result   - everything else non-green: "no mutants ran", fewer ran
-#                   than selected, a missing floor file, a killed step. Also
-#                   a "successful" step whose log carries no "Killed K/T"
-#                   line - a pass that cannot show its score is not a pass.
+#                   than selected, a missing floor file, a malformed or
+#                   unreadable ledger, a killed step. Also a "successful"
+#                   step whose log carries no "Killed K/T" line - a pass
+#                   that cannot show its score is not a pass.
 #
 # One run can file BOTH kinds for one gate (three probes survived while one
 # patch missed): each kind gets its own truthfully-titled issue rather than
@@ -139,11 +147,20 @@ fi
 # --- mutation floor -----------------------------------------------------------
 
 mut_regression=""
+mut_unledgered=""
 mut_noresult=""
 if [ ! -f "$MUTATION_LOG" ]; then
   mut_noresult="The mutation step left no log at all - it was killed before it started, or never ran."
 elif grep -q "dropped below the floor" "$MUTATION_LOG"; then
   mut_regression=$(grep -E '^(Killed|Floor)' "$MUTATION_LOG" || true)
+elif grep -qE '^[0-9]+ survivor\(s\) not in scripts/mutation-known-survivors\.txt' "$MUTATION_LOG"; then
+  # The score line, then each NEW survivor with its diff (the indented lines
+  # under it). Accepted rows carry indented lines too, so track which kind
+  # of row the indented lines belong to.
+  mut_unledgered=$(grep -E '^Killed [0-9]+/[0-9]+' "$MUTATION_LOG" || true)$'\n\n'$(awk '
+    /^  NEW /      { keep = 1; print; next }
+    /^             / { if (keep) print; next }
+                   { keep = 0 }' "$MUTATION_LOG")
 elif [ "$MUTATION_OUTCOME" = "success" ] && grep -qE '^Killed [0-9]+/[0-9]+' "$MUTATION_LOG" \
     && grep -qE '^Floor' "$MUTATION_LOG"; then
   :  # a real pass: it ran, scored, and can show both numbers
@@ -160,6 +177,15 @@ if [ -n "$mut_regression" ]; then
       "The weekly decision-point mutation run scored below the floor in \`scripts/mutation-floor.txt\`:" \
       "$mut_regression" "$(provenance)")"
 fi
+if [ -n "$mut_unledgered" ]; then
+  PROBLEMS=1
+  note "mutation floor" "REGRESSION (unledgered survivor)"
+  file_issue "Mutation gate found a survivor no test pins" \
+    "mutation-floor,epic-10-reliability,priority: p2" \
+    "$(printf '%s\n\n```\n%s\n```\n\nEach NEW row is a mutant that survived and that `scripts/mutation-known-survivors.txt` does not accept: a decision no selected test pins - a test lost its grip, or new code arrived unpinned. The score can still clear the floor; the ledger fails the gate on its own. Kill each with a test, or, if it is a proven equivalent, add its fingerprint and the argument to the ledger. Reproduce locally: `scripts/mutation-check.sh --check`.\n\n%s' \
+      "The weekly mutation run scored, and found survivor(s) the ledger does not accept:" \
+      "$mut_unledgered" "$(provenance)")"
+fi
 if [ -n "$mut_noresult" ]; then
   PROBLEMS=1
   note "mutation floor" "NO RESULT"
@@ -169,7 +195,7 @@ if [ -n "$mut_noresult" ]; then
       "The weekly mutation gate exited without a scored result. Log tail:" \
       "$mut_noresult" "$(provenance)")"
 fi
-[ -z "$mut_regression" ] && [ -z "$mut_noresult" ] && note "mutation floor" "pass ($(grep -E '^Killed' "$MUTATION_LOG" 2>/dev/null | tail -n1 || echo '?'))"
+[ -z "$mut_regression" ] && [ -z "$mut_unledgered" ] && [ -z "$mut_noresult" ] && note "mutation floor" "pass ($(grep -E '^Killed' "$MUTATION_LOG" 2>/dev/null | tail -n1 || echo '?'))"
 
 # The survivor ledger's size, every week, whatever the verdict. The ledger
 # turns anonymous slack into named slack; this row is what resists it
