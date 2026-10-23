@@ -110,7 +110,7 @@
  {
   "name": "portal: no session required to acknowledge",
   "file": "sentinel/portal.py",
-  "old": "            email = self._session_email()\n            if email is None:\n                self._send(_render_login().encode())\n                return\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
+  "old": "            email = self._session_email()\n            if email is None:\n                self._send(self._login_page().encode())\n                return\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
   "new": "            email = self._session_email() or \"anonymous@example.com\"\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
   "tests": [
    "tests/test_portal_acknowledge.py"
@@ -675,8 +675,8 @@
  {
   "name": "#32 ATTACK act on another member: the security routes trust a form field",
   "file": "sentinel/portal.py",
-  "old": "            email = self._session_email()\n            if email is None:\n                self._send(_render_login().encode())\n                return\n            if cipher is None:",
-  "new": "            email = self._session_email() or (form.get(\"email\", [\"\"])[0] or \"\")\n            if not email:\n                self._send(_render_login().encode())\n                return\n            if cipher is None:",
+  "old": "            email = self._session_email()\n            if email is None:\n                self._send(self._login_page().encode())\n                return\n            if cipher is None:",
+  "new": "            email = self._session_email() or (form.get(\"email\", [\"\"])[0] or \"\")\n            if not email:\n                self._send(self._login_page().encode())\n                return\n            if cipher is None:",
   "tests": [
    "tests/test_portal_two_factor_login.py"
   ]
@@ -2292,5 +2292,32 @@
    "tests/test_bind_address.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "portal: the sign-in page names the address from a literal, not the setting",
+  "file": "sentinel/portal.py",
+  "old": "    ours = portal_host()\n    if ours:",
+  "new": "    ours = \"guardian.minastrade.com\"\n    if ours:",
+  "tests": [
+   "tests/test_portal_address.py"
+  ]
+ },
+ {
+  "name": "portal: the old address is never told the address changed",
+  "file": "sentinel/portal.py",
+  "old": "    if ours and host and host != ours:",
+  "new": "    if False:",
+  "tests": [
+   "tests/test_portal_address.py"
+  ]
+ },
+ {
+  "name": "portal: the moved notice compares the raw Host header, port and case included",
+  "file": "sentinel/portal.py",
+  "old": "            return _render_login(error, host=self._request_host())",
+  "new": "            return _render_login(error, host=self.headers.get(\"Host\"))",
+  "tests": [
+   "tests/test_portal_address.py"
+  ]
  }
 ]

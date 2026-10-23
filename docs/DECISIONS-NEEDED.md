@@ -1661,6 +1661,18 @@ checked:
 - #88's issue text is amended in the same commit as the answer
   (CONTRIBUTING: retired criteria are amended where they live).
 
+**Built 2026-10-23, behind the setting:** the copy and the notice. With
+`SENTINEL_PORTAL_URL` set, the sign-in page's hint reads "Open
+guardian.minastrade.com directly" and its anti-phishing note "Our only
+address is guardian.minastrade.com" - as text to type, never a link - and
+a sign-in page reached by any other name (the Funnel address) says "Our
+address has changed" and names the new one. Unset, the pages read as
+before, so nothing shows until docs/deployment.md "The public address"
+step 8 sets it. The host comes from the setting alone:
+`tests/test_portal_address.py` holds that no module under `sentinel/`
+carries the domain as a literal, which is #88's own rule. Still the
+owner's: the stated period for the old address and the email to members.
+
 ### 22e. Removing Tailscale — **ANSWERED 2026-10-22: all of it; host access by SSH with the EC2 key pair**
 
 Tailscale does five jobs today. Each one needs a replacement before
