@@ -32,7 +32,9 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: mobile/package-lock.json
+          cache-dependency-path: |
+            mobile/package-lock.json
+            mobile/tools/openapi/package-lock.json
 
       - name: Install (lockfile exact; install scripts per package.json allowScripts)
         run: npm ci

@@ -41,7 +41,7 @@
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "gen:api": "npx --yes --package=openapi-typescript@7.13.0 --package=typescript@5.9.3 openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts",
+    "gen:api": "npm ci --prefix tools/openapi --ignore-scripts --no-audit --no-fund && tools/openapi/node_modules/.bin/openapi-typescript ../api/openapi.yaml -o src/api/schema.d.ts",
     "typecheck": "expo customize tsconfig.json && tsc --noEmit",
     "test": "jest",
     "audit:check": "node scripts/audit-check.mjs"

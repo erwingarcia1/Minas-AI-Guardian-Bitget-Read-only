@@ -72,6 +72,13 @@ test('an alert that reached nobody, or is still firing, says so in the list and 
   expect(screen.getByText(/^Still firing — repeated 3× since, last /)).toBeTruthy();
   const row = screen.getByRole('link', { name: /^CRITICAL alert\. Withdrawal #42 to a new address\. Incident 42\./ });
   expect(row.props.accessibilityLabel).toMatch(/Still firing — repeated 3× since.*Not acknowledged\. Reached nobody when it fired$/);
+  // The incident says it too.
+  on('GET', '/api/v1/alerts/{id}', () => json(200, { ...alertSummary(42, { delivered_to: 0, repeat_count: 3,
+    last_repeat_at: '2026-10-22T10:30:00+00:00' }), exchange: 'binance', evidence: {}, advice: null,
+    balances_before: [], balances_after: [], expected_marks: [] }));
+  await fireEvent.press(row);
+  expect(await screen.findByText(/^Repeated 3× since, last /)).toBeTruthy();
+  expect(screen.getByText('Not delivered')).toBeTruthy();
 });
 
 /** A server with `count` alerts, newest (highest id) first, paging as the API does. */

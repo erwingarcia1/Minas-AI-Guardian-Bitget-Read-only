@@ -1,8 +1,10 @@
+import { Link } from 'expo-router';
 import { useCallback } from 'react';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { api, type Schemas } from '@/api/client';
 import { useNow, useRequest } from '@/api/use-request';
-import { type Tone } from '@/theme';
+import { colors, radius, space, type, tone as tones, type Tone } from '@/theme';
 import { Badge, Body, Card, Eyebrow, KV, Loaded, Notice, Screen, Title, when } from '@/ui';
 
 type Overall = { tone: Tone; eyebrow: string; title: string; detail: string };
@@ -47,6 +49,24 @@ function watchState(account: Schemas['Account']): { tone: Tone; label: string } 
   return { tone: 'danger', label: 'Trouble' };
 }
 
+// What the member can do about an account that is not being watched. The
+// server says what kind of trouble it is (`cause`); only a rejected key is the
+// member's to fix, and only the account's main contact can replace it.
+function fix(account: Schemas['Account']): string | null {
+  switch (account.cause) {
+    case 'key_rejected':
+      return account.role === 'primary'
+        ? "You can fix this: replace the API key on the member portal, on this account's page."
+        : 'The account holder can fix this by replacing the API key on the member portal.';
+    case 'never_checked':
+    case 'no_recent_check':
+    case 'not_active':
+      return 'If this lasts, contact the Minas team.';
+    default:
+      return null;
+  }
+}
+
 export default function Accounts() {
   const load = useCallback(() => api.GET('/api/v1/accounts'), []);
   // Re-asked every 30 seconds while this tab is in view: it is the one
@@ -68,6 +88,15 @@ export default function Accounts() {
           const overall = OVERALL[accounts.overall] ?? UNKNOWN;
           return (
             <>
+              {accounts.attention ? <Attention alert={accounts.attention} /> : null}
+              {accounts.pending_pauses.length > 0 ? (
+                <Notice tone="warn" title="Monitoring is about to stop.">
+                  {`${accounts.pending_pauses
+                    .map((pause) => `${pause.account_name} at ${when(pause.execute_at)}`)
+                    .join('; ')}. Cancel it on the member portal, on the account's page — and if you did not ` +
+                    'ask for this, contact Minas directly. We never email links.'}
+                </Notice>
+              ) : null}
               {expired ? (
                 <Notice title="Checking again…">
                   {`This answer is from ${when(accounts.checked_at)}, too old to say whether you're being watched now. Pull down to check.`}
@@ -87,6 +116,7 @@ export default function Accounts() {
                     {state.label === 'Trouble' && account.reason ? (
                       <KV label="What's wrong">{account.reason}</KV>
                     ) : null}
+                    {state.label === 'Trouble' && fix(account) ? <Body muted>{fix(account)}</Body> : null}
                     <KV label="Exchange">{(account.exchange ?? 'unknown').replace(/^./, (c) => c.toUpperCase())}</KV>
                     <KV label="Last successful check">
                       {account.last_success_at ? when(account.last_success_at) : 'Never'}
@@ -105,3 +135,30 @@ export default function Accounts() {
     </Screen>
   );
 }
+
+/** The home page's first block (decision 16): the newest incident nobody has
+ * acknowledged, one tap from its record. */
+function Attention({ alert }: { alert: Schemas['Attention'] }) {
+  // The portal's rule: CRITICAL and HIGH are red, the rest amber.
+  const t = tones[alert.severity === 'CRITICAL' || alert.severity === 'HIGH' ? 'danger' : 'warn'];
+  const title = `Needs your attention — incident #${alert.id}`;
+  const detail = `${alert.severity}: ${alert.message} on ${alert.account_name}, ${when(alert.sent_at)} — not yet acknowledged.`;
+  return (
+    <Link href={{ pathname: '/alert/[id]', params: { id: String(alert.id) } }} asChild>
+      <Pressable accessibilityRole="link" accessibilityLabel={`${title}. ${detail} Open the incident.`}>
+        <View style={[styles.attention, { backgroundColor: t.bg, borderColor: t.line }]}>
+          <Text style={[styles.attentionTitle, { color: t.fg }]}>{title}</Text>
+          <Text style={styles.attentionText}>{detail}</Text>
+          <Text style={styles.attentionLink}>Open the incident and acknowledge it ›</Text>
+        </View>
+      </Pressable>
+    </Link>
+  );
+}
+
+const styles = StyleSheet.create({
+  attention: { borderWidth: 1, borderRadius: radius.md, padding: space(4), gap: space(1) },
+  attentionTitle: { fontSize: type.base, fontWeight: '600' },
+  attentionText: { color: colors.text, fontSize: type.base, lineHeight: type.base * 1.55 },
+  attentionLink: { color: colors.gold, fontSize: type.base, fontWeight: '600' },
+});

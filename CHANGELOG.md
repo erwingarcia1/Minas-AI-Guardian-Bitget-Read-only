@@ -151,18 +151,24 @@ container")._
   export without its token hashes).
 
 - **What the apps read (decision 21d).** `GET /api/v1/accounts` (each
-  account, whether it is being watched and why not, and what this login
-  may change on it), `/alerts` (newest first; filter by `severity`,
+  account, whether it is being watched and why not - in words, and as a
+  `cause` the app can act on - and what this login may change on it; and
+  what the home page shows first: the newest incident nobody has
+  acknowledged, and any pause about to stop monitoring), `/alerts`
+  (newest first; filter by `severity`,
   `account`, `from`, `to`; up to 200 per page with `limit` and `offset`),
-  `/alerts/{id}` (the incident record), `/activity` and `/limits`. Each
-  answers from the portal's own query for the same page: the incident
-  page, the limits page's sentences and sensitivity table, and the
-  activity page's wording are now data that the page and the app both
-  render, so the two cannot disagree. Every read is scoped to the
+  `/alerts/{id}` (the incident record, with whether it is still firing),
+  `/activity` and `/limits`. Each answers from the portal's own query for
+  the same page: the incident page, the home page's first blocks, the
+  limits page's sentences, opening line, "why it is built this way" and
+  sensitivity table, and the activity page's wording are now data that
+  the page and the app both render, so the two cannot disagree. Every read is scoped to the
   member's own accounts, and another member's alert is a 404
   indistinguishable from one that does not exist. A filter the API cannot
   understand is refused, never ignored. Quantities stay strings, never
-  floats.
+  floats. A handler that breaks answers a 500 in the API's own error shape
+  (`internal_error`), with the traceback in the log and nothing of it in
+  the answer, so the app always has a sentence to show.
 
 - **Acknowledging from the app, and signing a phone out from the browser
   (decisions 21c, 21d).** `POST /api/v1/alerts/{id}/acknowledge` runs
@@ -197,6 +203,12 @@ container")._
   commit carrying both kinds of tag could have stamped the server image
   with the app's tag. `mobile/` is also kept out of the Docker build
   context. Nothing changes for a deploy of a `vX.Y.Z` release.
+
+- **The labels on the portal's account cards are easier to read.** The
+  small capitals over each fact (`Last successful check`, `What's wrong`)
+  were 4.4:1 against a card, under the 4.5:1 that WCAG AA asks of small
+  text. They now use the muted tier, as the app does, and a test holds
+  them to AA.
 
 - **The member portal wears the Minas logo.** It replaces the stroked
   infinity mark in the top bar and on the sign-in page. The portal now

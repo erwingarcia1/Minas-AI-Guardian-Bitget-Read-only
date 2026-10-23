@@ -291,3 +291,27 @@ def test_the_dashboard_design_note_exists_and_records_the_decision():
     note = (ROOT / "design" / "dashboard" / "DESIGN-SYSTEM.md").read_text()
     assert "unbranded" in note and "#82" in note
     assert "#1f4e79" in note and "#1f4e79" in dashboard._STYLE
+
+
+def _token(name: str) -> str:
+    """A colour from the portal's :root, as #rrggbb."""
+    root = portal._PORTAL_STYLE[portal._PORTAL_STYLE.index(":root"):]
+    return re.search(rf"--{name}:\s*(#[0-9a-fA-F]{{6}})", root[:root.index("}")]).group(1)
+
+
+def _contrast(fg: str, bg: str) -> float:
+    """WCAG 2 contrast ratio of two #rrggbb colours."""
+    def luminance(hex_colour: str) -> float:
+        channels = [int(hex_colour[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        r, g, b = (c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4 for c in channels)
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+    light, dark = sorted((luminance(fg), luminance(bg)), reverse=True)
+    return (light + 0.05) / (dark + 0.05)
+
+
+def test_a_cards_fact_labels_clear_aa_on_the_card():
+    """`.kv dt` is 12px text on a card's surface, where WCAG AA wants 4.5:1.
+    The subtle tier is 4.4:1 there, so labels are muted - as in the app."""
+    rule = re.search(r"\.kv dt \{([^}]*)\}", portal._PORTAL_STYLE).group(1)
+    colour = re.search(r"color:var\(--([a-z-]+)\)", rule).group(1)
+    assert _contrast(_token(colour), _token("surface")) >= 4.5, colour

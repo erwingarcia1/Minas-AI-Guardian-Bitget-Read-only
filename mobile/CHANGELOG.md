@@ -25,5 +25,8 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   phone never waits on the network. Screens reload by themselves when they
   come back into view or the app comes back to the front. The Accounts tab
   asks again every 30 seconds and never shows a verdict older than its
-  monitoring window. The app wears the Minas logo and the portal's
-  colours. It has no push notifications yet (21e).
+  monitoring window. Like the portal's home page, the Accounts tab leads
+  with the newest incident nobody has acknowledged and any pause about to
+  stop monitoring, and a refused key says where it is replaced and by
+  whom. The app wears the Minas logo and the portal's colours. It has no
+  push notifications yet (21e).

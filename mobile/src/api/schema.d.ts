@@ -184,7 +184,7 @@ export interface components {
     schemas: {
         Error: {
             /** @enum {string} */
-            error: "invalid_json" | "invalid_request" | "invalid_credentials" | "two_factor_required" | "too_many_attempts" | "invalid_refresh_token" | "unauthorized" | "not_found" | "method_not_allowed" | "invalid_filter";
+            error: "invalid_json" | "invalid_request" | "invalid_credentials" | "two_factor_required" | "too_many_attempts" | "invalid_refresh_token" | "unauthorized" | "not_found" | "method_not_allowed" | "invalid_filter" | "internal_error";
             message: string;
         };
         SignInRequest: {
@@ -216,7 +216,26 @@ export interface components {
             overall: "watching" | "degraded" | "not_watching";
             checked_at: string;
             stale_after_seconds: number;
+            /** @description The newest alert nobody has acknowledged - what the home page puts first (decision 16) - or null. */
+            attention: components["schemas"]["Attention"] | null;
+            /** @description Accounts whose monitoring is about to stop: a pause asked for, not yet cancelled (#98). */
+            pending_pauses: components["schemas"]["PendingPause"][];
             accounts: components["schemas"]["Account"][];
+        };
+        Attention: {
+            id: number;
+            account_id: number;
+            account_name: string;
+            severity: components["schemas"]["Severity"];
+            rule: string;
+            message: string;
+            sent_at: string;
+        };
+        PendingPause: {
+            account_id: number;
+            account_name: string;
+            /** @description When monitoring stops unless the pause is cancelled. */
+            execute_at: string;
         };
         Account: {
             id: number;
@@ -226,6 +245,11 @@ export interface components {
             watched: boolean;
             /** @description Why it is not being watched, in words; null when it is. */
             reason: string | null;
+            /**
+             * @description The same judgement as `reason`, as a word to act on; null when it is being watched.
+             * @enum {string|null}
+             */
+            cause: "paused" | "tamper_suspected" | "not_active" | "key_rejected" | "never_checked" | "no_recent_check" | null;
             last_success_at: string | null;
             /**
              * @description What this login may change on it (#25).
@@ -270,6 +294,9 @@ export interface components {
             delivered_to: number;
             acknowledged_at: string | null;
             acknowledged_by: string | null;
+            /** @description Repeats folded into this alert while it kept firing (#22). */
+            repeat_count: number | null;
+            last_repeat_at: string | null;
             advice: components["schemas"]["Advice"] | null;
             balances_before: components["schemas"]["Balance"][];
             balances_after: components["schemas"]["Balance"][];
@@ -312,7 +339,9 @@ export interface components {
             created_at: string;
         };
         Limits: {
+            lead: string;
             headline: components["schemas"]["Statement"];
+            why: components["schemas"]["Statement"];
             does: components["schemas"]["Statement"][];
             cannot: {
                 title: string;
@@ -415,6 +444,7 @@ export interface operations {
                 };
             };
             429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
     signOut: {
@@ -434,6 +464,7 @@ export interface operations {
                 content?: never;
             };
             401: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
     refresh: {
@@ -452,6 +483,7 @@ export interface operations {
             200: components["responses"]["Tokens"];
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
     revokeDevice: {
@@ -474,6 +506,7 @@ export interface operations {
             };
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
     listAccounts: {
@@ -495,6 +528,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
     listAlerts: {
@@ -526,6 +560,7 @@ export interface operations {
             };
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
     getIncident: {
@@ -550,6 +585,7 @@ export interface operations {
             };
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
     acknowledgeAlert: {
@@ -574,6 +610,7 @@ export interface operations {
             };
             401: components["responses"]["Error"];
             404: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
     listActivity: {
@@ -595,6 +632,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
     getLimits: {
@@ -616,6 +654,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
     getSecurity: {
@@ -637,6 +676,7 @@ export interface operations {
                 };
             };
             401: components["responses"]["Error"];
+            500: components["responses"]["Error"];
         };
     };
 }

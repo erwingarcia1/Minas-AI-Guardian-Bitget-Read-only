@@ -18,6 +18,7 @@ import yaml
 from sentinel import api as api_module
 from sentinel.api import PRE_AUTH, ROUTES
 from sentinel.expected import mark_expected
+from sentinel.pause import request_pause
 from sentinel.portal import serve_portal, set_member_password
 from tests.conftest import PINNED_TOTP_NOW
 from tests.helpers.api_client import PASSWORD, ApiClient, add_account, add_alert, enrolled_member
@@ -156,7 +157,15 @@ def server(db, cipher, rules, monkeypatch):
     srv.server_close()
 
 
-def test_every_answer_the_server_gives_is_the_contracts(server, db, cipher):
+def test_every_operation_documents_the_catch_all_500():
+    """Api.handle answers any handler that breaks with a 500 in the error
+    shape, on every route - so every route says so."""
+    missing = [(m, p) for p, item in SPEC["paths"].items() for m, op in item.items()
+               if m in METHODS and "500" not in op["responses"]]
+    assert not missing
+
+
+def test_every_answer_the_server_gives_is_the_contracts(server, db, cipher, monkeypatch):
     a1 = add_account(db, ALICE, "alice-1")
     add_account(db, BOB, "bob-1")
     critical = add_alert(db, a1, sent_at="2026-08-28T10:00:00+00:00")
@@ -193,8 +202,13 @@ def test_every_answer_the_server_gives_is_the_contracts(server, db, cipher):
     assert call("POST", refresh, body={"refresh_token": "made-up"})[0] == 401
     assert call("POST", refresh, body=b"[]")[0] == 400
 
-    assert call("GET", "/api/v1/accounts", token=token)[0] == 200
+    request_pause(db, a1, ALICE)  # so `pending_pauses` has an entry to check
+    status, accounts = call("GET", "/api/v1/accounts", token=token)
+    assert status == 200 and accounts["attention"] is not None and accounts["pending_pauses"]
     assert call("GET", "/api/v1/accounts")[0] == 401
+    with monkeypatch.context() as broken:
+        broken.setattr("sentinel.portal.member_status", lambda *a, **k: 1 / 0)
+        assert call("GET", "/api/v1/accounts", token=token)[0] == 500
     assert call("GET", "/api/v1/alerts", path="/api/v1/alerts?severity=CRITICAL&limit=5", token=token)[0] == 200
     assert call("GET", "/api/v1/alerts", path="/api/v1/alerts?severity=nope", token=token)[0] == 400
 
