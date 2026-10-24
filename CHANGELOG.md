@@ -32,8 +32,8 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   script. In the terminal the code is drawn with block characters,
   printed white on black whatever the terminal's theme, and skipped -
   text as before - when the terminal's encoding cannot carry them.
-  Whether the three renderings scan was not yet checked with a device
-  when this was written; see decision 23.
+  All three renderings were read by Google Authenticator on 2026-10-24,
+  scanned by the owner from the branch's rendering of each (decision 23).
 
 ### Changed
 

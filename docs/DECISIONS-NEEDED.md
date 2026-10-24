@@ -42,7 +42,7 @@ there is a server to deploy to - the app waits on the store accounts
 | 20 | The member portal is published to the internet on Tailscale Funnel | ~~#88~~ (closed 2026-10-24; evidence in its closing comment) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in full 2026-10-23 by 22: no Tailscale, removed in one go* |
 | 21 | Native iOS and Android apps, and the JSON API they need | the apps | **PARTLY ANSWERED 2026-10-22** — customers only, React Native, in this repo, company branding, sign-in and v1 API scope as recommended; push and the web portal open; see section 21 |
 | 22 | One public address, guardian.minastrade.com; no Tailscale | ~~#88~~ (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22. **Built and deployed 2026-10-24 (v1.14.0)**; the email to members went the same day (22d); left: the Tailscale admin-console removal, the owner's |
-| 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **OPEN 2026-10-24** — merging the PR accepts it; a device scan of the three renderings still owed; see section 23 |
+| 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **OPEN 2026-10-24** — merging the PR accepts it; the three renderings read by Google Authenticator on 2026-10-24 (the owner's scan); see section 23 |
 
 ---
 
@@ -2227,6 +2227,11 @@ portal page, the light dashboard page and the terminal block - and say
 which app. Whether they scan was not checked with a device when this
 was written; the tests pin the markup to segno's, not a phone's reading
 of it.
+
+**Scanned 2026-10-24**, by the owner, with Google Authenticator, from the
+branch's rendering of each page and of the terminal block: all three
+read. What is left to decide is the dependency, and it is decided by
+merging or not merging the PR.
 
 ### What it blocks
 

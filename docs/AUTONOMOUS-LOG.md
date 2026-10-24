@@ -7974,8 +7974,9 @@ called); and the dependency written up as **decision 23**, because the
 repository's precedent keeps third-party code out of the authentication
 path (`totp.py` has no `pyotp`; decision 5 refused a PDF library) and that
 trade is the owner's - merging the PR accepts `segno`, an in-tree encoder
-is the alternative. Still owed and not provable by a test: a device scan
-of the three renderings, asked of the owner in the PR. Gates: `ruff check
+is the alternative. The one check no test can give, a device scan of the
+three renderings, the owner did the same day with Google Authenticator:
+all three read. Gates: `ruff check
 sentinel tests` clean; the full suite 2,120 passed on the committed tree
 (the rebase onto the merged main that followed touched records only, and
 the document and enrolment tests were re-run on the rebased tree); all
