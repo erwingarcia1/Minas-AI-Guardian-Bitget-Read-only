@@ -76,6 +76,12 @@ keys.
 
 ### A5. Supply chain (dependency compromise)
 `ccxt`, `requests`, etc. are the real attack surface for key exfiltration.
+`segno` (the enrolment QR code, 2026-10-24) is pure Python with no
+dependencies of its own on Python >=3.10; as called here (`svg_inline` and
+`terminal` into in-memory buffers) it opens no socket and no file - the
+package also ships a `segno` CLI and a `show()` that writes a temp file and
+opens a browser, neither of which is called - and it is handed the
+`otpauth://` URI - the TOTP secret - at enrolment and nothing else.
 - Controls: pinned minimum versions, container rebuilds are deliberate acts,
   no auto-update. Recommended next step, before scale: pip hash-pinning
   (`--require-hashes`) and an egress allowlist at the firewall so the worker

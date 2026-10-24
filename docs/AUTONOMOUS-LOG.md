@@ -7951,3 +7951,39 @@ The product gap is being closed on branch `worktree-qr-enrolment`: a QR
 code on both enrolment pages and in the terminal walk-through, the text
 secret kept as the fallback, one pure-Python dependency (`segno`); its PR
 follows the review. The records PR #128 merged at 12:37 UTC.
+
+**Later (2026-10-24): the QR code for two-factor enrolment, built on
+`worktree-qr-enrolment`.** The owner's enrolment had failed on typing the
+secret; the product fix draws the otpauth URI the pages already show as a
+QR code on the dashboard's enrolment page, the portal's and in the
+terminal walk-through of `operator add`, the text kept underneath as the
+fallback. One implementer built it (module `sentinel/qr.py`, inline SVG,
+no script, no external request, the secret present only as modules); two
+reviewers went through it (credential handling and dependency posture;
+design, copy and test strength) and found no blocker. What they changed:
+one instruction per page instead of three; the terminal block forced
+white-on-black because segno draws light modules in the terminal's
+foreground colour and a light theme inverts the symbol; an overflow guard
+so a page degrades to text like the terminal does; the portal enrolment
+response's `no-store` and `nosniff` pinned by the new test (only the
+dashboard had the pin); the page tests anchored on the symbol itself and
+the dashboard's wrong-code re-render asserted to show the same symbol;
+the threat model's sentence about `segno` scoped to the call sites (the
+package also ships a CLI and a `show()` that opens a browser, neither
+called); and the dependency written up as **decision 23**, because the
+repository's precedent keeps third-party code out of the authentication
+path (`totp.py` has no `pyotp`; decision 5 refused a PDF library) and that
+trade is the owner's - merging the PR accepts `segno`, an in-tree encoder
+is the alternative. The one check no test can give, a device scan of the
+three renderings, the owner did the same day with Google Authenticator:
+all three read. Gates: `ruff check
+sentinel tests` clean; the full suite 2,120 passed on the committed tree
+(the rebase onto the merged main that followed touched records only, and
+the document and enrolment tests were re-run on the rebased tree); all
+247 probes land once; `pip-audit` clean with `segno` installed; the CI
+image built locally from the branch with `segno` inside it. The
+first full-suite run failed only
+`tests/test_mutation_selection.py` (the new test file had to be added to
+`scripts/mutation-selection-excluded.txt` with its reason); the worktree's
+`.venv` carries `segno` from a plain `pip install`, never `-e`, so the
+editable install still points at the main checkout.

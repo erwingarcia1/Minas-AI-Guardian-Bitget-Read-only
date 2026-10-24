@@ -865,7 +865,7 @@ On the host, inside the container's environment (it needs `SENTINEL_MASTER_KEY`)
 ```bash
 sentinel operator add erwin --name "Erwin Garcia"   # prompts for a password,
                                                      # then walks through enrolment:
-                                                     # scan the secret, enter a code,
+                                                     # scan the QR code (or type the secret), enter a code,
                                                      # save the recovery codes (shown once)
 sentinel operator list                               # 2FA column: on / NOT YET
 ```

@@ -15,12 +15,15 @@ password, and cannot be replayed later.
 """
 from __future__ import annotations
 
+import html
 import http.client
+import re
 import time
 import urllib.parse
 
 import pytest
 
+from sentinel import qr
 from sentinel.portal import serve_portal, set_member_password
 from sentinel.totp import totp_at
 from sentinel.twofactor import MEMBER, begin_enrolment, confirm_enrolment
@@ -288,6 +291,39 @@ def test_a_member_can_enrol_and_is_shown_recovery_codes_once(portal, db, cipher)
     assert "only time they can be shown" in done.lower()
     from sentinel.twofactor import is_enabled
     assert is_enabled(db, MEMBER, ALICE) is True
+
+
+def test_the_enrolment_page_draws_the_uri_as_a_qr_code_above_the_secret(portal, db, cipher):
+    """The page carries the otpauth URI it already shows as a QR code too -
+    exactly segno's for that URI - above the secret. The secret and the URI
+    stay as text: that is the route when this page is open on the phone
+    that has the app, and the page says so."""
+    _account(db)
+    cookie = _signed_in(portal, db)
+
+    # The connection is opened here rather than through `_post` for the
+    # response headers: the page carries the secret twice over, so what
+    # `_send` already does for every response is pinned on this one.
+    host, port = portal
+    conn = http.client.HTTPConnection(host, port, timeout=5)
+    conn.request("POST", "/security/2fa/start", body="",
+                 headers={"Content-Type": "application/x-www-form-urlencoded",
+                          "Cookie": f"minas_portal={cookie}"})
+    resp = conn.getresponse()
+    setup = resp.read().decode()
+    conn.close()
+    assert resp.getheader("Cache-Control") == "no-store", "a page with the secret on it is never cached"
+    assert resp.getheader("X-Content-Type-Options") == "nosniff"
+
+    secret = setup.split('id="totp-secret"', 1)[1].split(">", 1)[1].split("<", 1)[0]
+    uri = html.unescape(re.search(r'<p class="mono">(otpauth://[^<]+)</p>', setup).group(1))
+    assert f"secret={secret}" in uri, "the URI shown is the secret shown"
+    label = html.unescape(re.search(r'<svg role="img" aria-label="([^"]*)"', setup).group(1))
+    assert secret not in label and "otpauth" not in label
+    assert qr.svg(uri, label=label) in setup
+    assert setup.index(qr.svg(uri, label=label)) < setup.index('id="totp-secret"'), "the QR code sits above the secret"
+    assert "Scan this with your authenticator app, then enter a code to switch it on." in setup
+    assert "Reading this on the phone that has the app? Copy the secret below into the app instead of scanning." in setup
 
 
 def test_a_wrong_enrolment_code_leaves_two_factor_off(portal, db, cipher):

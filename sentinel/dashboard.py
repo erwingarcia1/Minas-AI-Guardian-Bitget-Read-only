@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
+from sentinel import qr
 from sentinel.buildinfo import version_line
 from sentinel.config import env_setting
 from sentinel.crypto import CredentialCipher
@@ -130,6 +131,8 @@ _STYLE = """
   .ts { white-space:nowrap; font-variant-numeric:tabular-nums; }
   .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--muted);
     font-variant-numeric:tabular-nums; }
+  .qr { margin:12px; line-height:0; }
+  .qr svg { display:block; }
   .rule { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
   .lbl { font-weight:600; }
   .pill { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:2px;
@@ -386,8 +389,10 @@ def _render_operator_enrol(pending: str, secret: str, uri: str, error: str | Non
         banner
         + '<section><div class="card"><div class="card-head"><h2>Set up two-factor</h2>'
         '<span class="count">Required for every operator</span></div>'
-        "<p>Add this secret to your authenticator app, then enter a code to switch it on. "
+        "<p>Scan this QR code with your authenticator app (or type the secret under it into the app), "
+        "then enter a code to switch it on. "
         "Two-factor is required for the ops dashboard; you cannot sign in without it.</p>"
+        f'<div class="qr">{qr.svg(uri, label="QR code of the secret below, for an authenticator app to scan")}</div>'
         f'<p class="mono" id="totp-secret">{html.escape(secret)}</p>'
         f'<p class="mono">{html.escape(uri)}</p>'
         f'<form class="addf" method="post" action="{_url("/login/enrol")}">'

@@ -62,6 +62,7 @@ tests/test_portal_key_replacement.py: imports portal - nothing under the mutated
 tests/test_portal_snooze.py: imports portal, snooze - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_portal_two_factor_login.py: imports sentinel, portal, totp, twofactor - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_project_consistency.py: imports sentinel - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_qr.py: imports qr, totp - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_ratelimit_circuit.py: imports circuit, ratelimit - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_release_objects.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_release_process.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)

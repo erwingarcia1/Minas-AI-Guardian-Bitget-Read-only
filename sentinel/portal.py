@@ -18,6 +18,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 # Logic helpers only, deliberately: the portal owns its stylesheet, its pill
 # and its brand usage (#82 — tests/test_surface_styles.py refuses a shared
 # stylesheet, so the two surfaces cannot quietly converge again).
+from sentinel import qr
 from sentinel.brand import ICON_LINKS, MARK_HTML, WEB_ASSETS
 from sentinel.brand import asset as brand_asset
 from sentinel.dashboard import (
@@ -886,6 +887,8 @@ _PORTAL_STYLE = """
   /* Utilities the real pages need, from the same tokens */
   .mono { font-family:var(--font-mono); font-size:var(--text-sm);
           font-variant-numeric:tabular-nums; overflow-wrap:anywhere; }
+  .qr { margin:var(--space-4) 0 var(--space-3); line-height:0; }
+  .qr svg { display:block; max-width:100%; height:auto; border-radius:var(--radius-sm); }
   .meta { font-size:var(--text-sm); color:var(--text-subtle); }
   .empty { color:var(--text-subtle); }
   .count { font-size:var(--text-sm); color:var(--text-subtle); font-variant-numeric:tabular-nums; }
@@ -3216,9 +3219,12 @@ def _render_security(db: Database, email: str, *, secret: str | None = None,
         uri = _twofactor_uri(secret, email)
         body = (
             '<section class="panel"><h2>Set up two-factor</h2>'
-            '<p class="muted">Add this to your authenticator app, then enter '
+            '<p class="muted">Scan this with your authenticator app, then enter '
             "a code to switch it on. Two-factor is not active until you do — if the code never "
             "works, nothing has changed and you can still sign in.</p>"
+            f'<div class="qr">{qr.svg(uri, label="QR code of the secret below, for your authenticator app to scan")}</div>'
+            '<p class="muted">Reading this on the phone that has the app? '
+            "Copy the secret below into the app instead of scanning.</p>"
             f'<p class="mono" id="totp-secret" style="margin-top:var(--space-3)">{html.escape(secret)}</p>'
             f'<p class="mono">{html.escape(uri)}</p>'
             '<form class="form" method="post" action="/security/2fa/confirm" style="margin-top:var(--space-4)">'
