@@ -21,6 +21,88 @@ Newest entry first.
 
 ---
 
+## 2026-10-24 · v1.14.0 (current, from v1.12.0): the public address live, the portal and the dashboard at /admin behind Caddy, alerting restored after the 2026-09-28 pause
+
+Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
+each command typed with the `!` prefix and its output read by the session
+before the next (docs/deployment.md "The public address", steps 6 to 9,
+then "Restoring after the 2026-09-28 pause"). Steps 1 to 5 - the SSH
+proof, DNS, the security group, the Tailscale teardown and the clean box -
+are the entry below. Times are UTC.
+
+**Step 6, the deploy:** `sudo /opt/minas-guardian/scripts/deploy.sh
+v1.14.0` pulled `caddy:2.11.7@sha256:504a44d7…`, created the `caddy-data`
+and `caddy-config` volumes, recreated `minas-guardian-sentinel-1` on the
+new image and started both containers; the healthcheck passed and the
+version assertion printed:
+
+```
+Minas AI Guardian 1.14.0
+  commit   2b7b6c814afe05c4bcc44636f381ae63fb23becf
+  tag      v1.14.0
+  source   build-arg
+deploy: OK — v1.14.0 is live and verified
+```
+
+**Step 7, what runs:** `docker compose ps` → `caddy` Up, `sentinel` Up
+(healthy). `ss -tlnp` → 80 and 443 on `0.0.0.0` and `[::]`
+(`docker-proxy`); 8390, 8391 and 9109 on `127.0.0.1` only; nothing on a
+`100.` address. The sentinel log at 09:02:19: `dashboard: X-Forwarded-For
+is believed from 10.231.0.2 only`, `dashboard: served under /admin -
+every link, form and redirect carries it; the bare /healthz still answers
+for the container probe`, `portal: X-Forwarded-For is believed from
+10.231.0.2 only`. One oddity, recorded: the first `docker compose up -d`
+after deploy.sh recreated the `caddy` container once (sentinel stayed
+`Running`); a second `up -d` left both `Running`, and the certificate the
+first container had obtained persisted in `caddy-data` (the new
+container's log shows `serving initial configuration` and no error, and
+the certificate below is dated 08:03, before the recreate). Not
+understood; watch whether a later `up -d` does it again.
+
+**Step 8, the answers from outside** (from the owner's machine):
+
+```
+subject=CN=guardian.minastrade.com
+issuer=C=US, O=Let's Encrypt, CN=YE1
+notBefore=Oct 24 08:03:43 2026 GMT   notAfter=Jan 22 08:03:42 2027 GMT
+GET /login            HTTP/2 200; content-security-policy: frame-ancestors 'none';
+                      strict-transport-security: max-age=31536000; x-frame-options: DENY
+GET /api/v1/limits    401
+GET http://…/login    308 -> https://guardian.minastrade.com/login
+GET /admin/login      HTTP/2 200; the three above plus cache-control: no-store,
+                      x-content-type-options: nosniff, x-robots-tag: noindex, nofollow
+GET /admin  /admin/  /admin/healthz    401  401  401
+<h1>Ops dashboard</h1> on /admin/login: 1; on the portal's /login: 0
+the sign-in form's action: "/admin/login"
+```
+
+`sentinel operator list` on the box: one operator, `john.great`, active,
+2FA `on`, last login 2026-09-25 - no `NOT YET` row, so 22c item 1 holds.
+The wrong-password log reading (`failed operator login for … from <the
+operator's own address>`) was left for the owner to do from a browser;
+nothing in the deploy depends on it.
+
+**Step 9:** `SENTINEL_PORTAL_URL=https://guardian.minastrade.com` written
+to `/opt/minas-guardian/.env`, `docker compose up -d` recreated sentinel
+with it, `printenv SENTINEL_PORTAL_URL` → the address. From outside, once
+the container was back: `GET /login` 200, `grep -c 'Our only address'` →
+1, `grep -c 'Our address has changed'` → 0. (The first read, a second
+after `up -d`, found 0 because the portal was still starting - read it
+after the healthcheck, not before.)
+
+**The restore order's step 3:** `systemctl enable --now
+minas-liveness.timer minas-restart-on-unhealthy.timer` created both
+symlinks and both timers fired at 09:17:52; root's crontab carries the
+digest line live again (`0 8 * * * cd /opt/minas-guardian && docker
+compose exec -T sentinel sentinel digest`) with the `# PAUSED 2026-09-28`
+note left as a comment above it. #88 closed on this evidence.
+
+**Still outside this entry:** the Tailscale admin-console removal of the
+machine (a browser click); the email to members with the new address
+(22d); the wrong-password log reading above.
+
+---
+
 ## 2026-10-23 · The box read before the public address: v1.12.0 on disk, the container stopped since 2026-09-28, Tailscale torn down (22e steps 4, 6 and 7)
 
 No deploy. These are the readings that decided the order of

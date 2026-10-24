@@ -11,9 +11,21 @@ Guardian**.
 
 _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
-or Twilio credentials, terminate the retired us-east-1 instance, install the
-#81 restart timer on the host (docs/deployment.md "Acting on an unhealthy
-container")._
+or Twilio credentials, terminate the retired us-east-1 instance, the email
+to members with the new address (decision 22e step 5), the machine's
+removal in the Tailscale admin console. The #81 restart timer turned out
+to be installed on the host already (disabled in the 2026-09-28 pause,
+re-enabled 2026-10-24)._
+
+### Changed
+
+- **v1.14.0 is deployed and the public address is live (2026-10-24):**
+  https://guardian.minastrade.com serves the portal and the API, and
+  `/admin` the ops dashboard, with alerting running again after the
+  2026-09-28 pause. Recorded, with every reading, in docs/DEPLOYMENTS.md
+  and under 22e in docs/DECISIONS-NEEDED.md; #88 closed on it (the address
+  chosen, served over TLS, `SENTINEL_PORTAL_URL` set, the sign-in page
+  naming it). No code in this entry.
 
 ## [1.14.0] — 2026-10-24
 
