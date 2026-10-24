@@ -8094,3 +8094,116 @@ v1.15.0 entry; decisions 23 and 24 carry the deployed status; CHANGELOG
 [Unreleased] notes the deploy. Next: the owner's look at `/admin` in a
 browser; the pending keys and the SMS provider; #125; the small
 follow-ups listed above.
+
+# 2026-10-24 · The portal opens on a landing page, the app too, and a skill fires on UI changes (decision 25)
+
+**The owner's words (2026-10-24, after the deploy):** "a very important
+update. when a user visits guardian.minastrade.com, it is the login page,
+instead of like a landing page that should contain link to login or
+something. the landing page ought to be what the system is about. this
+should also be in the mobile apps too. when a user login session expires,
+it can take them to like that page. finally, i want you to create a skill
+that fires when a change is made to the UI, the change should reflect in
+both web UIs and the mobile UIs when necessary." Four instructions; all
+four are in PR #135 (branch `worktree-landing-page`, one commit,
+`e170895`), opened against main after #134 had merged (`67ae64f`, 21:06
+UTC). Nothing was cut or deployed.
+
+**How the work was done.** The scouting was mine, inline: the portal's
+route table and session check, the sixteen `self._login_page()` refusal
+sites, every test that pinned `GET /` as the sign-in form, the probe
+anchors on the refusal lines, the app's router and session code, the
+mobile CI, the hooks schema. From that, one written contract (the names,
+the sentences, the behaviours, the ownership of files) and a workflow:
+four builders in parallel over disjoint files (the portal and its tests;
+the app and `tests/test_mobile_app.py`; the records; the skill, the hook,
+its test and CONTRIBUTING), then four reviewers with one lens each (the
+member-data boundary; the design system, the copy and web/app parity; the
+guards and the records; the app's router), seventeen findings (one
+blocker, four major, twelve minor), two skeptics per serious finding
+(five of five survived), one fixer per area. The probes ran once, at the
+end, alone in the tree. Two things the fixers could not see of each
+other I corrected afterwards: the portal fixer gave the not-found page
+the member so its footer keeps pointing at `/limits` when there is one,
+while the records fixer, from the earlier code, had written the opposite
+into CHANGELOG and docs/portal-design.md; and the skill's map named a
+push-notification route that does not exist yet (21e is open).
+
+**What changed.** `GET /` without a session is `_render_landing`: the
+statement, the read-only key, "How it works" in three steps with the
+polling cadence from `polling_cadence(rules)`, the "cannot stop an
+attack" callout and the whole of LIMITS_DOES / LIMITS_CANNOT, the one
+address named as text from the setting with the anti-phishing rule, and
+the way in - a "Sign in" link in the top bar and the page's one gold
+button, both to `/login`; nothing to sign up for, and the page says so
+(decision 17). The sign-in page is unchanged, explicitly routed at
+`/login`; signed in, `/login` goes home where it used to 404. Every
+other path without a session - a member page, an unknown one - answers
+303 to `/`; `_session_email` records a cookie that was presented and
+rejected, and the landing page says "You were signed out." (the hours
+from the session constants) and clears it; a visitor without a cookie
+sees the plain page. The fourteen member-route POST refusals are the same
+303; `_reset` lands on `/login`. The footer's limits link is `/#limits`
+on pages rendered without a member and `/limits` with one. The app opens
+on `mobile/src/app/landing.tsx` ("Welcome", `/landing`) with the
+portal's sentences verbatim and one gold "Sign in" to the form, which
+gains a header and is declared singular; an ended sign-in lands there
+with "This phone was signed out.", a sign-out without it; `Title` is a
+heading and a standing `Notice` is no longer announced. The skill
+`.claude/skills/ui-parity/SKILL.md` carries the surface map, the rules,
+the guards by surface and the records; `scripts/ui-parity-reminder.py`
+is the PostToolUse hook registered in the committed
+`.claude/settings.json`, run with `python3 -I`.
+
+**Five traps, each now pinned.** (1) This clone's `.git/info/exclude`
+hides `/.claude/`, so the skill and the hook config were invisible to
+`git status` and a plain `git add -A` would have shipped the PR without
+them - a red suite and a false record; three reviewers found it,
+`git add -f` carried them, CONTRIBUTING says so, and
+`tests/test_ui_parity_hook.py` goes red in a checkout that would drop
+them. (2) expo-router 58.0.25's `Stack.Protected` fallback ignores the
+declaration order and picks the shortest unguarded route name, where
+`landing` and `sign-in` tie - the target is named with `redirectTo`, and
+the verification is in `_layout.tsx`'s comment, file by file. (3) Two
+probes anchored on the refusal lines that became redirects; both were
+re-anchored, and `    ours = portal_host()` stays exactly once, inside
+`_render_login`, because a probe replaces it. (4) A fast double tap on
+the welcome screen's "Sign in" stacked two forms; the form is singular
+now, with a Jest test that failed before and passes after. (5) A planted
+`json.py` beside the hook was imported instead of the stdlib under plain
+`python3`; the hook runs under `-I`, proven both ways.
+
+**The record.** CHANGELOG [Unreleased] (three entries),
+docs/DECISIONS-NEEDED.md section 25 and its row (and row 22's
+sentence, cut off since the 22e record, completed), docs/portal-design.md,
+design/portal/DESIGN-SYSTEM.md and the mockup design/portal/landing.html
+(generated from the real renderer), docs/threat-model.md A3,
+docs/deployment.md's smoke checks (the `/healthz` check is a 303 check
+now; `/` is checked for `id="landing-title"`), README, mobile/README.md,
+mobile/CHANGELOG.md, CONTRIBUTING's "A UI change lands on every
+surface". Tests: 17 files updated (every `signin-title` on an anonymous
+`GET /` is `landing-title`; every member path without a session asserts
+the 303 through tests/helpers/landing_redirect.py), tests/test_portal_landing.py
+new (23 tests), tests/test_mobile_app.py pins the 23 sentences the two
+surfaces share, mobile/src/__tests__/landing.test.tsx new,
+tests/test_ui_parity_hook.py new; both new server files registered in
+scripts/mutation-selection-excluded.txt.
+
+**Gates, on the committed tree:** `ruff check sentinel tests
+scripts/ui-parity-reminder.py` clean; the full suite 2237 passed
+(414 s); the design-guard probes 247/247 as expected (`--workers auto`);
+in mobile/, typecheck clean, 87 Jest tests passed, the audit 2 listed /
+0 unlisted / 0 stale, both platform bundles exported. CI on `e170895`, PR #135: the CI workflow (run 40140084388) and the Mobile workflow (run 40140084337) both green.
+
+**Left for the owner:** the merge of #135; the release cut (yours) and,
+after it, a look at `/` and `/login` in a browser and at the welcome
+screen on the phone - two things to judge on a device that I did not
+change: the step and limits cards use the 28px `Title` as the limits
+screen does, which is a lot of large type on one screen, and the sign-in
+form keeps its full-edge safe area under its new header. The hook is not
+live in a session until `/hooks` is opened once or the session restarts
+(Claude Code watches only `.claude/` directories that existed at start).
+Standing from the previous entry: the pending exchange keys and the SMS
+provider; #125; the fleet-health KPI, the triage auto-refresh and the
+phone-width tables on the dashboard; docs/DEPLOYMENTS.md:75's "unbranded
+ops view".
