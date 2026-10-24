@@ -5,7 +5,7 @@ two months the page could not say WHICH site: there was no address worth
 naming. Now there is one, and it lives in SENTINEL_PORTAL_URL and nowhere
 else. Held here: with no address the page reads as it always did; with one
 it names the host, as text, from the setting; a request addressed to any
-other name - the old Funnel address - is told the address has changed; and
+other name - an old address - is told the address has changed; and
 no module under sentinel/ carries the domain as a literal, so the setting
 is the one place it exists (#88's own rule for whoever built this)."""
 from __future__ import annotations
@@ -25,7 +25,7 @@ ROOT = Path(__file__).resolve().parent.parent
 # Not the real address, on purpose: the page must learn it from the setting.
 ADDRESS = "https://guardian.example.test"
 HOST = "guardian.example.test"
-OLD = "minas-guardian.tail0fdd4a.ts.net:8443"
+OLD = "old-address.example.net:8443"
 SHOWN = f'<strong style="color:var(--text)">{HOST}</strong>'
 
 

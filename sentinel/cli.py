@@ -400,10 +400,11 @@ def cmd_run(args: argparse.Namespace) -> int:
     metrics_port = int(_env_raw("SENTINEL_METRICS_PORT", "9109"))
     metrics_host = _env_raw("SENTINEL_METRICS_HOST", "127.0.0.1")
     Metrics.serve(metrics_port, host=metrics_host)
-    # Loopback by default: the dashboard has no login of its own, so the
-    # quickstart must not put it on every interface (G-36). Widening either
-    # one is deliberate, and logged below so it's visible at startup rather
-    # than discovered by a port scan.
+    # Loopback by default: a sign-in page need not face every interface, so
+    # the quickstart must not put the dashboard on all of them (G-36; it has
+    # had an operator sign-in with a second factor since #87). Widening
+    # either one is deliberate, and logged below so it's visible at startup
+    # rather than discovered by a port scan.
     dashboard_port = int(_env_raw("SENTINEL_DASHBOARD_PORT", "8390"))
     dashboard_host = _env_raw("SENTINEL_DASHBOARD_HOST", "127.0.0.1")
     # `rules` so the page can say when config/rules.yaml was rejected and the
@@ -591,11 +592,11 @@ def bind_disclosure(host: str, port: int, gate: str | None) -> tuple[str | None,
             f"(expect 127.0.0.1:{port})."))
     return ("warning", (
         f"ops dashboard is bound to {host}:{port}, not loopback, with no declared "
-        f"boundary (SENTINEL_BIND_GATE is unset). Sign-in is required once operator "
-        f"accounts exist, but until the first operator is created the page is open - "
-        f"and a sign-in page need not face every network either. Put a VPN, SSH "
-        f"tunnel or authenticating proxy in front, or declare the external gate in "
-        f"SENTINEL_BIND_GATE next to the publish that provides it."))
+        f"boundary (SENTINEL_BIND_GATE is unset). The operator sign-in and its second "
+        f"factor stand in front of the page, but a sign-in page need not face every "
+        f"network either. Put an SSH tunnel or an authenticating proxy in front, or "
+        f"declare the external gate in SENTINEL_BIND_GATE next to the publish that "
+        f"provides it."))
 
 
 def cmd_account_status(args: argparse.Namespace) -> int:

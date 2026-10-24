@@ -298,8 +298,8 @@ _PAGE = """<!doctype html><html lang="en"><head>
       <div><h1><span class="minas">MINAS</span> AI Guardian · Metrics</h1><div class="sub">Service telemetry — Prometheus exposition</div></div>
     </div>
     <div class="nav">
-      <a class="chip" href="/">Dashboard</a>
-      <a class="chip" href="/metrics/raw">Raw</a>
+      <a class="chip" href="{base_path}/">Dashboard</a>
+      <a class="chip" href="{base_path}/metrics/raw">Raw</a>
       <span class="chip"><span class="dot"></span> Live · {now}</span>
     </div>
   </header>
@@ -345,10 +345,16 @@ def _label_pills(labels: dict) -> str:
     return f'<span class="pills">{"".join(pills)}</span>' if pills else '<span class="mono">—</span>'
 
 
-def render_metrics_html(dash_port: int = 8390) -> str:
+def render_metrics_html(base_path: str = "") -> str:
     """Premium HTML view of the live Prometheus registry, themed to match
     the status dashboard. Pure presentation - the registry stays the single
-    source of truth and scrapers never see this."""
+    source of truth and scrapers never see this.
+
+    `base_path` is the dashboard's (SENTINEL_DASHBOARD_BASE_PATH, "/admin"
+    under compose): the two nav links point at the dashboard's root and at
+    its /metrics/raw, and without it they would land on the member portal's
+    root and on a portal 404 once Caddy fronts both on one name. The
+    standalone 9109 server passes nothing: loopback-only, never proxied."""
     service_cards: list[str] = []
     runtime_rows: list[str] = []
 
@@ -392,6 +398,7 @@ def render_metrics_html(dash_port: int = 8390) -> str:
                 )
 
     return _PAGE.format(
+        base_path=base_path,
         now=datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
         service_cards="".join(service_cards) or '<div class="empty">No service metrics yet</div>',
         runtime_rows="".join(runtime_rows) or '<tr><td colspan="3" class="empty">none</td></tr>',
@@ -400,8 +407,10 @@ def render_metrics_html(dash_port: int = 8390) -> str:
 
 def raw_exposition() -> tuple[str, bytes]:
     """Raw Prometheus exposition (content-type, body) - what scrapers consume.
-    Served same-origin at /metrics/raw so the browser 'Raw' link works behind
-    the Tailscale HTTPS proxy (which only fronts port 443)."""
+    Also served by the dashboard, same-origin at its /metrics/raw, so the
+    browser 'Raw' link works through Caddy (which fronts 443 alone and
+    forwards /admin to the dashboard); the 9109 endpoint stays on loopback,
+    for scrapers and the SSH tunnel, and is never proxied."""
     if not _AVAILABLE:
         return "text/plain; charset=utf-8", b"# prometheus_client not installed\n"
     return CONTENT_TYPE_LATEST, generate_latest(REGISTRY)
@@ -411,16 +420,13 @@ def _serve_metrics(port: int, host: str = "127.0.0.1"):
     """Content-negotiating metrics server: browsers (Accept: text/html) get
     the styled view; Prometheus scrapers get the raw exposition format they
     require. /raw always returns the raw format."""
-    import os
     from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-
-    dash_port = int(os.environ.get("SENTINEL_DASHBOARD_PORT", "8390"))
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
             wants_html = "text/html" in (self.headers.get("Accept") or "")
             if self.path != "/raw" and wants_html:
-                body = render_metrics_html(dash_port).encode()
+                body = render_metrics_html().encode()
                 content_type = "text/html; charset=utf-8"
             else:
                 body = generate_latest(REGISTRY)

@@ -40,9 +40,20 @@ onboarding form runs the identical gate — it cannot bypass it.
 
 ## Network & access posture
 
-- The status dashboard has **no login of its own by design**; it is
-  network-gated (Tailscale, tailnet-only HTTPS — no public ports). Access is
-  granted/revoked by tailnet membership.
+- The ops dashboard requires an operator sign-in with a **mandatory second
+  factor** (TOTP; #87, decision 19), and that sign-in is throttled. In
+  production it is served at `https://guardian.minastrade.com/admin` by
+  Caddy, the host's only public listener; the dashboard, portal and metrics
+  servers default to `127.0.0.1` (under compose they bind `0.0.0.0` inside
+  the container and the `127.0.0.1:` publishes in docker-compose.yml are
+  the gate), and the metrics endpoint is never proxied. There is no IP allowlist
+  on `/admin` (decision 22c item 5, answered no): the sign-in, its second
+  factor and the throttle are the protection. Access is granted with
+  `sentinel operator add` and revoked with `sentinel operator disable`,
+  which ends every session at once. The host itself is reached by SSH on
+  port 22 with the EC2 key pair, from the addresses in the security group's
+  SSH rule only; an SSH tunnel to `127.0.0.1:8390` is the break-glass path
+  to the dashboard.
 - Container runs non-root with `cap_drop: [ALL]`, `no-new-privileges`, and
   pid/memory limits.
 - The AI triage layer is additive: it runs **after** alerts dispatch and has

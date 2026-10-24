@@ -36,10 +36,10 @@ whoever builds one should build it to cover both.
 | 16 | Deep incident links in alert emails | #20 (reworded) | **ANSWERED 2026-08-23** — no links; non-clickable reference + portal lands on the incident; see section 16 |
 | 17 | Self-serve signup | #6 (stays open) | **ANSWERED 2026-08-23** — no; behind billing + legal, waitlist as fallback; see section 17 |
 | 18 | Sibling-alert definition width + production backfill | #99 (built conservatively) | **OPEN — owner reconsidering 2026-08-27**; nothing dependent to be built |
-| 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | ~~#87~~, ~~#82~~ | **ANSWERED 2026-08-27** — mandatory; host-access recovery, attributed and logged; see section 19 |
-| 20 | The member portal is published to the internet on Tailscale Funnel | #88 (the address is still the open half) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in part by 22: no Tailscale* |
+| 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | ~~#87~~, ~~#82~~ | **ANSWERED 2026-08-27** — mandatory; host-access recovery, attributed and logged; see section 19. *From 2026-10-23 the host access is SSH with the key pair at the Elastic IP (22e)* |
+| 20 | The member portal is published to the internet on Tailscale Funnel | #88 (the address: answered by 22; the issue text still to amend) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in full 2026-10-23 by 22: no Tailscale, removed in one go* |
 | 21 | Native iOS and Android apps, and the JSON API they need | the apps | **PARTLY ANSWERED 2026-10-22** — customers only, React Native, in this repo, company branding, sign-in and v1 API scope as recommended; push and the web portal open; see section 21 |
-| 22 | One public address, guardian.minastrade.com; no Tailscale | #88 (the address); the hostname the apps are built against | **PARTLY ANSWERED 2026-10-22** — one hostname including the dashboard, no Tailscale anywhere, host access by SSH with the key pair; TLS open; see section 22 |
+| 22 | One public address, guardian.minastrade.com; no Tailscale | #88 (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22 |
 
 ---
 
@@ -507,6 +507,15 @@ an admin IP only. So **an external monitor cannot poll a health endpoint**
 without weakening that, and the dashboard can't be the endpoint — it has no auth
 and shows customer names and contact details.
 
+> **Note 2026-10-23.** The paragraph above is the posture of August 2026
+> and is history: the dashboard has had an operator sign-in with a
+> mandatory second factor since #87 (decision 19), Caddy holds the
+> host's public 80 and 443 since decision 22b, and with 22e step 3 the
+> dashboard answers at `/admin` on the public address. None of it
+> changes the answer. The monitor must not share fate with the
+> monitored, and a health endpoint behind our own proxy on our own box
+> still does; B stays rejected for that reason, not for a closed port.
+
 ### What has to be decided
 
 **a) Detection latency.** How long may the Guardian be down before someone is
@@ -949,6 +958,18 @@ one operator session; the run left the data untouched.
 > devices; opt-in would let the weakest operator set its security.
 > Unblocks #87, and #82's dashboard pass lands with it.
 
+> **Update 2026-10-23 (decision 22e).** "Over the tailnet" is history:
+> Tailscale leaves the project, and the break-glass path is the same
+> host access by SSH on port 22 with the EC2 key pair, at the Elastic IP
+> `57.181.51.14`, from an address in the security group's SSH rule (the
+> box answered to exactly that the evening of 2026-10-23). Nothing else
+> here changes: the reset is still `sentinel operator reset-2fa <name>
+> --as <name>` on the box, attributed and event-logged
+> (`sentinel/operators.py`, `reset_second_factor`), and still the only
+> path that removes an operator's second factor. Its docstring and
+> docs/deployment.md "Operator accounts and two-factor" say "tailnet";
+> both change in the release this update describes (22e step 8).
+
 
 **The question.** The ops dashboard - the higher-privilege surface: it
 adds customers, reads every contact, attributes operator actions - has a
@@ -980,7 +1001,18 @@ together.
 
 ---
 
-## 20. The member portal is published to the internet on Tailscale Funnel (#88) — **ANSWERED by the owner, August 2026; recorded 2026-09-23**
+## 20. The member portal is published to the internet on Tailscale Funnel (#88) — **ANSWERED by the owner, August 2026; recorded 2026-09-23; SUPERSEDED in full 2026-10-23 by 22**
+
+> **Superseded in full, 2026-10-23: decision 22.** Tailscale leaves the
+> project in one go - Funnel, Serve and Tailscale SSH together - in the
+> sequence 22e's evening status records, with SSH by the Elastic IP
+> answered first. There is no overlap period: the Funnel address is
+> withdrawn, not kept up with a notice, and members are emailed the new
+> address before it goes (22d). The answer below is what ran from August
+> 2026 until that day; the two commands in it (`serve status`, `funnel …
+> off`) are the ones 22e step 6 runs, read against the box at the time,
+> and nothing else in it describes what remains afterwards. The
+> 2026-10-22 banner under this one is kept for the record.
 
 > **Superseded in part, 2026-10-22: decision 22** retires Tailscale from
 > the project and moves the dashboard to the public address. Until 22 is
@@ -1407,7 +1439,7 @@ against decision 22's hostname.
 
 ---
 
-## 22. One public address, https://guardian.minastrade.com, and no Tailscale (#88) — **ANSWERED: 2026-10-22 one hostname for everything, no Tailscale anywhere, host access by SSH; 2026-10-23 TLS by Caddy on the instance (22b)**
+## 22. One public address, https://guardian.minastrade.com, and no Tailscale (#88) — **ANSWERED: 2026-10-22 one hostname for everything, no Tailscale anywhere, host access by SSH; 2026-10-23 TLS by Caddy on the instance (22b); 2026-10-23, later: the dashboard at `/admin` behind its sign-in and second factor, no allowlist, Tailscale removed in one go, the slow gates waived for the release that ships it**
 
 > **Answer so far (2026-10-22).**
 > - **`https://guardian.minastrade.com` is the project's one address.**
@@ -1432,6 +1464,68 @@ against decision 22's hostname.
 > before the dashboard goes public (22e step 3), not before the portal
 > does.
 
+> **And (2026-10-23, later): remove everything Tailscale now, and give
+> the dashboard its route.** The owner's words: "remove all things
+> tailscale from the project. admin should have it's route. i need the
+> whole server working and running at https://guardian.minastrade.com
+> ASAP". The product is not launched. Recorded as four decisions:
+> - **22a is decided, not recommended: the dashboard's route is
+>   `/admin`**, served by the same Caddy as the portal, with the
+>   operator sign-in and its mandatory second factor (decision 19, #87)
+>   and the login throttle as its protection.
+> - **22c item 5 is answered: no IP allowlist.** Not a precondition; it
+>   can be added at the proxy later without a code change, and nothing
+>   in the application may assume it.
+> - **22d has no overlap period.** The Funnel address is withdrawn when
+>   Funnel goes; members are emailed the new address before that, and
+>   `SENTINEL_PORTAL_URL` carries it in every SMS and email from 22e
+>   step 2 on.
+> - **22e runs in one go**, with the same step numbers and the sequence
+>   recorded in its evening status. The one step that is never skipped
+>   is step 4, the SSH proof: it is what keeps the box reachable after
+>   step 7, and its connection half was taken that evening.
+>
+> **The gates.** The owner waived the slow gates - the probes and the
+> mutation floor (CONTRIBUTING, "Where the slow gates canonically run")
+> - for the release that ships steps 3 and 8. Ruff and the suite still
+> run: CLAUDE.md's "never leave `main` with a failing suite" is the
+> owner's own standing rule and was not withdrawn. The deploy stays the
+> owner's.
+>
+> **The code ships in the release this entry describes.** The base
+> path, the cookie path, the `Referer` check, the Metrics page's links,
+> the Caddy route and the two compose settings are one change set with
+> the document changes of 22e step 8, pinned by
+> `tests/test_dashboard_prefix.py` (the dashboard under a base path) and
+> `tests/test_bind_address.py` (what the proxy forwards, what it never
+> does, and both trusted-proxy settings). 22a lists what each piece does
+> and how to tell it worked.
+>
+> **What the box said that evening; the decision depends on both:**
+> - DNS answers `57.181.51.14`; the security group admits 80 and 443;
+>   nothing listens on them yet, because v1.13.0 (which carries Caddy
+>   for the portal) is cut and not deployed.
+> - **`tailscaled` holds port 443 on the Tailscale address.** A probe
+>   binding `0.0.0.0:443` answered "Address already in use", and that is
+>   the bind Docker's `443:443` publish for Caddy makes. So the Tailscale
+>   teardown precedes Caddy in the runbook's order (docs/deployment.md):
+>   Serve and Funnel are withdrawn and `tailscaled` is gone before the
+>   release that carries Caddy is started. Safe in that order because the
+>   lockout guard, SSH at the Elastic IP with the key pair, answered the
+>   same evening (22e step 4).
+> - **The `sentinel` container has been stopped since 2026-09-28**, by
+>   the owner's decision: alerting paused for the beta's credit cost. The
+>   portal and the dashboard run in that container, so neither has
+>   answered since then - the Funnel address has forwarded to a stopped
+>   upstream for almost a month, and there is no running service for the
+>   teardown-before-Caddy gap to interrupt. The restore order is in
+>   docs/deployment.md "Restoring after the 2026-09-28 pause"; 22c item
+>   1's reading needs that container running.
+> - The box answered on port 22 at `57.181.51.14` to the EC2 key pair.
+>   That settles which address is current: the `ec2-54-168-212-44…`
+>   hostname and `ssh ubuntu@minas-guardian` in the SSH examples are
+>   stale (22e, row 4).
+
 **What it reverses, so nobody reads the old line as current.** Decision
 20 says: "The ops dashboard (8390) and the metrics endpoint (9109) stay
 on Tailscale Serve: tailnet-only, never public". Tailscale also appears
@@ -1450,6 +1544,33 @@ in:
 
 Each one changes in the commit that makes it untrue, not before.
 
+**Status 2026-10-23, evening:** every item above still describes
+Tailscale, and under the new order they all change in ONE release - the
+one that ships `/admin` (22e steps 3 and 8 together) - because it is
+also the release after which Tailscale is gone. Read that day
+(`git grep -il 'tailscale\|tailnet\|funnel\|ts\.net'`), the list also
+includes: CONTRIBUTING.md (rule 6's Funnel example is history and
+stays; the `ssh ubuntu@minas-guardian` and `ec2-54-168-212-44…` lines
+under the deploy command go), `.env.example` (the `SENTINEL_PORTAL_URL`
+and `SENTINEL_DASHBOARD_TRUSTED_PROXIES` comments), `docker-compose.yml`
+(the comments on the 8390 and 8391 publishes, and `SENTINEL_BIND_GATE`),
+`deploy/caddy/Caddyfile` (its header), `tests/test_bind_address.py` and
+`tests/test_portal_address.py` (its docstring; the `OLD` fixture is a
+historic other name and stays); and, without naming Tailscale, the
+comments that describe the dashboard as not yet under `/admin`:
+`sentinel/edge.py` and `sentinel/liveness.py` (the dashboard's
+trusted-proxy setting) and `tests/test_login_lockout.py`
+(`test_the_portals_proxy_is_not_the_dashboards`, "until"; renamed in that
+release `test_the_dashboard_does_not_inherit_the_portals_trusted_proxy`,
+the assertion unchanged). In
+docs/deployment.md the places are "Reaching the dashboard", "Remote
+access: Tailscale", "The public address" (step 7 and the closing
+paragraphs) and "Operator accounts and two-factor" - as the guide stood
+that morning: "Remote access: Tailscale" became "Reaching the box: SSH
+with the EC2 key pair", and the then-step 7 ("Nothing on Tailscale
+moved") became the step-4 teardown in the renumbered section.
+docs/phase0-capability-audit.md is a dated record and is not changed.
+
 The dashboard is the higher-privilege surface (decision 19): it adds
 customers and reads every customer's contact details. With no tailnet
 and no separate hostname, its login is the only thing standing between
@@ -1458,7 +1579,7 @@ holds: the member portal never gains an operator capability. What
 changes is that the operator surface becomes reachable from the internet
 too, defended by its own login.
 
-### 22a. One hostname — **ANSWERED 2026-10-22: the dashboard shares it**
+### 22a. One hostname — **ANSWERED 2026-10-22: the dashboard shares it; 2026-10-23: at `/admin`, no allowlist**
 
 A separate admin hostname was recommended, for origin isolation, and was
 declined. What sharing the hostname takes:
@@ -1484,6 +1605,69 @@ declined. What sharing the hostname takes:
   page shows that it is the ops view.
 - **Extra controls apply by path.** Any IP allowlist (22c, item 5) goes
   on `/admin/*` at the proxy.
+
+**Decided 2026-10-23: `/admin`, and how the dashboard serves it.** Read
+from the code that morning, nothing implemented it: `sentinel/dashboard.py`
+had no base-path setting, every route was matched on its absolute path
+(`do_GET`: `/healthz`, `/login`, `/logout`, `/metrics/raw`, `/metrics`,
+`/triage`, `/add`, `/account`, `/favicon.ico`, `/`; `do_POST`: `/login`,
+`/login/code`, `/login/enrol`, `/portal-access`, `/portal-grant`,
+`/triage`, `/add`), and the pages wrote absolute paths: ten `href="/…"`,
+six `action="/…"`, three `Location:` (`/login` on sign-out, `/triage`
+after triage, `/` after sign-in), plus the Metrics page's `href="/"` and
+`href="/metrics/raw"` in `sentinel/metrics.py`. The code ships in the
+release this entry describes, in one change set with the proxy route and
+the documents, and it does this:
+
+- **One setting, `SENTINEL_DASHBOARD_BASE_PATH`.** Default empty: the
+  dashboard serves at `/` exactly as before, so the existing tests, the
+  demo server and a bare `sentinel run` do not change. docker-compose.yml
+  pins it to `/admin`. Empty and `/` mean the root; `admin`, `/admin`
+  and `/admin/` all mean `/admin`. `serve_dashboard` sets it once at
+  startup, on every start, so a later default server is back at the
+  root.
+- **The application serves at `/admin` in truth.** Caddy passes `/admin`
+  and `/admin/*` through with the path unchanged (`handle` with a named
+  matcher `@admin path /admin /admin/*`, never `handle_path`), so a test
+  pins the behaviour without Caddy and the proxy rewrites nothing - the
+  reason the headers live in the application too (22c item 3). `/admin`
+  and `/admin/` both render the root; there is no redirect between them
+  and none at the proxy. Every emitted `href`, `action` and `Location`
+  goes through one helper that prefixes the base path, and the Metrics
+  page takes the base path as a keyword for its two links (the
+  standalone 9109 server passes nothing, so its links stay as they are).
+- **Outside the base path.** `/healthz` keeps answering at the bare
+  path, before any routing: it is the compose healthcheck, probed from
+  inside the container, and it must not learn the prefix.
+  `/admin/healthz` is NOT a health route; it meets the sign-in gate like
+  any other path, so no Caddy rule withholds it. With a base path set, a
+  bare `GET /` answers 303 to `/admin/` (a convenience for the SSH
+  tunnel; through Caddy that path reaches the portal, never the
+  dashboard), and any other request outside the base path, GET or POST,
+  answers 404. The fallthrough inside the base path (an unknown gated
+  GET renders the fleet page) is kept, so nothing changes at the root.
+- **`Path=/admin` on the cookie.** Both `Set-Cookie` lines (issue and
+  the sign-out clear) carry `Path=` the base path, or `/` when it is
+  empty, with `HttpOnly; Secure; SameSite=Lax; Max-Age` as before. The
+  names already differ (`ops_session`, `minas_portal`), so this tightens
+  rather than fixes.
+- **The `Referer` path on dashboard POSTs, built in the same release.**
+  `_same_origin` still judges `Sec-Fetch-Site` and `Origin`; when a base
+  path is set and a `Referer` header is present, it also refuses unless
+  the referer's path is the base path or starts with it and a `/`. No
+  `Referer` stays as it was (non-browser clients, curl, the tests).
+  `Referrer-Policy: same-origin` already supplies the header.
+- **How to tell it worked.** `tests/test_dashboard_prefix.py` pins the
+  dashboard under a base path (routes, links, cookie path, the bare
+  `/healthz`, the 303 and the 404s, the `Referer` rule). On the box,
+  `https://guardian.minastrade.com/admin/` shows the operator sign-in
+  page (a 401 until signed in), `https://guardian.minastrade.com/admin/healthz`
+  shows the same sign-in page and not `ok`, and `http://localhost:8390/admin/`
+  through the tunnel does what `/admin/` does.
+- **The ops-view marking.** The header already reads "Ops dashboard"
+  with "internal · Minas staff only"; the footer's "Tailscale-gated"
+  changes in the same release to name what gates it now.
+- **Item 5: no allowlist** (the answer above).
 
 ### 22b. TLS and the way in — **ANSWERED 2026-10-23: Caddy on the instance, as one more compose service**
 
@@ -1527,6 +1711,30 @@ declined. What sharing the hostname takes:
 > and deploying the release, the checks, and `SENTINEL_PORTAL_URL` in the
 > host's `.env`.
 
+> **2026-10-23, the dashboard too (22e step 3):** the Caddyfile gains a
+> second upstream, `sentinel:8390`, for the named matcher `@admin path
+> /admin /admin/*` (`handle`, so the path reaches the dashboard
+> unchanged; bare `/admin` is matched, not redirected), with the same
+> `request_buffers 16KiB` and a cap of 32 connections beside the
+> portal's 64; the portal keeps everything else; 9109 stays unproxied.
+> `tests/test_bind_address.py`
+> `test_the_proxy_forwards_to_the_portal_and_nothing_else` is rewritten
+> as `test_the_proxy_forwards_admin_to_the_dashboard_the_rest_to_the_portal_and_never_the_metrics`:
+> exactly those two upstreams, the matcher's path equal to the compose
+> base path, never the metrics port, and `SENTINEL_BIND_GATE` in
+> docker-compose.yml saying so in the same diff (the test reads it).
+> `SENTINEL_DASHBOARD_TRUSTED_PROXIES: "10.231.0.2"` joins the sentinel
+> environment beside `SENTINEL_TRUSTED_PROXIES`, and
+> `test_the_portal_trusts_exactly_the_proxys_fixed_address`, renamed
+> `test_both_servers_trust_exactly_the_proxys_fixed_address`, holds both
+> equal to Caddy's address and to each other. Caddy reaches the dashboard over `edge` as
+> `sentinel:8390`, as it reaches the portal - the recommendation's "on
+> their existing `127.0.0.1` publishes" was departed from for the portal
+> and is departed from the same way here. Two lines in the block above
+> end with this release: "the dashboard stays on Tailscale Serve until
+> step 3", and "the publish stays as it was, because Funnel uses it" -
+> the `127.0.0.1` publishes stay anyway, for the SSH tunnel.
+
 **Recommendation (adopted): Caddy on the instance**, as one more compose service.
 It gets certificates from Let's Encrypt, renews them automatically, and
 proxies `/admin/*` to the dashboard and everything else to the portal,
@@ -1558,6 +1766,18 @@ DNS.
 These are not options. They are preconditions, and each one can be
 checked:
 
+**Status 2026-10-23, evening, in one line:** items 2, 3, 4 and 6 are
+built and pinned (item 6's dashboard half, the compose setting, ships in
+the release this entry describes); item 5 is answered "no" (not a
+precondition); item 1 is the one reading left, and it stays before the
+switch: an un-enrolled operator account on a public URL lets whoever
+holds its password enrol their own device at first sign-in
+(`sentinel/dashboard.py`, `_login` sends an un-enrolled operator to
+enrolment). An EMPTY operator table is not a hole: `_gate` has no
+waiver, so the dashboard answers the sign-in page with a 401 to
+everyone, and recovery is `sentinel operator add` on the box (decision
+19).
+
 1. **Every production operator is enrolled in TOTP.** Mandatory
    two-factor is built (#87, decision 19). Measure enrolment on the box
    before the switch, not after it.
@@ -1565,6 +1785,10 @@ checked:
    dashboard goes public (22e step 3), not before the portal does. The
    measurement is `sudo docker compose exec -T sentinel sentinel operator
    list`: every active row's 2FA column on.
+   **Evening of 2026-10-23:** the command needs the `sentinel` container
+   running, and it has been stopped since 2026-09-28 (section 22's
+   answer block). The reading is taken on the restored container, before
+   any operator is given the `/admin` address.
 2. **The dashboard's session cookie is marked `Secure`.** Today it is
    `HttpOnly; SameSite=Lax` without `Secure` (`sentinel/dashboard.py`,
    `_issue_session`); the portal's cookie has the flag. That is harmless
@@ -1604,7 +1828,9 @@ checked:
    `127.0.0.1`. Pinned by tests/test_bind_address.py
    `test_only_the_proxy_listens_publicly` and
    `test_the_proxy_forwards_to_the_portal_and_nothing_else` (which also
-   holds the `SENTINEL_BIND_GATE` declaration to the proxy).
+   holds the `SENTINEL_BIND_GATE` declaration to the proxy; renamed in the
+   `/admin` release
+   `test_the_proxy_forwards_admin_to_the_dashboard_the_rest_to_the_portal_and_never_the_metrics`).
 5. **Optional, recommended: an IP allowlist on `/admin/*`**, at the
    proxy, for office or VPN addresses. It is a lighter gate than the
    tailnet was, and it keeps password-spraying traffic away from the
@@ -1612,6 +1838,12 @@ checked:
    **Status 2026-10-23: still the owner's call.** Nothing is behind
    `/admin` yet, so there is nothing to allowlist; it is decided before
    22e step 3.
+   **Answered 2026-10-23, later that day: no allowlist.** The owner wants
+   the dashboard reachable from wherever an operator is, and named the
+   sign-in and its mandatory second factor, with the login throttle, as
+   the protection. Not a precondition; it can be added at the proxy
+   later without a code change, and nothing in the application assumes
+   it.
 6. **Each server must know the real client address behind the proxy.**
    Both servers take the address from the TCP connection
    (`client_address`), and no code reads a forwarded header (checked
@@ -1641,14 +1873,33 @@ checked:
    proxy one visitor's failures do not block another on the web sign-in,
    the app's sign-in or the dashboard's; malformed headers; the enrolment
    audit row), by tests/test_bind_address.py
-   `test_the_portal_trusts_exactly_the_proxys_fixed_address`, and by
+   `test_the_portal_trusts_exactly_the_proxys_fixed_address` (renamed in
+   the `/admin` release
+   `test_both_servers_trust_exactly_the_proxys_fixed_address`), and by
    probes for trusting an untrusted peer and for taking the left-most
    address. **The Funnel address is not covered.** Its connections come
    through the loopback publish, from Docker's gateway, which is not
    trusted, so its visitors keep sharing one bucket until Funnel goes (22e
    step 6). The UNVERIFIED line above still stands for that path.
+   **Ships with step 3** (the release this entry describes):
+   `SENTINEL_DASHBOARD_TRUSTED_PROXIES: "10.231.0.2"` in
+   docker-compose.yml, so the dashboard's throttle keys on the visitor
+   and not on Caddy; the startup log line then reads "dashboard:
+   X-Forwarded-For is believed from 10.231.0.2 only". The code default
+   stays unset: blank still trusts nobody, and `tests/test_login_lockout.py`
+   `test_the_dashboard_does_not_inherit_the_portals_trusted_proxy`
+   (formerly `test_the_portals_proxy_is_not_the_dashboards`; its docstring
+   stops saying "until") keeps testing exactly that;
+   `tests/test_bind_address.py`
+   `test_both_servers_trust_exactly_the_proxys_fixed_address` holds both
+   settings equal to Caddy's fixed address and to each other. The
+   operator throttle's account bucket is keyed on address and username
+   together from this release (found in review: a bare-username bucket
+   was a lockout button for any stranger who guessed a name, and it
+   blocked the SSH tunnel too). The Funnel caveat above ends with Funnel, which under
+   the evening's sequence goes before Caddy starts (22e).
 
-### 22d. Moving customers to the new address
+### 22d. Moving customers to the new address — **2026-10-23: no overlap period; the email goes before Funnel does**
 
 - `SENTINEL_PORTAL_URL` changes to the new address, so SMS links point
   there.
@@ -1668,12 +1919,38 @@ address is guardian.minastrade.com" - as text to type, never a link - and
 a sign-in page reached by any other name (the Funnel address) says "Our
 address has changed" and names the new one. Unset, the pages read as
 before, so nothing shows until docs/deployment.md "The public address"
-step 8 sets it. The host comes from the setting alone:
+step 8 sets it (step 9 since the same evening's renumbering, when the
+Tailscale teardown became a step of its own). The host comes from the
+setting alone:
 `tests/test_portal_address.py` holds that no module under `sentinel/`
 carries the domain as a literal, which is #88's own rule. Still the
 owner's: the stated period for the old address and the email to members.
 
-### 22e. Removing Tailscale — **ANSWERED 2026-10-22: all of it; host access by SSH with the EC2 key pair**
+**Changed 2026-10-23: no overlap period.** The owner removes Funnel
+outright, so "keep the old Funnel address up for a stated period" is
+withdrawn, and with it the period that was still the owner's. What
+follows:
+
+- **The notice on the old address will not be seen.** The Funnel name
+  resolves to Tailscale's relay, never to this host (decision 20); when
+  Funnel is withdrawn the name stops answering, and a member with the
+  old bookmark gets a failed connection, not "Our address has changed".
+  After Tailscale goes, Caddy serves the one site block, so no other
+  name reaches the portal at all. The notice code stays - it costs
+  nothing and `tests/test_portal_address.py` pins it - but it is not how
+  members learn the address. (And since 2026-09-28 the old address has
+  forwarded to a stopped container, so no member has seen a sign-in
+  page there for almost a month either - section 22's answer block.)
+- **So the email is the only announcement, and it goes BEFORE Funnel is
+  withdrawn**: 22e step 5 precedes step 6 and is not optional. Text to
+  type, never a link (decision 16): "Our only address is
+  guardian.minastrade.com." Still the owner's: sending it.
+- **From 22e step 2 on, every SMS and email already carries the new
+  address** (`SENTINEL_PORTAL_URL`), so a member who follows an alert
+  lands on the right site before the email arrives.
+- #88's issue text is still to amend.
+
+### 22e. Removing Tailscale — **ANSWERED 2026-10-22: all of it; host access by SSH with the EC2 key pair. 2026-10-23: in one go, the teardown before Caddy starts, SSH at the Elastic IP answered that evening**
 
 Tailscale does five jobs today. Each one needs a replacement before
 Tailscale goes:
@@ -1681,10 +1958,10 @@ Tailscale goes:
 | Tailscale does today | After |
 |---|---|
 | The portal's public address (Funnel, `:8443`) | `guardian.minastrade.com`, through the proxy |
-| The dashboard (Serve, `/`) | `guardian.minastrade.com/admin`, behind operator sign-in and two-factor |
-| Metrics (Serve, `:9109`) | **Not published.** The endpoint has no login. It stays on `127.0.0.1`, and the dashboard's Metrics page is the view operators use. Publishing the raw endpoint later is its own decision. |
-| SSH, the daily way onto the box (`tailscale up --ssh` in `scripts/aws-user-data.sh`) | **SSH on port 22 with the EC2 key pair**, which is already in use (answered 2026-10-22). This is the break-glass path in docs/deployment.md promoted to daily use. Its security-group rule must admit named admin IPs only; read the rule in AWS before Tailscale goes, rather than trusting the deployment guide. |
-| Decision 19's last-operator recovery ("host access, over the tailnet") | The same host access, by whichever path replaces SSH |
+| The dashboard (Serve, `/`) | `guardian.minastrade.com/admin`, behind operator sign-in and two-factor. **Decided 2026-10-23**; the code ships in the release this entry describes, pinned by `tests/test_dashboard_prefix.py` and `tests/test_bind_address.py` (22a, 22b) |
+| Metrics (Serve, `:9109`) | **Not published.** The endpoint has no login. It stays on `127.0.0.1`, and the dashboard's Metrics page is the view operators use. Publishing the raw endpoint later is its own decision. *2026-10-23:* after the move that page is `/admin/metrics` (raw text at `/admin/metrics/raw`), behind the sign-in; the other way to the raw endpoint is the SSH tunnel's `-L 9109:127.0.0.1:9109`. |
+| SSH, the daily way onto the box (`tailscale up --ssh` in `scripts/aws-user-data.sh`) | **SSH on port 22 with the EC2 key pair**, which is already in use (answered 2026-10-22). This is the break-glass path in docs/deployment.md promoted to daily use. Its security-group rule must admit named admin IPs only; read the rule in AWS before Tailscale goes, rather than trusting the deployment guide. **Settled 2026-10-23:** the address is the Elastic IP, `ubuntu@57.181.51.14` with `Minas-AI-Guardian-Key-Tokyo.pem`; the box answered to it that evening. The `ec2-54-168-212-44.ap-northeast-1…` hostname and `ssh ubuntu@minas-guardian` in the SSH examples are stale and go in the same release. The break-glass path to the dashboard is the tunnel `ssh -i Minas-AI-Guardian-Key-Tokyo.pem -L 8390:127.0.0.1:8390 -L 9109:127.0.0.1:9109 ubuntu@57.181.51.14`, then `http://localhost:8390/admin/`. |
+| Decision 19's last-operator recovery ("host access, over the tailnet") | The same host access, by whichever path replaces SSH - SSH at the Elastic IP with the key pair, settled 2026-10-23 |
 
 **The order matters, because the box can be locked out.** Tailscale is
 the daily way onto the host. Remove it before its replacement is proven
@@ -1715,11 +1992,103 @@ address". Steps 3 to 8 are untouched, and nothing Tailscale-related was
 removed: Funnel, Serve and Tailscale SSH keep working beside the new
 address until their own steps.
 
+**Status 2026-10-23, evening, and the sequence as now run (same step
+numbers, so earlier references hold):** the box answered on port 22 at
+`57.181.51.14` to the EC2 key pair, `tailscaled` holds 443 on the
+Tailscale address (a probe binding `0.0.0.0:443` answered "Address
+already in use"), and the `sentinel` container has been stopped since
+2026-09-28 by the owner's decision (section 22's answer block). Those
+three facts set the sequence:
+
+- **Step 4 first, and its connection is answered**: SSH by the Elastic
+  IP with the key pair, from an address in the security group's SSH
+  rule. 22e's read-only command
+  (`sudo docker compose exec -T sentinel sentinel version`) needs the
+  container running, so the runbook proves the login with two that do
+  not: `sudo git describe --tags` and `sudo docker compose ps -a` in
+  `/opt/minas-guardian` (docs/deployment.md "The public address", step
+  1), and runs `sentinel version` once the restore order has brought the
+  container back. This is the step that keeps the box reachable after
+  step 7, and it is why the rest can run in one go.
+- **Step 5 next**: email members the new address, before Funnel goes; no
+  waiting period (22d). **Owner's.**
+- **Steps 6 and 7, one session on the box, BEFORE step 1's proxy
+  starts**: `sudo tailscale serve status`, then withdraw Funnel and the
+  Serve entries with the command block in docs/deployment.md "The public
+  address" step 4 (`funnel reset`, then `serve reset` - decision 20's
+  warning against `funnel reset` is withdrawn on purpose, Serve goes
+  too), each checked against `serve status` at the time (rule 6); then
+  disconnect, uninstall, and remove the machine from the admin console. They come first because `tailscaled` holds
+  443 and Caddy's publish needs it, and the move costs no running
+  service: nothing in the container has answered since 2026-09-28.
+- **Steps 1, 2 and 3 are one deploy**: DNS is **done by the owner
+  2026-10-23** (`guardian.minastrade.com` → `57.181.51.14`, no AAAA; the
+  security group admits 80 and 443); the release that carries Caddy AND
+  `/admin` (one release, not two: v1.13.0 carries the portal half and is
+  not deployed) is deployed per docs/deployment.md "The public address"
+  and "Restoring after the 2026-09-28 pause", `SENTINEL_PORTAL_URL` is
+  set, and the dashboard answers at
+  `https://guardian.minastrade.com/admin/` with 22c items 2, 3, 4 and 6
+  holding, item 5 answered no, and item 1 read on the restored
+  container. **Owner's to run.** The code for step 3 ships in that
+  release (22a, 22b).
+- **Step 8 is in the same release**: docs, SECURITY.md, `.env.example`,
+  `scripts/aws-user-data.sh`, the dashboard footer and the docstrings
+  stop describing Tailscale, because after step 7 none of it is true.
+  docs/DEPLOYMENTS.md records each step with its evidence.
+
+The order of 2026-10-22 above is kept as written; this is the same list
+run with the facts of the evening. "The order matters, because the box
+can be locked out" still holds: step 4's connection is answered before
+anything is removed.
+
+**Run on the box the same night (2026-10-23, UTC):** step 4 - the login
+with the key pair at `57.181.51.14` proven with `git describe --tags` and
+`docker compose ps -a` on the stopped stack; steps 6 and 7 - Funnel and
+Serve reset (`No serve config`), `tailscale down`, the package removed
+and purged, `/var/lib/tailscale` deleted, no `tailscaled` socket, no
+`tailscale0` device (the admin-console removal is the one click left);
+and the runbook's step 5 - `held/` moved to
+`/var/backups/minas-guardian/held-2026-09-28/`, nothing on 80 or 443, the
+`edge` subnet free, the checkout clean. The evidence, command by command,
+is in docs/DEPLOYMENTS.md. Steps 1 to 3 and 8 ship with the release this
+record describes; the box waits for it at the runbook's step 6.
+
+**Reviewed before it faces the internet (2026-10-24).** Four readers went
+through the change adversarially - the prefix code, the proxy and compose
+and their tests, every document against the code, and the exposure
+itself. Fixed in the same release, each with a test: a reflected script
+in the fleet page's sort link (the `?state=` filter written raw into an
+attribute; it now echoes only a bucket the page counts, escaped); the
+operator throttle's bare-username bucket (a lockout button for any
+stranger, which also blocked the SSH tunnel; now keyed on address and
+username); `Cache-Control: no-store`, `X-Content-Type-Options: nosniff`
+and `X-Robots-Tag: noindex, nofollow` on every dashboard response;
+`LAST LOGIN` stamped after the second factor, not at the password step;
+the build line and the empty-table hint kept off the public sign-in page;
+a junk base path refused at startup; the CSRF gate requiring a browser's
+POST to carry a `Referer` under the base path (a planted same-origin form
+can suppress its referrer, so "present and outside" was not enough) and
+saying why it refused, in the body and the log; a stale design-guard
+probe re-anchored. Recorded as open, in docs/threat-model.md: operator
+sessions have no epoch, so a stolen cookie outlives a password change or
+a 2FA reset for up to twelve hours and `disable` then `enable` revives
+it (break-glass: replace `operator_meta.session_secret`); a distributed
+guesser is held by the per-address throttle only; each password check is
+scrypt in the engine's process behind a cap of 32 proxy connections; and
+22c item 1 is a hard gate for the same reason it always was - a `NOT
+YET` operator on a public URL belongs to whoever presents the password
+first.
+
 ### What it blocks
 
 The apps (decision 21), which are built against this hostname - unblocked
 once steps 1 and 2 have been run on the box; #88's anti-phishing copy; and
 every document that describes how the system is reached.
+
+From 2026-10-23 it also blocks the dashboard's own reachability: once
+Serve goes, `/admin` through Caddy and the SSH tunnel
+(`http://localhost:8390/admin/`) are the only ways to it.
 
 **Related:** decision 19 (operator two-factor, host-access recovery),
 decision 20 (the exposure model this supersedes), decision 21 (the

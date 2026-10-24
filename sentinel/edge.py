@@ -36,10 +36,12 @@ from sentinel.config import env_setting
 logger = logging.getLogger("sentinel.edge")
 
 TRUSTED_PROXIES_SETTING = "SENTINEL_TRUSTED_PROXIES"
-# The dashboard's own, separate on purpose: no proxy fronts it until it moves
-# under /admin (22e step 3), so until then it believes nobody's header -
-# not even that of the proxy beside it on the compose network, which can
-# reach it but does not serve it. Set when /admin ships.
+# The dashboard's own, separate on purpose, so the two surfaces can sit
+# behind different hops without one setting speaking for the other. Under
+# docker compose both name the same address - Caddy forwards /admin and
+# /admin/* to the dashboard (22e step 3) and everything else to the portal -
+# and a test holds the two equal. Unset trusts no proxy: the bare `sentinel
+# run` and the demo server have none in front of them.
 DASHBOARD_TRUSTED_PROXIES_SETTING = "SENTINEL_DASHBOARD_TRUSTED_PROXIES"
 
 # One year. No includeSubDomains and no preload: this service answers for
@@ -72,8 +74,10 @@ def _address(text: str) -> Address | None:
     return parsed
 
 
-def parse_trusted_proxies(raw: str | None) -> frozenset[Address]:
-    """SENTINEL_TRUSTED_PROXIES: exact addresses, comma-separated.
+def parse_trusted_proxies(raw: str | None, setting: str = TRUSTED_PROXIES_SETTING) -> frozenset[Address]:
+    """SENTINEL_TRUSTED_PROXIES - or the dashboard's own, named by
+    `setting` so the log blames the right one: exact addresses,
+    comma-separated.
 
     None - unset, or blank, which `env_setting` reads as unset - trusts no
     proxy, and the client address is the TCP peer: the behaviour from before
@@ -93,7 +97,7 @@ def parse_trusted_proxies(raw: str | None) -> frozenset[Address]:
         address = _address(entry)
         if address is None:
             logger.error("%s: %r is not an IP address - ignored. Exact addresses only: "
-                         "no names, no ranges.", TRUSTED_PROXIES_SETTING, entry)
+                         "no names, no ranges.", setting, entry)
             continue
         trusted.add(address)
     return frozenset(trusted)
@@ -102,7 +106,7 @@ def parse_trusted_proxies(raw: str | None) -> frozenset[Address]:
 def trusted_proxies_from_env(surface: str, setting: str = TRUSTED_PROXIES_SETTING) -> frozenset[Address]:
     """`setting`, read once when `surface` starts, and said in the log -
     what this server believes is a startup fact an operator can check."""
-    trusted = parse_trusted_proxies(env_setting(setting))
+    trusted = parse_trusted_proxies(env_setting(setting), setting=setting)
     if trusted:
         logger.info("%s: X-Forwarded-For is believed from %s only", surface,
                     ", ".join(sorted(str(a) for a in trusted)))
@@ -225,6 +229,15 @@ class EdgeHandler:
     def _client_ip(self) -> str:
         peer = self.client_address[0] if self.client_address else None
         return client_address(peer, self.headers.get_all("X-Forwarded-For"), self.trusted_proxies)
+
+    def _peer_is_trusted_proxy(self) -> bool:
+        """Whether this connection arrived through a proxy the setting
+        names - the public name, via Caddy - rather than straight from the
+        client, as the SSH tunnel's do. For a page deciding what it may say
+        to the public that it would say to the owner on the tunnel."""
+        peer = self.client_address[0] if self.client_address else None
+        address = _address(peer) if peer else None
+        return address is not None and address in self.trusted_proxies
 
     def _request_host(self) -> str | None:
         return request_host(self.headers.get("Host"))

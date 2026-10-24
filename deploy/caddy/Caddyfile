@@ -2,18 +2,20 @@
 #
 # Caddy is the one public listener on this host (22c item 4). It holds ports
 # 80 and 443, gets and renews the certificate from Let's Encrypt by itself,
-# and forwards to the member portal - its pages and the apps' JSON API under
-# /api/v1 - and to nothing else. The ops dashboard (8390) and the metrics
-# endpoint (9109) are not proxied: the dashboard stays on Tailscale Serve until
-# it moves under /admin with every 22c precondition met (22e step 3), and the
-# metrics endpoint is never published. tests/test_bind_address.py holds this
-# file to that.
+# and forwards to the two servers of the sentinel process: /admin and
+# /admin/* to the ops dashboard (8390), which brings its own operator sign-in
+# with a mandatory second factor and a login throttle, and everything else to
+# the member portal (8391) - its pages and the apps' JSON API under /api/v1.
+# The metrics endpoint (9109) is never proxied and never published: it
+# answers on the host's 127.0.0.1 and is read through an SSH tunnel.
+# tests/test_bind_address.py holds this file to that.
 #
 # X-Forwarded-For: Caddy trusts no proxy in front of it (no trusted_proxies),
 # so it discards whatever a client sends in X-Forwarded-For and sets it to
-# the address it saw. The portal believes the header only from this
+# the address it saw. Both servers believe the header only from this
 # container's fixed address on the compose network - SENTINEL_TRUSTED_PROXIES
-# in docker-compose.yml (22c item 6).
+# for the portal and SENTINEL_DASHBOARD_TRUSTED_PROXIES for the dashboard, in
+# docker-compose.yml (22c item 6).
 #
 # docker-compose.yml mounts this DIRECTORY read-only at /etc/caddy - not the
 # file: the image's docs warn a single-file mount misses edits. Check a
@@ -30,7 +32,7 @@
 		# holding a few hundred requests open (headers sent, body never) kept
 		# every thread the portal may start busy - the portal, the app API
 		# and the healthcheck all went down until it let go (found in
-		# review, 2026-10-23).
+		# review, 2026-10-23). Per listener, so they cover both routes below.
 		timeouts {
 			read_header 10s
 			read_body 15s
@@ -39,15 +41,51 @@
 }
 
 guardian.minastrade.com {
-	reverse_proxy sentinel:8391 {
-		# Caddy reads the whole body before it calls the portal (whose forms
-		# and API take at most 8 KiB), so an unfinished body never reaches
-		# a portal thread.
-		request_buffers 16KiB
-		transport http {
-			# The proxy never holds more than 64 of the container's 256
-			# threads (pids_limit), whatever shape an attack takes.
-			max_conns_per_host 64
+	# /admin and everything under /admin/. Not `path /admin*`, which would
+	# also match /administrator, and not `path /admin/*` alone, which misses
+	# the bare /admin a person types. Caddy's path matcher is case-insensitive
+	# and matches the decoded, dot-cleaned path, so /Admin/... and the like
+	# reach the dashboard too, with the path as sent; the dashboard's own
+	# match is exact and it answers 404 to them, never a page. The same path
+	# is pinned in docker-compose.yml as SENTINEL_DASHBOARD_BASE_PATH; a test
+	# holds the two equal.
+	@admin path /admin /admin/*
+	# `handle`, never `handle_path`: the dashboard serves under /admin itself
+	# - its links, form actions, redirects and cookie carry the prefix, and it
+	# answers 404 to a path outside it (a bare / is a 303 to /admin/, which
+	# only the SSH tunnel can reach: Caddy never forwards / here) - so the
+	# path must arrive as the visitor sent it. handle_path would strip the
+	# prefix and every request would reach the dashboard outside its base
+	# path.
+	handle @admin {
+		reverse_proxy sentinel:8390 {
+			# request_buffers and the transport are sub-directives of each
+			# reverse_proxy, not of the site: this route has its own, so both
+			# limits are stated again here (and again below).
+			request_buffers 16KiB
+			transport http {
+				# Both routes feed one process with 256 threads (pids_limit).
+				# 32 here and 64 below: no route holds more than a quarter of
+				# them, and the two together stay under half.
+				max_conns_per_host 32
+			}
+		}
+	}
+	# No matcher: everything @admin did not take, the portal's pages and
+	# /api/v1. handle blocks are mutually exclusive and Caddy evaluates a
+	# matcher-less handle after the matched ones whatever the file order; it
+	# is written last so the file reads the way it runs.
+	handle {
+		reverse_proxy sentinel:8391 {
+			# Caddy reads the whole body before it calls the portal (whose forms
+			# and API take at most 8 KiB), so an unfinished body never reaches
+			# a portal thread.
+			request_buffers 16KiB
+			transport http {
+				# The portal's route never holds more than 64 of the container's
+				# 256 threads (pids_limit), whatever shape an attack takes.
+				max_conns_per_host 64
+			}
 		}
 	}
 }

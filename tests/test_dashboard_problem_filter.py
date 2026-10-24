@@ -92,3 +92,40 @@ def test_an_unrecognised_filter_selects_nothing_never_everything(db):
     for label in ("aa-trouble", "zz-watching", "mm-paused"):
         assert label not in page.split("No accounts match")[1].split("</table>")[0]
     assert "0 shown · 3 total" in page
+
+
+# --- the query string is never written back raw -----------------------------------
+
+STATE_PAYLOAD = "'><img src=x onerror=alert(1)>"
+SORT_PAYLOAD = "'><script>alert(1)</script>"
+
+
+def test_a_hostile_state_filter_is_not_reflected_into_the_page(db):
+    """Found in the review before the page faced the internet (2026-10-24):
+    the sort link kept the current filter by writing `state_filter` straight
+    into its href, so /admin/?state='><img src=x onerror=...> rendered the
+    payload as markup - a reflected script that ran with the operator's
+    session once they opened the link. The link now keeps the filter only
+    when it is a bucket the page counts, escaped even then; an unknown value
+    selects nothing and prints nothing."""
+    _fleet(db)
+    page = _render(db, qs={"state": [STATE_PAYLOAD]})
+    assert STATE_PAYLOAD not in page
+    assert "onerror=" not in page and "<img" not in page
+    assert "No accounts match this filter" in page, "the page still renders, with nothing selected"
+    assert "state=" not in page.split("sort by")[0].rsplit("href=", 1)[-1], (
+        "the sort link carries no state when the filter is not a known bucket")
+
+
+def test_a_known_filter_is_kept_by_the_sort_link_escaped(db):
+    _fleet(db)
+    page = _render(db, qs={"state": ["trouble"]})
+    assert "&state=trouble" in page, "the sort link keeps a real filter"
+
+
+def test_a_hostile_sort_value_is_not_reflected_into_the_page(db):
+    """`sort` is only ever compared, never echoed - pinned so it stays so."""
+    _fleet(db)
+    page = _render(db, qs={"sort": [SORT_PAYLOAD]})
+    assert SORT_PAYLOAD not in page and "<script>alert" not in page
+    assert "aa-trouble" in page, "an unknown sort falls back to the default order and still renders"

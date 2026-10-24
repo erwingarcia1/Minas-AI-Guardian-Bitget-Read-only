@@ -120,6 +120,9 @@ def is_active_operator(db: Database, username: str) -> bool:
 
 
 def check_operator_login(db: Database, username: str, password: str) -> bool:
+    """True when `password` is this active operator's. The password step
+    alone: it records nothing. `touch_last_login` is for the moment a
+    session is issued, after the second factor."""
     username = normalize_username(username)
     with db.cursor() as cur:
         cur.execute(
@@ -133,11 +136,19 @@ def check_operator_login(db: Database, username: str, password: str) -> bool:
         # reveals which usernames exist.
         verify_password(password, DUMMY_HASH)
         return False
-    if not verify_password(password, row["password_hash"]):
-        return False
+    return verify_password(password, row["password_hash"])
+
+
+def touch_last_login(db: Database, username: str) -> None:
+    """Stamps last_login_at: a completed sign-in, which is the session being
+    issued after the second factor verified - never the password step.
+    Stamped there (as it was until 2026-10-24), LAST LOGIN in `sentinel
+    operator list` could not tell a sign-in from a password guess that got
+    no further than the code prompt, and on the public name guesses are
+    the expected traffic."""
     with db.cursor() as cur:
-        cur.execute("UPDATE operators SET last_login_at = ? WHERE username = ?", (_now(), username))
-    return True
+        cur.execute("UPDATE operators SET last_login_at = ? WHERE username = ?",
+                    (_now(), normalize_username(username)))
 
 
 def operator_login_requires_code(db: Database, username: str) -> bool:
@@ -317,10 +328,11 @@ def reset_second_factor(db: Database, username: str, actor: str) -> bool:
 
     This is the one path that removes an operator's 2FA - `twofactor.disable`
     refuses for operators, and the dashboard exposes nothing for it - and it
-    is reachable only from a shell on the host, which the tailnet already
-    gates and which is the root of trust for everything else. It is recorded
-    with who did it, because the person who reaches for this is either the
-    locked-out operator themselves or somebody who should not have."""
+    is reachable only from a shell on the host (SSH on port 22 with the EC2
+    key pair, from an address the security group admits), which is the root
+    of trust for everything else. It is recorded with who did it, because
+    the person who reaches for this is either the locked-out operator
+    themselves or somebody who should not have."""
     from sentinel.twofactor import OPERATOR
 
     username = normalize_username(username)

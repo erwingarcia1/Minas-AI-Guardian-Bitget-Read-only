@@ -25,11 +25,11 @@ container")._
   yourself" could not say which site. The name comes from the setting and
   nowhere else (`tests/test_portal_address.py` holds that no module under
   `sentinel/` carries the domain as a literal), and it is shown as text to
-  type, never as a link. A sign-in page reached by any other name - the
-  old Funnel address, today - says "Our address has changed" and names the
+  type, never as a link. A sign-in page reached by any other name - an
+  old address, a raw IP - says "Our address has changed" and names the
   new one: 22d's notice for the old address, which goes up by itself the
   moment the setting is set. Unset, every page reads exactly as before, so
-  nothing shows until step 8 of docs/deployment.md "The public address".
+  nothing shows until step 9 of docs/deployment.md "The public address".
 
 ### Changed
 
@@ -41,6 +41,99 @@ container")._
   killed. The reset request mattered most: its throttled answer looks like
   any other, so a regression there would have stopped reset emails for
   everyone without a visible error.
+
+- **The ops dashboard answers at `https://guardian.minastrade.com/admin`,
+  behind its sign-in and second factor (decisions 22a and 22e).** New
+  setting `SENTINEL_DASHBOARD_BASE_PATH`: docker-compose.yml pins it to
+  `/admin`, and every link, form action and redirect the dashboard emits,
+  and the `Path` of its session cookie, go through it, so a browser that
+  arrives at `/admin` never leaves it. A browser's POST to the dashboard -
+  one carrying `Sec-Fetch-Site` or `Origin` - must also carry a `Referer`
+  whose path is under the base path, or it is refused with the reason in
+  the body and the log; that is what tells the dashboard's own forms from
+  one planted on a same-origin portal page. A request carrying neither
+  header is judged as before, so curl and the tests are unchanged. The Caddyfile
+  gains a second route: `/admin` and `/admin/*` go to the dashboard with
+  the path unchanged and a connection cap of their own, everything else
+  goes to the portal as before, and the metrics endpoint is still never
+  proxied. `SENTINEL_DASHBOARD_TRUSTED_PROXIES` is pinned to Caddy's
+  address beside `SENTINEL_TRUSTED_PROXIES`, so the operator sign-in
+  throttle keys on the visitor and not on Caddy: without it, one visitor's
+  wrong passwords would have locked every operator out. The container
+  healthcheck keeps probing the bare `/healthz`, which answers unprefixed;
+  `/admin/healthz` is an ordinary gated path. `tests/test_dashboard_prefix.py`
+  and `tests/test_bind_address.py` pin all of it. With the setting blank -
+  the default, the demo server and a bare `sentinel run` - nothing changes
+  at the root.
+
+- **docs/deployment.md "The public address" is now the whole move, in the
+  order the box allows.** It starts by proving SSH with the EC2 key pair by
+  the Elastic IP, with a read-only command, and then tears Tailscale down -
+  Funnel and Serve withdrawn, the package removed, the machine deleted from
+  the admin console - before Caddy is brought up: `tailscaled` held 443 on
+  the Tailscale address when the box was read on 2026-10-23, so Caddy
+  cannot take the port until Serve is gone, and the daily way onto a box
+  is not withdrawn before the other way is proven. The steps already there
+  - DNS, the security group, the certificate, `SENTINEL_PORTAL_URL` -
+  follow, each with the check that says it worked, and end at the first
+  sign-in at `/admin`. It also records the 2026-09-28 pause and the order
+  in which the stack is restored from it, which until now lived only in a
+  README on the box.
+
+### Removed
+
+- **Tailscale, from everything that described it.** Funnel for the portal,
+  Serve for the dashboard and the metrics, tailnet SSH, the admin-console
+  steps, the bootstrap MOTD's install step and the dashboard footer's
+  "Tailscale-gated" are gone from the comments, the product and every
+  document except the teardown step itself (docs/deployment.md "The
+  public address", step 4) and CONTRIBUTING rule 6's dated example
+  (decision 22e, step 8). Host access is SSH on port 22 with the
+  EC2 key pair, from the addresses in the security group's SSH rule; the
+  SSH tunnel (`ssh -i <key>.pem -L 8390:127.0.0.1:8390 ubuntu@57.181.51.14`,
+  then `http://localhost:8390/admin/`) is the break-glass path to the
+  dashboard; the metrics endpoint stays on `127.0.0.1`, unpublished and
+  unproxied. There is no overlap period for the old Funnel address: it
+  stops answering the moment Funnel is withdrawn, so the email that tells
+  members the new address goes out before that step. Decision records,
+  docs/DEPLOYMENTS.md and earlier release notes keep their history as
+  written.
+
+### Fixed
+
+- **What the review before the dashboard faced the internet found
+  (2026-10-24), each with a test.** The fleet page's sort link wrote the
+  `?state=` filter straight back into an attribute, a reflected script
+  for anyone who could get an operator to open a link: it now echoes only
+  a bucket the page counts, escaped. The operator sign-in throttle keyed a
+  hard lockout on the bare username, a lockout button for any stranger
+  who guessed a name, from any address, that blocked the SSH tunnel too:
+  the account bucket is now (address, username), the portal's shape. The
+  dashboard's responses carry `Cache-Control: no-store`,
+  `X-Content-Type-Options: nosniff` and `X-Robots-Tag: noindex, nofollow`,
+  so a shared machine's back button cannot replay a recovery-codes page
+  or a customer's details after sign-out and the sign-in page is never
+  indexed. `LAST LOGIN` in `sentinel operator list` is stamped when a
+  session is issued, after the second factor, not at the password step,
+  so it no longer reads a password guess as a sign-in. The sign-in pages
+  no longer print the build line, and the "no operator accounts exist -
+  run `sentinel operator add`" hint shows only to a visitor who did not
+  come through the proxy, which on the public name means the SSH tunnel.
+  A `SENTINEL_DASHBOARD_BASE_PATH` with whitespace, `?`, `#` or `//` is
+  refused at startup instead of being written into every link. A
+  refused dashboard POST says why (`cross-origin POST rejected: Referer
+  missing`, `... outside /admin`) and the reason is logged with the
+  visitor's address, so a browser that trims referrers is diagnosable.
+  A bad entry in `SENTINEL_DASHBOARD_TRUSTED_PROXIES` is logged under
+  that name, not the portal's. And one test, of alerts held in quiet
+  hours, failed for the one minute a day between 23:59:00 and 23:59:59
+  UTC - its window was 00:00 to 23:59 with the end exclusive, and CI
+  started at 23:59 on 2026-10-23 - so it now puts its window around the
+  clock. Left open, and written into
+  docs/threat-model.md: operator sessions have no epoch, so a stolen
+  cookie outlives a password change for up to twelve hours and
+  `disable` then `enable` revives it - the break-glass is to replace
+  `operator_meta.session_secret`.
 
 ## [1.13.0] — 2026-10-23
 

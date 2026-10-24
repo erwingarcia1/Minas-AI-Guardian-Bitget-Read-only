@@ -21,6 +21,7 @@ tests/test_buildinfo.py: imports sentinel - nothing under the mutated paths (ale
 tests/test_bybit_onboarding.py: imports onboarding - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_cli_entrypoint.py: imports sentinel - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_csrf_origin.py: imports api, dashboard, edge, operators, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_dashboard_prefix.py: imports dashboard, operators, portal, totp, twofactor - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_dashboard_problem_filter.py: imports dashboard - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_dev_server.py: imports api, portal, totp (and scripts/dev-server.py) - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_docker_ops_scripts.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)

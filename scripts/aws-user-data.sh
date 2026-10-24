@@ -54,21 +54,42 @@ cat > /etc/motd <<'MOTD'
    5. sudo chmod 600 .env
    6. sudo docker compose up -d --build
    7. sudo docker compose exec -it sentinel sentinel onboard --label <name>
-   8. Whitelist this instance's Elastic IP on the Bitget API key.
-   9. Tailscale (daily access path - docs/deployment.md "Remote access"):
-        curl -fsSL https://tailscale.com/install.sh | sh
-        sudo tailscale up --ssh --hostname minas-guardian
-        sudo tailscale serve --bg 8390          # dashboard: serve, never funnel
-        # the member portal (8391) is funnel-published - decision 20, docs/deployment.md
-      then in the admin console: disable key expiry for this machine.
+   8. Whitelist this instance's Elastic IP on every exchange API key
+      (Bitget, Bybit, OKX, Binance) - docs/deployment.md "The Elastic IP is
+      load-bearing". A key without it is refused on its first check.
+   9. The public address - docs/deployment.md "The public address" has each
+      check; do these in order, and go on only when the check passes:
+        a. DNS: an A record for guardian.minastrade.com -> this instance's
+           Elastic IP, no AAAA record.
+             dig +short guardian.minastrade.com A      # expect: the Elastic IP
+        b. Security group: TCP 80 and 443 from 0.0.0.0/0; SSH 22 from admin
+           IPs only.
+             nc -vz -w 5 <elastic-ip> 443
+               # expect: succeeded; a timeout means the group still drops it
+        c. "docker compose up -d" (step 6) started caddy, which fetches the
+           certificate itself:
+             sudo docker compose logs caddy | grep "certificate obtained"
+           Nothing after a few minutes: recheck a and b, then
+           "sudo docker compose restart caddy" tries again at once.
+        d. .env: SENTINEL_PORTAL_URL=https://guardian.minastrade.com, then
+             sudo docker compose up -d      # up -d, not restart: a container's
+                                            # environment is fixed at creation
+        e. sudo docker compose exec -it sentinel sentinel operator add <name>
+           (password, then two-factor enrolment), then sign in at
+           https://guardian.minastrade.com/admin
+
+ Daily host access is what you are using now: SSH on port 22 with the EC2
+ key pair, from an address in the security group's port-22 rule. Never
+ delete that rule - it is the only way onto the box.
 
  Updates from now on, one command (docs/deployment.md "Deploying code
  changes" - ships release tags only):
    sudo /opt/minas-guardian/scripts/deploy.sh
 
- Break-glass dashboard access (only needs the EC2 key pair):
+ Break-glass dashboard access, when https://guardian.minastrade.com/admin
+ is unreachable (only needs the EC2 key pair, from an allowlisted address):
    ssh -i your-key.pem -L 8390:127.0.0.1:8390 -L 9109:127.0.0.1:9109 \
-       ubuntu@<elastic-ip>          ->  http://localhost:8390
+       ubuntu@<elastic-ip>          ->  http://localhost:8390/admin/
 =====================================================================
 MOTD
 

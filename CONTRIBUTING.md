@@ -67,7 +67,8 @@ scripts/health-check.sh                # every gate, one table — "Is everythin
    because `tailscale serve status` was never run against the box, which
    would have shown the listener on 8443. The doc obeyed the first half of
    this rule and shipped a command that did nothing (corrected 2026-09-25,
-   decision 20).
+   decision 20; Tailscale itself has since left the project, decision 22e,
+   and the lesson stands).
 7. **One session per working tree.** Before starting any issue, confirm no
    other `claude` process (or person) is working in this directory — and
    NEVER start `claude --continue` while a background job holds this tree,
@@ -203,11 +204,9 @@ deploy is a fetch on the server — nothing is shipped from a laptop. After
 cutting and pushing a release (above), it is one command:
 
 ```bash
-# On the tailnet:
-ssh ubuntu@minas-guardian
-# Not on the tailnet — EC2 key pair (chmod 400 the .pem; your IP must be in
-# the security group's port-22 rule):
-ssh -i "Minas-AI-Guardian-Key-Tokyo.pem" ubuntu@ec2-54-168-212-44.ap-northeast-1.compute.amazonaws.com
+# EC2 key pair (chmod 400 the .pem; your IP must be in the security group's
+# port-22 rule - that rule is the only way onto the box):
+ssh -i "Minas-AI-Guardian-Key-Tokyo.pem" ubuntu@57.181.51.14
 
 sudo /opt/minas-guardian/scripts/deploy.sh            # latest release tag
 sudo /opt/minas-guardian/scripts/deploy.sh vX.Y.Z     # or a specific one

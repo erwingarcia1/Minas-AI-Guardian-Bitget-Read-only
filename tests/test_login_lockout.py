@@ -238,11 +238,13 @@ def test_activity_re_issues_the_cookie_with_the_same_hard_deadline(db):
 # Behind Caddy every connection comes from Caddy's address. Read off the
 # socket, that makes each login throttle one shared bucket: five wrong
 # passwords from anyone block every member's sign-in, the app's included,
-# for fifteen minutes. The address now comes from X-Forwarded-For, believed
-# only from a peer named in SENTINEL_TRUSTED_PROXIES, right-most entry that
-# is not itself a trusted proxy. The test client always connects from
-# 127.0.0.1, so below "the trusted proxy" is 127.0.0.1 named in the setting,
-# and X-Forwarded-For plays the visitor.
+# for fifteen minutes - and the operator sign-in at /admin the same. The
+# address now comes from X-Forwarded-For, believed only from a peer named in
+# SENTINEL_TRUSTED_PROXIES (the portal) or SENTINEL_DASHBOARD_TRUSTED_PROXIES
+# (the dashboard), right-most entry that is not itself a trusted proxy;
+# docker-compose.yml pins both to caddy's address. The test client always
+# connects from 127.0.0.1, so below "the trusted proxy" is 127.0.0.1 named
+# in the setting, and X-Forwarded-For plays the visitor.
 
 CADDY = parse_trusted_proxies("10.231.0.2")
 VISITOR_A = "203.0.113.7"
@@ -315,12 +317,20 @@ def test_the_setting_is_exact_addresses_and_absent_trusts_nobody(caplog):
         parsed = parse_trusted_proxies("caddy, 10.231.0.0/24, 10.231.0.2")
     assert parsed == CADDY
     assert "'caddy'" in caplog.text and "'10.231.0.0/24'" in caplog.text
+    # The log blames the setting that was being read: a bad entry in the
+    # dashboard's own setting must not send the operator to the portal's.
+    caplog.clear()
+    with caplog.at_level("ERROR", logger="sentinel.edge"):
+        parse_trusted_proxies("10.231.0.2/32", setting=DASHBOARD_TRUSTED_PROXIES_SETTING)
+    assert DASHBOARD_TRUSTED_PROXIES_SETTING in caplog.text
+    assert f"{TRUSTED_PROXIES_SETTING}:" not in caplog.text
 
 
 @pytest.fixture
 def behind_the_proxy(monkeypatch):
     """The servers read their settings once, when they start. The dashboard
-    has its own, set here as it will be once it is behind the proxy."""
+    has its own, which docker-compose.yml pins to the same address as the
+    portal's; here both name 127.0.0.1, the test client's peer."""
     monkeypatch.setenv(TRUSTED_PROXIES_SETTING, "127.0.0.1")
     monkeypatch.setenv(DASHBOARD_TRUSTED_PROXIES_SETTING, "127.0.0.1")
 
@@ -572,6 +582,32 @@ def test_the_dashboard_throttles_the_visitor_not_the_proxy(db, cipher, behind_th
         server.server_close()
 
 
+def test_a_strangers_guesses_at_a_username_do_not_lock_the_operator_out(db, cipher, behind_the_proxy):
+    """Found in the review before the dashboard faced the internet
+    (2026-10-24): the account bucket was keyed on the bare username, so
+    anyone who guessed an operator's name could lock them out for the window
+    from any address - and the one bucket blocked the SSH tunnel too. The
+    bucket is now (address, username), the portal's shape: the stranger locks
+    only himself out of that name, and the operator signs in from where they
+    are. The per-address bucket still caps a single source across names."""
+    _enrolled_operator(db, cipher, "erwin")
+    server = serve_dashboard(db, cipher, 0)
+    try:
+        port = server.server_address[1]
+        for _ in range(5):
+            status, _ = _dashboard_post(port, "/login", {"username": "erwin", "password": "x"}, VISITOR_A)
+            assert status == 401
+        status, _ = _dashboard_post(port, "/login", {"username": "erwin", "password": "x"}, VISITOR_A)
+        assert status == 429, "the guesser is throttled on (address, username)"
+        status, body = _dashboard_post(port, "/login", {"username": "erwin", "password": "correct-horse-battery"},
+                                       VISITOR_B)
+        assert status == 200 and 'action="/login/code"' in body, (
+            "the operator's own sign-in from another address must not be locked by a stranger's guesses")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
 def _enrolled_operator(db, cipher, name):
     """An operator with a confirmed second factor; returns its secret.
     Confirmed with the previous step's code, so the pinned step is still
@@ -623,11 +659,12 @@ def test_the_dashboards_second_factor_throttles_the_visitor_not_the_proxy(db, ci
         server.server_close()
 
 
-def test_the_portals_proxy_is_not_the_dashboards(db, cipher, monkeypatch):
-    """The proxy beside the dashboard on the compose network fronts the
-    portal only, until the dashboard moves under /admin (22e step 3). So the
-    portal's setting names it and the dashboard's own does not: from it, a
-    claimed address is ignored, as from any stranger."""
+def test_the_dashboard_does_not_inherit_the_portals_trusted_proxy(db, cipher, monkeypatch):
+    """Each server states what fronts it, and the two settings are
+    independent: a proxy the portal trusts is not thereby trusted by the
+    dashboard. With only the portal's setting naming the peer, the dashboard
+    ignores a claimed address as it would any stranger's. docker-compose.yml
+    names caddy in both settings; this holds the code apart from that."""
     monkeypatch.setenv(TRUSTED_PROXIES_SETTING, "127.0.0.1")
     monkeypatch.delenv(DASHBOARD_TRUSTED_PROXIES_SETTING, raising=False)
     server = serve_dashboard(db, cipher, 0)

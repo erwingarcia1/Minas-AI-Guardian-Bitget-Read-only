@@ -8,8 +8,8 @@ from pathlib import Path
 import pytest
 import yaml
 
-from sentinel.dashboard import serve_dashboard
-from sentinel.edge import TRUSTED_PROXIES_SETTING, parse_trusted_proxies
+from sentinel.dashboard import BASE_PATH_SETTING, serve_dashboard
+from sentinel.edge import DASHBOARD_TRUSTED_PROXIES_SETTING, TRUSTED_PROXIES_SETTING, parse_trusted_proxies
 from sentinel.metrics import Metrics
 from sentinel.portal import serve_portal
 
@@ -26,10 +26,10 @@ def stop():
 
 
 def test_dashboard_binds_loopback_by_default(db, cipher, stop):
-    """G-36: the ops dashboard has no login of its own. On any default but
-    loopback, following the quickstart publishes an unauthenticated
-    'add customer' form - and every customer's contact details - on every
-    interface of the machine it runs on."""
+    """G-36: a sign-in page need not face every interface. On any default
+    but loopback, following the quickstart would put the operator sign-in
+    (and, behind it, the 'add customer' form and every customer's contact
+    details) on every interface of the machine it runs on."""
     server = serve_dashboard(db, cipher, 0)
     stop(server)
     assert server.server_address[0] == "127.0.0.1"
@@ -170,12 +170,16 @@ def test_composes_wide_bind_declares_its_gate_and_the_publish_is_real():
         "list does not contain one")
 
 
-# --- the public edge: one proxy, and only the portal behind it (decision 22) ---
+# --- the public edge: one proxy; the portal at / and the dashboard at /admin behind it (decision 22) ---
 #
 # Caddy is the first public listener this host has had (22b, 2026-10-23).
-# What makes that safe is a handful of facts spread over two files -
-# docker-compose.yml and deploy/caddy/Caddyfile - and each is held here,
-# because a proxy config is read by nothing in the suite at runtime.
+# Behind it are the two servers of one process: the member portal for every
+# path, except /admin and /admin/*, which reach the ops dashboard with the
+# path unchanged. The metrics endpoint is behind nothing: never proxied,
+# never published. What makes that safe is a handful of facts spread over
+# two files - docker-compose.yml and deploy/caddy/Caddyfile - and each is
+# held here, because a proxy config is read by nothing in the suite at
+# runtime.
 
 ROOT = Path(__file__).resolve().parent.parent
 CADDYFILE = ROOT / "deploy/caddy/Caddyfile"
@@ -208,53 +212,89 @@ def test_only_the_proxy_listens_publicly():
     assert "protocols h1 h2" in _caddy_lines(), "HTTP/3 needs UDP 443, which nothing publishes"
 
 
-def test_the_proxy_forwards_to_the_portal_and_nothing_else():
-    """Caddy reaches the member portal - pages and /api/v1 - and never the
-    ops dashboard (it stays on Tailscale Serve until 22e step 3) or the
-    metrics endpoint (never published). The bind gate's declaration says
-    so, and this is what makes the declaration true."""
+def test_the_proxy_forwards_admin_to_the_dashboard_the_rest_to_the_portal_and_never_the_metrics():
+    """Caddy reaches exactly two upstreams: /admin and /admin/* go to the
+    ops dashboard (which brings its own sign-in and second factor), and
+    everything else to the member portal - pages and /api/v1. It never
+    reaches the metrics endpoint. The path arrives at the dashboard as the
+    visitor sent it (`handle`, never `handle_path`): the dashboard serves
+    under SENTINEL_DASHBOARD_BASE_PATH and answers 404 outside it, so the
+    matcher's path and the compose setting must be one value. The bind
+    gate's declaration says all of this, and this is what makes the
+    declaration true."""
     lines = _caddy_lines()
     env = _compose()["services"]["sentinel"]["environment"]
+    dashboard = f"sentinel:{env['SENTINEL_DASHBOARD_PORT']}"
     portal = f"sentinel:{env['SENTINEL_PORTAL_PORT']}"
     upstreams = [[word for word in line.split()[1:] if word != "{"]
                  for line in lines if line.split()[0] == "reverse_proxy"]
-    assert upstreams == [[portal]], f"the proxy's upstreams are {upstreams}, not the portal alone"
+    assert upstreams == [[dashboard], [portal]], (
+        f"the proxy's upstreams are {upstreams}, not the dashboard's route and then the portal's fallback")
     assert "guardian.minastrade.com {" in lines
+    base = env[BASE_PATH_SETTING]
+    # Caddy does not normalise the matcher's words the way the dashboard
+    # normalises its setting, so compose must carry the one form both read.
+    assert base.startswith("/") and not base.endswith("/"), f"base path {base!r} is not /name"
+    [matcher] = [line.split() for line in lines if line.split()[0] == "@admin"]
+    assert matcher == ["@admin", "path", base, f"{base}/*"], (
+        f"the dashboard serves under {base} but caddy's matcher is {' '.join(matcher)}")
+    assert "handle @admin {" in lines
+    assert "handle {" in lines, "everything outside /admin needs the matcher-less fallback to the portal"
+    assert not any(line.startswith("handle_path") for line in lines), (
+        "handle_path strips the prefix; the dashboard expects the path as the visitor sent it")
     text = "\n".join(lines)
-    for never in (env["SENTINEL_DASHBOARD_PORT"], env["SENTINEL_METRICS_PORT"], "/admin"):
-        assert never not in text, f"the Caddyfile mentions {never}"
+    assert env["SENTINEL_METRICS_PORT"] not in text, "the Caddyfile mentions the metrics port"
     gate = env["SENTINEL_BIND_GATE"]
-    assert "caddy" in gate and env["SENTINEL_PORTAL_PORT"] in gate, (
-        "the bind gate no longer describes the public proxy it sits beside")
+    for named in ("caddy", env["SENTINEL_DASHBOARD_PORT"], env["SENTINEL_PORTAL_PORT"],
+                  env["SENTINEL_METRICS_PORT"], base):
+        assert named in gate, f"the bind gate no longer describes the public proxy it sits beside: {named!r} missing"
 
 
-def test_the_proxy_makes_a_client_finish_what_it_starts():
+def test_the_proxy_makes_a_client_finish_what_it_starts_on_every_route():
     """One client holding a few hundred requests open - headers sent, body
     never - kept every thread the portal may start (pids_limit 256) busy:
     the portal, the app API and the healthcheck all went down (found in
     review, 2026-10-23). Caddy bounds how long a request may take to
-    arrive, reads a whole body before it calls the portal, and never holds
-    more than a quarter of the portal's threads."""
+    arrive (per listener, so once), reads a whole body before it calls
+    either server, and holds a bounded share of the one process's threads:
+    no route more than a quarter, both routes together no more than half.
+    The body and connection limits are sub-directives of each reverse_proxy,
+    so every route must state its own - a route without them has none,
+    which is why the values are collected rather than looked up by name."""
     words = [line.split() for line in _caddy_lines()]
-    settings = {w[0]: w[1:] for w in words if w}
-    assert settings.get("read_header") == ["10s"] and settings.get("read_body") == ["15s"]
-    assert settings.get("request_buffers") == ["16KiB"]
-    limit = int(settings["max_conns_per_host"][0])
+    timeouts = {w[0]: w[1:] for w in words if w[0] in ("read_header", "read_body")}
+    assert timeouts == {"read_header": ["10s"], "read_body": ["15s"]}
+    routes = sum(1 for w in words if w[0] == "reverse_proxy")
+    buffers = [w[1:] for w in words if w[0] == "request_buffers"]
+    limits = [int(w[1]) for w in words if w[0] == "max_conns_per_host"]
+    assert routes and len(buffers) == routes and len(limits) == routes, (
+        f"{routes} reverse_proxy routes, {len(buffers)} request_buffers, {len(limits)} max_conns_per_host "
+        "- every route states both")
+    assert all(buffer == ["16KiB"] for buffer in buffers), buffers
     threads = _compose()["services"]["sentinel"]["pids_limit"]
-    assert 0 < limit <= threads // 4, f"the proxy may hold {limit} of the portal's {threads} threads"
+    assert all(0 < limit <= threads // 4 for limit in limits), (
+        f"a route may hold {limits} of the process's {threads} threads")
+    assert sum(limits) <= threads // 2, f"the routes together may hold {sum(limits)} of the process's {threads} threads"
 
 
-def test_the_portal_trusts_exactly_the_proxys_fixed_address():
+def test_both_servers_trust_exactly_the_proxys_fixed_address():
     """22c item 6, the pairing: X-Forwarded-For is believed from caddy's
-    address and no other, so caddy's address is fixed, on a network both
-    services share, in a subnet compose controls, and outside the range
-    Docker hands out - no other container can ever be given it."""
+    address and no other - by the portal through SENTINEL_TRUSTED_PROXIES
+    and by the dashboard through its own SENTINEL_DASHBOARD_TRUSTED_PROXIES
+    (separate settings, so neither server inherits the other's trust; the
+    dashboard's login throttle must key on the visitor, not on caddy) - so
+    caddy's address is fixed, on a network both services share, in a subnet
+    compose controls, and outside the range Docker hands out - no other
+    container can ever be given it."""
     compose = _compose()
     services = compose["services"]
-    trusted = parse_trusted_proxies(services["sentinel"]["environment"][TRUSTED_PROXIES_SETTING])
+    env = services["sentinel"]["environment"]
     assert list(services["caddy"]["networks"]) == ["edge"]
     fixed = ipaddress.ip_address(services["caddy"]["networks"]["edge"]["ipv4_address"])
-    assert trusted == {fixed}
+    assert parse_trusted_proxies(env[TRUSTED_PROXIES_SETTING]) == {fixed}
+    assert parse_trusted_proxies(env[DASHBOARD_TRUSTED_PROXIES_SETTING]) == {fixed}
+    assert env[TRUSTED_PROXIES_SETTING] == env[DASHBOARD_TRUSTED_PROXIES_SETTING], (
+        "the two settings and caddy's fixed address change together")
     assert "edge" in services["sentinel"]["networks"]
     edge = compose["networks"]["edge"]
     assert edge.get("enable_ipv6") is False, "a connection over IPv6 would come from an address nobody trusts"
@@ -265,7 +305,7 @@ def test_the_portal_trusts_exactly_the_proxys_fixed_address():
     assert fixed in subnet and dynamic.subnet_of(subnet)
     assert fixed not in dynamic and fixed != gateway
     # Clear of Docker's default pools and the default VPC (172.16.0.0/12
-    # covers 172.17-172.31), Docker's second pool, and Tailscale's range.
+    # covers 172.17-172.31), Docker's second pool, and the CGNAT range.
     for taken in ("172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10"):
         assert not subnet.overlaps(ipaddress.ip_network(taken)), f"{subnet} overlaps {taken}"
 

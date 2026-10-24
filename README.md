@@ -8,9 +8,8 @@ across **Bitget, Bybit, OKX Global, and Binance Global**.
 > package/CLI codename throughout the code.
 
 [![CI](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/actions/workflows/ci.yml/badge.svg)](https://github.com/erwingarcia1/Minas-AI-Guardian-Bitget-Read-only/actions/workflows/ci.yml)
-&nbsp;·&nbsp; last tag **1.0.0** (2026-07-05) ·&nbsp; `main` also carries the
-untagged **member portal** and **member SMS** work ·&nbsp; see
-[CHANGELOG](CHANGELOG.md)
+&nbsp;·&nbsp; releases and what each one changed: [CHANGELOG](CHANGELOG.md)
+(the record; this line is not)
 
 ## The one non-negotiable
 
@@ -37,21 +36,23 @@ so credentials needn't land in shell history.
 
 | Server | Default port | Default bind | Env vars | Exposure |
 |---|---|---|---|---|
-| Ops dashboard | 8390 | `127.0.0.1` | `SENTINEL_DASHBOARD_PORT`, `SENTINEL_DASHBOARD_HOST` | **No login** — network-gated only (Tailscale) |
+| Ops dashboard | 8390 | `127.0.0.1` | `SENTINEL_DASHBOARD_PORT`, `SENTINEL_DASHBOARD_HOST`, `SENTINEL_DASHBOARD_BASE_PATH` | Operator sign-in with mandatory two-factor; in production behind Caddy at `https://guardian.minastrade.com/admin` (the base path, blank by default) |
 | Member portal | 8391 | `127.0.0.1` | `SENTINEL_PORTAL_PORT`, `SENTINEL_PORTAL_HOST` | Member login; front with TLS |
 | Prometheus metrics | 9109 | `127.0.0.1` | `SENTINEL_METRICS_PORT`, `SENTINEL_METRICS_HOST` | Internal |
 
 **All three are reachable only from the machine running them.**
-That is deliberate: the dashboard has no login of its own, so a wider default
-would put an unauthenticated *Add customer* form — and every customer's contact
-details — on every interface of whatever box you ran the quickstart on. The
-metrics view is on the same footing: unauthenticated, and it leaks operational
-shape (account counts, which rules are firing, which exchanges are
-misbehaving). To reach any of them from elsewhere, tunnel rather than widen:
-Tailscale Serve (what production does — see
-[docs/deployment.md](docs/deployment.md)), `ssh -L 8390:127.0.0.1:8390
-your-host`, or an authenticating reverse proxy. The `*_HOST` vars above do widen the bind if a deployment genuinely
-needs it; the dashboard logs a startup warning whenever it isn't on loopback.
+That is deliberate: the dashboard's sign-in page need not face every
+interface of whatever box you ran the quickstart on, and the metrics view
+has no login at all and leaks operational shape (account counts, which
+rules are firing, which exchanges are misbehaving). To reach any of them
+from elsewhere, proxy or tunnel rather than widen: in production Caddy
+terminates TLS at `https://guardian.minastrade.com` and forwards `/admin`
+to the dashboard and everything else to the portal (see
+[docs/deployment.md](docs/deployment.md)); the break-glass path to the
+dashboard is `ssh -i your-key.pem -L 8390:127.0.0.1:8390
+ubuntu@<elastic-ip>`, then `http://localhost:8390/admin/`. The `*_HOST`
+vars above do widen the bind if a deployment genuinely needs it; the
+dashboard logs a startup warning whenever it isn't on loopback.
 
 Under Docker all three bind `0.0.0.0` *inside the container* on purpose,
 because Docker publishes a port by proxying to the container's interface and
@@ -109,7 +110,9 @@ deploy to tune. Every detector ships with trigger + non-trigger tests.
 
 ## Dashboard
 
-Served over **Tailscale** (HTTPS, tailnet-only — no public ports, no tunnel):
+Served at **https://guardian.minastrade.com/admin** behind Caddy, with
+operator sign-in and mandatory two-factor (break-glass: an SSH tunnel to
+`127.0.0.1:8390`, then `http://localhost:8390/admin/`):
 fleet KPIs, per-account status, recent alerts, an **Add customer** form, a
 per-account **drill-down** (customer profile + security-posture panel + event
 history), and a styled **Metrics** page. See
@@ -130,13 +133,15 @@ whose `alert_email` matches (case-insensitive). Properties:
   once. Passwords are scrypt-hashed; sessions are HMAC-signed `HttpOnly` cookies
   (12 h). Login is throttled per-email and per-IP, with constant-time email
   lookup so timing can't reveal who's registered.
-- **Read-only, and on its own port** — it shares nothing with the network-gated
-  ops view. Front it with TLS (Tailscale Serve or a reverse proxy) before
-  exposing it; the container publishes it on `127.0.0.1:8391` only. In
-  production that front is the compose file's `caddy` service, at
-  `https://guardian.minastrade.com` (decision 22b); behind it the client
+- **Read-only, and on its own port** — it shares nothing with the ops view:
+  a separate server, separate sessions, separate routes. Front it with TLS
+  (a reverse proxy) before exposing it; the container publishes it on
+  `127.0.0.1:8391` only. In production that front is the compose file's
+  `caddy` service, at `https://guardian.minastrade.com` (decision 22b),
+  which also serves the ops dashboard under `/admin`; behind it the client
   address comes from `X-Forwarded-For`, believed only from the proxies named
-  in `SENTINEL_TRUSTED_PROXIES`.
+  in `SENTINEL_TRUSTED_PROXIES` (`SENTINEL_DASHBOARD_TRUSTED_PROXIES` for
+  the dashboard).
 
 ## Alerting
 
