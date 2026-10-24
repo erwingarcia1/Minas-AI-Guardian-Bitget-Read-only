@@ -9,9 +9,10 @@ product should do, and each was skipped rather than guessed at.
 
 **Open today (2026-10-24):** 6 (needs the lawyer; #47), 7's vendor (#63),
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
-and 21b/21e/21h/21i. Everything else below is answered and built, and
-deployed where there is a server to deploy to - the app waits on the store
-accounts (section 21, "Not built yet"); the sections stay as the record.
+21b/21e/21h/21i, and 23 (the QR encoder, decided by merging or not merging
+its PR). Everything else below is answered and built, and deployed where
+there is a server to deploy to - the app waits on the store accounts
+(section 21, "Not built yet"); the sections stay as the record.
 
 ---
 
@@ -41,6 +42,7 @@ accounts (section 21, "Not built yet"); the sections stay as the record.
 | 20 | The member portal is published to the internet on Tailscale Funnel | ~~#88~~ (closed 2026-10-24; evidence in its closing comment) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in full 2026-10-23 by 22: no Tailscale, removed in one go* |
 | 21 | Native iOS and Android apps, and the JSON API they need | the apps | **PARTLY ANSWERED 2026-10-22** — customers only, React Native, in this repo, company branding, sign-in and v1 API scope as recommended; push and the web portal open; see section 21 |
 | 22 | One public address, guardian.minastrade.com; no Tailscale | ~~#88~~ (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22. **Built and deployed 2026-10-24 (v1.14.0)**; the email to members went the same day (22d); left: the Tailscale admin-console removal, the owner's |
+| 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **OPEN 2026-10-24** — merging the PR accepts it; a device scan of the three renderings still owed; see section 23 |
 
 ---
 
@@ -2177,6 +2179,63 @@ Serve goes, `/admin` through Caddy and the SSH tunnel
 decision 20 (the exposure model this supersedes), decision 21 (the
 apps), #82 (ops screens must not impersonate customer pages), #88 (the
 address).
+
+---
+
+## 23. A QR-code encoder in the two-factor enrolment path — **OPEN 2026-10-24: merging the QR PR accepts `segno`**
+
+Enrolment showed the TOTP secret as text only: the 32-character secret
+and the `otpauth://` URI, to be typed into the authenticator app. On
+2026-10-24 the owner failed to enrol an operator account from a phone
+that way and asked for a QR code; authenticator apps scan the otpauth
+URI. The repository's precedent keeps third-party code out of the
+authentication path: `sentinel/totp.py` writes HOTP/TOTP itself rather
+than take `pyotp`, and decision 5 refused a PDF library as a
+supply-chain surface on a security product. A QR encoder on the
+enrolment page is that question again, so the dependency is recorded
+here as a decision and not only as a line in `pyproject.toml`.
+
+**Options:**
+
+(a) **`segno`, as built.** Pure Python, no dependencies of its own on
+Python >=3.10, BSD-3, about seven modules, read in full for this change.
+Called only through in-memory buffers (`svg_inline` and `terminal`); it
+sees the otpauth URI - the same secret the page already shows - and
+nothing else. Pinned `>=1.6,<2`; covered by the existing `pip-audit`
+gate and the next image build. The package also ships a `segno` CLI and
+a `show()` that writes a temp file and opens a browser; neither is
+called.
+
+(b) **An in-tree encoder.** Byte mode, versions to about 20, error
+level M, Reed-Solomon and the masking rules: roughly 300 lines, tested
+against known vectors. No dependency - and more code in the
+authentication path to maintain.
+
+(c) **Text only, as before.** The route the owner failed with.
+
+**Recommendation: (a), as built.** The trade is the one the product
+already makes for `cryptography` and `requests`, and the surface is
+small: one module's worth of calls, no socket, no file, and the secret
+it handles already on the page. The answer is the owner's, and it is
+given by the PR rather than by a line here: merging the PR accepts (a);
+asking for (b) replaces one module (`sentinel/qr.py`) and nothing else;
+(c) is the status quo.
+
+**Before merging, one thing only the owner can do:** scan the three
+renderings once with the authenticator app(s) members use - the dark
+portal page, the light dashboard page and the terminal block - and say
+which app. Whether they scan was not checked with a device when this
+was written; the tests pin the markup to segno's, not a phone's reading
+of it.
+
+### What it blocks
+
+Nothing is built behind it: the PR is the whole change, and what waits
+is the merge.
+
+**Related:** decision 5 (a PDF library refused on the same ground),
+decision 19 (operator two-factor, mandatory), docs/threat-model.md A5
+(where `segno` sits in the supply-chain surface).
 
 ---
 

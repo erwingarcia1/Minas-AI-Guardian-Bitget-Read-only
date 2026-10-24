@@ -105,7 +105,10 @@ footer is better provenance than a composed document.
 
 ## The rules
 
-1. **No hex outside `:root`** (rgba alpha variants of tokens excepted).
+1. **No hex outside `:root`** (rgba alpha variants of tokens excepted, and
+   the enrolment QR code - inline SVG from `sentinel/qr.py` - which carries
+   its own black on white so it scans on the dark ground: the one picture
+   whose colours are not tokens).
 2. **Every emitted class is styled** — enforced by
    `tests/test_surface_styles.py`, along with: no shared stylesheet between
    portal and dashboard (either direction), the brand stays in `brand.py`,

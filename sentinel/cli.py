@@ -906,6 +906,7 @@ def _enrol_operator_now(db, username: str, *, enrol_later: bool) -> int:
 
     secret, uri = begin_enrolment(db, cipher, OPERATOR, username)
     print("\nAdd this to the authenticator app, then enter a code to switch two-factor on:")
+    _print_enrolment_qr(uri)
     print(f"  secret: {secret}")
     print(f"  {uri}")
     for _attempt in range(3):
@@ -923,6 +924,40 @@ def _enrol_operator_now(db, username: str, *, enrol_later: bool) -> int:
         print("that code was not accepted - nothing has changed; try again", file=sys.stderr)
     print("enrolment not confirmed; it will be required at first sign-in", file=sys.stderr)
     return 0
+
+
+def _print_enrolment_qr(uri: str) -> None:
+    """The URI as a QR code for the phone to scan, above the secret - when
+    this stdout can carry one. The block characters are not ASCII, so a
+    stdout whose encoding cannot carry them gets nothing here, and the
+    secret and URI that follow are the route, exactly as before. The real
+    cases are PYTHONIOENCODING=ascii, a legacy 8-bit locale and a replaced
+    stream (an unknown encoding is read as ASCII) - not a C-locale shell,
+    which Python 3.7+ switches to UTF-8. A URI segno cannot encode is
+    treated the same way.
+
+    Polarity: segno's compact rendering draws the LIGHT modules with the
+    terminal's foreground colour and the dark ones as its background, so on
+    a light-themed terminal the symbol would print inverted. At a terminal
+    (a tty, and a TERM that is not "dumb") every line is therefore printed
+    bright white on black and reset at its end, whatever the theme. A stdout
+    that is not a terminal - a pipe, a file, a test's capture - gets the
+    plain block, escape-free; `sentinel.qr.terminal` itself never emits an
+    escape."""
+    from sentinel import qr
+
+    try:
+        block = qr.terminal(uri)
+        block.encode(getattr(sys.stdout, "encoding", None) or "ascii")
+    except (ValueError, LookupError):  # UnicodeEncodeError and DataOverflowError are ValueErrors
+        return
+    print()
+    if sys.stdout.isatty() and os.environ.get("TERM", "dumb") != "dumb":
+        for line in block.split("\n"):
+            print(f"\033[97;40m{line}\033[0m")
+    else:
+        print(block)
+    print("Scan the code with the app, or type the secret below into it.")
 
 
 def cmd_erase(args: argparse.Namespace) -> int:

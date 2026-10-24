@@ -10,11 +10,16 @@ break-glass that is recorded with who ran it.
 """
 from __future__ import annotations
 
+import html
 import http.client
+import io
+import re
+import sys
 import urllib.parse
 
 import pytest
 
+from sentinel import qr
 from sentinel.operators import (
     create_operator,
     make_pending_token,
@@ -220,6 +225,24 @@ def test_an_unenrolled_operator_must_enrol_before_any_session(server, db, cipher
     assert not is_enabled(db, OPERATOR, "newbie"), "not in force until a code verifies"
 
 
+def test_the_enrolment_page_draws_the_uri_as_a_qr_code_above_the_secret(server, db, cipher):
+    """The owner asked for this after failing to enrol by typing the secret
+    (2026-10-24): the page carries the otpauth URI it already shows as a QR
+    code too - exactly segno's for that URI - above the secret, and the
+    secret and the URI stay on the page as text, the fallback."""
+    create_operator(db, "newbie", PASSWORD)
+    _, _, body = _post(server, "/login", {"username": "newbie", "password": PASSWORD})
+    secret = re.search(r'id="totp-secret">([^<]+)<', body).group(1)
+    uri = html.unescape(re.search(r'<p class="mono">(otpauth://[^<]+)</p>', body).group(1))
+    assert f"secret={secret}" in uri, "the URI shown is the secret shown"
+    label = html.unescape(re.search(r'<svg role="img" aria-label="([^"]*)"', body).group(1))
+    assert secret not in label and "otpauth" not in label
+    assert qr.svg(uri, label=label) in body
+    assert body.index(qr.svg(uri, label=label)) < body.index('id="totp-secret"'), "the QR code sits above the secret"
+    assert ("Scan this QR code with your authenticator app (or type the secret under it into the app), "
+            "then enter a code to switch it on.") in body
+
+
 def test_confirming_enrolment_shows_recovery_codes_and_signs_in(server, db, cipher):
     from sentinel.twofactor import pending_secret
 
@@ -246,9 +269,11 @@ def test_a_wrong_enrolment_code_changes_nothing_and_shows_the_same_secret(server
     _, _, body = _post(server, "/login", {"username": "newbie", "password": PASSWORD})
     pending = _pending_from(body)
     before = pending_secret(db, cipher, OPERATOR, "newbie")
+    picture = body[body.index('<svg role="img"'):body.index("</svg>") + len("</svg>")]
     status, set_cookie, page = _post(server, "/login/enrol", {"pending": pending, "code": "000000"})
     assert status == 401 and _session_cookie(set_cookie) is None
     assert before in page, "the same secret is shown again - nothing has changed"
+    assert picture in page, "and the same QR code: the picture is the secret, so it cannot have changed either"
     assert not is_enabled(db, OPERATOR, "newbie")
     assert pending_secret(db, cipher, OPERATOR, "newbie") == before
 
@@ -334,6 +359,7 @@ def test_operator_add_without_a_tty_defers_enrolment_to_first_sign_in(db, capsys
     assert _cli_operator(db, operator_command="add", username="newbie", password="a-long-enough-password") == 0
     out = capsys.readouterr().out
     assert "first sign-in" in out
+    assert "secret:" not in out and "Scan" not in out and "█" not in out, "nothing to scan or type without a tty"
     from sentinel.db import Database
 
     fresh = Database(db._path)
@@ -341,6 +367,116 @@ def test_operator_add_without_a_tty_defers_enrolment_to_first_sign_in(db, capsys
         assert not is_enabled(fresh, OPERATOR, "newbie")
     finally:
         fresh.close()
+
+
+class _FakeTTY:
+    """What `_enrol_operator_now` asks of stdin: whether it is a terminal.
+    No fileno, so nothing reads it - `input()` is monkeypatched below."""
+
+    def isatty(self):
+        return True
+
+
+def _enrol_at_the_keyboard(db, monkeypatch):
+    """`operator add newbie` as if at a terminal: a master key in the
+    environment, a stdin that says it is a tty, and an `input()` that
+    answers the code prompt with the right code for the secret the command
+    has just created. Returns (exit code, that secret)."""
+    from cryptography.fernet import Fernet
+
+    from sentinel.crypto import CredentialCipher
+    from sentinel.db import Database
+    from sentinel.twofactor import pending_secret
+
+    key = Fernet.generate_key().decode()
+    monkeypatch.setenv("SENTINEL_MASTER_KEY", key)
+    monkeypatch.setattr(sys, "stdin", _FakeTTY())
+    seen = []
+
+    def answer(_prompt=""):
+        reader = Database(db._path)
+        try:
+            secret = pending_secret(reader, CredentialCipher(key), OPERATOR, "newbie")
+        finally:
+            reader.close()
+        seen.append(secret)
+        return _code(secret)
+
+    monkeypatch.setattr("builtins.input", answer)
+    db.close()
+    rc = _cli_operator(db, operator_command="add", username="newbie", password="a-long-enough-password",
+                       enrol_later=False)
+    assert seen, "the code prompt was never reached"
+    return rc, seen[0]
+
+
+def test_operator_add_at_a_terminal_draws_the_qr_code_before_the_secret(db, capsys, monkeypatch):
+    """The terminal walk-through draws the URI as a QR code for the phone to
+    scan, above the secret; the secret and the URI are still printed. The
+    captured stdout is not a tty, so the block is the plain one - the
+    escapes are the tty test's, below."""
+    from sentinel.totp import provisioning_uri
+
+    rc, secret = _enrol_at_the_keyboard(db, monkeypatch)
+    out = capsys.readouterr().out
+    assert rc == 0 and "two-factor is ON" in out
+    uri = provisioning_uri(secret, "newbie")
+    block = qr.terminal(uri)
+    assert block in out
+    assert out.index(block) < out.index(f"secret: {secret}"), "the QR code comes before the secret"
+    assert "Scan the code with the app, or type the secret below into it." in out
+    assert uri in out, "the URI is still printed as text"
+
+
+def test_operator_add_on_a_stdout_that_cannot_carry_blocks_prints_the_text_as_before(db, monkeypatch):
+    """A stdout whose encoding cannot carry U+2588 and friends -
+    PYTHONIOENCODING=ascii, a legacy 8-bit locale, a replaced stream (not a
+    C-locale shell: Python 3.7+ switches that to UTF-8). The QR code is
+    skipped - no half-drawn symbol, no UnicodeEncodeError - and the secret
+    and the URI are printed exactly as before."""
+    from sentinel.totp import provisioning_uri
+
+    ascii_stdout = io.TextIOWrapper(io.BytesIO(), encoding="ascii", errors="strict")
+    monkeypatch.setattr(sys, "stdout", ascii_stdout)
+    rc, secret = _enrol_at_the_keyboard(db, monkeypatch)
+    ascii_stdout.flush()
+    out = ascii_stdout.buffer.getvalue().decode("ascii")
+    assert rc == 0 and "two-factor is ON" in out
+    assert f"secret: {secret}" in out and provisioning_uri(secret, "newbie") in out
+    assert "Scan" not in out and "█" not in out
+
+
+class _TTYStdout(io.TextIOWrapper):
+    """A stdout that says it is a terminal: UTF-8 over a buffer the test can
+    read back, and `isatty()` True, which is the one thing
+    `_print_enrolment_qr` asks of it beyond the encoding."""
+
+    def isatty(self):
+        return True
+
+
+def test_operator_add_at_a_real_terminal_prints_the_qr_code_white_on_black(db, monkeypatch):
+    """segno's block form draws the light modules in the terminal's
+    foreground colour, so on a light theme the symbol would print inverted.
+    At a tty with a TERM that is not "dumb", every line of the block is
+    printed bright white on black and reset at its end - the polarity is
+    forced, whatever the theme - and the plain block never appears unwrapped.
+    The secret line stays escape-free: it is for copying."""
+    from sentinel.totp import provisioning_uri
+
+    tty_stdout = _TTYStdout(io.BytesIO(), encoding="utf-8")
+    monkeypatch.setattr(sys, "stdout", tty_stdout)
+    monkeypatch.setenv("TERM", "xterm")
+    rc, secret = _enrol_at_the_keyboard(db, monkeypatch)
+    tty_stdout.flush()
+    out = tty_stdout.buffer.getvalue().decode("utf-8")
+    assert rc == 0 and "two-factor is ON" in out
+    block = qr.terminal(provisioning_uri(secret, "newbie"))
+    for line in block.split("\n"):
+        assert f"\033[97;40m{line}\033[0m\n" in out, "every line white on black, reset before the newline"
+    assert block not in out, "the plain block is never printed unwrapped at a terminal"
+    secret_line = next(line for line in out.split("\n") if "secret:" in line)
+    assert secret_line == f"  secret: {secret}" and "\033" not in secret_line
 
 
 def test_operator_list_shows_who_has_no_second_factor_yet(db, capsys, enrolled):

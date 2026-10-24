@@ -14,6 +14,8 @@ dependencies = [
     "requests>=2.31",
     "python-dotenv>=1.0",
     "prometheus-client>=0.20",
+    # Two-factor enrolment QR code: pure Python, no dependencies of its own; inline SVG on the pages, blocks in the terminal.
+    "segno>=1.6,<2",
 ]
 
 [project.optional-dependencies]

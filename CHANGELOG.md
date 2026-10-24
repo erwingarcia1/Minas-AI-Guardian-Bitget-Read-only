@@ -16,6 +16,25 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Added
+
+- **Two-factor enrolment shows a QR code (2026-10-24).** The ops
+  dashboard's first-sign-in page, the member portal's "Set up two-factor"
+  page and the terminal walk-through of `sentinel operator add` draw the
+  `otpauth://` URI as a QR code for the authenticator app to scan, above
+  the secret. The secret and the URI stay as text: the fallback, and the
+  route when the page is open on the phone that has the app, which the
+  portal page now says. One new runtime dependency, `segno` (pure Python,
+  no dependencies of its own, no network, no files; `pip-audit` is clean
+  with it installed): it renders the URI the page already shows - the
+  same secret, on the same page, at the same moment - as inline SVG, so
+  the portal and the dashboard still make no external request and run no
+  script. In the terminal the code is drawn with block characters,
+  printed white on black whatever the terminal's theme, and skipped -
+  text as before - when the terminal's encoding cannot carry them.
+  Whether the three renderings scan was not yet checked with a device
+  when this was written; see decision 23.
+
 ### Changed
 
 - **v1.14.0 is deployed and the public address is live (2026-10-24):**
