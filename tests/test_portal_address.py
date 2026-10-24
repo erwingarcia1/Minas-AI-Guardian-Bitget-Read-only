@@ -45,8 +45,9 @@ def portal(db):
     srv.shutdown()
 
 
-def _login(port, host, method="GET", body=None, origin=None):
-    """GET or POST /login addressed to `host`; None sends no Host header."""
+def _login(port, host, method="GET", body=None, origin=None, path="/login"):
+    """GET or POST `path` (the sign-in page by default; `/` is the landing
+    page) addressed to `host`; None sends no Host header."""
     conn = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
     headers = {}
     payload = None
@@ -57,12 +58,12 @@ def _login(port, host, method="GET", body=None, origin=None):
     if origin is not None:
         headers["Origin"] = origin
     if host is None:
-        conn.putrequest(method, "/login", skip_host=True)
+        conn.putrequest(method, path, skip_host=True)
         for k, v in headers.items():
             conn.putheader(k, v)
         conn.endheaders(payload)
     else:
-        conn.request(method, "/login", body=payload, headers={"Host": host, **headers})
+        conn.request(method, path, body=payload, headers={"Host": host, **headers})
     resp = conn.getresponse()
     page = resp.read().decode()
     conn.close()
@@ -120,10 +121,36 @@ def test_a_failed_sign_in_on_the_old_address_carries_the_notice_too(portal, monk
     assert "Our address has changed." in page
 
 
+def test_the_landing_page_names_the_host_from_the_setting_too(portal, monkeypatch):
+    """Decision 25 moved the front door: the landing page teaches the same
+    rule from the same setting, as text, never as a link."""
+    monkeypatch.setenv("SENTINEL_PORTAL_URL", ADDRESS + "/")
+    status, page = _login(portal, HOST, path="/")
+    assert status == 200 and 'id="landing-title"' in page
+    assert f"Our only address is {SHOWN}." in page
+    assert "minastrade" not in page and ADDRESS not in page and f'href="https://{HOST}' not in page
+    assert "Our address has changed" not in page, "the one address is not told to move"
+    monkeypatch.delenv("SENTINEL_PORTAL_URL")
+    status, page = _login(portal, HOST, path="/")
+    assert status == 200 and "Always open this site and sign in" in page and "Our only address" not in page
+
+
+@pytest.mark.parametrize("name", [OLD, "localhost:8391", "127.0.0.1"])
+def test_any_other_name_is_told_the_address_changed_on_the_landing_page(portal, monkeypatch, name):
+    monkeypatch.setenv("SENTINEL_PORTAL_URL", ADDRESS)
+    status, page = _login(portal, name, path="/")
+    assert status == 200
+    assert "Our address has changed." in page
+    assert f"sign in at {SHOWN}" in page
+    assert 'id="landing-title"' in page, "the notice is added to the landing page, nothing is taken from it"
+    assert f"Our only address is {SHOWN}." in page
+
+
 def test_the_bare_renderer_has_one_caller():
     """The registration half of the test above: a new sign-in path that
     called `_render_login` directly would not know the request's host, and
-    the old address would be told nothing on that path."""
+    the old address would be told nothing on that path. The landing page's
+    renderer is held to the same rule in tests/test_portal_landing.py."""
     src = (ROOT / "sentinel/portal.py").read_text()
     assert src.count("def _render_login(") == 1
     assert src.count("_render_login(") == 2, "call it through Handler._login_page, which passes the request's host"

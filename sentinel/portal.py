@@ -999,12 +999,16 @@ _NAV_ITEMS = (
 
 def _page(body_html: str, email: str | None = None, active: str = "",
           *, title: str = "Minas AI Guardian", shell: bool = False,
-          actionbar: bool = False, back: str | None = None) -> str:
+          actionbar: bool = False, back: str | None = None,
+          landing: bool = False) -> str:
     """The frame, per design/portal/: topbar (brand + signed-in meta),
     scrollable subnav with the current page underlined in gold, footer.
     `shell` centres an auth card vertically (sign-in family, no nav);
     `actionbar` reserves bottom space for a fixed action bar; `back`
-    replaces the subnav with a single return link (alert detail)."""
+    replaces the subnav with a single return link (alert detail);
+    `landing` is the public front door (decision 25): the topbar offers a
+    "Sign in" link where the signed-in meta would be - a link, not a
+    button, because the one gold primary on that page is in the hero."""
     brand = (
         '<a class="brand" href="/" aria-label="Minas AI Guardian home">' + MARK_HTML
         + '<span class="brand__stack"><span class="brand__name">Minas AI <span>Guardian</span></span>'
@@ -1020,6 +1024,8 @@ def _page(body_html: str, email: str | None = None, active: str = "",
             + '<br><form method="post" action="/logout" style="margin:0;display:inline">'
               '<button class="linkbtn" type="submit">Sign out</button></form></div>'
         )
+    elif landing:
+        meta = '<div class="topbar__meta"><a href="/login">Sign in</a></div>'
     subnav = ""
     if email and not back:
         current = " aria-current='page'"
@@ -1031,10 +1037,16 @@ def _page(body_html: str, email: str | None = None, active: str = "",
                   f'<div class="container subnav__inner">{links}</div></nav>')
     topbar = (f'<header class="topbar"><div class="container topbar__inner">'
               f"{brand}{meta}</div>{subnav}</header>")
+    # The limits link: the limits page when signed in, the landing page's
+    # limits section otherwise. Without a session /limits is sent to the
+    # landing page (decision 25), so an anonymous reader - on the landing
+    # page, on the not-found page - would be bounced from the footer to the
+    # page they are on.
+    limits_href = "/limits" if email else "/#limits"
     footer = (
         '<footer class="footer"><div class="container footer__row">'
         '<span class="footer__tag">Minas AI Guardian</span>'
-        '<a href="/limits">What this product can and cannot do</a>'
+        f'<a href="{limits_href}">What this product can and cannot do</a>'
         '<span class="subtle">Read-only monitoring. We cannot move your funds.</span>'
         "</div></footer>"
     )
@@ -1239,6 +1251,37 @@ def _auth_brand() -> str:
     )
 
 
+def _shown_address(ours: str) -> str:
+    """The one address as a page shows it: a name to type, never a link
+    (#88)."""
+    return f'<strong style="color:var(--text)">{html.escape(ours)}</strong>'
+
+
+def _address_rule(ours: str | None) -> str:
+    """The anti-phishing rule, for every page that teaches it - the sign-in
+    page and the landing page. `ours` is the one address from the setting
+    (`portal_host()`), passed in so each page reads the setting on a line of
+    its own; with no address the sentence reads as it did before there was
+    one."""
+    if ours:
+        return (f"Our only address is {_shown_address(ours)}. Always type it in yourself to check your "
+                "accounts — never click through from an email or a message.")
+    return ("Always open this site and sign in to check your accounts — don't click "
+            "through from email or messages.")
+
+
+def _moved_notice(ours: str) -> str:
+    """22d's notice for the old address. It goes up by itself, on every
+    name that is not the one address, the moment the setting is set; the
+    stated period and the email to members stay the owner's."""
+    return (
+        '<div class="notice notice--info" role="status">' + _ICON_INFO
+        + '<div><p class="notice__title">Our address has changed.</p>'
+        f'<p class="notice__body">From now on, sign in at {_shown_address(ours)} and update any bookmark '
+        "you have. This older address will be switched off later.</p></div></div>"
+    )
+
+
 def _render_login(error: str | None = None, host: str | None = None) -> str:
     """The sign-in page. `host` is the name the request was addressed to;
     `Handler._login_page` passes it, and is the only caller, so that when
@@ -1254,29 +1297,18 @@ def _render_login(error: str | None = None, host: str | None = None) -> str:
             'forgotten your password, reset it rather than retrying.</p></div></div>'
         )
     ours = portal_host()
-    if ours:
+    if ours:  # noqa: SIM108 - the mutation probe anchors on these two lines
         # The sentence the anti-phishing story waited two months for (#88):
         # "open the site yourself" finally says which site. The name comes
         # from the setting and is shown as text, never as a link - the page
-        # teaches typing it, not clicking.
-        shown = f'<strong style="color:var(--text)">{html.escape(ours)}</strong>'
-        where = f"Open {shown} directly."
-        rule = (f"Our only address is {shown}. Always type it in yourself to check your "
-                "accounts — never click through from an email or a message.")
+        # teaches typing it, not clicking. The rule under the form is the
+        # landing page's too (`_address_rule`).
+        where = f"Open {_shown_address(ours)} directly."
     else:
         where = "Open the portal address you were given directly."
-        rule = ("Always open this site and sign in to check your accounts — don't click "
-                "through from email or messages.")
+    rule = _address_rule(ours)
     if ours and host and host != ours:
-        # 22d's notice for the old address. It goes up by itself, on every
-        # name that is not the one address, the moment the setting is set;
-        # the stated period and the email to members stay the owner's.
-        notice += (
-            '<div class="notice notice--info" role="status">' + _ICON_INFO
-            + '<div><p class="notice__title">Our address has changed.</p>'
-            f'<p class="notice__body">From now on, sign in at {shown} and update any bookmark '
-            "you have. This older address will be switched off later.</p></div></div>"
-        )
+        notice += _moved_notice(ours)
     body = (
         '<section class="auth-card" aria-labelledby="signin-title">' + _auth_brand()
         + '<h1 id="signin-title">Sign in</h1>'
@@ -1302,6 +1334,76 @@ def _render_login(error: str | None = None, host: str | None = None) -> str:
         "</section>"
     )
     return _page(body, title="Sign in — Minas AI Guardian", shell=True)
+
+
+def _render_landing(rules=None, *, host: str | None = None, ended: bool = False) -> str:
+    """The public front door (decision 25): what the Guardian is, how it
+    works, what it cannot do, the one address, and the way to sign in.
+
+    Composed from the member pages' primitives and from their sentences:
+    the limits section reads LIMITS_* exactly as /limits does, and the
+    app's welcome screen carries the LANDING_* constants verbatim
+    (tests/test_mobile_app.py pins them), so the three places a member can
+    read what the product is cannot disagree. Nothing to sign up for
+    (decision 17): Minas sets monitoring up with the member.
+
+    `ended` is the handler's: a session cookie was presented and rejected -
+    expired, retired by a password change, forged, its member gone - and
+    the page says so before anything else, so a member who was reading
+    their accounts a moment ago does not wonder whether the product is
+    gone. The numbers in that sentence, like the polling numbers in step 2,
+    come from the configuration, never typed in. `host` is the name the
+    request was addressed to; `Handler._landing_page` passes it, and is
+    the only caller, for the same 22d notice the sign-in page shows."""
+    fast, slow = polling_cadence(rules)
+    notice = ""
+    if ended:
+        notice = (
+            '<div class="notice notice--info" role="status">' + _ICON_INFO
+            + f'<div><p class="notice__title">{html.escape(LANDING_ENDED_TITLE)}</p>'
+            f'<p class="notice__body">A session ends after {SESSION_IDLE_SECONDS // 3600} hours '
+            f"without activity, after {SESSION_TTL_SECONDS // 3600} hours in all, and when the "
+            "password is changed. Sign in again to see your accounts.</p></div></div>"
+        )
+    address = portal_host()
+    if address and host and host != address:
+        notice += _moved_notice(address)
+    steps = ""
+    for number, (title, text) in enumerate(LANDING_STEPS, start=1):
+        if number == 2:
+            text += (f" Balances and movements about every {fast} seconds; permissions and "
+                     f"allowlists about every {slow // 60} minutes.")
+        steps += f"<li><strong>{html.escape(title)}</strong><span>{html.escape(text)}</span></li>"
+    does = "".join(_feature_item("yes", title, text) for title, text in LIMITS_DOES)
+    # Text only: "see Am I being watched?" is a link for a signed-in reader.
+    cannot = "".join(_feature_item("no", title, text) for title, text, _to_status in LIMITS_CANNOT)
+    body = (
+        notice
+        + '<div class="page-head"><span class="eyebrow">Read-only monitoring for crypto exchange accounts</span>'
+        f'<h1 id="landing-title">{html.escape(LANDING_STATEMENT)}</h1>'
+        f'<p class="lead">{html.escape(LANDING_LEAD)}</p></div>'
+        '<div class="primary-row"><a class="btn btn--primary" href="/login">Sign in</a>'
+        f'<p class="muted">{html.escape(LANDING_SETUP)}</p></div>'
+        '<section class="panel" aria-labelledby="how-title"><h2 id="how-title">How it works</h2>'
+        f'<ol class="steps">{steps}</ol></section>'
+        '<div class="callout-danger" role="note">'
+        f"<h2>{LIMITS_HEADLINE[0]}</h2>"
+        f"<p>{LIMITS_HEADLINE[1]}</p></div>"
+        # Two regions, as /limits composes them, so a screen reader lists
+        # "What it cannot do" under its own name; `.stack` groups them under
+        # the one anchor the footer points at.
+        '<div class="stack" id="limits">'
+        '<section class="panel" aria-labelledby="landing-does-title">'
+        '<h2 id="landing-does-title">What the Guardian does</h2>'
+        f'<ul class="feature-list">{does}</ul></section>'
+        '<section class="panel" aria-labelledby="landing-cannot-title">'
+        '<h2 id="landing-cannot-title">What it cannot do</h2>'
+        f'<ul class="feature-list">{cannot}</ul></section></div>'
+        '<div class="phish">' + _ICON_SHIELD
+        + '<p><strong style="color:var(--text)">Minas will never email you a link asking '
+        f"for your API key.</strong> {_address_rule(address)}</p></div>"
+    )
+    return _page(body, landing=True)
 
 
 def _repeat_note(r) -> str:
@@ -2205,6 +2307,37 @@ LIMITS_WHY = (
 # "not yet reviewed" notice and the app's flag both read it.
 RETENTION_REVIEWED = False
 
+# The landing page (decision 25), as data: the app's welcome screen carries
+# these sentences verbatim (tests/test_mobile_app.py pins them), like the
+# limits screen carries LIMITS_*. The web appends the polling numbers to
+# step 2 at render time, from the configuration - no number is typed here.
+LANDING_STATEMENT = (
+    "Minas AI Guardian watches your exchange accounts around the clock and tells you "
+    "within minutes when money starts leaving."
+)
+LANDING_LEAD = (
+    "Read-only monitoring for Bitget, Bybit, OKX and Binance accounts. The key you give "
+    "Minas can read your account and never trade, withdraw or move anything, so a "
+    "compromise of Minas itself cannot cost you money."
+)
+# No self-serve signup (decision 17).
+LANDING_SETUP = "Minas sets monitoring up with you. There is nothing to sign up for here."
+# (title, text) per "How it works" step.
+LANDING_STEPS = (
+    ("You connect a read-only API key.",
+     "Minas checks with the exchange that the key cannot trade or withdraw, and refuses "
+     "any key that can."),
+    ("The Guardian keeps reading.",
+     "Your balances, recent movements, API permissions and allowlists, all day, compared "
+     "with what it has seen before."),
+    ("When something looks wrong, you are told.",
+     "On the channels you have set up, with what to do next. A second contact is told "
+     "too, and Minas escalates if nobody acknowledges."),
+)
+# The notice the landing page carries when a session cookie was presented
+# and rejected; its body is built at render time from the session constants.
+LANDING_ENDED_TITLE = "You were signed out."
+
 
 def polling_cadence(rules=None) -> tuple[int, int]:
     """(fast, slow) loop seconds from the running config - the numbers the
@@ -2218,6 +2351,19 @@ def polling_cadence(rules=None) -> tuple[int, int]:
         else int(default_for("polling", "slow_loop_seconds") or 600)
     )
     return fast, slow
+
+
+def _feature_item(kind: str, title: str, text: str) -> str:
+    """One row of a `.feature-list`: a tick ("yes") or a cross ("no") and
+    the sentence it marks. The limits page and the landing page render the
+    LIMITS_* sentences through this one function, so the two cannot drift.
+    Trusted literals, interpolated unescaped as the limits page always has."""
+    path = ("M8 12.5l2.5 2.5L16 9" if kind == "yes" else "M9 9l6 6M15 9l-6 6")
+    return (f'<li><svg class="tick tick--{kind}" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
+            '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>'
+            f'<path d="{path}" stroke="currentColor" stroke-width="2" '
+            'stroke-linecap="round" stroke-linejoin="round"/></svg>'
+            f"<div><strong>{title}</strong><span>{text}</span></div></li>")
 
 
 def _render_limits(db: Database, email: str, rules=None) -> str:
@@ -2239,18 +2385,10 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
     """
     fast, slow = polling_cadence(rules)
 
-    def _feat(kind, title, text):
-        path = ("M8 12.5l2.5 2.5L16 9" if kind == "yes" else "M9 9l6 6M15 9l-6 6")
-        return (f'<li><svg class="tick tick--{kind}" viewBox="0 0 24 24" fill="none" aria-hidden="true">'
-                '<circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/>'
-                f'<path d="{path}" stroke="currentColor" stroke-width="2" '
-                'stroke-linecap="round" stroke-linejoin="round"/></svg>'
-                f"<div><strong>{title}</strong><span>{text}</span></div></li>")
-
-    does = "".join(_feat("yes", title, text) for title, text in LIMITS_DOES)
+    does = "".join(_feature_item("yes", title, text) for title, text in LIMITS_DOES)
     cannot = "".join(
-        _feat("no", title, text.removesuffix(".")
-              + ' — see <a class="acctlink" href="/status">Am I being watched?</a>.' if to_status else text)
+        _feature_item("no", title, text.removesuffix(".")
+                      + ' — see <a class="acctlink" href="/status">Am I being watched?</a>.' if to_status else text)
         for title, text, to_status in LIMITS_CANNOT
     )
 
@@ -3518,11 +3656,17 @@ def _twofactor_uri(secret: str, email: str) -> str:
     return provisioning_uri(secret, email)
 
 
-def _render_not_found() -> str:
+def _render_not_found(email: str | None = None) -> str:
+    """The 404, in the frame of whoever is reading it. A member's carries
+    their meta and nav, and the footer's limits link is /limits, as on every
+    page rendered with the member's email. Without a session - a POST to no
+    route, or a DELETE - it is the bare frame, whose limits link is the
+    landing page's section (/#limits), since /limits without a session is
+    sent to the landing page (decision 25)."""
     return _page(
         '<section class="panel"><p class="empty">Not found.</p>'
         '<p style="margin-top:var(--space-3)"><a href="/">‹ Back to your accounts</a></p></section>',
-        title="Not found — Minas AI Guardian",
+        email, title="Not found — Minas AI Guardian",
     )
 
 
@@ -3643,6 +3787,12 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             # is called from here and nowhere else; a test holds that.
             return _render_login(error, host=self._request_host())
 
+        def _landing_page(self, ended: bool = False) -> str:
+            # The landing page knows the name it was asked for too, for the
+            # same notice (decision 22d); the bare renderer is called from
+            # here and nowhere else (tests/test_portal_landing.py holds that).
+            return _render_landing(rules, host=self._request_host(), ended=ended)
+
         def _redirect(self, location: str, extra_headers: list[tuple[str, str]] | None = None):
             self.send_response(303)
             self.send_header("Location", location)
@@ -3659,7 +3809,14 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             out at all: without it a cookie issued before a password change
             keeps working until it expires on its own, which is precisely the
             window an attacker needs after a customer resets in a panic
-            (#33)."""
+            (#33).
+
+            Records whether a cookie was PRESENTED and rejected - expired,
+            retired by a password change, forged, its member gone - as
+            `_stale_session`: that is how the landing page knows to say
+            "You were signed out" (decision 25). Set per request, so a
+            handler reused by keep-alive never carries the last one's."""
+            self._stale_session = False
             cookie = self.headers.get("Cookie") or ""
             for part in cookie.split(";"):
                 name, _, value = part.strip().partition("=")
@@ -3667,27 +3824,31 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     continue
                 email = verify_session_token(secret, value)
                 if email is None:
+                    self._stale_session = True
                     return None
                 with db.cursor() as cur:
                     cur.execute("SELECT session_epoch FROM portal_members WHERE email = ?",
                                 (normalize_email(email),))
                     row = cur.fetchone()
                 if row is None:
+                    self._stale_session = True
                     return None  # the member was removed; the cookie is stale
                 current = verify_session_token(secret, value, epoch=row["session_epoch"])
-                if current is not None:
-                    # Activity slides the idle window (#31): re-issue with a
-                    # fresh idle deadline and the ORIGINAL absolute one -
-                    # copied, never extended. _send attaches it.
-                    hard = session_hard_deadline(value)
-                    if hard is not None and hard > time.time():
-                        refreshed = make_session_token(
-                            secret, current, epoch=row["session_epoch"],
-                            absolute_deadline=hard)
-                        max_age = max(1, int(min(hard - time.time(), SESSION_IDLE_SECONDS)))
-                        self._refresh_cookie = (
-                            f"{SESSION_COOKIE}={refreshed}; Max-Age={max_age}; "
-                            f"Path=/; HttpOnly; Secure; SameSite=Lax")
+                if current is None:
+                    self._stale_session = True  # the epoch moved: retired (#33)
+                    return None
+                # Activity slides the idle window (#31): re-issue with a
+                # fresh idle deadline and the ORIGINAL absolute one -
+                # copied, never extended. _send attaches it.
+                hard = session_hard_deadline(value)
+                if hard is not None and hard > time.time():
+                    refreshed = make_session_token(
+                        secret, current, epoch=row["session_epoch"],
+                        absolute_deadline=hard)
+                    max_age = max(1, int(min(hard - time.time(), SESSION_IDLE_SECONDS)))
+                    self._refresh_cookie = (
+                        f"{SESSION_COOKIE}={refreshed}; Max-Age={max_age}; "
+                        f"Path=/; HttpOnly; Secure; SameSite=Lax")
                 return current
             return None
 
@@ -3746,6 +3907,20 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             email = self._session_email()
             if email is None:
+                if path == "/":
+                    # The front door (decision 25). A cookie that was
+                    # presented and rejected is cleared here, by the page
+                    # that says why - not by the redirects that lead here.
+                    stale = self._stale_session
+                    cleared = [(
+                        "Set-Cookie",
+                        f"{SESSION_COOKIE}=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax",
+                    )] if stale else None
+                    self._send(self._landing_page(ended=stale).encode(), extra_headers=cleared)
+                    return
+                if path == "/login":
+                    self._send(self._login_page().encode())
+                    return
                 # The two recovery routes are reachable without a session -
                 # that is the entire point of a recovery route.
                 if path == "/forgot":
@@ -3763,11 +3938,18 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     else:
                         self._send(self._login_page().encode())
                     return
-                # Every other unauthenticated GET lands on the login page.
-                self._send(self._login_page().encode())
+                # Every other unauthenticated GET - a member page, a path that
+                # does not exist - is sent to the landing page, so a visitor
+                # still cannot tell which paths exist. The stale cookie rides
+                # along: the landing page needs it to say "You were signed
+                # out", and clears it.
+                self._redirect("/")
                 return
             if path == "/":
                 self._send(_render_home(db, email, rules).encode())
+            elif path == "/login":
+                # Already signed in: the accounts, not a second sign-in form.
+                self._redirect("/")
             elif path == "/alerts":
                 qs = parse_qs(urlparse(self.path).query)
                 self._send(_render_alert_history(db, email, qs).encode())
@@ -3797,7 +3979,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     alert_id = 0
                 page = _render_incident(db, email, alert_id)
                 if page is None:
-                    self._send(_render_not_found().encode(), 404)
+                    self._send(_render_not_found(email).encode(), 404)
                 else:
                     self._send(page.encode())
             elif path == "/security":
@@ -3810,7 +3992,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     aid = 0
                 page = _render_replace_key(db, email, aid)
                 if page is None:
-                    self._send(_render_not_found().encode(), 404)
+                    self._send(_render_not_found(email).encode(), 404)
                 else:
                     self._send(page.encode())
             elif path == "/account":
@@ -3821,11 +4003,11 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     aid = 0
                 page = _render_member_account(db, email, aid, rules)
                 if page is None:
-                    self._send(_render_not_found().encode(), 404)
+                    self._send(_render_not_found(email).encode(), 404)
                 else:
                     self._send(page.encode())
             else:
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
 
         @staticmethod
         def _pad_to(deadline: float) -> None:
@@ -3840,15 +4022,15 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             does not exist."""
             member = self._session_email()
             if member is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             try:
                 account_id = int((form.get("account_id") or [""])[0])
             except (TypeError, ValueError):
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(member).encode(), 404)
                 return
             if account_id not in {int(r["id"]) for r in member_accounts(db, member)}:
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(member).encode(), 404)
                 return
             from sentinel.pause import cancel_pause, request_pause
 
@@ -3860,14 +4042,14 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 logger.info("portal: pause cancel on account %d by %s (pending=%s)",
                             account_id, member, cancelled)
             page = _render_member_account(db, member, account_id, rules)
-            self._send((page or _render_not_found()).encode())
+            self._send((page or _render_not_found(member)).encode())
 
         def _export(self):
             """Download my data (#46 criterion 3): the member's own accounts'
             events and alerts, as JSON, before erasure."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             import json as _json
 
@@ -3887,7 +4069,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             confirmation sent, session ended."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             from sentinel.erasure import confirmation_text, erase_member
             from sentinel.twofactor import MEMBER as _MEMBER
@@ -3935,7 +4117,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             member, because a drill is a real message to a real phone."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             from sentinel.drill import last_drill, run_drill
 
@@ -3970,7 +4152,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             takes effect on the next alert."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             from sentinel.alerts.preferences import CHANNELS, SEVERITIES, set_member_prefs
 
@@ -3998,7 +4180,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             unrecognized value changes nothing rather than guessing."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             from sentinel.alerts.digest import DIGEST_FREQUENCIES, set_digest_frequency
 
@@ -4021,7 +4203,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             their own chat."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             from sentinel.alerts.telegram_link import create_link_code, disconnect
 
@@ -4051,7 +4233,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             login."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             if cipher is None:
                 self._send(_render_security(
@@ -4099,7 +4281,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     db, email, notice="Two-factor is off. We have emailed you about it.").encode())
                 return
 
-            self._send(_render_not_found().encode(), 404)
+            self._send(_render_not_found(email).encode(), 404)
 
         def _revoke_device(self, form):
             """Sign one of this login's phones out of the app (decision 21c).
@@ -4107,17 +4289,17 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             another login's device is the same not-found as no device."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             from sentinel.api import revoke_device
 
             try:
                 device_id = int((form.get("device_id") or [""])[0])
             except (TypeError, ValueError):
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
             if not revoke_device(db, normalize_email(email), device_id, "revoked"):
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
             logger.info("portal: %s signed out app device %d", email, device_id)
             self._send(_render_security(db, email, notice="That phone is signed out of the app.").encode())
@@ -4232,8 +4414,9 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             # No session issued. Setting a password proves control of the
             # mailbox, not knowledge of the password, and signing them straight
             # in would make the link itself a login - which is the thing the
-            # single-use expiry exists to limit.
-            self._redirect("/")
+            # single-use expiry exists to limit. To the form, not the front
+            # door: the member has a password to type now.
+            self._redirect("/login")
 
         def _acknowledge(self, form):
             """The portal's only member-facing write (G-22, #26).
@@ -4244,18 +4427,18 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             volume one id at a time."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             try:
                 alert_id = int((form.get("alert_id") or [""])[0])
             except (TypeError, ValueError):
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
 
             account_ids = [r["id"] for r in member_accounts(db, email)]
             alert = _member_alert(db, alert_id, account_ids)
             if alert is None:
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
             account_id = alert["account_id"]
 
@@ -4281,18 +4464,18 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             past, not asking for silence."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             try:
                 alert_id = int((form.get("alert_id") or [""])[0])
             except (TypeError, ValueError):
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
 
             account_ids = [r["id"] for r in member_accounts(db, email)]
             alert = _member_alert(db, alert_id, account_ids)
             if alert is None:
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
 
             note = (form.get("note") or [""])[0]
@@ -4318,12 +4501,12 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             types."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             try:
                 alert_id = int((form.get("alert_id") or [""])[0])
             except (TypeError, ValueError):
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
             try:
                 hours = float((form.get("hours") or ["0"])[0])
@@ -4333,7 +4516,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             account_ids = [r["id"] for r in member_accounts(db, email)]
             alert = _member_alert(db, alert_id, account_ids)
             if alert is None:
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
 
             snooze_alert(db, alert["account_id"], alert["dedup_key"], alert["rule"],
@@ -4354,12 +4537,12 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             too, and it is repeated here because this is where they arrive."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             try:
                 account_id = int((form.get("account_id") or [""])[0])
             except (TypeError, ValueError):
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
 
             # Scope before anything else. `_render_replace_key` returning None
@@ -4367,7 +4550,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             # an account the member cannot see is indistinguishable from one
             # that does not exist.
             if _render_replace_key(db, email, account_id) is None:
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
 
             if cipher is None:
@@ -4449,7 +4632,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             assert set(routes) == POST_ROUTES, "POST_ROUTES must mirror the dispatch table"
             handler = routes.get(path)
             if handler is None:
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(self._session_email()).encode(), 404)
                 return
             if path in PRIMARY_ONLY and not self._may_change(path, form):
                 return
@@ -4460,10 +4643,11 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             contact for what this route changes; otherwise the refusal page
             has been sent and the handler must not run.
 
-            No session at all is the handler's own business (it renders the
-            login page). A login that is primary nowhere is refused every
-            primary-only route, whatever it names - including an account id
-            that does not exist, so the refusal cannot be used to probe.
+            No session at all is the handler's own business (it sends the
+            visitor to the landing page). A login that is primary nowhere is
+            refused every primary-only route, whatever it names - including
+            an account id that does not exist, so the refusal cannot be used
+            to probe.
             An account-scoped route names its target; the login must be
             primary on THAT account. A member-scoped route needs the login
             to be primary somewhere."""
@@ -4511,15 +4695,15 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             the member's own scope, never by any name."""
             email = self._session_email()
             if email is None:
-                self._send(self._login_page().encode())
+                self._redirect("/")
                 return
             try:
                 account_id = int((form.get("account_id") or [""])[0])
             except (TypeError, ValueError):
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
             if account_id not in {int(r["id"]) for r in member_accounts(db, email)}:
-                self._send(_render_not_found().encode(), 404)
+                self._send(_render_not_found(email).encode(), 404)
                 return
             from sentinel.naming import set_member_name
 
@@ -4527,7 +4711,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 set_member_name(db, account_id, (form.get("name") or [""])[0], actor=email)
             except ValueError as exc:
                 page = _render_member_account(db, email, account_id, rules, name_error=str(exc))
-                self._send((page or _render_not_found()).encode(), 400)
+                self._send((page or _render_not_found(email)).encode(), 400)
                 return
             self._redirect(f"/account?id={account_id}")
 

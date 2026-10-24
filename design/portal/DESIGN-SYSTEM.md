@@ -8,6 +8,7 @@ consistently. One shared stylesheet (`styles.css`) links into every screen.
 
 | File | Screen |
 |------|--------|
+| `landing.html` | Landing — the public front door (`GET /` without a session): what the Guardian is, how it works, what it cannot do, the one address, and the way to sign in |
 | `signin.html` | Sign in (rendered in the **wrong-credentials error** state) |
 | `accounts.html` | Home / My accounts (four-account case, plus a one-account reference) |
 | `status.html` | Am I being watched? (all three states; print stylesheet) |
@@ -184,6 +185,28 @@ On the limits page this is its own `callout-danger` block directly under the
 page heading — a red-bordered panel with a 22px bold heading, before any other
 content. It is not a footnote. The alert detail repeats the same constraint in
 an info notice next to the acknowledge action.
+
+---
+
+## Landing page (the front door)
+
+`GET /` without a session is not the sign-in form (decision 25,
+2026-10-24): it is the page that says what the product is, built from the
+primitives above and nothing new. In order: the top bar with a plain
+"Sign in" link as its meta and no second navigation row (there is no
+member); a `page-head` hero — eyebrow "Read-only monitoring for crypto
+exchange accounts", the one-sentence statement as the `h1`
+(`id="landing-title"`), a lead on the read-only key; the `primary-row`
+with the screen's one gold button, "Sign in", and the muted sentence that
+there is nothing to sign up for; "How it works" as three numbered `steps`
+(the polling cadence in step 2 is rendered from the configuration, never
+typed); the `callout-danger` "cannot stop an attack" block; the limits
+section (`id="limits"`: the limits page's two `feature-list`s, text only);
+and the `phish` note naming the one address as text, never as a link. A
+visitor whose session has ended sees an info notice ("You were signed
+out.", `role="status"`) above the hero. The footer's limits link points at
+`#limits` on this page, since the limits are on it. The app's welcome
+screen is the same page in native primitives, without the numbers.
 
 ---
 

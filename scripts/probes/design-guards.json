@@ -83,8 +83,8 @@
  {
   "name": "portal: snooze without checking the account scope",
   "file": "sentinel/portal.py",
-  "old": "            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            snooze_alert(",
-  "new": "            alert = _member_alert(db, alert_id, list(range(1, 999)))\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            snooze_alert(",
+  "old": "            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found(email).encode(), 404)\n                return\n\n            snooze_alert(",
+  "new": "            alert = _member_alert(db, alert_id, list(range(1, 999)))\n            if alert is None:\n                self._send(_render_not_found(email).encode(), 404)\n                return\n\n            snooze_alert(",
   "tests": [
    "tests/test_portal_snooze.py"
   ]
@@ -110,8 +110,8 @@
  {
   "name": "portal: no session required to acknowledge",
   "file": "sentinel/portal.py",
-  "old": "            email = self._session_email()\n            if email is None:\n                self._send(self._login_page().encode())\n                return\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
-  "new": "            email = self._session_email() or \"anonymous@example.com\"\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
+  "old": "            email = self._session_email()\n            if email is None:\n                self._redirect(\"/\")\n                return\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found(email).encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found(email).encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
+  "new": "            email = self._session_email() or \"anonymous@example.com\"\n            try:\n                alert_id = int((form.get(\"alert_id\") or [\"\"])[0])\n            except (TypeError, ValueError):\n                self._send(_render_not_found(email).encode(), 404)\n                return\n\n            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found(email).encode(), 404)\n                return\n            account_id = alert[\"account_id\"]",
   "tests": [
    "tests/test_portal_acknowledge.py"
   ]
@@ -666,8 +666,8 @@
  {
   "name": "#32 ATTACK act on another member: the security routes trust a form field",
   "file": "sentinel/portal.py",
-  "old": "            email = self._session_email()\n            if email is None:\n                self._send(self._login_page().encode())\n                return\n            if cipher is None:",
-  "new": "            email = self._session_email() or (form.get(\"email\", [\"\"])[0] or \"\")\n            if not email:\n                self._send(self._login_page().encode())\n                return\n            if cipher is None:",
+  "old": "            email = self._session_email()\n            if email is None:\n                self._redirect(\"/\")\n                return\n            if cipher is None:",
+  "new": "            email = self._session_email() or (form.get(\"email\", [\"\"])[0] or \"\")\n            if not email:\n                self._redirect(\"/\")\n                return\n            if cipher is None:",
   "tests": [
    "tests/test_portal_two_factor_login.py"
   ]
@@ -817,8 +817,8 @@
  {
   "name": "#28 ATTACK mark another customer's alert: the portal trusts the posted id",
   "file": "sentinel/portal.py",
-  "old": "            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            note = (form.get(\"note\") or [\"\"])[0]",
-  "new": "            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                with db.cursor() as cur:\n                    cur.execute(\"SELECT id, account_id, rule, dedup_key, severity FROM alerts WHERE id = ?\", (alert_id,))\n                    alert = cur.fetchone()\n            if alert is None:\n                self._send(_render_not_found().encode(), 404)\n                return\n\n            note = (form.get(\"note\") or [\"\"])[0]",
+  "old": "            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                self._send(_render_not_found(email).encode(), 404)\n                return\n\n            note = (form.get(\"note\") or [\"\"])[0]",
+  "new": "            account_ids = [r[\"id\"] for r in member_accounts(db, email)]\n            alert = _member_alert(db, alert_id, account_ids)\n            if alert is None:\n                with db.cursor() as cur:\n                    cur.execute(\"SELECT id, account_id, rule, dedup_key, severity FROM alerts WHERE id = ?\", (alert_id,))\n                    alert = cur.fetchone()\n            if alert is None:\n                self._send(_render_not_found(email).encode(), 404)\n                return\n\n            note = (form.get(\"note\") or [\"\"])[0]",
   "tests": [
    "tests/test_expected_activity.py"
   ],
@@ -1133,7 +1133,7 @@
  {
   "name": "#69 the portal stops scoping a key replacement to the member's own accounts",
   "file": "sentinel/portal.py",
-  "old": "            if _render_replace_key(db, email, account_id) is None:\n                self._send(_render_not_found().encode(), 404)\n                return",
+  "old": "            if _render_replace_key(db, email, account_id) is None:\n                self._send(_render_not_found(email).encode(), 404)\n                return",
   "new": "            pass",
   "tests": [
    "tests/test_portal_key_replacement.py"

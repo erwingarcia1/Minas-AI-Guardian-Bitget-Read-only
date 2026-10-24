@@ -37,7 +37,7 @@ so credentials needn't land in shell history.
 | Server | Default port | Default bind | Env vars | Exposure |
 |---|---|---|---|---|
 | Ops dashboard | 8390 | `127.0.0.1` | `SENTINEL_DASHBOARD_PORT`, `SENTINEL_DASHBOARD_HOST`, `SENTINEL_DASHBOARD_BASE_PATH` | Operator sign-in with mandatory two-factor; in production behind Caddy at `https://guardian.minastrade.com/admin` (the base path, blank by default) |
-| Member portal | 8391 | `127.0.0.1` | `SENTINEL_PORTAL_PORT`, `SENTINEL_PORTAL_HOST` | Member login; front with TLS |
+| Member portal | 8391 | `127.0.0.1` | `SENTINEL_PORTAL_PORT`, `SENTINEL_PORTAL_HOST` | Public landing page and member sign-in; front with TLS |
 | Prometheus metrics | 9109 | `127.0.0.1` | `SENTINEL_METRICS_PORT`, `SENTINEL_METRICS_HOST` | Internal |
 
 **All three are reachable only from the machine running them.**
@@ -135,7 +135,10 @@ see **only their own** accounts, alerts, events, and security posture — never
 another customer's. Identity is the customer email; a member sees the accounts
 their login was granted (#61), and a login nobody has scoped sees every account
 whose `alert_email` or `alert_email_secondary` matches (case-insensitive).
-Properties:
+Its front door is a public landing page - what the Guardian is, how it
+works, what it cannot do, the one address - with the sign-in at `/login`
+(decision 25); an ended session lands on that page, and so does every
+other path asked for without one. Properties:
 
 - **Isolation is the invariant** — every query is scoped to the signed-in
   member's account ids; a drill-down on an id you don't own returns 404 without

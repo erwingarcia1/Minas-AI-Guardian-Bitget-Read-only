@@ -20,6 +20,7 @@ from sentinel import outbox
 from sentinel.portal import _session_secret, make_session_token, serve_portal
 from tests.conftest import PINNED_TOTP_NOW
 from tests.helpers.api_client import ApiClient, add_account, add_alert, enrolled_member
+from tests.helpers.landing_redirect import assert_sent_to_the_landing_page
 
 ALICE = "alice@example.com"
 BOB = "bob@example.com"
@@ -184,6 +185,6 @@ def test_another_logins_phone_is_not_found_and_stays_signed_in(server, db, ciphe
 
 def test_signed_out_of_the_browser_the_form_signs_nothing_out(server, db, cipher, fleet):
     tokens = _token(server, db, cipher, ALICE)
-    status, page = _web(server, "POST", "/security/devices/revoke", None, {"device_id": tokens["device_id"]})
-    assert status == 200 and "Sign in" in page
+    assert_sent_to_the_landing_page(("127.0.0.1", server.port), "POST", "/security/devices/revoke",
+                                    body={"device_id": tokens["device_id"]})
     assert server.request("GET", "/api/v1/security", token=tokens["access_token"])[0] == 200

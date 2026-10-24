@@ -297,7 +297,8 @@ def test_a_portal_cookie_is_not_an_access_token_and_the_reverse(server, db, alic
     assert server.request("GET", "/api/v1/security", token=cookie)[0] == 401
     _, tokens, _ = server.sign_in(ALICE, alice)
     status, body, _ = server.request("GET", "/", headers={"Cookie": f"minas_portal={tokens['access_token']}"})
-    assert status == 200 and "Sign in" in body  # the login page, not the member's home
+    assert status == 200 and 'id="landing-title"' in body  # the landing page, not the member's home
+    assert "alice-1" not in body and "Signed in as" not in body
 
 
 def test_a_token_signed_with_another_key_is_refused(server, db, alice):

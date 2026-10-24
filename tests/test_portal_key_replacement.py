@@ -21,6 +21,7 @@ import pytest
 
 from sentinel.portal import serve_portal, set_member_password
 from tests.fixtures.ccxt_responses import account_info_response
+from tests.helpers.landing_redirect import assert_sent_to_the_landing_page
 
 OUR_UID = "12345"
 
@@ -134,13 +135,11 @@ def test_an_unauthenticated_post_reaches_no_exchange(portal, db, cipher, alice, 
     limit, before anything about keys is even considered."""
     account_id, _ = alice
 
-    status, body = _request(portal, "POST", "/key",
-                            body={"account_id": str(account_id), "api_key": "k", "secret": "s"})
+    assert_sent_to_the_landing_page(portal, "POST", "/key",
+                                    body={"account_id": str(account_id), "api_key": "k", "secret": "s"})
 
     assert calls == []
-    assert "password" in body.lower()
     assert _stored_key(db, account_id, cipher) == "old-key"
-    assert status == 200
 
 
 def test_a_member_cannot_replace_the_key_on_somebody_elses_account(portal, db, cipher, alice, calls):
@@ -173,9 +172,7 @@ def test_the_form_for_somebody_elses_account_is_not_found(portal, db, cipher, al
 
 def test_the_form_needs_a_session(portal, alice):
     account_id, _ = alice
-    status, body = _request(portal, "GET", f"/key?id={account_id}")
-    assert status == 200
-    assert "password" in body.lower()
+    assert_sent_to_the_landing_page(portal, "GET", f"/key?id={account_id}")
 
 
 def test_a_cross_origin_post_is_rejected(portal, db, cipher, alice, calls):

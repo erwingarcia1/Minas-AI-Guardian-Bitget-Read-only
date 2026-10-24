@@ -7,6 +7,37 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
 
 ### Changed
 
+- **An ended sign-in lands on the welcome screen, which says why.** When
+  the server ends a phone's sign-in (signed out from the portal or another
+  phone, 30 days unopened, a password change, a sign-in used from two
+  places at once), the app used to drop onto the sign-in form with the
+  "This phone was signed out." notice above it. It now lands on the
+  welcome screen, with that notice at the top, and every member screen
+  leaves the stack: there is no way back to member data. Signing out from
+  Security lands on the same screen without the notice, as before. The
+  sign-in form is reached from the welcome screen's "Sign in" button and
+  has a header now, so it has a way back; opened directly (a link to
+  `/sign-in`) it has none, as before. The form is declared singular
+  (`dangerouslySingular`), so a fast double tap on that button opens one
+  form, not two stacked, and one Back returns to the welcome screen. The
+  guard is still `Stack.Protected`,
+  now with an explicit `redirectTo`: expo-router 58's own fallback picks
+  the shortest unguarded route name, and "landing" and "sign-in" tie, so
+  the target is named rather than left to an alphabetical tie-break. The
+  comment in `src/app/_layout.tsx` records the verification, file by file.
+
+- **Headings and standing text read right to a screen reader.** `Title`
+  is a heading now (`accessibilityRole="header"`), as the portal's `<h1>`
+  is: VoiceOver's and TalkBack's heading list on the welcome screen starts
+  with what the Guardian is, not with "How it works", and on every other
+  screen each card's title heads its card. The limits headline ("Minas AI
+  Guardian cannot stop an attack.") is standing text, the portal's
+  `role="note"` callout, so it is no longer announced aloud on every cold
+  start of the welcome screen and every opening of the limits screen:
+  `Notice` takes `live={false}` for text that is there from the start, and
+  keeps the alert role and the announcement for what happens while a screen
+  is open (an ended sign-in, a failed request, a refused sign-out).
+
 - **The `braces` advisory left the audit allowlist.** GitHub withdrew
   GHSA-vfj7-8cjw-p6xm on 2026-10-23, so `npm audit` no longer reports it
   and `audit-check.mjs` refused the stale entry, as it is built to: an
@@ -43,6 +74,16 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   left the lockfile.
 
 ### Added
+
+- **A welcome screen (decision 25).** A phone with no sign-in opens on
+  what the Guardian is, in the portal's words: read-only monitoring, what
+  it watches and tells, what it cannot do, how it works in three steps,
+  that Minas sets monitoring up with the member (there is nothing to sign
+  up for), the anti-phishing line, and one gold "Sign in". It asks nothing
+  of the server. The sentences are copies of `sentinel/portal.py`'s, and
+  `tests/test_mobile_app.py` in the server's suite fails if they drift;
+  the polling numbers the portal appends to its second step are left out,
+  because the app cannot read the configuration before a sign-in.
 
 - **The first version of the app (decision 21).** Expo SDK 58 and React
   Native 0.88, for iOS and Android. It covers:

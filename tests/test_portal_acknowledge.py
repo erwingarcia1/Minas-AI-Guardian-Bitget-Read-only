@@ -29,6 +29,7 @@ import pytest
 
 from sentinel.alerts.escalation import Escalator
 from sentinel.portal import acknowledge_alert_as_member, member_accounts, serve_portal, set_member_password
+from tests.helpers.landing_redirect import assert_sent_to_the_landing_page
 
 
 def _free_port():
@@ -179,14 +180,14 @@ def test_an_unauthenticated_post_acknowledges_nothing(portal, db, alice):
     that dropped the session check and fell back to an unknown identity would
     also acknowledge nothing, because an unknown email is a contact on no
     account. That is the right outcome reached by an accident that a real
-    member's email in the form would undo. So this pins the login page."""
+    member's email in the form would undo. So this pins the answer itself:
+    the redirect to the landing page (decision 25), and no page body."""
     account_id, _ = alice
     alert_id = _alert(db, account_id)
 
-    status, body = _request(portal, "POST", "/acknowledge", body={"alert_id": str(alert_id)})
+    assert_sent_to_the_landing_page(portal, "POST", "/acknowledge", body={"alert_id": str(alert_id)})
 
     assert _ack_row(db, alert_id)["acknowledged_at"] is None
-    assert 'id="signin-title"' in body and status == 200
 
 
 def test_a_tampered_cookie_acknowledges_nothing(portal, db, alice):
@@ -196,11 +197,10 @@ def test_a_tampered_cookie_acknowledges_nothing(portal, db, alice):
     alert_id = _alert(db, account_id)
     forged = token[:-1] + ("0" if token[-1] != "0" else "1")
 
-    _, body = _request(portal, "POST", "/acknowledge",
-                       body={"alert_id": str(alert_id)}, cookie=forged)
+    assert_sent_to_the_landing_page(portal, "POST", "/acknowledge",
+                                    body={"alert_id": str(alert_id)}, cookie=forged)
 
     assert _ack_row(db, alert_id)["acknowledged_at"] is None
-    assert 'id="signin-title"' in body
 
 
 def test_a_cross_origin_post_acknowledges_nothing(portal, db, alice):

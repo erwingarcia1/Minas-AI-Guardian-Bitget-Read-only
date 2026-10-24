@@ -24,7 +24,7 @@ type Input = ComponentRef<typeof TextInput>;
 // The server answers a wrong password and a wrong code alike, on purpose, and
 // its messages are written for the member - they are shown as they come.
 export default function SignIn() {
-  const { signIn, ended } = useSession();
+  const { signIn } = useSession();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [code, setCode] = useState('');
@@ -68,14 +68,6 @@ export default function SignIn() {
             <Body muted>Sign in with your member portal email, password and two-factor code.</Body>
           </View>
 
-          {ended && !problem ? (
-            <Notice tone="warn" title="This phone was signed out.">
-              That happens when the app goes 30 days unopened, when this phone is signed out from the portal&apos;s
-              Security page or another phone, after a password change, or when Minas sees this phone&apos;s sign-in
-              used from two places at once. If you don&apos;t recognise any of these, change your password on the
-              member portal.
-            </Notice>
-          ) : null}
           {problem ? (
             <Notice tone="danger" title={problem.title}>
               {problem.message}

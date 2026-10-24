@@ -56,9 +56,9 @@ login, fake accounts and alerts, and makes no outside connections.
 7. **Scan the QR code**: with the Camera app on an iPhone, or from inside
    Expo Go on Android. Allow the phone to find devices on your local
    network when it asks.
-8. **Sign in** with the demo email and password and the code the demo
-   server printed. The sign-in screen shows which server the build talks
-   to.
+8. **Sign in**: tap "Sign in" on the welcome screen, then enter the demo
+   email and password and the code the demo server printed. The sign-in
+   screen shows which server the build talks to.
 
 Saving a file reloads the app on the phone. Avoid reloading while the
 app is starting up. A reload in the middle of a sign-in refresh can sign
@@ -73,6 +73,7 @@ plain HTTP for `localhost` only.
 
 | Screen | API |
 |---|---|
+| Welcome: what the Guardian is, and the way to sign in | none |
 | Sign in: email, password and two-factor code | `POST /api/v1/session` |
 | Accounts: the incident needing attention, any pending pause, and "Am I being watched?" in the portal's exact words | `GET /api/v1/accounts` |
 | Alerts: newest first, with older ones on request | `GET /api/v1/alerts` |

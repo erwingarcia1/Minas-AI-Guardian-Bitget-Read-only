@@ -27,6 +27,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from sentinel.portal import serve_portal, set_member_password
+from tests.helpers.landing_redirect import assert_sent_to_the_landing_page
 
 
 def _free_port():
@@ -135,14 +136,12 @@ def test_a_member_cannot_read_another_members_incident(portal, db, alice):
     assert "bob-1" not in body
 
 
-def test_an_unauthenticated_reader_gets_the_login_page(portal, db, alice):
+def test_an_unauthenticated_reader_is_sent_to_the_landing_page(portal, db, alice):
+    """A redirect with no body: nothing of the incident crosses the boundary."""
     account_id, _ = alice
     incident = _incident(db, account_id)
 
-    status, body = _request(portal, f"/incident?id={incident}")
-
-    assert 'id="signin-title"' in body
-    assert "bc1qattacker" not in body
+    assert_sent_to_the_landing_page(portal, "GET", f"/incident?id={incident}")
 
 
 def test_a_nonexistent_incident_is_indistinguishable_from_someone_elses(portal, db, alice):

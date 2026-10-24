@@ -35,6 +35,7 @@ from sentinel.cli import cmd_set_contact
 from sentinel.events import append_event, record_member_security_event
 from sentinel.portal import account_activity, serve_portal, set_member_password
 from tests.conftest import PINNED_TOTP_NOW
+from tests.helpers.landing_redirect import assert_sent_to_the_landing_page
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -353,8 +354,7 @@ def test_activity_never_shows_another_members_accounts(db, signed_in, portal):
 
 
 def test_activity_requires_a_session(db, portal):
-    _status, body = _request(portal, "GET", "/activity")
-    assert 'id="signin-title"' in body
+    assert_sent_to_the_landing_page(portal, "GET", "/activity")
 
 
 # --- the page shows changes, not detections -----------------------------------

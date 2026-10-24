@@ -3,13 +3,13 @@
 The member portal's design system: tokens, primitives, and the rules that
 keep every screen looking like one product. **The reference is the owner's
 external design pass in `design/portal/`** — `DESIGN-SYSTEM.md`, `styles.css`
-and five mockup screens (signin, accounts, status, limits, alert), produced
-2026-08-19 and ported into `_PORTAL_STYLE` in `sentinel/portal.py` as a
-system, not a paste: mockup-only artifacts (state-variation reference
-sections, a remember-me checkbox) were dropped, and utilities the real pages
-need are defined from the same tokens. Screens **inherit rather than
-reinvent**; this file is the contract, `design/portal/DESIGN-SYSTEM.md` is
-the fuller design rationale.
+and six mockup screens (signin, accounts, status, limits, alert, produced
+2026-08-19, and landing, added 2026-10-24 for decision 25), ported into
+`_PORTAL_STYLE` in `sentinel/portal.py` as a system, not a paste:
+mockup-only artifacts (state-variation reference sections, a remember-me
+checkbox) were dropped, and utilities the real pages need are defined from
+the same tokens. Screens **inherit rather than reinvent**; this file is the
+contract, `design/portal/DESIGN-SYSTEM.md` is the fuller design rationale.
 
 ## The decisions in force (owner, 2026-08-19 — recorded on #82)
 
@@ -39,6 +39,14 @@ the fuller design rationale.
 4. **Portal first**; the dashboard's pass followed in v1.10.0 (plain,
    2026-08-27) and was re-cut on the portal's dark ground by decision 24
    (2026-10-24); `design/dashboard/DESIGN-SYSTEM.md` is its contract.
+5. **The front door is a landing page, not the sign-in form (owner,
+   2026-10-24; decision 25).** `GET /` without a session says what the
+   Guardian is, how it works and what it cannot do, names the one address
+   as text, and links to the sign-in at `/login`; an ended session lands
+   there with "You were signed out." and every other path without a
+   session is sent there (303). The app's landing screen
+   (`mobile/src/app/landing.tsx`) mirrors it, and `tests/test_mobile_app.py`
+   pins the sentences the two share.
 
 ## Tokens (`:root`, all with role names)
 
@@ -87,7 +95,22 @@ the fuller design rationale.
 - **The frame**: `.topbar` (brand + signed-in meta) over a horizontally
   scrollable `.subnav` with the current page underlined in gold
   (`aria-current="page"`); `.footer`; `.skip-link`; auth pages use the
-  centered `.auth-card` shell.
+  centered `.auth-card` shell. **The landing page** (decision 25) is the
+  public front door, `GET /` without a session, in the same frame: the
+  `.topbar` with a "Sign in" link to `/login` as its meta and no subnav
+  (there is no member); a `.page-head` hero (eyebrow, `<h1
+  id="landing-title">`, lead) with the screen's one gold primary in
+  `.primary-row` ("Sign in", to `/login`) and the no-signup sentence
+  beside it; the three `.steps` of "How it works"; the `.callout-danger`;
+  the limits section (`id="limits"`, two `.feature-list`s); and the
+  `.phish` block naming the one address as text. When the visitor arrived
+  with a session that had ended, a `.notice--info` ("You were signed
+  out.", `role="status"`) opens the page. The footer is the standard one,
+  except that its limits link points at `/#limits` on every page rendered
+  without a member (the landing page, an anonymous not-found page) and at
+  `/limits` on every page rendered with one (`_render_not_found` takes the
+  member for that reason), so a visitor is never bounced from the footer
+  to the page they are on.
 
 ## Mobile and touch
 

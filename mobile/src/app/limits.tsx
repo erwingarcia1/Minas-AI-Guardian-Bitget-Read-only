@@ -17,7 +17,8 @@ export default function Limits() {
         {(limits) => (
           <>
             <Body muted>{limits.lead}</Body>
-            <Notice tone="danger" title={limits.headline.title}>
+            {/* Standing text, the portal's callout (role="note"): not announced. */}
+            <Notice tone="danger" title={limits.headline.title} live={false}>
               {limits.headline.text}
             </Notice>
 

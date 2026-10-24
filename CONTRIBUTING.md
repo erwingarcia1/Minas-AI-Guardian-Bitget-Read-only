@@ -105,6 +105,40 @@ scripts/health-check.sh                # every gate, one table — "Is everythin
 - Bump [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`; releases are cut with
   `scripts/release.sh` — see **Releases and versioning** below.
 
+## A UI change lands on every surface
+
+The owner's rule (decision 25, 2026-10-24): a change to what a member sees,
+reads or can do lands on the web and in the app together, because the app's
+screens in `mobile/src/app/` are the portal's pages in the portal's words,
+carried by the API — and a sentence corrected on one surface and not the
+other is two products disagreeing in front of a frightened customer. Three
+things hold it. The `ui-parity` skill (`.claude/skills/ui-parity/SKILL.md`)
+maps every portal page, token and brand file to its app counterpart and the
+API route between them, and says which guards and records each change owes;
+read it before touching any surface, even when the request names only one.
+The PostToolUse hook (`scripts/ui-parity-reminder.py`, registered in the
+committed `.claude/settings.json`) runs after every edit, write and Bash
+call, and when one wrote to a surface it tells the session to invoke the
+skill before finishing — it prints one JSON object or nothing, treats a
+`grep` or `cat` as the read it is, and never fails the tool call. Both files
+live under `.claude/`, which the owner's clone hides in `.git/info/exclude`
+so the worktrees under it stay out of `git status`; every worktree shares
+that rule, and it silently keeps the two files out of `git add -A`. In that
+clone stage them with `git add -f .claude/settings.json
+.claude/skills/ui-parity/SKILL.md` and confirm `git ls-files .claude` lists
+both before pushing — the suite reads both and goes red in CI without them,
+and `tests/test_ui_parity_hook.py` goes red here first, in the checkout that
+would drop them. The parity tests pin what must not drift:
+`tests/test_mobile_app.py` (the tokens, the icons, the route set and the
+landing page's shared sentences),
+`tests/test_api_contract.py`, `tests/test_surface_styles.py`,
+`tests/test_no_prevention_claims.py`, and `tests/test_ui_parity_hook.py`,
+which holds the hook's map and the skill's to each other. "When necessary"
+is decided by the map, not by scope: a change is web-only or app-only only
+when the map says the surface has no counterpart — the ops dashboard; the
+print sheet and the primary-only settings until API v2 (decision 21d); push
+notifications (21e) — and the commit message says so.
+
 ## Releases and versioning
 
 This project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html)

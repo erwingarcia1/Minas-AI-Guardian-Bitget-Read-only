@@ -17,6 +17,7 @@ from sentinel.portal import (
     verify_password,
     verify_session_token,
 )
+from tests.helpers.landing_redirect import assert_sent_to_the_landing_page
 
 
 def _free_port():
@@ -198,10 +199,16 @@ def test_throttle_window_expires():
 
 # --- HTTP: auth flow ------------------------------------------------------------
 
-def test_unauthenticated_pages_show_login(portal, db):
-    for path in ("/", "/account?id=1"):
-        status, body, _ = _request(portal, "GET", path)
-        assert status == 200 and 'id="signin-title"' in body
+def test_unauthenticated_pages_show_the_landing_page(portal, db):
+    """The front door (decision 25): the root is the landing page, and a
+    member path without a session is sent there - not answered with the
+    sign-in form in place, which told a visitor the path existed."""
+    status, body, set_cookie = _request(portal, "GET", "/")
+    assert status == 200 and 'id="landing-title"' in body
+    assert 'href="/login"' in body and 'id="signin-title"' not in body
+    assert set_cookie == "", "no cookie was presented, so none is cleared"
+    for path in ("/account?id=1", "/alerts", "/security", "/healthz"):
+        assert_sent_to_the_landing_page(portal, "GET", path)
 
 
 def test_login_success_sets_cookie_and_shows_own_accounts(portal, db):
@@ -243,13 +250,15 @@ def test_member_sees_own_account_detail(portal, db):
     assert status == 200 and "alice-1" in body and "Security posture" in body
 
 
-def test_tampered_cookie_lands_on_login(portal, db):
+def test_tampered_cookie_lands_on_the_landing_page_signed_out(portal, db):
     _member_account(db, "alice-1", "alice@example.com")
     set_member_password(db, "alice@example.com", "pw-alice")
     _, _, token = _login(portal, "alice@example.com", "pw-alice")
     bad = token[:-4] + ("aaaa" if token[-4:] != "aaaa" else "bbbb")
-    status, body, _ = _request(portal, "GET", "/", cookie=bad)
-    assert 'id="signin-title"' in body and "alice-1" not in body
+    status, body, set_cookie = _request(portal, "GET", "/", cookie=bad)
+    assert status == 200 and 'id="landing-title"' in body and "alice-1" not in body
+    assert "You were signed out." in body, "a cookie was presented and rejected: the page says so"
+    assert set_cookie.startswith("minas_portal=;") and "Max-Age=0" in set_cookie, "and clears it"
 
 
 def test_logout_clears_cookie(portal, db):
