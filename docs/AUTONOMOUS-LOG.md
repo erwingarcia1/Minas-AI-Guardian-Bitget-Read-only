@@ -7987,3 +7987,92 @@ first full-suite run failed only
 `scripts/mutation-selection-excluded.txt` with its reason); the worktree's
 `.venv` carries `segno` from a plain `pip install`, never `-e`, so the
 editable install still points at the main checkout.
+
+# 2026-10-24 · The dashboard carries the brand, dark like the portal (decision 24, reverses #82's second half)
+
+**The owner's words, in order:** "let everything about the admin dashboard
+have the Minas colours and logo. the current dashboard is mostly plain
+white, dry and boring and no company logo even." Then, offered a light
+variant with a brand band: "the dashboard should be dark like the portal.
+remember that this is a thorough revamp of the project." Then, on the
+plan's own asset route: "no /admin/brand nonsense. keep it simple and just
+do what i ask you." The first build (light) was stopped before it wrote
+code; the second was restarted without the route and the helpers.
+
+**How the work was done.** Four read-only readers mapped the dashboard
+(every render function, class and rule; the eleven probe anchors), the
+brand and the portal's design language (the palette, the logo files, the
+contrast facts), the guards and the records (every test and document that
+pinned the plain look, and how each guard inverts rather than dies), and
+wrote an offline renderer that stands the dashboard up on a temporary
+database with six fictional accounts and captures all thirty responses -
+`scratchpad/dash/render-dashboard.py`, kept outside the tree. The design
+contract was written from the maps; two builders worked it in parallel
+over disjoint files (code and tests; the record and documents); two
+reviewers then went through the result (the look and contrast; the guards,
+records and security posture) and found one blocker and twenty smaller
+points, all applied: the centred sign-in card was too narrow for its
+two-column form and clipped the password field on desktop (the fields now
+stack); the enrolment card clipped the long otpauth URI; the metrics tiles
+overflowed a phone and stretched to the tallest tile; the print sheet
+printed the dark palette on white paper (now a universal flip); pills
+carry the portal's badge tones; three document claims about a current
+nav chip that no page has were struck; the external-URL guard, token
+equality for gold/violet/the band's hover, AA on card heads, and the
+retired-gradient guard reaching CSS gradients and the standalone metrics
+sheet. Checked clean: the eleven probe anchors, the headers, no new route,
+the operator name escaped, the portal half of the style guard
+byte-identical, every pinned string, every record.
+
+**What changed.** The portal's ground, surfaces and text ramp; a band in
+`VIOLET_INK` (new in brand.py, with `VIOLET_LOGO`) carrying
+`brand.MARK_HTML`, the wordmark, the gold `ops__tag` "Operations", the
+byte-for-byte h1 and sub, the nav, and the operator's name with a sign-out
+link when signed in (`_page(..., operator=)` threaded from
+`Handler._operator()`; `refresh_seconds=` added for the metrics page's 15
+seconds); violet-text links, violet buttons, gold on the one primary; the
+portal's badge (dot + word) and radii at the dashboard's density; the
+sign-in family as one centred card with the brand head; `/admin/metrics`
+rendering `render_metrics_body()` in the shell and the standalone 9109
+page on a plain dark sheet of its own, the retired infinity mark,
+gradients and pulse gone from both; `brand.ICON_LINKS` and the mark
+root-relative, as the portal's - Caddy sends `/brand/*` to the portal on
+the one hostname; through the SSH tunnel the image is absent and
+decorative. Folded in: `--bad` defined, `.dim` a plain class, the
+add-customer card in a section, four dead rules gone, "Last poll" through
+`_ts`.
+
+**The record.** Decision 24 (section and row), "superseded" notes under
+21g and 22a, docs/portal-design.md decision 2 in the strike-through
+convention, design/dashboard/DESIGN-SYSTEM.md rewritten (a test reads its
+strings), design/brand/README.md, docs/deployment.md's smoke-check comment
+(the grep unchanged), docs/threat-model.md A3, CHANGELOG [Unreleased]. The
+guards: `test_the_dashboard_wears_the_brand_from_brand_py` (hues equal to
+brand.py's, no gradient/glow/motion/external URL, the marking present),
+`test_the_surfaces_share_the_ground_and_are_told_apart_by_the_marking`
+(replacing the grounds-differ test), the design-note test parsing the
+accent and band from the sheet, every text token at AA by the file's own
+helper, gold fill reserved for the one primary, the old mark gone from the
+shell and both metrics renderings, the base-path sweep covering `src=`
+with its one documented exception for the portal's `/brand/` files and
+`/brand/mark.png` pinned as a 404 on the dashboard (no route).
+
+**Gates:** `ruff check sentinel tests` clean; the full suite 2,124 passed
+on the final tree (after the fix round; the same count before it); all
+247 probes land once, the eleven dashboard anchors byte-identical; every
+dashboard text token at 4.5:1 or better on `--bg`, `--panel` and
+`--panel-2` by the test's own helper; the thirty responses re-rendered
+after the fixes with the lockup, "Operations" and the h1 on every shell
+page and the signed-in line on exactly the signed-in ones.
+
+**The owner's review.** The thirty rendered pages were opened in the
+owner's browser twice, before and after the fix round (the brand PNGs
+copied beside the static pages so the mark shows); after the second pass
+the owner's words were "looks good" (2026-10-24).
+
+**Left for the owner:** the merge, and the look once more on a real
+browser at `/admin` after the next release; the three follow-ups the pass did not
+touch (the fleet-health KPI always green, the triage auto-refresh wiping a
+typed note, tables with no horizontal scroll on a phone), and
+`docs/DEPLOYMENTS.md:75`, a dated record that still reads "the unbranded
+ops view" for the v1.14.0 smoke check.

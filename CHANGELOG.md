@@ -37,6 +37,39 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
 
 ### Changed
 
+- **The ops dashboard wears the Minas identity, dark like the portal
+  (decision 24, 2026-10-24).** Every dashboard page, the sign-in family
+  included, opens on a header band in the brand's deep violet carrying the
+  Minas mark, the wordmark and an **Operations** tag and, once signed in,
+  the operator's name and a sign-out link at its far end. Below it: the
+  portal's dark ground, surfaces and text ramp; deep violet buttons,
+  violet-text links; gold as the one primary fill per screen ("+ Add
+  customer"), as the tag and as the critical numeral; the portal's badge
+  shape and tones and its radius language at the dashboard's density. The
+  logo is the portal's `/brand` file on the same host, through
+  `brand.MARK_HTML` and `brand.ICON_LINKS` as they are - no new route, no
+  new helper; through the SSH tunnel the decorative image is absent and
+  nothing else changes.
+  `/admin/metrics` is folded into the dashboard shell, and the retired
+  infinity mark, the gradients and the pulse are gone from both metrics
+  renderings. Byte for byte as before: the title, `<h1>Ops dashboard</h1>`
+  with "internal · Minas staff only", the footer sentence, and so the
+  runbook's smoke check. This reverses the dashboard half of decision 2
+  on #82; what it protected moves from colour to that marking, and the
+  guards in `tests/test_surface_styles.py` are inverted, not deleted: the
+  brand hues must be present and equal to `brand.py`'s, gradients, glow,
+  motion and external requests stay refused, both grounds are `#0d0f13`
+  on purpose, and the marking is asserted on every page. Two constants
+  join `brand.py` (`VIOLET_INK`, `VIOLET_LOGO`); the record is section 24
+  of docs/DECISIONS-NEEDED.md, with docs/portal-design.md decision 2,
+  design/dashboard/DESIGN-SYSTEM.md, design/brand/README.md and
+  docs/threat-model.md A3 amended in the same commit. Folded in because
+  the pass touched the lines: `var(--bad)` is defined, so the triage
+  queue's overdue age is red at last; `.dim` reaches table cells; the
+  add-customer card sits in a `<section>` like every other page; the dead
+  rules `.snoozesel`, `.snoozed`, `.fld.full` and `.noprint` are gone;
+  "Last poll" on the account page is rendered in local time like
+  "Onboarded".
 - **v1.14.0 is deployed and the public address is live (2026-10-24):**
   https://guardian.minastrade.com serves the portal and the API, and
   `/admin` the ops dashboard, with alerting running again after the
