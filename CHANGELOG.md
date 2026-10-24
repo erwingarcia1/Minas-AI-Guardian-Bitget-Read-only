@@ -125,7 +125,11 @@ container")._
   missing`, `... outside /admin`) and the reason is logged with the
   visitor's address, so a browser that trims referrers is diagnosable.
   A bad entry in `SENTINEL_DASHBOARD_TRUSTED_PROXIES` is logged under
-  that name, not the portal's. Left open, and written into
+  that name, not the portal's. And one test, of alerts held in quiet
+  hours, failed for the one minute a day between 23:59:00 and 23:59:59
+  UTC - its window was 00:00 to 23:59 with the end exclusive, and CI
+  started at 23:59 on 2026-10-23 - so it now puts its window around the
+  clock. Left open, and written into
   docs/threat-model.md: operator sessions have no epoch, so a stolen
   cookie outlives a password change for up to twelve hours and
   `disable` then `enable` revives it - the break-glass is to replace

@@ -13,7 +13,7 @@ import argparse
 import http.client
 import os
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -226,8 +226,15 @@ def _stored(db, account_id, severity="HIGH"):
 
 def test_a_non_critical_in_quiet_hours_is_held_not_sent_and_lands_in_the_digest(db, member, monkeypatch):
     account_id = _account_with_phone(db)
+    # A window around the clock, not 00:00-23:59: with the end exclusive,
+    # that window left the minute 23:59:00-23:59:59 UTC outside quiet hours,
+    # and the suite's first minute landed there on 2026-10-23 (CI started at
+    # 23:59). Four hours around now wraps midnight when it must; the wrap is
+    # the production case and is tested above.
+    now = datetime.now(timezone.utc)
     set_member_prefs(db, member, timezone_name="UTC", quiet_hours_enabled=True,
-                     quiet_start="00:00", quiet_end="23:59", grid={})
+                     quiet_start=(now - timedelta(hours=2)).strftime("%H:%M"),
+                     quiet_end=(now + timedelta(hours=2)).strftime("%H:%M"), grid={})
     router = _router(db, monkeypatch)
     det, alert_id = _stored(db, account_id, "HIGH")
     router.send(det, "acct-1", [EMAIL], ["+15550001111"], account_id=account_id, alert_id=alert_id)
