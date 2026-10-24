@@ -7718,3 +7718,27 @@ from "Restoring after the 2026-09-28 pause"; `sentinel operator list`
 with every row's 2FA `on` before the address is shared; the email to
 members with the new address; decisions 21h, 21i and #113; the store
 enrolments; the `ufw` rules from the phone test.
+
+**Later the same morning (2026-10-24, UTC):** PR #122's first checks
+failed on one test unrelated to the change -
+`test_a_non_critical_in_quiet_hours_is_held_not_sent_and_lands_in_the_digest`,
+whose quiet-hours window of 00:00-23:59 with an exclusive end left the
+minute 23:59:00-23:59:59 outside it, and both CI runs started at 23:59.
+Its window is four hours around the clock now. Checks green, the owner
+merged; v1.14.0 was cut from the main checkout (`2b7b6c8`; the first
+attempt refused because the `EnterWorktree` worktree under
+`.claude/worktrees/` showed as untracked there - removed, and `/.claude/`
+added to `.git/info/exclude`); the owner ran steps 6 to 9 and the
+restore order's timers and cron, each line read here before the next.
+The server is live at https://guardian.minastrade.com - the portal, the
+API and the dashboard at `/admin` - with alerting running again for the
+first time since 2026-09-28. Evidence: docs/DEPLOYMENTS.md; #88 and #121
+closed on it; the decision record's 22e carries the "Deployed" status.
+One oddity to watch: the first `docker compose up -d` after deploy.sh
+recreated the `caddy` container once; the second left both alone.
+Remaining for the owner: the email to members with the new address
+(22e step 5), the Tailscale admin-console removal, the wrong-password
+log reading from a browser, decisions 21h, 21i and #113, the store
+enrolments, the `ufw` rules from the phone test. Next for a session:
+the operator session epoch (the review's open finding), and a look at
+why `up -d` recreated Caddy.

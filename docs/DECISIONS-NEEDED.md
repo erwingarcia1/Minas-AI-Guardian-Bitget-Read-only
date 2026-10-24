@@ -2054,6 +2054,27 @@ and the runbook's step 5 - `held/` moved to
 is in docs/DEPLOYMENTS.md. Steps 1 to 3 and 8 ship with the release this
 record describes; the box waits for it at the runbook's step 6.
 
+**Deployed 2026-10-24: v1.14.0, every 22e step done but two.** PR #122
+merged by the owner, v1.14.0 cut (commit `2b7b6c8`, the slow gates
+covered by the dispatched run on the merged head), and the runbook's
+steps 6 to 9 run by the owner's hand the same morning, each read before
+the next (docs/DEPLOYMENTS.md, 2026-10-24): `deploy: OK — v1.14.0 is
+live and verified`; Caddy on 80 and 443 and nothing else public; both
+servers believing `X-Forwarded-For` from `10.231.0.2` only; a Let's
+Encrypt certificate for `guardian.minastrade.com` (to 2027-01-22); the
+portal at `/` with its headers, the API answering 401 unauthenticated,
+http redirecting with 308; the dashboard at `/admin/login` with its six
+headers, `401` on `/admin`, `/admin/` and `/admin/healthz`, its form
+posting to `/admin/login`; `sentinel operator list` with one operator,
+2FA `on` (22c item 1 holds); `SENTINEL_PORTAL_URL` set and the sign-in
+page saying "Our only address" (#88 closed on that evidence); the two
+timers and the digest cron back on. So: steps 1, 2, 3, 4, 6, 7 and 8 are
+done; **step 5 - the email to members with the new address - is the
+owner's and still to send**, as is the machine's removal in the
+Tailscale admin console (a browser click, the tail of step 7). 22d's
+notice on the old address was never shown to anyone, as expected: the
+old address stopped answering at step 6 of the teardown.
+
 **Reviewed before it faces the internet (2026-10-24).** Four readers went
 through the change adversarially - the prefix code, the proxy and compose
 and their tests, every document against the code, and the exposure
