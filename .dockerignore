@@ -1,10 +1,15 @@
 # Never ship secrets or local state into the build context.
 .env
+*.pem
 sentinel_data/
 *.db
 .git/
 .venv/
 __pycache__/
+# Docker anchors a bare pattern at the context root, so the line above misses
+# sentinel/__pycache__/ and `COPY sentinel/ sentinel/` would carry it into the
+# image; `**/` reaches every depth.
+**/__pycache__/
 tests/
 docs/
 # scripts/ stays out of the build context except the ops scripts the
@@ -21,3 +26,12 @@ mobile/
 # The proxy's config (decision 22b): docker-compose.yml mounts it into the
 # caddy container; nothing the server image uses.
 deploy/
+# Tooling output and the owner's drop folder (.gitignore says what each is;
+# ruff's cache ignores itself):
+# nothing the Dockerfile COPYs, so they would only ever cost context size.
+mutants/
+files/
+.health-check-logs/
+.ruff_cache/
+*.egg-info/
+.coverage

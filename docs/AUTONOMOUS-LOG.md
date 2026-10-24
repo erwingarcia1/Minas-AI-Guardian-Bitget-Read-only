@@ -7742,3 +7742,158 @@ log reading from a browser, decisions 21h, 21i and #113, the store
 enrolments, the `ufw` rules from the phone test. Next for a session:
 the operator session epoch (the review's open finding), and a look at
 why `up -d` recreated Caddy.
+
+# 2026-10-24 · The repository cleanup: what nothing used leaves, and the documents say what the tree does
+
+**The owner's instruction, after the deploy:** delete the old merged
+branches too, then a system-wide cleanup - remove every irrelevant file
+and piece of code, keep things as simple and clean as possible, and make
+no mistakes. The last clause set the rule for the whole pass: remove only
+what is provably unreferenced or already recorded elsewhere; where the
+evidence was short of proof, keep.
+
+**Branches (done first, on origin):** the seven merged branches
+(`api-v1`, `fix-report-classifier`, `fix-scheduled-gates`, `mobile-app`,
+`mutmut-3.8`, `public-address`, `review-2-fixes`) and the two worktree
+branches of this week, each checked with `merge-base --is-ancestor`
+before deletion; the two unmerged ones too - `edge-bind` (its only
+purpose was the overlay listener, dead by decision 22e) and the July
+Google Cloud branch, whose one useful idea, a SIGTERM handler so `docker
+stop` and every deploy no longer force-kill `sentinel run` after ten
+seconds, is preserved as **#124** with its nine-line diff. `origin/main`
+is the only branch left. Locally, the regenerable caches were cleared by
+name; the EC2 key, the owner's drop folder, the mutation cache, the
+health-check logs, the venv and the app's `node_modules` were not touched.
+
+**How the work was done.** Five read-only readers mapped every candidate
+with its evidence (137 candidates: 42 safe, 43 careful, 52 keep - the
+keeps and their reasons are part of the record below); four editors then
+applied the triage over disjoint file sets (code, infrastructure,
+documents, the app); three adversarial reviewers went through the result
+(everything removed against everything that might still need it, every
+document against the code and the records, every rewritten test against
+what it pinned before); their findings were applied here by hand. The
+review found no blocker and eighteen points. The ones with substance:
+README's detection catalog had `account_unreachable` under MEDIUM (HIGH
+since v1.1.0; corrected - the dashboard's own catalog says the same and
+lacks the LOW rule, which is **#126**, code for its own change); README's
+new "Known limitations" bullet and the threat model's A3 claimed the
+portal's `/limits` page and the alert advice carry the login/device/2FA
+guidance - they do not, only the retired runbook did - so both now say
+the truth and the runbook's two sections nothing else carried are
+preserved in **#125** for `/limits` (customer-facing wording, the
+owner's); README's CLI row for `set-threshold` sat beside "never edited
+on the box" while the command's global form rewrites `config/rules.yaml`,
+so the row, the runbook's "Tune thresholds" and the compose comment on
+the `:ro` mount now tell the two forms apart (per account: a recorded
+override, live at once; global: through git as a PATCH release); the
+CHANGELOG cited dashboard `#32` probes that do not exist (the route-level
+guards are the two `#87` probes and tests/test_operator_two_factor.py),
+left out `deliveries_for_alert` and `deposit_record`, and under-reported
+the documents it touched; the four packages npm keeps in the app's
+lockfile are required peers of packages still in the tree, not optional
+peers of `expo-router`; the architecture diagram still said REST/WS; and
+a `.dockerignore` comment, the runbook's "every reading" claim (step 8's
+wrong-password reading is still the owner's) and the decision record's
+open list (8's dropdown durations; the app waits on the store accounts)
+were tightened.
+
+**What left (CHANGELOG "### Removed").** The parked WebSocket monitor
+and its test (never wired into the engine; no exchange streams
+withdrawals over WebSocket). Five dead names (`run_forever`,
+`RulesConfigError`, `API_PREFIX`, `_utcnow`, `_looks_read_only`), six
+helpers only tests called, folded back into their tests
+(`record_contact_delivery`, `is_known_address`, `in_host_auth_incident`,
+`deliveries_for_alert`, `reached_a_person`,
+`operator_login_requires_code`), the unused fixture `deposit_record`, and
+the one design-guard probe that mutated the last of those helpers - a
+function the login route never called; the invariant it guarded (an
+unenrolled operator cannot complete a sign-in, no route can turn operator
+two-factor off) is pinned at the route by
+`tests/test_operator_two_factor.py` and the dashboard's two `#87` probes;
+247/247 probes land once. The portal's duplicate scrypt primitives, now
+imported from `sentinel/passwords.py` (byte-identical parameters and
+encoding, so every stored member hash verifies unchanged). The
+never-started `postgres`/`redis` compose profile with its volumes and
+`POSTGRES_PASSWORD` (and its row in the liveness gate's NOT_A_SWITCH, the
+same change). `scripts/mutation-module.sh` (drifted from the gate; its
+one measurement kept in CONTRIBUTING), `pytest-mock`, two `.gitignore`
+rules for paths nothing produces, docs/BACKLOG.md and
+docs/customer-runbook.md (its incident steps contradicted decision 3/9's
+canonical `RULE_ADVICE`; its two surviving sections are in #125), about
+a hundred lines of one-time cutover text in docs/deployment.md (the
+teardown, the pause and its restore, Alibaba, a second copy of the
+first-login steps - all done or never taken, and in docs/DEPLOYMENTS.md),
+and nine `create-expo-app` template dependencies the app never imported
+(24 lockfile entries with them; four of the nine stay in the lockfile as
+required peers of packages still in the tree - `react-native-drawer-layout`
+under `expo-router`, `react-native-reanimated`, the `@radix-ui` packages -
+proven unneeded by exporting both bundles with them physically removed).
+
+**What stayed, deliberately:** every record (this log, the released
+CHANGELOG sections, DEPLOYMENTS, the decision record's history, the
+audits); `scripts/backfill-siblings.py` (decision 18 is open);
+`scripts/soak_test.py` and `scripts/aws-user-data.sh`;
+`expected.judged_counts` (audit evidence), `retention.NEVER_PRUNE`, the
+`_now()` copies, `DEPRECATED_KEYS` (its removal is a major-version
+change), the `/logout` route; `networks: default: {}` on the sentinel
+service (production's network attachment is not a cleanup);
+`expo-system-ui` (its config plugin applies the dark style the app test
+pins); the one pre-existing ruff hit in `scripts/mutation-probe.py`
+(SIM105, outside CI's `ruff check sentinel tests`); the test-plumbing
+duplication (13 copies of `_free_port`, 16 of the portal fixture, 8 of
+`RecordingChannel`) - a refactor, not a cleanup, for its own PR.
+
+**What the documents now say (CHANGELOG "### Changed"):** README's
+counts, the whole CLI table, the 13 rules at their real severities, its
+member-identity claims (#61, #25); CONTRIBUTING's `--no-verify` paragraph
+agreeing with the standing rule, nine gates, the deploy section
+deferring to the runbook; the threat model's real key posture (the
+master key in `/opt/minas-guardian/.env`; Secrets Manager injection is a
+recommendation, not a control), four exchanges, ClickSend and Resend;
+docs/deployment.md AWS-only, "Rolling back" bounded at v1.13.0 (Caddy)
+and v1.14.0 (`/admin`), "Tune thresholds" through git or the per-account
+override, never on the box; the decision record's status lines (open
+today: 6, 7's vendor, 8's durations, 11, 18, 21b/e/h/i, 22e step 5);
+`EXPOSE 8391`; `.dockerignore` keeping `*.pem`, the caches and the drop
+folder out of the build context.
+
+**Gates:** `ruff check sentinel tests` clean (CI's scope); the full suite
+2,106 passed on the final tree, coverage 91% against the 78% floor;
+every one of the 247 probes lands exactly once and their test files
+exist; `bash -n` over every script; the compose file rendered from a
+scratch copy with an empty `.env` (services caddy and sentinel; volumes
+sentinel-data, caddy-data, caddy-config; the sentinel service on
+`default` and `edge`); the CI image build run locally from the cleaned
+tree (1.2 MB context, `sentinel version` reporting its commit through
+the build arg, no bytecode cache inside the image); the app's `npm ci`,
+typecheck, 84 tests, `audit:check` and `expo export` for iOS and
+Android, twice (once with the four leftover peers physically removed
+from `node_modules`). The mutation floor and the probe run are
+dispatched on the branch's commit after the push (`gh workflow run CI
+--ref worktree-cleanup`) rather than run locally; the reviewers'
+estimate from the last recorded population is 672/688 against the 96%
+floor, the removed functions having held five killed mutants and no
+ledger row.
+
+**Worth knowing:** `tests/test_scheduled_gates.py` counts the probes at
+import time, so editing `design-guards.json` while a suite is running
+makes five of its tests fail against the report script's live count -
+the first full run here did exactly that; the re-run on the untouched
+tree was green. The worktree guard of this session refuses compound
+shell commands that name git, awk programs with `|` and some heredocs:
+plain commands, or a script in the scratchpad, get through.
+
+**The owner's, in order:** merge the cleanup PR from `worktree-cleanup`
+(its CI green; the dispatched slow gates on its commit); the email to
+members with the new address (22e step 5; "Our only address is
+guardian.minastrade.com", never a link); the Tailscale admin-console
+removal (Machines → minas-guardian → Remove); the wrong-password log
+reading from a browser at `/admin/login`; the wording for #125 (what
+`/limits` tells a customer about logins, two-factor and allowlists);
+decisions 21h, 21i and #113, and 6, 7, 11, 18; the store enrolments; the
+`ufw` rules from the phone test. Next for a session: #124 (the SIGTERM
+handler, its own small PR), #126 (the dashboard's catalog, with a test
+that derives it from the detectors), the operator session epoch (the
+revamp review's open finding), the test-plumbing dedupe, and a look at
+why `up -d` recreated Caddy once.

@@ -74,14 +74,6 @@ def settings_diff(before: dict, after: dict, _prefix: str = "") -> list[tuple[st
     return changes
 
 
-class RulesConfigError(ValueError):
-    """A rules file could not be read or parsed at all.
-
-    Raised by `sentinel validate-config`, which is where failing fast on a bad
-    config belongs: before a deploy, not during one. `RulesConfig` itself never
-    raises - see `_reject`."""
-
-
 def _to_decimal_leaves(node: Any) -> Any:
     """Numeric-looking strings become Decimal so thresholds are never floats.
     Non-numeric strings (e.g. 'CRITICAL') pass through unchanged."""

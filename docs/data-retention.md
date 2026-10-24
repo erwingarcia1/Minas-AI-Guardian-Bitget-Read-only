@@ -43,8 +43,7 @@ described below cannot stop silently (#73).
 | Baselines (known addresses, traded pairs, transfer routes, fee EMA) | never pruned | Deleting a baseline row invents an anomaly |
 | Identity & auth (operators, portal members, 2FA enrolments) | never pruned | Offboarding is `disable`, never deletion (G-50) |
 
-Hosting: AWS Tokyo (ap-northeast-1) — the Alibaba Cloud plan this document
-originally described was never used. Data residency questions below should be
+Hosting: AWS Tokyo (ap-northeast-1). Data residency questions below should be
 answered for AWS Japan.
 
 ## Questions legal must answer before GA

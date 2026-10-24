@@ -208,7 +208,7 @@ class BitgetClient(ExchangeClient):
 class BybitClient(ExchangeClient):
     """Thin, read-only wrapper around ccxt.bybit. Bybit v5 has no API
     passphrase. Read-only status is authoritative via the query-api endpoint
-    (readOnly flag). See docs/phase0-capability-audit.md (Bybit addendum)."""
+    (readOnly flag). See the read-only-signal table in SECURITY.md."""
 
     exchange_id = "bybit"
     # Cross-product order coverage: a naive fetch_closed_orders defaults to
@@ -287,8 +287,8 @@ class BybitClient(ExchangeClient):
 class OKXClient(ExchangeClient):
     """Read-only wrapper around ccxt.okx. OKX requires an API passphrase (in
     `password`, like Bitget). Read-only status is authoritative via the
-    account-config `perm` field. See docs/phase0-capability-audit.md (OKX
-    addendum)."""
+    account-config `perm` field. See the read-only-signal table in
+    SECURITY.md."""
 
     exchange_id = "okx"
     # fetch_closed_orders is instType-scoped; a naive call covers only the
@@ -348,7 +348,7 @@ class OKXClient(ExchangeClient):
 class BinanceClient(ExchangeClient):
     """Read-only wrapper around ccxt.binance (global). No API passphrase.
     Read-only status is authoritative via the apiRestrictions permission
-    flags. See docs/phase0-capability-audit.md (Binance addendum)."""
+    flags. See the read-only-signal table in SECURITY.md."""
 
     exchange_id = "binance"
     # Binance order history is per-symbol (fetch_closed_orders requires a

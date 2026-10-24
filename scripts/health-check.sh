@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 # Every gate this project has, in one command, with a summary table.
 #
-#   scripts/health-check.sh          # all seven gates (~20 min, mutation dominates)
+#   scripts/health-check.sh          # all nine gates (~20 min, mutation dominates)
 #   scripts/health-check.sh --fast   # skips the two multi-minute gates (~3 min)
 #
 # The gates already existed; what did not existed was a way to ask "is
-# everything okay" and get one answer. Seven commands, three of them with
+# everything okay" and get one answer. Nine commands, three of them with
 # arguments nobody remembers, means in practice people run two of them and
 # infer the rest - and an ungated gate is indistinguishable from a passing one,
 # which is the failure mode this repo keeps rediscovering.
@@ -83,7 +83,7 @@ NAMES=(); RESULTS=(); TIMES=(); NOTES=(); LOGS=()
 FAILED=0; UNAVAILABLE=0; LAST_STATUS=0
 
 # Runs one gate, captures its output, records the outcome. Never aborts the
-# run: the point of a summary table is knowing all seven answers, not the first
+# run: the point of a summary table is knowing all nine answers, not the first
 # one that went wrong.
 gate() {
   local name="$1" log="$LOGDIR/${2}.log"; shift 2
@@ -214,7 +214,7 @@ for i in "${!NAMES[@]}"; do
 done
 echo
 
-# The tail of each failure, inline. Otherwise the table sends you to seven log
+# The tail of each failure, inline. Otherwise the table sends you to nine log
 # files to find out what the one red line meant.
 for i in "${!NAMES[@]}"; do
   [ "${RESULTS[$i]}" = "FAIL" ] || continue

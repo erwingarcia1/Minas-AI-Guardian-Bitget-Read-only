@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import logging
-import random
-import time
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 
@@ -749,33 +747,3 @@ class AccountPoller:
         if self._metrics is not None:
             self._metrics.poll_failed(auth=False)
         logger.warning("poll failure for %s (%d consecutive): %s", label, failures, exc)
-
-
-def run_forever(db: Database, cipher: CredentialCipher, rules: RulesConfig, channels: dict) -> None:
-    """Sequential single-process loop, kept for small deployments and
-    debugging. The scaled path is sentinel/engine.py (worker pool +
-    rate limiting + circuit breakers)."""
-    poller = AccountPoller(db, cipher, rules, channels)
-    last_slow_loop: dict[int, float] = {}
-
-    while True:
-        with db.cursor() as cur:
-            cur.execute("SELECT * FROM accounts WHERE status = 'active'")
-            accounts = cur.fetchall()
-
-        for account_row in accounts:
-            poller.run_fast_loop(account_row)
-            account_id = account_row["id"]
-            slow_interval = rules.get_seconds("polling", "slow_loop_seconds", default=600)
-            now = time.monotonic()
-            # Same "never polled is None, not 0" as Engine._schedule_cycle -
-            # monotonic() counts from boot, so comparing against 0 asked about
-            # the machine's uptime rather than this account's last slow poll.
-            last_slow = last_slow_loop.get(account_id)
-            if last_slow is None or now - last_slow >= slow_interval:
-                poller.run_slow_loop(account_row)
-                last_slow_loop[account_id] = now
-
-        jitter = rules.get_seconds("polling", "jitter_seconds")
-        fast_interval = rules.get_seconds("polling", "fast_loop_seconds", default=45)
-        time.sleep(fast_interval + random.uniform(0, jitter))

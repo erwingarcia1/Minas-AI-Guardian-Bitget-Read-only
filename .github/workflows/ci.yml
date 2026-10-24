@@ -96,12 +96,13 @@ jobs:
   # The slow gates, on a schedule (#86): the decision-point mutation floor
   # AND the design-guard probes. Weekly and on-demand, NOT per push - they
   # are canonically scheduled jobs, too slow for feedback anyone acts on -
-  # and release.sh still demands both locally before a tag exists. Between
-  # releases, CI is the source of truth: reproducible, does not stop when a
-  # laptop sleeps, and a fresh checkout makes every run PROVABLY cold (the
-  # first step below asserts no caches, so the 8-second cached pass that is
-  # indistinguishable from a 2951-second real one - except in a log nobody
-  # rereads - cannot happen here).
+  # and release.sh demands both green for the exact tree it tags, running
+  # them locally only when no scheduled run has already proven it (#93).
+  # Between releases, CI is the source of truth: reproducible, does not
+  # stop when a laptop sleeps, and a fresh checkout makes every run
+  # PROVABLY cold (the first step below asserts no caches, so the 8-second
+  # cached pass that is indistinguishable from a 2951-second real one -
+  # except in a log nobody rereads - cannot happen here).
   #
   # Failure reporting distinguishes, in the ISSUE TITLE, a real regression
   # from a gate that produced no result. The previous version filed "score

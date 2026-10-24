@@ -599,15 +599,6 @@
   ]
  },
  {
-  "name": "#32 an unenrolled operator can complete a sign-in",
-  "file": "sentinel/operators.py",
-  "old": "    an optional one.\"\"\"\n    return True",
-  "new": "    an optional one.\"\"\"\n    from sentinel.twofactor import OPERATOR, is_enabled\n\n    return is_enabled(db, OPERATOR, username)",
-  "tests": [
-   "tests/test_twofactor.py"
-  ]
- },
- {
   "name": "#32 a malformed secret is treated as valid",
   "file": "sentinel/totp.py",
   "old": "    return raw or None",

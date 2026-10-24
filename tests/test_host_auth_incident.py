@@ -18,7 +18,6 @@ from sentinel.alerts.fleet import (
     auth_failure_starts,
     fleet_incident,
     host_auth_incident,
-    in_host_auth_incident,
     observed_request_ip,
     page_fleet_incident,
 )
@@ -32,6 +31,12 @@ BITGET = 'bitget {"code":"40018","msg":"Invalid IP,Current request IP 57.181.51.
 BYBIT = 'bybit {"retCode":10010,"retMsg":"Unmatched IP, please check your API key\'s bound IP addresses.","result":{}}'
 REFUSALS = {"bitget": BITGET, "bybit": BYBIT, "okx": "okx {\"code\":\"50110\",\"msg\":\"Invalid IP\"}",
             "binance": 'binance {"code":-2015,"msg":"Invalid API-key, IP, or permissions for action."}'}
+
+
+def _in_host_auth_incident(db, rules, account_id) -> bool:
+    """Is this account a member of the open host-level incident, if any?"""
+    incident = host_auth_incident(db, rules)
+    return bool(incident) and int(account_id) in incident["account_ids"]
 
 
 class _Recording:
@@ -237,7 +242,7 @@ def test_a_member_that_recovers_leaves_the_incident_and_the_rest_can_be_accused_
     for _ in range(2):
         for _, row in rows:
             poller.run_fast_loop(row)
-    assert _alerts(db, TAMPER_RULE) == [] and all(in_host_auth_incident(db, rules, a) for a, _ in rows)
+    assert _alerts(db, TAMPER_RULE) == [] and all(_in_host_auth_incident(db, rules, a) for a, _ in rows)
     # b and c are fixed (their allowlists updated); a is still refused - now on its own.
     with db.cursor() as cur:
         cur.execute("UPDATE poll_state SET auth_failing_since = NULL, consecutive_auth_failures = 0 "
@@ -311,11 +316,11 @@ def test_membership_is_exact_a_stranger_is_not_in_an_open_incident(db):
         for account_id in ids:
             cur.execute("UPDATE poll_state SET auth_failing_since = '2026-09-21T19:10:00+00:00', last_auth_error = ? "
                         "WHERE account_id = ?", (BITGET, account_id))
-    assert all(in_host_auth_incident(db, rules, a) for a in ids)
-    assert in_host_auth_incident(db, rules, stranger) is False
+    assert all(_in_host_auth_incident(db, rules, a) for a in ids)
+    assert _in_host_auth_incident(db, rules, stranger) is False
     with db.cursor() as cur:
         cur.execute("UPDATE poll_state SET auth_failing_since = NULL")
-    assert in_host_auth_incident(db, rules, ids[0]) is False, "no incident, no member"
+    assert _in_host_auth_incident(db, rules, ids[0]) is False, "no incident, no member"
 
 
 def test_the_refusal_sample_per_exchange_is_only_ever_the_exchanges_words(db):
@@ -466,7 +471,7 @@ def test_a_member_of_the_incident_is_never_told_to_replace_the_key(db, monkeypat
             poller.run_fast_loop(row)
     account_id, row = rows[0]
     member = row["alert_email"]
-    assert in_host_auth_incident(db, rules, account_id)
+    assert _in_host_auth_incident(db, rules, account_id)
 
     [account] = member_status(db, member, rules)["accounts"]
     assert (account["cause"], account["watched"]) == (HOST_AUTH_RULE, False)

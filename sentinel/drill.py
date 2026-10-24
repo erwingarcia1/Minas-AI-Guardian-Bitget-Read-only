@@ -69,16 +69,6 @@ def mark_drill_account(db: Database, account_id: int, is_drill: bool = True) -> 
 
 # --- the delivery record -----------------------------------------------------------
 
-def record_contact_delivery(db: Database, email: str, channel: str, alert_id: int | None) -> None:
-    """Kept for callers that predate the general record (#103 item 2): an
-    accepted email/telegram leg to a customer, written to `deliveries`;
-    `contact_deliveries` is the view that reads it back."""
-    from sentinel.alerts.delivery import record_delivery
-
-    record_delivery(db, channel=channel, recipient=email, status="accepted", audience="customer",
-                    kind="alert", alert_id=alert_id)
-
-
 def delivery_recency(db: Database, email: str, now: datetime | None = None) -> dict:
     """{channel: {"last": iso|None, "stale": bool}} for email, telegram and
     sms - derived from what was actually delivered to this person, never

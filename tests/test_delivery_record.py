@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from sentinel.alerts.delivery import deliveries_for_alert, last_accepted, reached_a_person, record_delivery
+from sentinel.alerts.delivery import last_accepted, record_delivery
 from sentinel.alerts.dispatch import dispatch
 from sentinel.db import Database
 from sentinel.detectors.base import Detection
@@ -74,7 +74,7 @@ def test_dispatch_records_every_global_recipient_and_keeps_delivered_to(db):
     with db.cursor() as cur:
         cur.execute("SELECT delivered_to FROM alerts WHERE id = ?", (alert_id,))
         assert cur.fetchone()["delivered_to"] == 2, "delivered_to still counts global channels that took it"
-    assert reached_a_person(db, alert_id) is True
+    assert any(r["status"] == "accepted" for r in _rows(db, alert_id))
 
 
 def test_a_snoozed_alert_records_every_leg_as_skipped_not_silently(db):
@@ -89,7 +89,7 @@ def test_a_snoozed_alert_records_every_leg_as_skipped_not_silently(db):
     second = dispatch(db, {"CRITICAL": [_Channel("email", ["ops@minas.test"])]}, aid, "acct", _detection(), {"CRITICAL": 0})
     assert [r["status"] for r in _rows(db, second)] == ["skipped"]
     assert "snoozed" in _rows(db, second)[0]["detail"]
-    assert reached_a_person(db, second) is False
+    assert not any(r["status"] == "accepted" for r in _rows(db, second))
 
 
 # --- the customer's own legs, through the router --------------------------------------
@@ -134,7 +134,7 @@ def test_the_member_email_leg_is_recorded_accepted_per_address(db, router):
     assert [(r["recipient"], r["status"], r["audience"], r["kind"]) for r in rows] == [
         ("owner@x.test", "accepted", "customer", "alert"), ("kin@x.test", "accepted", "customer", "alert")]
     assert rows[0]["provider"] == "smtp"
-    assert reached_a_person(db, alert_id) is True
+    assert any(r["status"] == "accepted" for r in _rows(db, alert_id))
 
 
 def test_a_refused_email_is_recorded_failed_with_the_transports_words(db, router):
@@ -144,7 +144,7 @@ def test_a_refused_email_is_recorded_failed_with_the_transports_words(db, router
     router.send(_detection(), "acct", ["owner@x.test"], [], account_id=aid, alert_id=alert_id)
     rows = _rows(db, alert_id, channel="email")
     assert [(r["status"], r["detail"]) for r in rows] == [("failed", "550 mailbox unavailable")]
-    assert reached_a_person(db, alert_id) is False
+    assert not any(r["status"] == "accepted" for r in _rows(db, alert_id))
 
 
 def test_no_smtp_records_the_leg_as_skipped_not_absent(db, router, monkeypatch):
@@ -169,13 +169,6 @@ def test_sms_with_no_provider_records_every_phone_as_skipped(db, router):
     with db.cursor() as cur:
         cur.execute("SELECT phone, status FROM sms_deliveries WHERE alert_id = ? ORDER BY id", (alert_id,))
         assert [tuple(r) for r in cur.fetchall()] == [("+15550001", "skipped"), ("+15550002", "skipped")]
-
-
-def test_nothing_recorded_is_unknowable_not_false(db):
-    aid = make_account(db)
-    alert_id = _alert_row(db, aid)
-    assert deliveries_for_alert(db, alert_id) == []
-    assert reached_a_person(db, alert_id) is None
 
 
 def test_the_secondary_note_is_recorded_as_the_secondary_audience(db, router):

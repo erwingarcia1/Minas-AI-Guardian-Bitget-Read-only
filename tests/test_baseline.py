@@ -5,7 +5,6 @@ from decimal import Decimal
 from unittest.mock import MagicMock
 
 from sentinel.baseline import (
-    is_known_address,
     known_transfer_routes,
     latest_balance_snapshot,
     prune_balance_snapshots,
@@ -29,9 +28,11 @@ def test_seen_withdrawal_is_reported_new_only_once(db):
 def test_known_address_roundtrip(db):
     account_id = make_account(db)
 
-    assert is_known_address(db, account_id, "bc1qabc") is False
-    record_known_address(db, account_id, "bc1qabc", "BTC", "deposit_history")
-    assert is_known_address(db, account_id, "bc1qabc") is True
+    assert record_known_address(db, account_id, "bc1qabc", "BTC", "deposit_history") is True
+    with db.cursor() as cur:
+        cur.execute("SELECT 1 FROM known_addresses WHERE account_id = ? AND address = ?", (account_id, "bc1qabc"))
+        assert cur.fetchone() is not None
+    assert record_known_address(db, account_id, "bc1qabc", "BTC", "deposit_history") is False, "already known"
 
 
 def test_latest_balance_snapshot_returns_newest_and_prune_keeps_it(db):

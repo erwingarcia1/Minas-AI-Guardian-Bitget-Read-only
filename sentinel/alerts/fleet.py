@@ -38,7 +38,7 @@ from __future__ import annotations
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sentinel.alerts.meaning import COVERAGE_RULES
 from sentinel.db import Database
@@ -205,11 +205,6 @@ def host_auth_incident(db: Database, rules, now: datetime | None = None) -> dict
     }
 
 
-def in_host_auth_incident(db: Database, rules, account_id: int) -> bool:
-    incident = host_auth_incident(db, rules)
-    return bool(incident) and int(account_id) in incident["account_ids"]
-
-
 def _already_accused(db: Database, account_ids: list[int]) -> list[str]:
     """Members whose tamper accusation went out before the cluster formed
     (the first one or two can, when the failures span sweeps): named on the
@@ -318,7 +313,3 @@ def page_fleet_incident(db: Database, alerter, incident: dict, rules=None) -> in
     logger.warning("fleet coverage incident %s: %d accounts (%s) - paged once as #%s",
                    incident["key"], incident["count"], labels, page_id)
     return page_id
-
-
-def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
