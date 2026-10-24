@@ -32,15 +32,6 @@ def record_known_address(db: Database, account_id: int, address: str | None, coi
         return cur.rowcount == 1
 
 
-def is_known_address(db: Database, account_id: int, address: str) -> bool:
-    with db.cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM known_addresses WHERE account_id = ? AND address = ?",
-            (account_id, address),
-        )
-        return cur.fetchone() is not None
-
-
 def record_seen_withdrawal(db: Database, account_id: int, record: dict) -> bool:
     """Records a withdrawal (CCXT unified transaction dict) if not already
     seen. Returns True if it was newly recorded, False if already known -

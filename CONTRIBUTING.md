@@ -21,7 +21,7 @@ python3 -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().
 ```bash
 .venv/bin/pytest -q                    # full suite — mocked CCXT, never hits a live exchange
 .venv/bin/python scripts/soak_test.py  # 100-account synthetic soak
-.venv/bin/sentinel run                 # engine + dashboard (:8390) + metrics (:9109)
+.venv/bin/sentinel run                 # engine + dashboard (:8390) + member portal (:8391) + metrics (:9109)
 scripts/health-check.sh                # every gate, one table — "Is everything okay?" below
 ```
 
@@ -181,7 +181,8 @@ scripts/release.sh 1.2.0     # refuses on an empty [Unreleased], a dirty tree,
 
 The slow gates (probes, mutation floor) are skipped locally only when
 scheduled CI provably ran them on this exact tree and passed — see
-"Where the slow gates canonically run" above; anything unprovable runs
+"Where the slow gates canonically run" below, under "Is everything
+okay?"; anything unprovable runs
 them locally, and a red scheduled run on this code refuses the release.
 
 It moves `[Unreleased]` under a dated heading, bumps `pyproject.toml`, adds the
@@ -212,20 +213,10 @@ sudo /opt/minas-guardian/scripts/deploy.sh            # latest release tag
 sudo /opt/minas-guardian/scripts/deploy.sh vX.Y.Z     # or a specific one
 ```
 
-`deploy.sh` **deploys a release tag, never main's tip** — it fetches tags
-and checks the tag out (the server stays detached at it, so `git describe`
-names what is deployed with no drift suffix), which is why the log-handoff
-commit that routinely follows every tag cannot block a deploy. The rest is
-the documented sequence — deploy gate (release tags only, no `--force`),
-image build stamped with `GIT_SHA`/`GIT_TAG`, `validate-config` against the
-new image, `up -d`, wait for the healthcheck, then **assert** the container
-reports the requested tag — and any failure before the switchover leaves
-the previous version running untouched. It refuses a dirty tree (naming
-the files) and asks for typed confirmation before deploying a tag older
-than what is running. If the tag you want does not exist: cut a release
-(`scripts/release.sh X.Y.Z`, then `git push && git push --tags`) and rerun.
-The manual sequence and the reasoning behind each step:
-[docs/deployment.md](docs/deployment.md) "Deploying code changes".
+`deploy.sh` **deploys a release tag, never main's tip**, and refuses a
+dirty tree. The sequence it runs, its refusals and the reasoning behind
+each step: [docs/deployment.md](docs/deployment.md) "Deploying code
+changes".
 
 Push first: the server fetches from GitHub, so unpushed work cannot
 deploy — GitHub and production stay in lockstep by construction. Don't
@@ -244,9 +235,10 @@ scripts/health-check.sh          # every gate (~20 min, mutation dominates)
 scripts/health-check.sh --fast   # skips the two multi-minute gates (~4 min)
 ```
 
-One command, eight gates, one summary table: ruff, the suite, the coverage
-floor, `pip-audit`, the issue-status audit, the design-guard probes, the
-mutation floor, and a freshness check on the scheduled CI gates. Non-zero if
+One command, nine gates, one summary table: ruff, the suite, the coverage
+floor, `pip-audit`, the issue-status audit, a freshness check on the
+scheduled CI gates, the release-objects check (#94: every version tag has a
+GitHub Release), the design-guard probes and the mutation floor. Non-zero if
 any of them fail.
 
 **Where the slow gates canonically run (#86): scheduled CI, not the inner
@@ -285,7 +277,7 @@ The division of labour:
   becomes a proof that the gates ran, not that they held. Do not remove it
   thinking it duplicates the floor; it covers what the floor cannot.
 
-The eighth gate closes the quiet failure of that arrangement: a cron that
+The freshness gate closes the quiet failure of that arrangement: a cron that
 silently stops firing reads as permanently green, so
 `scripts/scheduled-gates-freshness.sh` asserts a scheduled (or dispatched)
 run completed within 8 days — "did it run", not "did it pass"; a red run
@@ -299,15 +291,17 @@ tests                        pass       179s
 coverage floor (78%)         pass         0s
 pip-audit                    pass        39s
 issue-status audit           pass         3s
+scheduled gates ran (8d)     pass         2s
+release objects              pass         3s
 design-guard probes          skipped       -  --fast
-mutation floor (90%)         skipped       -  --fast
+mutation floor (96%)         skipped       -  --fast
 ```
 
 Each gate is documented in its own section below; this only runs them. Three
 things it is deliberate about:
 
 - **It does not stop at the first failure.** The point of the table is knowing
-  all seven answers. Failed gates get their last 30 lines printed inline.
+  all nine answers. Failed gates get their last 30 lines printed inline.
 - **It keeps the logs when everything passes.** Every run writes to
   `.health-check-logs/<utc-stamp>-<sha>/`, named at the top of the run and kept
   for 14 days whatever the result. Deleting them on success sounds tidy and is
@@ -433,9 +427,10 @@ scripts/install-hooks.sh
   over SSH: run `scripts/install-hooks.sh` again. Never answer it with
   `--no-verify`.
 
-Bypass with `--no-verify` when you genuinely need to. It is possible on
-purpose — a hook that blocks an urgent fix gets uninstalled — and it is never
-silent.
+`--no-verify` is possible on purpose (a hook that cannot be bypassed gets
+uninstalled) and it is never silent — and the standing rule in CLAUDE.md is
+that it is never used here. A hook that blocks you is a defect to fix, not a
+gate to step round.
 
 The hooks are deliberately not the `pre-commit` tool. That would buy hook
 management at the price of a dev dependency managing its own tool environments,
@@ -848,23 +843,17 @@ path. Its mutations are evidence-key and message changes, which the restricted
 run discards as cosmetic and which are nothing of the kind: `dispatch._dedup_key`
 reads `evidence["order_id"]` to decide whether two withdrawals are one.
 
-Covered by hand under **#65**, and measured with `scripts/mutation-module.sh`,
-which runs an *unrestricted* mutation score over a single module:
-
-```bash
-scripts/mutation-module.sh sentinel/detectors/withdrawal.py \
-    tests/test_detectors_withdrawal.py tests/test_withdrawal_evidence.py \
-    tests/test_dispatch.py tests/test_detector_wiring.py
-```
-
-59 mutants: **40 survived (67.8%) before, 0 survived (0.0%) after**. The
-decision-point floor did not move and cannot — it counts mutants this module
-does not produce. Use this script when auditing one file deeply; it is manual
-by design and not in CI.
+Covered by hand under **#65**. The measurement was taken once, 2026-08-13,
+with an *unrestricted* mutation run over that one module: 59 mutants, **40
+survivors brought to 0**. The decision-point floor did not move and cannot —
+it counts mutants this module does not produce. The one-module script that
+produced it has since drifted from the gate and was removed; rebuild it on
+`scripts/mutation-check.sh`'s `setup.cfg` block if ever needed.
 
 The mutmut invocation quirks (whole-package `source_paths`, newline-separated
 test selection, the cached `mutants/` copy, unstable mutant numbering) are
-documented at the top of the script so nobody rediscovers them.
+documented at the top of `scripts/mutation-check.sh` so nobody rediscovers
+them.
 
 ### Regeneration is incremental, and proven
 
@@ -903,7 +892,7 @@ not) and comes back a survivor, 185/188 instead of 186/188, and the gate
 passes. One decision quietly unpinned, inside the headroom.
 
 So `scripts/mutation-known-survivors.txt` lists every survivor the gate
-accepts — today the two argued equivalents — by file plus the `-`/`+` lines of
+accepts — sixteen rows today, each with its reason — by file plus the `-`/`+` lines of
 `mutmut show` plus the mutant's FUNCTION (since 2026-09-23: the same diff in
 two functions of one file was one row, and pinning one left the row covering
 the other), hashed (`scripts/mutation_survivors.py`); not by mutant number,

@@ -66,14 +66,13 @@ services:
       SENTINEL_DASHBOARD_TRUSTED_PROXIES: "10.231.0.2"
     volumes:
       - sentinel-data:/data
-      - ./config:/app/config:ro   # rules.yaml stays hot-reloadable from the host
+      - ./config:/app/config:ro   # rules.yaml hot-reloads when a deploy updates the checkout; never edited on the host
     ports:
       - "127.0.0.1:8390:8390"     # ops dashboard - loopback: the break-glass path is an SSH tunnel to this port, then http://localhost:8390/admin/; caddy reaches it over the edge network
       - "127.0.0.1:8391:8391"     # member portal - loopback: nothing on the host needs it; caddy reaches it over the edge network
       - "127.0.0.1:9109:9109"     # prometheus metrics - loopback only: never proxied, read through an SSH tunnel
-    # `default` as before (the scale profile's postgres and redis live there),
-    # plus `edge`, where caddy reaches the portal as sentinel:8391 and the
-    # dashboard as sentinel:8390.
+    # `default` as before, plus `edge`, where caddy reaches the portal as
+    # sentinel:8391 and the dashboard as sentinel:8390.
     networks:
       default: {}
       edge: {}
@@ -165,44 +164,6 @@ services:
         max-size: "20m"
         max-file: "5"
 
-  # Phase 2 scale-out targets, opt-in via: docker compose --profile scale up -d
-  # The MVP engine runs in-process (SQLite + in-memory queue); these are
-  # provisioned here so moving to Postgres (SENTINEL_DB_DSN) and a
-  # Redis-backed distributed queue is a config change on this same compose
-  # file, not a new deployment. Keeping them off by default keeps the pilot
-  # VM footprint to one container.
-  postgres:
-    image: postgres:16-alpine
-    profiles: ["scale"]
-    restart: unless-stopped
-    environment:
-      POSTGRES_DB: sentinel
-      POSTGRES_USER: sentinel
-      # Empty default on purpose: `:?` would break compose parsing even for
-      # pilot deploys that never start this profile. With an empty value the
-      # postgres image itself refuses to boot (clear error at `--profile
-      # scale up` time), which is the right failure moment.
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-}
-    volumes:
-      - pg-data:/var/lib/postgresql/data
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-
-  redis:
-    image: redis:7-alpine
-    profiles: ["scale"]
-    restart: unless-stopped
-    volumes:
-      - redis-data:/data
-    logging:
-      driver: json-file
-      options:
-        max-size: "20m"
-        max-file: "5"
-
 networks:
   # The hop between caddy and the two servers it fronts. Its own network,
   # with a subnet fixed here so caddy's address can be fixed and trusted
@@ -225,7 +186,5 @@ networks:
 
 volumes:
   sentinel-data:
-  pg-data:
-  redis-data:
   caddy-data:
   caddy-config:

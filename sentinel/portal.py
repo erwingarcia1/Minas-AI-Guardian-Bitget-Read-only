@@ -32,7 +32,7 @@ from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
 from sentinel.naming import display_label
 from sentinel.outbox import answering
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
-from sentinel.passwords import LoginThrottle
+from sentinel.passwords import LoginThrottle, hash_password, verify_password
 from sentinel.rules_schema import default_for
 from sentinel.snooze import active_snoozes_for_accounts, snooze_alert, snooze_choices
 from sentinel.twofactor import MEMBER as TWOFACTOR_MEMBER
@@ -56,43 +56,6 @@ SESSION_COOKIE = "minas_portal"
 SESSION_IDLE_SECONDS = 2 * 3600
 SESSION_TTL_SECONDS = 12 * 3600
 _SECRET_KEY_ROW = "session_signing_secret"
-
-# Login throttling: after this many failures per email or per client IP in
-# the window, further attempts are rejected without checking the password.
-
-
-# --- password hashing (scrypt, stdlib) --------------------------------------
-
-_SCRYPT_N, _SCRYPT_R, _SCRYPT_P = 2**14, 8, 1
-
-
-def hash_password(password: str) -> str:
-    salt = secrets.token_bytes(16)
-    digest = hashlib.scrypt(
-        password.encode(), salt=salt, n=_SCRYPT_N, r=_SCRYPT_R, p=_SCRYPT_P, dklen=32
-    )
-    return f"scrypt${_SCRYPT_N}${_SCRYPT_R}${_SCRYPT_P}${salt.hex()}${digest.hex()}"
-
-
-def verify_password(password: str, encoded: str) -> bool:
-    try:
-        scheme, n, r, p, salt_hex, digest_hex = encoded.split("$")
-        if scheme != "scrypt":
-            return False
-        digest = hashlib.scrypt(
-            password.encode(), salt=bytes.fromhex(salt_hex),
-            n=int(n), r=int(r), p=int(p), dklen=len(bytes.fromhex(digest_hex)),
-        )
-        return hmac.compare_digest(digest, bytes.fromhex(digest_hex))
-    except (ValueError, TypeError):
-        return False  # unparseable hash fails closed
-
-
-# A single precomputed scrypt hash used to equalize login timing for unknown
-# emails: verifying against it costs exactly ONE scrypt op, the same as the
-# real-email path, so response time never reveals whether an email is
-# registered. Shared with the operator login from sentinel.passwords - the
-# primitives are common, the identities deliberately are not.
 
 
 # --- member records ----------------------------------------------------------

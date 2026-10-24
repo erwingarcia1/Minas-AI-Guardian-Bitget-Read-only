@@ -1,17 +1,17 @@
 # Minas AI Guardian — Deployment Guide
 
-Target: **AWS first** (launch decision 2026-07-03), Alibaba Cloud kept as an
-alternative. Both paths use the same Docker Compose deployment; only the
-managed-service names differ.
+Target: **AWS EC2, ap-northeast-1** (launch decision 2026-07-03): one Docker
+Compose stack on one instance.
 
 ## Prerequisites
 
-- A Linux VM (AWS EC2 / Alibaba ECS). 2 vCPU / 2 GB (t3.small) is
-  comfortable for the pilot; t3.micro (1 GB) works with the swap the
-  bootstrap script creates. Scale workers before scaling the box.
+- An EC2 instance. 2 vCPU / 2 GB (t3.small) is comfortable for the pilot;
+  t3.micro (1 GB) works with the swap the bootstrap script creates. Scale
+  workers before scaling the box.
 - Docker + Docker Compose plugin (the bootstrap script installs both).
-- Outbound HTTPS to `api.bitget.com`, `api.telegram.org`, Twilio, your SMTP
-  host, and (if triage is enabled) `api.anthropic.com`.
+- Outbound HTTPS to the four exchanges' APIs (Bitget, Bybit, OKX, Binance),
+  `api.telegram.org`, ClickSend or Twilio, Resend or your SMTP host, and (if
+  triage is enabled) `api.anthropic.com`.
 
 ## AWS quickstart (pilot)
 
@@ -39,7 +39,7 @@ managed-service names differ.
    It contains no secrets by design (user-data is readable from instance
    metadata).
 6. Launch, then: Elastic IPs → **Allocate** → **Associate** with the
-   instance. This is the permanent egress IP you whitelist on Bitget keys.
+   instance. This is the permanent egress IP you allowlist on every exchange key.
 7. Instance settings → Metadata options: require **IMDSv2** with hop limit
    1 (new launches default to this; verify) — blocks SSRF-style metadata
    theft from anything running on the box.
@@ -98,19 +98,13 @@ the tunnel working: per MDN's `Set-Cookie` page, the `https:` requirement
 "is ignored when the `Secure` attribute is set by localhost". Open the
 tunnel as `http://localhost:8390/admin/`. Not checked in every browser
 here: if one signs you in and then shows the sign-in page again, it
-refused the cookie - use another browser, or the public address. One
-more, once: a browser that opened the tunnel before this release may
-still hold an `ops_session` cookie with `Path=/`. It is still a valid
-session for up to 12 hours, and `/admin/logout` cannot clear it (it
-clears `Path=/admin` only), so after the upgrade clear the browser's
-cookies for `localhost` once, or you stay signed in after signing out
-until the old token expires. And a browser or extension that trims
-same-origin referrers to the bare origin is refused on every dashboard
-POST, the sign-in included, with "cross-origin POST rejected: Referer
-outside /admin" (the service log says the same, with your address):
-the dashboard requires a browser's POST to name a page under `/admin`,
-which is what tells its own forms from one planted on a portal page.
-Turn the trimming off for this site.
+refused the cookie - use another browser, or the public address. And a
+browser or extension that trims same-origin referrers to the bare origin
+is refused on every dashboard POST, the sign-in included, with
+"cross-origin POST rejected: Referer outside /admin" (the service log says
+the same, with your address): the dashboard requires a browser's POST to
+name a page under `/admin`, which is what tells its own forms from one
+planted on a portal page. Turn the trimming off for this site.
 
 **Migrating an existing pilot DB instead of re-onboarding:**
 
@@ -151,12 +145,10 @@ the stack comes back on its own after a reboot or crash; no operator action.
 
 Every login is SSH on port 22 with the instance's key pair, by the Elastic
 IP, from an address the security group's SSH rule admits. There is no VPN
-and no overlay network (decision 22e; the teardown is step 4 of "The public
-address" below - until it has run on the box, the old daemon is still
-installed there, and nothing in this guide uses it). The rule is the gate,
-so read it in the AWS console (EC2 → Security groups → the instance's
-group → Inbound rules → SSH) rather than trusting this page, and add your
-current address as a `/32` before you need it.
+and no overlay network (decision 22e). The rule is the gate, so read it in
+the AWS console (EC2 → Security groups → the instance's group → Inbound
+rules → SSH) rather than trusting this page, and add your current address
+as a `/32` before you need it.
 
 ```bash
 chmod 400 Minas-AI-Guardian-Key-Tokyo.pem
@@ -194,8 +186,7 @@ and everything else to the member portal (8391) - its pages and the apps'
 JSON API under `/api/v1`. The metrics endpoint (9109) is never published
 (22e). There is no IP allowlist on `/admin` (22c item 5, answered
 2026-10-23: no): the operator sign-in with its mandatory second factor and
-the login throttle are the protection. This section is also 22e's teardown
-of the old way in (step 4), because Caddy cannot have 443 until it is gone.
+the login throttle are the protection.
 
 What the compose file carries for it:
 
@@ -234,16 +225,14 @@ What the compose file carries for it:
   like any other page.
 
 Bring it up in this order. Each step says how to tell it worked; do not
-start the next one until it has. The order departs from 22e's, which put
-the teardown after members had moved: step 4 says why it cannot wait that
-long. From step 4 until step 7's certificate the portal is unreachable
-from the internet (step 8 confirms it) - do those steps in one sitting,
-and email members the new address beforehand (22d; there is no overlap
-period, the old address dies at step 4).
+start the next one until it has. Production went through it on 2026-10-23
+and 2026-10-24 (docs/DEPLOYMENTS.md holds the readings; step 8's
+wrong-password log line is still the owner's); step 4 was its one-time
+teardown of the old way in and does not recur.
 
 1. **Prove SSH with the EC2 key pair** (22e step 4; rule 6's read-only
    twin). From a fresh terminal, by the public address, from the network
-   you will work from in steps 4 to 9:
+   you will work from in the steps below:
 
    ```bash
    ssh -i Minas-AI-Guardian-Key-Tokyo.pem ubuntu@57.181.51.14
@@ -251,13 +240,11 @@ period, the old address dies at step 4).
    ```
 
    Expect the deployed tag (one name, no drift suffix) and the container
-   list: `sentinel` shows `Exited (137)` while the 2026-09-28 pause holds
-   ("Restoring after the 2026-09-28 pause" below), `Up (healthy)`
-   otherwise. When it is up, `sudo docker compose exec -T sentinel
-   sentinel version` is 22e's own wording of the same proof. Both read and
-   change nothing. Do not go on until this works: step 4 removes the other
-   way in, and a box nobody can reach gets no deploys and no last-operator
-   recovery.
+   list, `sentinel` at `Up (healthy)`; `sudo docker compose exec -T
+   sentinel sentinel version` is 22e's own wording of the same proof. Both
+   read and change nothing. Do not go on until this works: SSH is the only
+   way onto the box, and a box nobody can reach gets no deploys and no
+   last-operator recovery.
 
 2. **DNS**, at the registrar: an `A` record for `guardian.minastrade.com`
    pointing at `57.181.51.14`, the Elastic IP. No `AAAA` record: the edge
@@ -276,8 +263,8 @@ period, the old address dies at step 4).
 3. **Security group**, in the AWS console (EC2 → Security groups → the
    instance's group → Edit inbound rules): add **TCP 80** and **TCP 443**
    from `0.0.0.0/0`. Leave the SSH rule as it is - it is the only way onto
-   the box from step 4 on; read it and confirm the address you used in
-   step 1 is in it. From your laptop:
+   the box; read it and confirm the address you used in step 1 is in it.
+   From your laptop:
 
    ```bash
    nc -vz -w 5 57.181.51.14 443
@@ -287,76 +274,40 @@ period, the old address dies at step 4).
    connection through and nothing listens yet. A timeout means the group
    still drops it.
 
-4. **Tear Tailscale down** (22e steps 6 and 7). On the box, in the
-   EC2-key SSH session from step 1 - never in a Tailscale SSH session,
-   which `tailscale down` ends. From `funnel reset` on, the old address is
-   dead and members have no way in until Caddy holds a certificate (step
-   7): go straight on. This step comes before Caddy, not after members
-   have moved as 22e lists it, because tailscaled's Serve listener holds
-   443 (`/` → 8390 in the reading below) and step 5 requires no listener
-   there before Caddy may start.
-
-   ```bash
-   sudo tailscale serve status        # expect the four listeners read on 2026-09-25:
-   #   # Funnel on: https://minas-guardian.tail0fdd4a.ts.net:8443
-   #   :8443 (Funnel on)    -> 127.0.0.1:8391   portal, PUBLIC
-   #   :8391 (tailnet only) -> 127.0.0.1:8391   portal, tailnet
-   #   /     (tailnet only) -> 127.0.0.1:8390   dashboard
-   #   :9109 (tailnet only) -> 127.0.0.1:9109   metrics
-   sudo tailscale funnel reset
-   sudo tailscale serve reset
-   sudo tailscale serve status        # expect: no listeners (the CLI's "No serve config" line, or nothing)
-   sudo tailscale down
-   tailscale status                   # expect: Tailscale is stopped.
-   sudo apt-get remove -y tailscale
-   sudo rm -f /etc/apt/sources.list.d/tailscale.list
-   command -v tailscale               # expect: nothing
-   sudo ss -tlnp | grep -c tailscaled # expect: 0
-   ip -4 addr show tailscale0         # expect: Device "tailscale0" does not exist.
-   ```
-
-   Then in the Tailscale admin console: Machines → minas-guardian →
-   Remove. `apt-get remove` leaves `/var/lib/tailscale/tailscaled.state`
-   (the node key) on disk; `sudo apt-get purge -y tailscale` or `sudo rm
-   -rf /var/lib/tailscale` clears it - the owner's call. The old warning
-   against `tailscale funnel reset` (it might take Serve down with Funnel)
-   is withdrawn on purpose: Serve goes too. The expected wordings above
-   are the CLI's as best known - verify each command's output on the box
-   at the time (rule 6). There is no coming back to this address
-   afterwards: a reinstall is a new node with a new name.
+4. **Tear Tailscale down** (22e steps 6 and 7). Done 2026-10-23 - commands
+   and readings in docs/DEPLOYMENTS.md (2026-10-23 entry).
 
 5. **Read the box** (rule 6's read-only twin). Nothing may hold 80 or 443,
    the `edge` subnet must be free, and the checkout must be clean:
 
    ```bash
    sudo ss -tlnp '( sport = :80 or sport = :443 )'   # expect: no listener
-   sudo ss -tlnp | grep -c tailscaled                 # expect: 0
    ip -4 route | grep '^10\.231\.'                    # expect: nothing
    cd /opt/minas-guardian && sudo git status --short  # expect: nothing
    ```
 
-   A listener on 80 or 443 means step 4 is not finished. A route there
-   means something on the host uses that range: stop, and pick another
-   subnet for `edge` in docker-compose.yml (caddy's address,
-   `SENTINEL_TRUSTED_PROXIES` and `SENTINEL_DASHBOARD_TRUSTED_PROXIES` move
-   with it; a test holds them together). A `??` line is an untracked file,
-   and `deploy.sh` refuses to run with one in the tree: on production that
-   is `held/` from the 2026-09-28 pause, and "Restoring after the
-   2026-09-28 pause" below says where it goes.
+   A listener on 80 or 443 means something on the host already holds
+   Caddy's port: stop, and find out what. A route there means something on
+   the host uses that range: stop, and pick another subnet for `edge` in
+   docker-compose.yml (caddy's address, `SENTINEL_TRUSTED_PROXIES` and
+   `SENTINEL_DASHBOARD_TRUSTED_PROXIES` move with it; a test holds them
+   together). A `??` line is an untracked file, and `deploy.sh` refuses to
+   run with one in the tree ("Where backups go" below says where such a
+   file belongs).
 
-6. **Deploy the release that carries `/admin`.** The dashboard's base path
+6. **Deploy a release that carries `/admin`.** The dashboard's base path
    (`SENTINEL_DASHBOARD_BASE_PATH=/admin`, the `Path=/admin` cookie, the
    `Referer` check), the Caddyfile's `/admin` route, compose's
-   `SENTINEL_DASHBOARD_TRUSTED_PROXIES` and this guide arrive in one tag;
-   it sits in `[Unreleased]` until the release is cut:
+   `SENTINEL_DASHBOARD_TRUSTED_PROXIES` and this guide shipped in v1.14.0
+   (the `caddy` service itself in v1.13.0); deploy that or later:
 
    ```bash
-   sudo /opt/minas-guardian/scripts/deploy.sh vX.Y.Z
+   sudo /opt/minas-guardian/scripts/deploy.sh vX.Y.Z   # v1.14.0 or later
    ```
 
    Its `docker compose up -d` creates the `edge` network, recreates
-   `sentinel` on it - starting it, if the 2026-09-28 pause still holds -
-   and starts `caddy`. Expect `deploy: OK — vX.Y.Z is live and verified`.
+   `sentinel` on it and starts `caddy`. Expect `deploy: OK — vX.Y.Z is
+   live and verified`.
 
 7. **`docker compose up -d`, then read what runs:**
 
@@ -365,8 +316,7 @@ period, the old address dies at step 4).
    sudo docker compose up -d     # after deploy.sh, a no-op that confirms nothing is left down
    sudo docker compose ps        # expect: caddy Up; sentinel Up (healthy)
    sudo ss -tlnp | grep -E ':(80|443|8390|8391|9109)\b'
-       # expect: 80 and 443 on 0.0.0.0 (and [::]); 8390, 8391 and 9109 on 127.0.0.1 only;
-       #         nothing on a 100. address
+       # expect: 80 and 443 on 0.0.0.0 (and [::]); 8390, 8391 and 9109 on 127.0.0.1 only
    sudo docker compose logs sentinel | grep -E 'X-Forwarded-For is believed|no trusted proxy'
        # expect two lines and no "no trusted proxy" line:
        #   "portal: X-Forwarded-For is believed from 10.231.0.2 only"
@@ -467,44 +417,23 @@ period, the old address dies at step 4).
    curl -s https://guardian.minastrade.com/login | grep -c 'Our address has changed' # expect: 0 - the host is recognised
    ```
 
-   Telling members the address (22d) is the owner's email, sent before
-   step 4; after that step there is no old address left to keep up, so the
-   "Our address has changed" notice has nobody to show to.
+   Telling members the address (22d, 22e step 5) is the owner's email;
+   there is no old address left to keep up, so the "Our address has
+   changed" notice has nobody to show to.
 
 **Rolling back:** `sudo docker compose stop caddy` takes the public
 listener down at once - and with it the portal and the dashboard, for
 everyone. You still reach both through the SSH tunnel; members have no way
-in until Caddy is back. Deploying an older tag does NOT stop Caddy: a tag
-from before Caddy has no `caddy` service in its compose file, so compose
+in until Caddy is back. Deploying an older tag does NOT stop Caddy. A tag
+older than v1.13.0 has no `caddy` service in its compose file, so compose
 leaves the container running as an orphan, forwarding to a portal it can
-no longer reach. Stop it first. A tag from before `/admin` leaves Caddy
-forwarding `/admin` to a dashboard that serves at `/`: its sign-in page
-still appears there, but its forms post to bare `/login`, which Caddy hands
-to the portal. Use the tunnel at `http://localhost:8390/` until you roll
-forward. There is no rolling back step 4: the old address does not come
-back.
+no longer reach: stop it first. A tag older than v1.14.0 has no `/admin`:
+the dashboard serves at `/` and is not usable through Caddy, whichever
+Caddyfile is loaded - use the tunnel at `http://localhost:8390/` until you
+roll forward.
 
-**Restoring after the 2026-09-28 pause.** Alerting was stopped by hand on
-2026-09-28 20:50 UTC (the owner's decision: beta, credit cost):
-`minas-liveness.timer` and `minas-restart-on-unhealthy.timer` disabled, the
-sentinel container stopped (exit 137 after the 10-second grace; the
-database's `PRAGMA integrity_check` was ok), and root's `sentinel digest`
-cron line commented out. The note recording it,
-`held/README-2026-09-28.txt`, was left in the checkout with the cron
-backup; both belong in `/var/backups/minas-guardian/held-2026-09-28/` (an
-untracked file in the checkout stops `deploy.sh`, which is what step 5's
-`git status --short` catches:
-`sudo mkdir -p /var/backups/minas-guardian && sudo mv /opt/minas-guardian/held /var/backups/minas-guardian/held-2026-09-28`).
-Its restore order, which the steps above sit inside: (1) every exchange
-key's allowlist carries `57.181.51.14` again (done 2026-10-23) - at the
-stop nine accounts had been dark for a week and were raising 391 tamper
-alerts a day, which is exactly the cost a restart before this step brings
-back; (2) the deploy (step 6), whose `up -d` starts the container; (3)
-then `sudo systemctl enable --now minas-liveness.timer
-minas-restart-on-unhealthy.timer` and the cron line uncommented (`sudo
-crontab -e`). Read `sudo systemctl list-timers --all | grep minas` and
-`sudo crontab -l` afterwards: both timers listed with a next run, the
-digest line live.
+**Restoring after the 2026-09-28 pause.** Lifted 2026-10-24 - the restore
+and its readings are in docs/DEPLOYMENTS.md.
 
 ## Before any upgrade: check the config that is already on the box
 
@@ -542,7 +471,7 @@ git push && git push --tags
 # SSH rule - "Reaching the box" above):
 ssh -i "Minas-AI-Guardian-Key-Tokyo.pem" ubuntu@57.181.51.14
 sudo /opt/minas-guardian/scripts/deploy.sh            # latest release tag
-sudo /opt/minas-guardian/scripts/deploy.sh v1.5.0     # or that specific tag
+sudo /opt/minas-guardian/scripts/deploy.sh v1.14.0    # or that specific tag
 ```
 
 `scripts/deploy.sh` (plain `scripts/deploy.sh` also works — it re-runs
@@ -761,37 +690,15 @@ explicitly instead of reaching for a cleanup flag: take a backup (to
 into the checkout), then `sudo docker volume rm minas-guardian_sentinel-data`
 — a command that can only mean the thing it does.
 
-## First deployment (any host)
-
-```bash
-git clone git@github.com:erwingarcia1/Minas-AI-Guardian-Bitget-Read-only.git minas-guardian
-cd minas-guardian
-cp .env.example .env
-# 1. Generate SENTINEL_MASTER_KEY (python3 command in .env.example)
-# 2. Fill in alert-channel credentials
-chmod 600 .env
-docker compose up -d --build
-```
-
-Note: the repo is **private**, so the clone needs a key GitHub knows — on a
-production host that is a **read-only deploy key** (creation steps in the
-AWS quickstart above), generated where the pulls will actually run (root's
-`~/.ssh` if the checkout is root-owned). An unauthenticated `git clone`/
-`curl` fails with a 404.
-
-Onboard accounts from inside the container so credentials never touch the
-host shell history:
-
-```bash
-docker compose exec -it sentinel sentinel onboard --label customer-1
-```
-
-### The Elastic IP is load-bearing: `57.181.51.14`
+## The Elastic IP is load-bearing: `57.181.51.14`
 
 Production's egress address is the Elastic IP **57.181.51.14**, associated
 with instance **i-0faad6c4d361b127d** (ap-northeast-1). Every onboarded
 customer's exchange key is (or must be) allowlisted to that address on the
-exchange side, so:
+exchange side - Bitget, Bybit, OKX and Binance all support it, a stolen
+read-only key is useless off our address, and the price is that every
+customer is coupled to it, which is why the address appears in this
+document at all. So:
 
 - **Every new key's allowlist must carry `57.181.51.14`** before the
   account is onboarded, or its first check is refused. Whoever onboards
@@ -814,10 +721,7 @@ exchange side, so:
   and 443 for the portal and, under `/admin`, the dashboard ("The public
   address" above); SSH arrives there too ("Reaching the box"). Moving it
   breaks the exchanges' allowlists AND the public address, until DNS
-  follows. (Until 2026-10-23 this bullet said the address was not the
-  portal's ingress; that was true while the portal was published through
-  the overlay network's relay, which step 4 of "The public address"
-  removes.)
+  follows.
 - **To move the address on purpose:** allocate the new EIP, add it to every
   affected key's allowlist while the old address still works (both entries
   at once - the exchanges allow more than one), then re-associate, then
@@ -825,6 +729,8 @@ exchange side, so:
   then watch `sentinel` for `host_auth_failure` and the dashboard for auth
   failures before removing the old entry. Never the other order. The
   certificate names the host, not the address, so it survives the move.
+
+## Daily digest cron
 
 Daily digest via cron on the host (MEDIUM/LOW alerts route here, per
 `alerting.routing` in rules.yaml). **Use root's crontab** (`sudo crontab -e`)
@@ -834,10 +740,6 @@ crontab fails silently every day and the digest never sends:
 ```bash
 0 8 * * * cd /opt/minas-guardian && docker compose exec -T sentinel sentinel digest
 ```
-
-The `postgres` and `redis` services are Phase 2 scale-out targets behind a
-compose profile — the default `up` runs the monitor and the `caddy` proxy.
-Enable them later with `docker compose --profile scale up -d`.
 
 ## Ports
 
@@ -856,23 +758,12 @@ pilot; at scale run one compose stack per VM (or per elastic IP) and shard
 accounts across them. The `rate_limits.egress_ip_rps` bucket in rules.yaml
 protects each IP; keep it at ~60% of Bitget's 100 req/s ceiling.
 
-## Exchange API key IP allowlisting
-
-The VM's stable public IP is the Elastic IP `57.181.51.14` (see "The
-Elastic IP is load-bearing" under First deployment). Customer read-only
-keys are issued with that address allowlisted on the exchange side - Bitget,
-Bybit, OKX and Binance all support it. This is a real security win (a stolen
-read-only key becomes useless off our IP) and is standard onboarding
-practice; it couples every customer to our egress address, which is why the
-rotation procedure above exists and why the address appears in this
-document at all.
-
 ## Secrets posture
 
 - Pilot: `SENTINEL_MASTER_KEY` lives only in `/opt/minas-guardian/.env`
   (root-readable) on the VM and in your password manager. Never in git,
   never in user-data, never in shell history.
-- Hardening step (recommended before customer #2): move it to **AWS Secrets
+- Hardening step (recommended, not yet done): move it to **AWS Secrets
   Manager** or **SSM Parameter Store (SecureString)** and inject it into the
   environment at boot; give the instance an IAM role scoped to that one
   secret.
@@ -948,17 +839,7 @@ does *not* include Resend. That is correct only while Resend sends from the
 turned off, SPF hard-fails immediately — and under `p=reject` the alerts stop
 being delivered at all rather than landing in spam.
 
-## Alibaba Cloud specifics (alternative path)
-
-- ECS instance + EIP; security group allows nothing inbound except SSH from
-  your admin IPs, plus 80 and 443 for the proxy.
-- Use KMS (or at minimum an encrypted RAM-role-scoped parameter) to hold
-  `SENTINEL_MASTER_KEY`; inject it into `.env` at deploy time rather than
-  storing it on disk unencrypted.
-- SQLite volume (`sentinel-data`) lives on the instance; snapshot it with
-  regular ECS disk snapshots until the Postgres migration.
-
-## Scaling path (Phase 2 → beyond)
+## Scaling path
 
 1. **One box, more workers**: raise `workers.pool_size` in rules.yaml,
    then `docker compose restart sentinel` — the pool is sized once at
@@ -967,11 +848,10 @@ being delivered at all rather than landing in spam.
    process needs the DB or (b) the event log outgrows instance disk. Schema
    is deliberately plain SQL. On AWS this becomes RDS; the migration will
    introduce a `SENTINEL_DB_DSN` setting (not implemented yet — today the
-   engine is SQLite-only), and the compose postgres service goes away.
+   engine is SQLite-only).
 3. **Multiple egress IPs**: shard accounts across compose stacks/VMs. The
    engine's Task/queue shape is designed so a Redis-backed distributed queue
-   (already provisioned behind the `scale` profile) replaces the in-process
-   queue without changing worker logic.
+   replaces the in-process queue without changing worker logic.
 
 ## Operator accounts and two-factor (#87, decision 19)
 
@@ -1046,7 +926,7 @@ every docker command takes `sudo`:
 | Container health | `sudo docker compose ps` (the healthcheck probes the dashboard's bare `/healthz` every 30s) |
 | Acknowledge a CRITICAL alert | `sudo docker compose exec sentinel sentinel ack <alert_id>` |
 | Send digest now | `sudo docker compose exec -T sentinel sentinel digest` |
-| Tune thresholds | edit `config/rules.yaml` on the host — hot-reloads, no restart |
+| Tune thresholds | for one account: `sudo docker compose exec sentinel sentinel set-threshold --account <label> <setting> <value> --as <who>` - a recorded override, live at once. Globally: edit `config/rules.yaml` in git and ship a PATCH release; it hot-reloads on arrival ("Deploying code changes" above). Never edit it on the host - the dirty tree blocks the next deploy, and the container's copy is read-only |
 | AI triage narrative for an account | `sudo docker compose exec sentinel sentinel triage --label <label>` |
 | Update to latest code | `sudo /opt/minas-guardian/scripts/deploy.sh` — the full documented sequence, one command ("Deploying code changes" above) |
 | What is running right now | `sudo docker compose exec -T sentinel sentinel version` (also in the dashboard footer) |

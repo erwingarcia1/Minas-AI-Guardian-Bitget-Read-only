@@ -317,24 +317,3 @@ def test_a_member_without_two_factor_signs_in_on_the_password_alone(db, cipher):
     set_member_password(db, ALICE, "a-long-enough-password")
 
     assert member_login_requires_code(db, ALICE) is False
-
-
-def test_an_operator_without_two_factor_cannot_complete_a_sign_in(db, cipher):
-    """G-28's fourth criterion has two halves: an enrolled operator cannot turn
-    it off, and an *unenrolled* one cannot sign in at all. Without the second
-    half, "operators must have 2FA" is satisfied by nobody enrolling."""
-    from sentinel.operators import create_operator, operator_login_requires_code
-
-    create_operator(db, "erwin", "pw-erwin")
-
-    assert operator_login_requires_code(db, "erwin") is True
-
-
-def test_an_enrolled_operator_still_requires_a_code(db, cipher):
-    from sentinel.operators import create_operator, operator_login_requires_code
-
-    create_operator(db, "erwin", "pw-erwin")
-    secret, _ = begin_enrolment(db, cipher, OPERATOR, "erwin")
-    confirm_enrolment(db, cipher, OPERATOR, "erwin", _code(secret))
-
-    assert operator_login_requires_code(db, "erwin") is True

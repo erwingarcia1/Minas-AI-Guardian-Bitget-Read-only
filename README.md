@@ -23,7 +23,7 @@ signal (Bitget `authorities`, Bybit `readOnly`, OKX `perm`, Binance
 ## Quick start (local)
 
 ```bash
-python3 -m venv .venv
+python3.12 -m venv .venv
 .venv/bin/pip install -e ".[dev]"
 cp .env.example .env       # SENTINEL_MASTER_KEY + alert channels
 .venv/bin/sentinel onboard --exchange bitget --label customer-1
@@ -95,6 +95,14 @@ and tags are only cut by `scripts/release.sh`, which refuses an empty
 | `sentinel ack <id>` | Acknowledge an alert (stops CRITICAL escalation) |
 | `sentinel triage --label X` | AI incident narrative (optional; additive only) |
 | `sentinel validate-config [path]` | Check a rules file against the schema. No database, nothing started. Exit 0 valid / 1 rejected / 2 unreadable — **run it against the server's live file before an upgrade** |
+| `sentinel version` | The running version and the commit it was built from (`--machine` for scripts; `deploy.sh` asserts against it) |
+| `sentinel operator add\|passwd\|disable\|enable\|reset-2fa\|list` | Operator accounts for the ops dashboard: create (with two-factor enrolment), change a password, offboard, re-enable, the host break-glass 2FA reset, list |
+| `sentinel disable-account\|enable-account <label>` | Stop or resume polling and alerting on an account (offboarding is disable, never delete) |
+| `sentinel set-threshold <setting> <value> --as <who>` | Change one detection threshold, recorded against an operator. With `--account <label>` it is a per-account override in the database, live at once; without it, it rewrites `config/rules.yaml` in the checkout it runs in, to be shipped as a PATCH release |
+| `sentinel erase <email> --as <who>` | Erase a member's data on request: immediate, the gap recorded, the customer told |
+| `sentinel drill` | Run a fire drill now: the whole alert path, labelled as a drill |
+| `sentinel liveness` | Which mechanisms are built but not running; exit 1 on any |
+| `sentinel cancel-pause --label X` | Cancel a member's pending 24-hour pause countdown |
 
 ## Detection catalog
 
@@ -102,11 +110,13 @@ and tags are only cut by `scripts/release.sh`, which refuses an empty
 never-seen address, unexplained per-asset quantity decrease.
 **HIGH:** withdrawal burst (structuring), never-seen transfer route,
 never-touched pair activity, off-market execution (counterparty drain),
-monitoring-key tamper, permission-state change (proxy).
-**MEDIUM:** abnormal fee spend, account unreachable. **LOW:** baseline drift.
+monitoring-key tamper, permission-state change (proxy), account unreachable.
+**MEDIUM:** abnormal fee spend. **LOW:** baseline drift, unseen-address
+check degraded.
 
-Thresholds live in [config/rules.yaml](config/rules.yaml) — hot-reloaded, no
-deploy to tune. Every detector ships with trigger + non-trigger tests.
+Thresholds live in [config/rules.yaml](config/rules.yaml) — hot-reloaded on
+arrival; shipped through git in a release, never edited on the box. Every
+detector ships with trigger + non-trigger tests.
 
 ## Dashboard
 
@@ -122,8 +132,10 @@ history), and a styled **Metrics** page. See
 
 A **separate** authenticated server (`:8391`) that lets a customer sign in and
 see **only their own** accounts, alerts, events, and security posture — never
-another customer's. Identity is the customer email; a member sees every account
-whose `alert_email` matches (case-insensitive). Properties:
+another customer's. Identity is the customer email; a member sees the accounts
+their login was granted (#61), and a login nobody has scoped sees every account
+whose `alert_email` or `alert_email_secondary` matches (case-insensitive).
+Properties:
 
 - **Isolation is the invariant** — every query is scoped to the signed-in
   member's account ids; a drill-down on an id you don't own returns 404 without
@@ -168,15 +180,16 @@ logged and flagged on the dashboard's security-posture panel.
 .venv/bin/python scripts/soak_test.py    # 100 synthetic accounts through the engine
 ```
 
-The suite (900+ tests across 70+ files) never touches a live exchange — every
+The suite (1,800+ tests across 150+ files) never touches a live exchange — every
 CCXT response is a fixture, and `sentinel/net.py` refuses to open a connection
 at all while `SENTINEL_ENV=test` or pytest is running, so a test that reaches
 for the network fails rather than sending. CI runs it on every push/PR to
 `main`, validates that `docker compose config` parses, and builds the image to
 check it can name the commit it was built from — a build given none must report
-`unknown` and exit non-zero rather than claim one. Latest soak: 100 accounts
-(5 permanently failing, 3 under scripted attack) — full-fleet cycle well under
-the target, only the attacked accounts fired CRITICALs.
+`unknown` and exit non-zero rather than claim one. The soak recorded on
+2026-07-02: 100 accounts (5 permanently failing, 3 under scripted attack) —
+full-fleet cycle well under the target, only the attacked accounts fired
+CRITICALs.
 
 ## Architecture (short)
 
@@ -187,7 +200,7 @@ the target, only the attacked accounts fired CRITICALs.
 - `sentinel/ratelimit.py` / `circuit.py` — per-UID + egress-IP token buckets;
   per-account breakers (one bad key never stalls the fleet).
 - `sentinel/poller.py` — fast loop (money movement) + slow loop (config drift).
-- `sentinel/detectors/` — the 12 rules, pure functions over unified data.
+- `sentinel/detectors/` — the 13 rules, pure functions over unified data.
 - `sentinel/baseline.py` — what "normal" is per account (known addresses,
   traded pairs, transfer routes, balance/permission snapshots, fee EMA).
 - `sentinel/alerts/` — Telegram / ClickSend / Twilio / SMTP, routing, dedup,
@@ -198,8 +211,6 @@ the target, only the attacked accounts fired CRITICALs.
 - `sentinel/db.py` + `schema.sql` — SQLite (Postgres is the scale path);
   append-only event log; `Decimal` everywhere; UTC everywhere.
 - `sentinel/triage.py` — optional AI incident narrative (off by default).
-- `sentinel/ws_monitor.py` — ccxt.pro stream watcher with a staleness watchdog:
-  implemented and unit-tested, **not yet wired into the engine**.
 
 Full write-up: [docs/architecture.md](docs/architecture.md).
 
@@ -209,10 +220,21 @@ Full write-up: [docs/architecture.md](docs/architecture.md).
 - [docs/phase0-capability-audit.md](docs/phase0-capability-audit.md) — what
   each exchange/CCXT actually exposes, verified against live sources.
 - [docs/deployment.md](docs/deployment.md) — AWS deployment, scaling, ops.
-- [docs/customer-runbook.md](docs/customer-runbook.md) — customer incident
-  response, incl. what the service *cannot* see.
+- [docs/DEPLOYMENTS.md](docs/DEPLOYMENTS.md) — the deployment log, with the
+  readings taken at each one.
 - [docs/threat-model.md](docs/threat-model.md) — assets, adversaries, controls.
 - [docs/data-retention.md](docs/data-retention.md) — **flagged for legal review**.
+- [docs/portal-design.md](docs/portal-design.md) — the portal's design system:
+  tokens, primitives, the rules the tests enforce.
+- [docs/DECISIONS-NEEDED.md](docs/DECISIONS-NEEDED.md) — product decisions,
+  open and answered, and what each one blocks.
+- [docs/RELEASE-NOTES.md](docs/RELEASE-NOTES.md) — the contract for every
+  GitHub Release body.
+- [docs/AUTONOMOUS-LOG.md](docs/AUTONOMOUS-LOG.md) — session handoffs and the
+  standing rules.
+- [mobile/README.md](mobile/README.md) — the iOS/Android app;
+  [api/openapi.yaml](api/openapi.yaml) is the `/api/v1` contract it is built
+  against.
 - [CONTRIBUTING.md](CONTRIBUTING.md) · [SECURITY.md](SECURITY.md) · [CHANGELOG.md](CHANGELOG.md)
 
 ## Known limitations (honest list)
@@ -223,18 +245,19 @@ Full write-up: [docs/architecture.md](docs/architecture.md).
   wire it on for spot/hold accounts only.
 - New-API-key detection for independent accounts is a documented proxy — no
   exchange exposes a key inventory for an account's own keys.
-- Login/device/2FA state is invisible to any API consumer; covered by
-  customer-side mitigations in the runbook.
+- Login/device/2FA state is invisible to any API consumer. The exchange's own
+  login notifications and authenticator-app two-factor are the customer's
+  controls there, and no customer-facing page says so yet (#125).
 - Per-customer **Telegram-handle** delivery isn't automated (Bot API can't DM
   an arbitrary handle without the recipient opting in); handles are stored.
-- Detection is **REST-only**. `ws_monitor.py` is built and tested but not
-  wired into the engine — and no exchange streams withdrawals/deposits/
-  transfers over WS anyway, so it would only sharpen the trading signals.
-- **Member portal identity is `alert_email` only.** An account's
-  `alert_email_secondary` receives alerts but cannot be given portal access.
+- Detection is **REST-only**: no exchange streams withdrawals, deposits or
+  transfers over WebSocket.
+- A secondary contact can sign in, read, and acknowledge; everything that
+  changes what is watched or where alerts go stays with the primary contact
+  (#25).
 - The engine is one process, one SQLite connection: workers, dashboard, and
   portal all serialize on it. Fine at pilot scale; Postgres + a distributed
-  queue is the documented scale-out (the compose `scale` profile is the stub).
+  queue is the documented scale-out.
 
 ## License
 

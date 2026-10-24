@@ -8,12 +8,12 @@ threshold.
 
 ## Try it on your phone
 
-The app talks to `https://guardian.minastrade.com` unless told otherwise,
-and the app API (`/api/v1/`) ships in the server from v1.13.0. Until that
-release is deployed and the address answers, a plain `npm start` has
-nothing to sign in to; once it is, signing in there needs a real member
-login with two-factor on. For either case, run the demo server on your
-computer instead and point the app at it. The demo server has a demo
+The app talks to `https://guardian.minastrade.com` unless told otherwise.
+The app API (`/api/v1/`) has been live there since v1.14.0 was deployed
+(2026-10-24; `GET /api/v1/limits` answers 401 without a token), so a plain
+`npm start` signs in to the real server, and that needs a real member
+login with two-factor on. To develop without one, run the demo server on
+your computer instead and point the app at it. The demo server has a demo
 login, fake accounts and alerts, and makes no outside connections.
 
 1. **Phone and computer on the same Wi-Fi.**

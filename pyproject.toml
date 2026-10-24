@@ -1,7 +1,7 @@
 [project]
 name = "sentinel"
 version = "1.14.0"
-description = "24/7 Bitget account-compromise monitoring service"
+description = "24/7 exchange-account compromise monitoring with read-only keys"
 requires-python = ">=3.11"
 dependencies = [
     # Pinned: the per-exchange adapters depend on ccxt internals (implicit
@@ -19,7 +19,6 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
-    "pytest-mock>=3.14",
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "pip-audit>=2.7",

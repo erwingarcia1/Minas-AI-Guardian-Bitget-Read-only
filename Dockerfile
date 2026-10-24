@@ -22,9 +22,10 @@ RUN useradd --create-home sentinel && mkdir -p /data && chown sentinel:sentinel 
 USER sentinel
 
 # What this image was built from. The build context has no `.git` (only
-# sentinel/, config/ and pyproject.toml are copied), so the commit cannot be
-# discovered at runtime and has to be passed in. scripts/deploy-gate.sh
-# --export prints both; docker-compose.yml forwards them.
+# sentinel/, config/, pyproject.toml and scripts/retention-boundary.py are
+# copied), so the commit cannot be discovered at runtime and has to be
+# passed in. scripts/deploy-gate.sh --export prints both; docker-compose.yml
+# forwards them.
 #
 # Defaulting to `unknown` rather than to something plausible is the point: a
 # build that misreports its commit is worse than one that admits it does not
@@ -37,6 +38,6 @@ ENV SENTINEL_DB_PATH=/data/sentinel.db \
     SENTINEL_GIT_SHA=$GIT_SHA \
     SENTINEL_GIT_TAG=$GIT_TAG
 
-EXPOSE 8390 9109
+EXPOSE 8390 8391 9109
 
 CMD ["sentinel", "run"]

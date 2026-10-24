@@ -41,7 +41,6 @@ from sentinel.outbox import later
 
 logger = logging.getLogger("sentinel.api")
 
-API_PREFIX = "/api/v1"
 ACCESS_TTL_SECONDS = 15 * 60
 # Slides: every refresh issues a new token with a fresh 30 days, so an app in
 # use stays signed in and one left unopened for a month signs out.

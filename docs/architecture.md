@@ -1,6 +1,6 @@
 # Architecture
 
-Current-state architecture of Minas AI Guardian (v1.0.0). For the exchange
+Current-state architecture of Minas AI Guardian. For the exchange
 capability research behind it, see
 [phase0-capability-audit.md](phase0-capability-audit.md).
 
@@ -24,10 +24,10 @@ capability research behind it, see
    └───────┬──────────────────────────────────────────────────────┬────────────────┘
            │ read-only CCXT calls                                  │ detections
            ▼                                                       ▼
-   exchange.py: Bitget / Bybit / OKX / Binance clients      detectors/ (12 rules)
+   exchange.py: Bitget / Bybit / OKX / Binance clients      detectors/ (13 rules)
            │                                                       │
            ▼                                                       ▼
-   exchanges' REST/WS APIs                              alerts/ (Telegram, team group,
+   exchanges' REST APIs                                 alerts/ (Telegram, team group,
                                                         ClickSend/Twilio SMS, SMTP email)
                                                                    │
                                                         db.py + schema.sql (SQLite):
@@ -60,7 +60,7 @@ by default, which serves them at the root as the diagram shows).
   REST-only, since no exchange exposes withdrawals over WS) + slow loop
   (permission/IP-allowlist snapshot). Emits detections, writes the event log,
   and fires per-account contact delivery.
-- **`detectors/`** — 12 pure-function rules over CCXT-unified structures, so
+- **`detectors/`** — 13 pure-function rules over CCXT-unified structures, so
   most detections work across all four exchanges unchanged.
 - **`alerts/`** — severity routing from `config/rules.yaml` to Telegram (+ team
   group), SMS (ClickSend preferred, Twilio fallback), and SMTP email; dedup +

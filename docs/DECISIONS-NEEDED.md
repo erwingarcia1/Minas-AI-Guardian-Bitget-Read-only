@@ -7,11 +7,12 @@ autonomous backlog work — see `docs/AUTONOMOUS-LOG.md` for the sessions.
 Nothing here is blocked on engineering. Every item is a choice about what the
 product should do, and each was skipped rather than guessed at.
 
-**Read this first:** decisions 1 and 2 are worth answering together and unblock
-the most. Decision 6 is not a product call at all — it needs a lawyer, and it
-is the longest lead time on the list, so it's worth starting even if the rest
-waits. Decisions 2 and 7 share a mechanism: both need a scheduled drill, and
-whoever builds one should build it to cover both.
+**Open today (2026-10-24):** 6 (needs the lawyer; #47), 7's vendor (#63),
+8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
+21b/21e/21h/21i, and 22e step 5 (the email to members). Everything else below
+is answered and built, and deployed where there is a server to deploy to -
+the app waits on the store accounts (section 21, "Not built yet"); the
+sections stay as the record.
 
 ---
 
@@ -24,22 +25,23 @@ whoever builds one should build it to cover both.
 | 3 | Incident page "what to do next" wording | ~~#29~~ | **ANSWERED 2026-08-27** with 9 — one canonical text; reversible steps only; observed facts, no inferences; see section 3 |
 | 4 | Alert channel defaults + quiet hours | ~~#24~~ | **ANSWERED 2026-08-27** — off by default, non-critical, local time 22:00–07:00, queued to digest, email un-disableable, unknown tz = cannot enable; see section 4 |
 | 5 | PDF export for incidents | ~~#29~~ | **ANSWERED 2026-08-27** — print stylesheet + browser print-to-PDF, no library; see section 5 |
-| 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), #46 (G-42) — lawyer pending | **ANSWERED 2026-08-27 interim** — lawyer engaged (crypto-shredding question); 24 months configurable; erasure = hard delete + recorded gap + told; see section 6 |
+| 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), ~~#46~~ (G-42) — lawyer pending | **ANSWERED 2026-08-27 interim** — lawyer engaged (crypto-shredding question); 24 months configurable; erasure = hard delete + recorded gap + told; see section 6 |
 | 7 | External uptime monitoring: latency, vendor, what customers hear | #63 (vendor still owner's) | **ANSWERED 2026-08-27** — dead-man's switch, third party, 15 min, gaps in the digest; see section 7 |
+| 8 | How long may a customer silence a CRITICAL? | — | **ANSWERED 2026-08-13** — 1 h / 4 h / 24 h caps, `alerting.snooze_cap_hours`; shipped; see section 8 |
 | 9 | What the incident page tells a customer to do next | ~~#29~~ | **ANSWERED 2026-08-27** with 3 — see section 9 |
-| 10 | Portal credential scoped to an account | #61 | **ANSWERED 2026-08-27** — per-account grants, sooner than when asked; backfill from contact rows; see section 10 |
-| 11 | Billing: provider, plans, prices, lapse | #43 (G-39), #44 (G-40) | **OPEN — owner reconsidering 2026-08-27**; plan-only, nothing dependent to be built |
+| 10 | Portal credential scoped to an account | ~~#61~~ | **ANSWERED 2026-08-27** — per-account grants, sooner than when asked; backfill from contact rows; built, v1.10.0; see section 10 |
+| 11 | Billing: provider, plans, prices, lapse | #43 (G-39), #44 (G-40) (both closed not-planned 2026-08-27; the decision stays open) | **OPEN — owner reconsidering 2026-08-27**; plan-only, nothing dependent to be built |
 | 12 | Restart-on-unhealthy: sidecar, systemd timer, or page-only | ~~#81~~ | **ANSWERED 2026-08-21** — systemd timer accepted; see section 12 |
 | 13 | Browser push notifications | ~~#23~~ | **ANSWERED 2026-08-21** — won't-do; no-JS posture stands; see section 13 |
 | 14 | Exchange key-creation instructions: screenshots or text | ~~#8~~ | **ANSWERED 2026-08-21** — text-only, dated and interface-named; see section 14 |
-| 15 | Member self-serve pause | #10 (reworded) | **ANSWERED 2026-08-23** — 24-hour cancellable countdown, never immediate; see section 15 |
-| 16 | Deep incident links in alert emails | #20 (reworded) | **ANSWERED 2026-08-23** — no links; non-clickable reference + portal lands on the incident; see section 16 |
-| 17 | Self-serve signup | #6 (stays open) | **ANSWERED 2026-08-23** — no; behind billing + legal, waitlist as fallback; see section 17 |
-| 18 | Sibling-alert definition width + production backfill | #99 (built conservatively) | **OPEN — owner reconsidering 2026-08-27**; nothing dependent to be built |
+| 15 | Member self-serve pause | ~~#10~~ (reworded) | **ANSWERED 2026-08-23** — 24-hour cancellable countdown, never immediate; built, v1.10.0; see section 15 |
+| 16 | Deep incident links in alert emails | ~~#20~~ (reworded) | **ANSWERED 2026-08-23** — no links; non-clickable reference + portal lands on the incident; built, v1.10.0; see section 16 |
+| 17 | Self-serve signup | ~~#6~~ (closed not-planned 2026-08-27; waitlist is the recorded fallback) | **ANSWERED 2026-08-23** — no; behind billing + legal, waitlist as fallback; see section 17 |
+| 18 | Sibling-alert definition width + production backfill | ~~#99~~ (built conservatively) | **OPEN — owner reconsidering 2026-08-27**; nothing dependent to be built |
 | 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | ~~#87~~, ~~#82~~ | **ANSWERED 2026-08-27** — mandatory; host-access recovery, attributed and logged; see section 19. *From 2026-10-23 the host access is SSH with the key pair at the Elastic IP (22e)* |
-| 20 | The member portal is published to the internet on Tailscale Funnel | #88 (the address: answered by 22; the issue text still to amend) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in full 2026-10-23 by 22: no Tailscale, removed in one go* |
+| 20 | The member portal is published to the internet on Tailscale Funnel | ~~#88~~ (closed 2026-10-24; evidence in its closing comment) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in full 2026-10-23 by 22: no Tailscale, removed in one go* |
 | 21 | Native iOS and Android apps, and the JSON API they need | the apps | **PARTLY ANSWERED 2026-10-22** — customers only, React Native, in this repo, company branding, sign-in and v1 API scope as recommended; push and the web portal open; see section 21 |
-| 22 | One public address, guardian.minastrade.com; no Tailscale | #88 (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22 |
+| 22 | One public address, guardian.minastrade.com; no Tailscale | ~~#88~~ (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22. **Built and deployed 2026-10-24 (v1.14.0)**; left: 22e step 5 (the email to members) and the Tailscale admin-console removal, both the owner's |
 
 ---
 
@@ -1395,7 +1397,7 @@ The apps, end to end. Nothing blocks the API now that 21c and 21d are
 answered. Push (21e) waits on its own answer, and the apps are built
 against decision 22's hostname.
 
-### Built so far — 2026-10-22, branch `api-v1`
+### Built so far — 2026-10-22, branch `api-v1` (merged)
 
 - **Sign-in (21c), the v1 reads and acknowledge (21d)** are built, as
   answered, in `sentinel/api.py`, served by the portal process under
@@ -1414,7 +1416,7 @@ against decision 22's hostname.
   non-primary allowed).
 - **The contract is `api/openapi.yaml`**, held to the server by
   `tests/test_api_contract.py`.
-- **The app is started (2026-10-22, branch `mobile-app`)** in `mobile/`.
+- **The app is started (2026-10-22, branch `mobile-app`, merged)** in `mobile/`.
   It is Expo SDK 58 with React Native, and covers sign-in, accounts,
   alerts, incident and acknowledge, security and devices, activity and
   limits. It has its own CI workflow (`.github/workflows/mobile.yml`) and
@@ -1428,8 +1430,9 @@ against decision 22's hostname.
 - **Not built yet:**
   - push (21e);
   - the primary-only writes (v2);
-  - the app's bundle identifier and package name, which wait on the
-    publishing entity (21f, the owner's call);
+  - ~~the app's bundle identifier and package name, which wait on the
+    publishing entity (21f, the owner's call)~~ — answered 2026-10-23, see
+    21f;
   - store accounts and builds.
 
 **Related:** decision 13 (browser push, no-JS posture), decision 20
@@ -1948,7 +1951,7 @@ follows:
 - **From 22e step 2 on, every SMS and email already carries the new
   address** (`SENTINEL_PORTAL_URL`), so a member who follows an alert
   lands on the right site before the email arrives.
-- #88's issue text is still to amend.
+- #88 closed 2026-10-24 on the closing comment's evidence.
 
 ### 22e. Removing Tailscale — **ANSWERED 2026-10-22: all of it; host access by SSH with the EC2 key pair. 2026-10-23: in one go, the teardown before Caddy starts, SSH at the Elastic IP answered that evening**
 
@@ -2119,6 +2122,10 @@ address).
 ---
 
 ## Not a decision, but needs saying: #16's remaining criterion
+
+**Resolved 2026-08-13 (v1.1.0):** operator identities exist (#54) and
+threshold changes are recorded against a name; #16 is closed. Kept as
+written for the record.
 
 G-12's third criterion — "threshold changes are recorded, showing **who**
 changed what and when" — is not a product decision, it's a dependency. There

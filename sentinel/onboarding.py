@@ -84,10 +84,6 @@ def _bitget_read_only(authorities: object) -> tuple[bool, str]:
     return True, "all authority tokens matched a read-only ('...r' suffix) pattern"
 
 
-# Kept as a backwards-compatible alias (existing tests import this name).
-_looks_read_only = _bitget_read_only
-
-
 def _bybit_read_only(data: object) -> tuple[bool, str]:
     """Bybit v5 query-api gate. readOnly==1 is the authoritative, documented
     read-only signal; the permissions scan is defense-in-depth. Any ambiguity
@@ -120,13 +116,14 @@ def _bybit_read_only(data: object) -> tuple[bool, str]:
 
 
 # OKX perm tokens (comma-joined string on account-config). Only 'read_only'
-# is acceptable; 'trade'/'withdraw' are write. Confirmed against CCXT-embedded
-# example (docs/phase0-capability-audit.md, OKX addendum).
+# is acceptable; 'trade'/'withdraw' are write. Confirmed against the
+# CCXT-embedded example; the accept rule is SECURITY.md's read-only-signal table.
 _OKX_WRITE_TOKENS = ("trade", "withdraw")
 
 # Binance apiRestrictions: enableReading must be true; every one of these
 # write-implying flags must be present AND false. A missing flag fails CLOSED.
-# Confirmed against Binance apikey-permission docs (Binance addendum).
+# Confirmed against Binance's apikey-permission docs; the accept rule is
+# SECURITY.md's read-only-signal table.
 _BINANCE_WRITE_FLAGS = (
     "enableWithdrawals", "enableInternalTransfer", "enableMargin", "enableFutures",
     "permitsUniversalTransfer", "enableVanillaOptions", "enableFixApiTrade",

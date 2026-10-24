@@ -11,7 +11,7 @@ states plainly where residual risk remains.
 | Customer read-only API keys | High | Read access to balances/history; NOT funds movement (verified read-only at onboarding, fail-closed) |
 | `SENTINEL_MASTER_KEY` | Critical | Decrypts every stored credential |
 | Event log / balance history | High | Detailed financial activity per customer — privacy, not theft |
-| Alert channel credentials (Telegram/Twilio/SMTP) | Medium | Impersonation of our alerts; alert suppression |
+| Alert channel credentials (Telegram/ClickSend/SMTP) | Medium | Impersonation of our alerts; alert suppression |
 | The detection pipeline itself | High | If silently disabled, customers believe they're protected when they're not |
 
 ## Adversaries & scenarios
@@ -22,10 +22,12 @@ process env is readable) the master key → effectively all customer read-only
 keys.
 - **Impact ceiling: surveillance, not theft.** Keys are verified read-only at
   onboarding; the check fails closed. The residual theft path would require
-  Bitget honoring a write action from a read-only key (exchange-side bug) —
-  out of our control, why key scope is non-negotiable.
-- Controls: non-root container; master key injected from KMS/Secrets Manager
-  at boot rather than sitting in a dotfile; no inbound ports except SSH
+  an exchange honoring a write action from a read-only key (exchange-side
+  bug) — out of our control, why key scope is non-negotiable.
+- Controls: non-root container; the master key in `/opt/minas-guardian/.env`
+  (root-readable; never in git, user-data or shell history - injection from
+  Secrets Manager or SSM at boot is a recommended hardening step, not yet
+  done: docs/deployment.md "Secrets posture"); no inbound ports except SSH
   (from the security group's admin addresses) and the proxy's 80 and 443
   (decision 22b), which reach the member portal and, under `/admin`, the
   ops dashboard behind its sign-in and second factor; dashboard, portal and
@@ -36,20 +38,28 @@ keys.
   forensics from the append-only event log (which the app can only INSERT
   into by construction).
 
-### A2. Compromise of a customer's Bitget account (the case we exist for)
-Covered by the detection catalog. Two designed-in properties matter:
+### A2. Compromise of a customer's exchange account (the case we exist for)
+Covered by the detection catalog, on all four exchanges. Two designed-in
+properties matter:
 - The attacker's cleanup step — deleting our monitoring key — is itself a
   HIGH detection (`monitoring_key_tamper_suspected`), not a blind spot.
-- All withdrawals funnel through one endpoint (no separate futures
-  withdrawal path on Bitget), so drain attempts can't route around the
-  fast loop.
+- Withdrawals are read from each exchange's own withdrawal records on the
+  fast loop, in-flight `pending` ones included, so a drain is seen as it
+  starts rather than after it clears. (On Bitget every withdrawal, spot or
+  futures-originated, funnels through that one endpoint -
+  docs/phase0-capability-audit.md §1.)
 
 ### A3. Alert-channel compromise
-Telegram bot token or Twilio creds leak → attacker can send fake alerts
-(panic/phishing) or read alert traffic (learns which accounts are monitored).
+Telegram bot token, ClickSend (or Twilio) credentials or the Resend SMTP
+password leak → attacker can send fake alerts (panic/phishing) or read alert
+traffic (learns which accounts are monitored).
 - Controls: tokens only in env/secret manager; alerts never include API keys
-  or full addresses beyond what the customer needs; anti-phishing guidance in
-  the customer runbook.
+  or full addresses beyond what the customer needs; the anti-phishing posture
+  lives on the portal itself rather than in a document - the sign-in page
+  names the one address (#88) and alerts carry a reference, never a link.
+  The customer-side controls (the exchange's own login notifications,
+  authenticator-app two-factor, a withdrawal allowlist) are not yet stated
+  on any customer page: #125.
 - Gap (accepted for now): alerts are not cryptographically signed. Customers
   should treat alert *instructions* as "check the app", never "click this
   link".
@@ -67,14 +77,15 @@ keys.
 ### A5. Supply chain (dependency compromise)
 `ccxt`, `requests`, etc. are the real attack surface for key exfiltration.
 - Controls: pinned minimum versions, container rebuilds are deliberate acts,
-  no auto-update. Recommended next step (Phase 3+): pip hash-pinning
+  no auto-update. Recommended next step, before scale: pip hash-pinning
   (`--require-hashes`) and an egress allowlist at the firewall so the worker
-  can only reach Bitget/alert endpoints — that turns "dependency steals keys"
-  into "dependency must also beat network policy".
+  can only reach the exchanges' and the alert channels' endpoints — that
+  turns "dependency steals keys" into "dependency must also beat network
+  policy".
 
 ### A6. Sentinel-as-oracle (abuse of our own service)
 Someone onboards a victim's stolen read-only key with us to surveil them.
-- Control: onboarding is operator-mediated in Phase 2 (no self-serve API);
+- Control: onboarding is operator-mediated today (no self-serve API);
   KYC-matching the key owner to the customer is a business-process control to
   formalize before self-serve onboarding exists.
 
@@ -100,7 +111,7 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
 - No RBAC on the dashboard (A4) — one operator role behind sign-in and
   two-factor, and since decision 22 reachable from the internet at `/admin`;
   acceptable at pilot scale, not at 1,000 accounts with staff turnover.
-  Revisit in Phase 3.
+  Revisit before scale.
 - SQLite file readable by host root until Postgres + disk encryption.
 - The member portal is internet-reachable at
   `https://guardian.minastrade.com`, through Caddy on the host (decision

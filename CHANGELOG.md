@@ -10,12 +10,11 @@ Guardian**.
 ## [Unreleased]
 
 _Pending customer/ops items (not code): read-only Bybit key (previous had
-Contract-Trade scope), OKX + Binance keys, Gmail SMTP credentials, ClickSend
-or Twilio credentials, terminate the retired us-east-1 instance, the email
-to members with the new address (decision 22e step 5), the machine's
-removal in the Tailscale admin console. The #81 restart timer turned out
-to be installed on the host already (disabled in the 2026-09-28 pause,
-re-enabled 2026-10-24)._
+Contract-Trade scope), OKX + Binance keys, ClickSend or Twilio credentials,
+terminate the retired us-east-1 instance, the email to members with the new
+address (decision 22e step 5), the machine's removal in the Tailscale admin
+console. The #81 restart timer turned out to be installed on the host
+already (disabled in the 2026-09-28 pause, re-enabled 2026-10-24)._
 
 ### Changed
 
@@ -26,6 +25,70 @@ re-enabled 2026-10-24)._
   and under 22e in docs/DECISIONS-NEEDED.md; #88 closed on it (the address
   chosen, served over TLS, `SENTINEL_PORTAL_URL` set, the sign-in page
   naming it). No code in this entry.
+- **The documents say what the tree does (repository cleanup,
+  2026-10-24).** README's counts (1,800+ tests across 150+ files; 13 rules,
+  with the LOW `unseen_address_check_degraded` now in the catalog and
+  `account_unreachable` at its real HIGH - the dashboard's own catalog
+  still says MEDIUM, #126; the whole CLI in its table, with
+  `set-threshold`'s two forms told apart: per account live at once,
+  global through git) and its member-identity claims (a login opens what it
+  was granted, #61; a secondary contact can sign in, read and acknowledge,
+  #25); CONTRIBUTING's `--no-verify` paragraph now agrees with the standing
+  rule (never), its health-check section counts nine gates, and its deploy
+  section defers to docs/deployment.md instead of restating it; the threat
+  model states the master key's real posture (in `/opt/minas-guardian/.env`
+  - Secrets Manager injection is a recommendation, not a control), speaks of
+  the four exchanges, and names ClickSend and Resend; docs/deployment.md is
+  AWS-only, its "Tune thresholds" row no longer tells an operator to edit a
+  tracked file on the box, and "Rolling back" names the tags it is bounded
+  by (Caddy from v1.13.0, `/admin` from v1.14.0); docs/architecture.md
+  says 13 rules and REST only; docs/portal-design.md and
+  docs/data-retention.md drop the waiting dashboard pass and the Alibaba
+  aside; docs/DECISIONS-NEEDED.md's status lines follow the tracker (seven
+  closed issues struck, row 8 restored to the table, the open set stated
+  as of 2026-10-24; history untouched); mobile/README.md says the API is
+  live; the pending list above no longer names Gmail SMTP credentials
+  (production email has been Resend since 2026-08-18, docs/DEPLOYMENTS.md);
+  the package description no longer says Bitget-only; the Dockerfile's
+  `EXPOSE` names the portal's 8391 too; and `.dockerignore` keeps `*.pem`,
+  the local caches and the owner's drop folder out of the build context.
+
+### Removed
+
+- **What the tree no longer carries (repository cleanup, 2026-10-24) - none
+  of it reached by production.** The parked WebSocket monitor
+  (`sentinel/ws_monitor.py`) and its test: never wired into the engine, and
+  no exchange streams withdrawals, deposits or transfers over WebSocket.
+  Five dead names (`run_forever`, `RulesConfigError`, `API_PREFIX`,
+  `_utcnow`, `_looks_read_only`), six helpers only tests called, folded
+  back into their tests (`record_contact_delivery`, `is_known_address`,
+  `in_host_auth_incident`, `deliveries_for_alert`, `reached_a_person`,
+  `operator_login_requires_code`), and the unused fixture
+  `deposit_record`. The portal's own copy of the scrypt
+  primitives, now imported from `sentinel/passwords.py`: the same parameters
+  and the same encoding, so every stored member hash verifies unchanged. The
+  never-started `postgres`/`redis` compose profile, its volumes and
+  `POSTGRES_PASSWORD` (nothing read them; the scale path stays documented).
+  `scripts/mutation-module.sh`, which had drifted from the gate it mirrored
+  (its one measurement is kept in CONTRIBUTING); `pytest-mock`, which no
+  test used; two `.gitignore` rules for paths nothing produces; the one
+  design-guard probe that mutated `operator_login_requires_code` (a
+  function the login route never called: the dashboard's two `#87` probes
+  and tests/test_operator_two_factor.py hold the invariant at the route);
+  nine Expo template dependencies the app never imported, with the
+  lockfile entries only they pulled in (four of the nine stay in the
+  lockfile as required peers of packages still in the tree: installed,
+  unused, and both bundles export without them). docs/BACKLOG.md (a
+  self-declared stale snapshot; the issues are the tracker) and
+  docs/customer-runbook.md (the Bitget-only pilot's incident steps, which
+  contradicted the canonical `RULE_ADVICE` in `sentinel/alerts/base.py`
+  rendered on every alert and the incident page; its two sections nothing
+  else carried - the login/device/2FA blind spot and the prevention
+  checklist - are preserved in #125 for the portal's `/limits` page). And
+  about a hundred lines of docs/deployment.md that described the 2026-10-23
+  Tailscale teardown, the 2026-09-28 pause and its restore, a never-used
+  Alibaba Cloud path and a second copy of the first-login steps - all done,
+  never taken or said once already, and recorded in docs/DEPLOYMENTS.md.
 
 ## [1.14.0] — 2026-10-24
 

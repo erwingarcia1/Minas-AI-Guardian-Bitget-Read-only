@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
 
+from sentinel.alerts.delivery import record_delivery
 from sentinel.drill import (
     DrillSchedule,
     delivery_recency,
@@ -18,7 +19,6 @@ from sentinel.drill import (
     last_drill,
     mark_drill_account,
     recent_drills,
-    record_contact_delivery,
     run_drill,
 )
 from sentinel.portal import set_member_password
@@ -77,7 +77,8 @@ class _Router:
         self.calls.append((detection, label, emails, phones, account_id, alert_id))
         if self.record:
             for e in emails:
-                record_contact_delivery(self.db, e, "email", alert_id)
+                record_delivery(self.db, channel="email", recipient=e, status="accepted", audience="customer",
+                                kind="alert", alert_id=alert_id)
 
 
 # --- the dedicated account ----------------------------------------------------------
@@ -277,7 +278,8 @@ def test_recency_is_derived_from_real_deliveries_and_flags_stale_channels(db):
     with db.cursor() as cur:
         cur.execute("UPDATE accounts SET alert_email = 'alice@example.com', alert_phone = '+15550001' WHERE id = ?", (a,))
     now = datetime(2026, 8, 27, 12, 0, tzinfo=timezone.utc)
-    record_contact_delivery(db, "alice@example.com", "email", None)
+    record_delivery(db, channel="email", recipient="alice@example.com", status="accepted", audience="customer",
+                    kind="alert", alert_id=None)
     with db.cursor() as cur:
         cur.execute("UPDATE deliveries SET created_at = ? WHERE channel = 'email'",
                     ((now - timedelta(days=2)).isoformat(),))

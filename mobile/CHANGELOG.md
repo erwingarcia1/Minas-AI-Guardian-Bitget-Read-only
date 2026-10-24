@@ -24,6 +24,24 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   patched, so the row records the reason and the review date instead of a
   blind major override on a build tool. The lockfile is unchanged.
 
+- **Nine template dependencies left `package.json`.** `@expo/ui`,
+  `expo-image`, `expo-symbols`, `expo-web-browser`, `react-dom`,
+  `react-native-web`, `react-native-gesture-handler`,
+  `react-native-reanimated` and `react-native-worklets` came with the
+  `create-expo-app` template, for web builds, native tabs, glass and
+  symbol views, images, an in-app browser and the gesture and animation
+  stacks. No screen imports any of them, the layouts use only `Stack` and
+  `Tabs`, and the app is built for iOS and Android only. Both bundles
+  still export and the tests still pass without them, also with the four
+  that stay in the lockfile because packages still in the tree name them
+  as required peers (`react-native-drawer-layout`, under `expo-router`,
+  needs gesture-handler and reanimated; reanimated needs worklets; the
+  `@radix-ui` packages need `react-dom`) taken out of `node_modules`.
+  `expo-system-ui` stays although nothing imports it: its
+  config plugin is what applies app.json's dark interface style and
+  background colour, which `tests/test_mobile_app.py` pins. 24 packages
+  left the lockfile.
+
 ### Added
 
 - **The first version of the app (decision 21).** Expo SDK 58 and React

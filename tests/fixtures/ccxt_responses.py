@@ -24,18 +24,6 @@ def withdrawal_record(
     }
 
 
-def deposit_record(order_id="dep-1", amount="1.0", currency="BTC", address="bc1qexistingaddress"):
-    return {
-        "id": order_id,
-        "amount": amount,
-        "currency": currency,
-        "status": "success",
-        "address": address,
-        "timestamp": 1699000000000,
-        "info": {},
-    }
-
-
 def trade_record(symbol="BTC/USDT", side="sell", amount="0.1", cost="6000", fee_currency="USDT", fee_cost="6"):
     return {
         "symbol": symbol,

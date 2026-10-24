@@ -106,26 +106,6 @@ def record_delivery(
         return None
 
 
-def deliveries_for_alert(db: Database, alert_id: int) -> list:
-    """Every recorded leg of one alert, oldest first: the answer to "who was
-    told, how, and did the transport take it"."""
-    with db.cursor() as cur:
-        cur.execute("SELECT * FROM deliveries WHERE alert_id = ? ORDER BY id", (alert_id,))
-        return cur.fetchall()
-
-
-def reached_a_person(db: Database, alert_id: int) -> bool | None:
-    """True when at least one leg to a customer, secondary or operator was
-    accepted; False when every recorded leg failed or was skipped; None when
-    nothing was recorded at all (an alert from before this table existed -
-    the unknowable case the audit could not fill, and must not be filled
-    with an inference here either)."""
-    rows = deliveries_for_alert(db, alert_id)
-    if not rows:
-        return None
-    return any(r["status"] == "accepted" for r in rows)
-
-
 def last_accepted(db: Database, *, kind: str | None = None, channel: str | None = None,
                   recipient: str | None = None) -> str | None:
     """ISO timestamp of the newest accepted delivery matching the filters,

@@ -19,7 +19,8 @@ the fuller design rationale.
    page's `window.print()` button. Anything beyond needs a decision, not a
    diff. **Consequence for #39**: dashboard filtering is server-side.
 2. **The portal carries the Minas identity; the ops dashboard stays plain,
-   dense, unbranded** (its pass waits on the access model — #87). An ops
+   dense, unbranded** (its pass shipped in v1.10.0, #82;
+   `design/dashboard/DESIGN-SYSTEM.md` is the dashboard's contract). An ops
    screenshot must not be usable to impersonate a customer page.
 3. **Brand assets live in `sentinel/brand.py`**: the gold/violet identity
    and the Minas logo (supplied 2026-10-22, replacing the stroked infinity
@@ -27,7 +28,8 @@ the fuller design rationale.
    (`design/brand/minas-logo.png`) by `scripts/brand-assets.py`, and served
    by the portal itself from `sentinel/static/` - still no external
    request.
-4. **Portal first**; dashboard design waits.
+4. **Portal first**; the dashboard's pass followed in v1.10.0, under
+   `design/dashboard/DESIGN-SYSTEM.md`.
 
 ## Tokens (`:root`, all with role names)
 
