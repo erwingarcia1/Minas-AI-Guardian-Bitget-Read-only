@@ -36,6 +36,7 @@ from sentinel.portal import (
     set_member_password,
     verify_session_token,
 )
+from tests.helpers.landing_redirect import exchange
 
 EMAIL = "alice@example.com"
 
@@ -375,9 +376,12 @@ def test_submitting_the_reset_changes_the_password_and_burns_the_token(portal, d
 
     token = create_reset_token(db, member)
 
-    status, _ = _post(portal, "/reset", {"token": token, "password": "brand-new-password"})
+    status, message, _ = exchange(portal, "POST", "/reset", body={"token": token, "password": "brand-new-password"})
 
-    assert status in (200, 303)
+    # To the form, not the front door (decision 25): the member has a
+    # password to type now. No session is issued - see the handler.
+    assert status == 303 and message.get("Location") == "/login"
+    assert "minas_portal=" not in (message.get("Set-Cookie") or "")
     assert check_member_login(db, member, "brand-new-password") is True
     assert check_member_login(db, member, "old-password") is False
     assert consume_reset_token(db, token) is None
@@ -396,7 +400,9 @@ def test_a_reset_will_not_accept_a_trivially_short_password(portal, db, member):
 
 
 def test_the_login_page_offers_the_reset_route(portal, db):
-    """A recovery flow nobody can find is a support call."""
-    _, body = _get(portal, "/")
+    """A recovery flow nobody can find is a support call. The form lives at
+    /login since decision 25; the root is the landing page."""
+    status, body = _get(portal, "/login")
 
+    assert status == 200 and 'id="signin-title"' in body
     assert "/forgot" in body

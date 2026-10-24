@@ -55,8 +55,13 @@ password leak → attacker can send fake alerts (panic/phishing) or read alert
 traffic (learns which accounts are monitored).
 - Controls: tokens only in env/secret manager; alerts never include API keys
   or full addresses beyond what the customer needs; the anti-phishing posture
-  lives on the portal itself rather than in a document - the sign-in page
-  names the one address (#88) and alerts carry a reference, never a link.
+  lives on the portal itself rather than in a document - the landing page
+  and the sign-in page name the one address (#88; decision 25) and alerts
+  carry a reference, never a link. A session that has ended is sent to
+  the landing page, never to a page that would carry member data: the
+  page says "You were signed out." and clears the stale cookie, and every
+  other path without a session answers the same 303, so a visitor without
+  one still cannot tell which paths exist.
   The portal and the ops dashboard share the identity and the dark ground
   (decision 24, 2026-10-24) and are told apart by the Operations lockup, the
   operator's name, the h1 and the `/admin` path, never by colour.

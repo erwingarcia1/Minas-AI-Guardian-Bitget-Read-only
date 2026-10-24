@@ -1,9 +1,9 @@
 """The app in mobile/ cannot drift from the server it belongs to (decision 21).
 
 Read as files: the server's suite needs no Node to hold the app to the
-portal's colours, the logo's derived files, the API's route set and the
-image's build context. The app's own behaviour is tested by its own suite
-(Jest) in the Mobile workflow.
+portal's colours, the logo's derived files, the API's route set, the
+landing page's sentences and the image's build context. The app's own
+behaviour is tested by its own suite (Jest) in the Mobile workflow.
 """
 from __future__ import annotations
 
@@ -12,6 +12,7 @@ import json
 import re
 from pathlib import Path
 
+from sentinel import portal
 from sentinel.api import ROUTES
 from sentinel.portal import _PORTAL_STYLE
 
@@ -82,6 +83,29 @@ def test_the_generated_client_knows_exactly_the_servers_routes():
     schema = (MOBILE / "src" / "api" / "schema.d.ts").read_text()
     paths = set(re.findall(r'^    "(/api/v1/[^"]*)": \{', schema, re.M))
     assert paths == {template for _, template in ROUTES}
+
+
+def test_the_apps_landing_says_what_the_portals_does():
+    """Decision 25: the app opens on the portal's landing page, in the
+    portal's words. The sentences live in sentinel/portal.py; the app
+    carries copies, because it cannot read the server before a sign-in,
+    and this is what keeps the copies from drifting."""
+    source = (MOBILE / "src" / "app" / "landing.tsx").read_text()
+    # JSX text may spell an apostrophe as an entity; the portal's sentences do not.
+    source = source.replace("&apos;", "'").replace("&#39;", "'")
+    pinned = [portal.LANDING_STATEMENT, portal.LANDING_LEAD, portal.LANDING_SETUP, *portal.LIMITS_HEADLINE]
+    for title, text in portal.LANDING_STEPS:
+        pinned += [title, text]
+    # The limits rows too: the app's limits screen reads them live from
+    # GET /api/v1/limits, one tap away, so a copy here that lagged would be
+    # two sentences for one fact inside one app.
+    for title, text in portal.LIMITS_DOES:
+        pinned += [title, text]
+    for title, text, _to_status in portal.LIMITS_CANNOT:
+        pinned += [title, text]
+    assert len(pinned) == 23, "the scan found too few sentences to prove anything"
+    missing = [sentence for sentence in pinned if sentence not in source]
+    assert not missing, f"mobile/src/app/landing.tsx does not say, verbatim: {missing}"
 
 
 def test_the_app_never_enters_the_server_image_build():

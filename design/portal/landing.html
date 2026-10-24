@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="dark">
+  <title>Minas AI Guardian — Member portal</title>
+  <meta name="description" content="Read-only monitoring for crypto exchange accounts: what Minas AI Guardian watches, how it tells you, what it cannot do, and where members sign in.">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class=""><a class="skip-link" href="#main">Skip to content</a>
+  <header class="topbar">
+    <div class="container topbar__inner"><a class="brand" href="/" aria-label="Minas AI Guardian home"><img class="brand__mark" src="../brand/minas-logo.png" alt="" width="28" height="28"><span class="brand__stack"><span class="brand__name">Minas AI <span>Guardian</span></span><span class="brand__tag">Member portal</span></span></a>
+      <div class="topbar__meta"><a href="/login">Sign in</a>
+      </div>
+    </div>
+  </header>
+  <main id="main" class="main">
+    <div class="container stack-lg">
+      <div class="page-head"><span class="eyebrow">Read-only monitoring for crypto exchange accounts</span>
+        <h1 id="landing-title">Minas AI Guardian watches your exchange accounts around the clock and tells you within minutes when money starts leaving.</h1>
+        <p class="lead">Read-only monitoring for Bitget, Bybit, OKX and Binance accounts. The key you give Minas can read your account and never trade, withdraw or move anything, so a compromise of Minas itself cannot cost you money.</p>
+      </div>
+      <div class="primary-row"><a class="btn btn--primary" href="/login">Sign in</a>
+        <p class="muted">Minas sets monitoring up with you. There is nothing to sign up for here.</p>
+      </div>
+      <section class="panel" aria-labelledby="how-title">
+        <h2 id="how-title">How it works</h2>
+        <ol class="steps">
+          <li><strong>You connect a read-only API key.</strong><span>Minas checks with the exchange that the key cannot trade or withdraw, and refuses any key that can.</span>
+          </li>
+          <li><strong>The Guardian keeps reading.</strong><span>Your balances, recent movements, API permissions and allowlists, all day, compared with what it has seen before. Balances and movements about every 45 seconds; permissions and allowlists about every 10 minutes.</span>
+          </li>
+          <li><strong>When something looks wrong, you are told.</strong><span>On the channels you have set up, with what to do next. A second contact is told too, and Minas escalates if nobody acknowledges.</span>
+          </li>
+        </ol>
+      </section>
+      <div class="callout-danger" role="note">
+        <h2>Minas AI Guardian cannot stop an attack.</h2>
+        <p>It cannot freeze your account, cancel a transaction, or move funds. When you get an alert, you and the exchange are the ones who can act — and seconds decide the outcome.</p>
+      </div>
+      <div class="stack" id="limits">
+        <section class="panel" aria-labelledby="landing-does-title">
+          <h2 id="landing-does-title">What the Guardian does</h2>
+          <ul class="feature-list">
+            <li><svg class="tick tick--yes" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div><strong>It watches for money leaving.</strong><span>Withdrawals, transfers, and balance drops that no trade explains.</span>
+              </div>
+            </li>
+            <li><svg class="tick tick--yes" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div><strong>It watches your account's security settings.</strong><span>API permissions and IP allowlists changing are how a takeover starts.</span>
+              </div>
+            </li>
+            <li><svg class="tick tick--yes" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div><strong>It tells you, on the channels you have configured.</strong><span>And tells a second contact, and escalates if nobody acknowledges.</span>
+              </div>
+            </li>
+            <li><svg class="tick tick--yes" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M8 12.5l2.5 2.5L16 9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div><strong>It keeps the record.</strong><span>Every alert and every check is stored, so you can reconstruct what happened and when afterwards.</span>
+              </div>
+            </li>
+          </ul>
+        </section>
+        <section class="panel" aria-labelledby="landing-cannot-title">
+          <h2 id="landing-cannot-title">What it cannot do</h2>
+          <ul class="feature-list">
+            <li><svg class="tick tick--no" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div><strong>It cannot see what the exchange does not report.</strong><span>Every check reads the exchange's own API. If the exchange is slow to show a withdrawal, omits a reference, or is unreachable, the Guardian is that much later or that much blinder. It says so rather than guessing.</span>
+              </div>
+            </li>
+            <li><svg class="tick tick--no" viewBox="0 0 24 24" fill="none" aria-hidden="true"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M9 9l6 6M15 9l-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <div><strong>It cannot recover money that has gone.</strong><span>There is no reversal. The Guardian shortens the time between a theft starting and you knowing about it. That is the whole product.</span>
+              </div>
+            </li>
+          </ul>
+        </section>
+      </div>
+      <div class="phish"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l8 3v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6l8-3z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"/><path d="M9 12l2 2 4-4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <p><strong style="color:var(--text)">Minas will never email you a link asking for your API key.</strong> Our only address is <strong style="color:var(--text)">guardian.minastrade.com</strong>. Always type it in yourself to check your accounts — never click through from an email or a message.</p>
+      </div>
+    </div>
+  </main>
+  <footer class="footer">
+    <div class="container footer__row"><span class="footer__tag">Minas AI Guardian</span><a href="/#limits">What this product can and cannot do</a><span class="subtle">Read-only monitoring. We cannot move your funds.</span>
+    </div>
+  </footer>
+</body></html>

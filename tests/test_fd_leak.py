@@ -54,7 +54,7 @@ def _get(port: int, path: str = "/", cookie: str | None = None) -> int:
 
 def _signed_in_portal_cookie(db, port: int) -> str:
     """A real session, because the leak needs a DB-touching request to show:
-    an anonymous portal GET renders the login page without ever opening this
+    an anonymous portal GET renders the landing page without ever opening this
     thread's connection, and a test hammering it passes with or without the
     fix — the trap CONTRIBUTING's mutation section exists for."""
     set_member_password(db, "leak@test.invalid", "pw-123456")

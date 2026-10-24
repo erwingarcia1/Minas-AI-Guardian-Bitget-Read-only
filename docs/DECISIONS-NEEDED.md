@@ -40,9 +40,10 @@ accounts (section 21, "Not built yet"); the sections stay as the record.
 | 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | ~~#87~~, ~~#82~~ | **ANSWERED 2026-08-27** — mandatory; host-access recovery, attributed and logged; see section 19. *From 2026-10-23 the host access is SSH with the key pair at the Elastic IP (22e)* |
 | 20 | The member portal is published to the internet on Tailscale Funnel | ~~#88~~ (closed 2026-10-24; evidence in its closing comment) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in full 2026-10-23 by 22: no Tailscale, removed in one go* |
 | 21 | Native iOS and Android apps, and the JSON API they need | the apps | **PARTLY ANSWERED 2026-10-22** — customers only, React Native, in this repo, company branding, sign-in and v1 API scope as recommended; push and the web portal open; see section 21 |
-| 22 | One public address, guardian.minastrade.com; no Tailscale | ~~#88~~ (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22. **Built and deployed 2026-10-24 (v1.14.0)**; the email to members went the same day (22d); left: the Tailscale admin-console removal, the owner's |
+| 22 | One public address, guardian.minastrade.com; no Tailscale | ~~#88~~ (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22. **Built and deployed 2026-10-24 (v1.14.0)**; the email to members went the same day (22d); left: the Tailscale admin-console removal (the owner's) |
 | 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **ANSWERED 2026-10-24** — `segno` accepted by the merge of the QR PR (#130); the three renderings read by Google Authenticator the same day; shipped in v1.15.0 and deployed; see section 23 |
 | 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24. **Deployed 2026-10-24 (v1.15.0)** |
+| 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25 |
 
 ---
 
@@ -2333,6 +2334,128 @@ print sheet still flips to white paper and black ink), decision 19
 (operator two-factor, which gated #82's dashboard pass), #82 (the design
 decisions of 2026-08-19), docs/threat-model.md A3 (the anti-phishing
 posture).
+
+---
+
+## 25. The portal's front door is a landing page; the sign-in moves to /login; an ended session lands there — **ANSWERED by the owner 2026-10-24**
+
+> **The owner's words (2026-10-24):** "a very important update. when a
+> user visits guardian.minastrade.com, it is the login page, instead of
+> like a landing page that should contain link to login or something. the
+> landing page ought to be what the system is about. this should also be
+> in the mobile apps too. when a user login session expires, it can take
+> them to like that page. finally, i want you to create a skill that fires
+> when a change is made to the UI, the change should reflect in both web
+> UIs and the mobile UIs when necessary."
+
+Four instructions, taken in the owner's order.
+
+**1. The front door.** `GET /` without a session is a landing page, not
+the sign-in form. It says what the system is about, in the portal's own
+primitives and nothing new: the statement ("Minas AI Guardian watches
+your exchange accounts around the clock and tells you within minutes when
+money starts leaving."), the lead on the read-only key, "How it works" in
+three steps with the polling cadence read from the running configuration
+at render time, the "Minas AI Guardian cannot stop an attack." callout
+and the whole of what it does and cannot do, the one address named as
+text with the anti-phishing rule under it, and the way in: a "Sign in"
+link in the top bar and the page's one gold button, both to `/login`.
+There is nothing to sign up for and the page says so - "Minas sets
+monitoring up with you. There is nothing to sign up for here." The
+sign-in page is unchanged, now explicitly routed at `/login`; signed in,
+`/login` goes home (303) where it used to 404. The renderer is
+`_render_landing` in `sentinel/portal.py`, the page is pinned by
+`id="landing-title"` as the sign-in page is by `signin-title`, and the
+mockup is `design/portal/landing.html`.
+
+**2. The app.** `mobile/src/app/landing.tsx` ("Welcome", route
+`/landing`) is the first screen a phone without a sign-in sees: the same
+statement, lead and setup sentence, the same three steps (without the
+numbers - the app cannot read the configuration before sign-in), the same
+callout and limits, and a "Sign in" button to `/sign-in`, which gains a
+header and a way back. The sentences the two surfaces share are pinned in
+the server suite: `tests/test_mobile_app.py` reads the screen and asserts
+the portal's constants appear in it verbatim.
+
+**3. An ended session.** A member whose cookie is presented and rejected
+- expired, the session epoch bumped, tampered, the member gone - is sent
+to the landing page (303 `Location: /`) from any other page they asked
+for; `/` itself answers the landing page directly. Either way the page
+opens with "You were signed out." and when a session ends (the hours
+from `SESSION_IDLE_SECONDS` and `SESSION_TTL_SECONDS`, never typed in,
+and a password change), then clears the stale cookie (`Max-Age=0`). The
+redirect leaves the cookie alone, since the landing page needs to see it
+to say so; a visitor who arrives without one sees the plain page, no
+notice, no `Set-Cookie`. Every other path without a session - a member
+page, an unknown one such as `/healthz` - answers the same 303, and so
+does a POST on a member route (the acknowledgement or snooze it carried
+is not applied); the pre-auth flows (`/login`, `/login-code`, `/forgot`,
+`/reset`) keep their own, a login error stays on the form, and a
+password reset lands on `/login` so the member lands on the form.
+Sign-out lands on the plain landing page. In the app, "This phone was
+signed out." moves from the sign-in screen to the landing; signing out
+from Security lands there without it.
+
+**4. A UI change lands on every surface.** The `ui-parity` skill
+(`.claude/skills/ui-parity/SKILL.md`) carries the map of surfaces - which
+portal page, constant or token corresponds to which app screen and which
+API route carries it, and which surfaces have no counterpart (the
+dashboard; the print sheet and the pause, snooze, erase and Telegram
+settings, portal-only by 21d; push notifications, app-only and open on
+21e) - the decision procedure, the rules every surface obeys, the guards
+to run and the records to write. `scripts/ui-parity-reminder.py` is a
+PostToolUse hook, registered in the committed `.claude/settings.json`:
+when an edit, a write or a writing shell command touches a user-facing
+file, it names the surface, the counterparts and the skill to invoke
+before finishing, and otherwise prints nothing; it never raises and
+always exits 0. `tests/test_ui_parity_hook.py` runs it as a subprocess
+and holds the skill and the script to the same list of surfaces.
+CONTRIBUTING.md has the section "A UI change lands on every surface".
+
+**What stays decided.**
+
+- Decision 1 on #82: no framework, no JavaScript beyond
+  `_LOCAL_TIME_SCRIPT`, no external request. The landing page is
+  server-rendered HTML + CSS.
+- Decision 17: no self-serve signup. The landing page offers no "sign
+  up"; it says Minas sets monitoring up with the member.
+- #88 / 22d: the public address exists in exactly one place, the setting
+  (`portal_host()` in `sentinel/edge.py`); copy names it as text, never a
+  link; the "Our address has changed" notice appears on any host that is
+  not the one address - on the landing page as on the sign-in page.
+- #48 / G-44: no prevention claim ever reaches a customer.
+  `tests/test_no_prevention_claims.py` scans every string literal in
+  `sentinel/portal.py`, the landing copy included; its verbs are watches,
+  reads, tells, alerts, keeps the record.
+- Numbers come from the running configuration, never typed into copy
+  (`polling_cadence(rules)`, `SESSION_IDLE_SECONDS`,
+  `SESSION_TTL_SECONDS`).
+- The portal's design system (docs/portal-design.md,
+  design/portal/DESIGN-SYSTEM.md): screens compose existing primitives;
+  one gold `.btn--primary` per screen (the hero's - the top bar's "Sign
+  in" is a link); every emitted class is styled in `_PORTAL_STYLE`; no
+  tables; no motion; mobile-first; touch floors.
+- The ops dashboard (`sentinel/dashboard.py`, `/admin`) is unchanged.
+- The app's sign-in mechanics (`tokens.ts`, `session.tsx`, 21c) are
+  unchanged; only the routing and the screens change.
+- 21b stays open as it was: the browser portal is still server-rendered.
+  A landing page is a screen, not a framework.
+
+**What the old rule protected is kept.** "Every other unauthenticated GET
+lands on the login page" existed so that a visitor without a session
+cannot tell which paths exist. The 303 to `/` keeps that: a member page
+and an unknown path answer identically.
+
+### What it blocks
+
+Nothing.
+
+**Related:** decision 17 (no self-serve signup), 21b (the browser
+portal), 21c (the app's sign-in), 21d (the limits copy the app reads),
+22d (the one address and the moved notice), docs/threat-model.md A3 (the
+anti-phishing posture), docs/portal-design.md and
+design/portal/DESIGN-SYSTEM.md (the landing's composition),
+CONTRIBUTING.md ("A UI change lands on every surface").
 
 ---
 

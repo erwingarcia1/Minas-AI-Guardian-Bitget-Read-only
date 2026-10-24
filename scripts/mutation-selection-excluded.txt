@@ -59,6 +59,7 @@ tests/test_portal_access_scope.py: imports dashboard, portal - nothing under the
 tests/test_portal_address.py: imports edge, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_portal_alert_history.py: imports portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_portal_key_replacement.py: imports portal - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_portal_landing.py: imports portal, snooze - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_portal_snooze.py: imports portal, snooze - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_portal_two_factor_login.py: imports sentinel, portal, totp, twofactor - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_project_consistency.py: imports sentinel - nothing under the mutated paths (alerts/, detectors/, config.py)
@@ -75,6 +76,7 @@ tests/test_set_contact.py: imports cli, events, operators - nothing under the mu
 tests/test_surface_styles.py: imports sentinel, dashboard - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_totp.py: imports sentinel, totp - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_twofactor.py: imports operators, portal, totp, twofactor - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_ui_parity_hook.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_unidentifiable_withdrawal.py: imports identity - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_validate_config_cli.py: imports cli, db - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_mutation_selection.py: the guard over this list and the selection; reads scripts/, imports no sentinel module

@@ -11,6 +11,9 @@ import { json, on, REFRESH_KEY, resetServer, store } from './server';
 configure({ asyncUtilTimeout: 5000 });
 
 export const SIGN_IN_LINE = 'Sign in with your member portal email, password and two-factor code.';
+/** The welcome screen's first sentence: the portal's LANDING_STATEMENT. */
+export const LANDING_STATEMENT =
+  'Minas AI Guardian watches your exchange accounts around the clock and tells you within minutes when money starts leaving.';
 export const REFUSED_REASON = 'our monitoring key is being rejected — replace it and monitoring restarts';
 
 export function tokens(n: number) {

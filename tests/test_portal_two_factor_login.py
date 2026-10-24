@@ -28,6 +28,7 @@ from sentinel.portal import serve_portal, set_member_password
 from sentinel.totp import totp_at
 from sentinel.twofactor import MEMBER, begin_enrolment, confirm_enrolment
 from tests.conftest import PINNED_TOTP_NOW
+from tests.helpers.landing_redirect import assert_sent_to_the_landing_page
 
 ALICE = "alice@example.com"
 PASSWORD = "a-long-enough-password"
@@ -134,10 +135,10 @@ def test_the_pending_token_is_not_a_session(portal, db, alice_with_2fa):
     _, body, _ = _post(portal, "/login", {"email": ALICE, "password": PASSWORD})
     pending = _pending_from(body)
 
-    _, page = _get(portal, "/", cookie=pending)
+    status, page = _get(portal, "/", cookie=pending)
 
-    assert 'id="signin-title"' in page
-    assert "alice-1" not in page
+    assert status == 200 and 'id="landing-title"' in page, "the landing page: a pending token is no session"
+    assert "alice-1" not in page and "Signed in as" not in page
 
 
 def test_a_correct_code_completes_the_sign_in(portal, db, alice_with_2fa):
@@ -207,9 +208,8 @@ def test_the_security_routes_ignore_a_form_supplied_identity(portal, db, cipher)
     _account(db)
     set_member_password(db, ALICE, PASSWORD)
 
-    _, body, _ = _post(portal, "/security/2fa/start", {"email": ALICE})
+    assert_sent_to_the_landing_page(portal, "POST", "/security/2fa/start", body={"email": ALICE})
 
-    assert 'id="signin-title"' in body
     from sentinel.twofactor import is_enabled
     assert is_enabled(db, MEMBER, ALICE) is False
 
@@ -345,11 +345,9 @@ def test_the_security_page_needs_a_session(portal, db, cipher):
     _account(db)
     set_member_password(db, ALICE, PASSWORD)
 
-    status, body = _get(portal, "/security")
-    _, start, _ = _post(portal, "/security/2fa/start", {})
+    assert_sent_to_the_landing_page(portal, "GET", "/security")
+    assert_sent_to_the_landing_page(portal, "POST", "/security/2fa/start", body={})
 
-    assert 'id="signin-title"' in body and status == 200
-    assert 'id="signin-title"' in start
     from sentinel.twofactor import is_enabled
     assert is_enabled(db, MEMBER, ALICE) is False
 

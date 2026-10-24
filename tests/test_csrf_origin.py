@@ -227,7 +227,8 @@ def test_every_kind_of_portal_response_carries_the_edge_headers(db, cipher, monk
         cookie = {"Cookie": message.get("Set-Cookie").split(";")[0]}
         _walk(port, [
             ("GET", "/login", None, None, 200),
-            ("GET", "/", None, None, 200),                       # no session: the sign-in page
+            ("GET", "/", None, None, 200),                       # no session: the landing page
+            ("GET", "/alerts", None, None, 303),                 # no session: sent to the landing page
             ("GET", "/forgot", None, None, 200),
             ("GET", "/reset?token=abc", None, None, 200),
             ("GET", "/brand/mark.png", None, None, 200),         # the logo files
@@ -239,6 +240,7 @@ def test_every_kind_of_portal_response_carries_the_edge_headers(db, cipher, monk
             ("DELETE", "/", None, None, 404),
             ("PUT", "/", None, None, 501),                       # the standard library's own error reply
             ("GET", "/", None, cookie, 200),                     # signed in
+            ("GET", "/login", None, cookie, 303),                # signed in: sent home
             ("GET", "/export.json", None, cookie, 200),          # headers written by hand
             ("GET", "/alerts.csv", None, cookie, 200),
             ("GET", "/incident?id=999999", None, cookie, 404),

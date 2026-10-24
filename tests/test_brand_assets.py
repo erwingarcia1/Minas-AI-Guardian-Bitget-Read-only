@@ -103,9 +103,13 @@ def test_the_portal_serves_each_file_before_sign_in(portal, path):
 
 
 def test_a_path_that_is_not_a_logo_file_is_not_served_as_one(portal):
+    """A traversal under /brand/ is no logo file: it meets the session check
+    like any other path and is sent to the landing page (decision 25) - no
+    body, no image header."""
     conn = http.client.HTTPConnection("127.0.0.1", portal, timeout=5)
     conn.request("GET", "/brand/../../etc/passwd")
     resp = conn.getresponse()
-    resp.read()
+    body = resp.read()
     conn.close()
-    assert resp.getheader("Content-Type", "").startswith("text/html")
+    assert resp.status == 303 and resp.getheader("Location") == "/"
+    assert resp.getheader("Content-Type") is None and body == b""

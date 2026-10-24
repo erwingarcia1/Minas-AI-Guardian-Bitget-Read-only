@@ -27,7 +27,7 @@ PASSWORD = "pw-long-enough-1"
 
 # Every GET path, with a query string that reaches the handler's real body.
 GET_ROUTES = {
-    "/": "/", "/alerts": "/alerts?severity=CRITICAL", "/limits": "/limits", "/status": "/status",
+    "/": "/", "/login": "/login", "/alerts": "/alerts?severity=CRITICAL", "/limits": "/limits", "/status": "/status",
     "/activity": "/activity", "/export.json": "/export.json", "/alerts.csv": "/alerts.csv",
     "/incident": "/incident?id={alert}", "/security": "/security", "/key": "/key?id={account}",
     "/account": "/account?id={account}", "/forgot": "/forgot", "/reset": "/reset?token=not-a-token",

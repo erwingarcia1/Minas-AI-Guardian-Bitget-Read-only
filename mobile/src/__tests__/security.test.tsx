@@ -6,7 +6,7 @@
 import { act, fireEvent, screen, testRouter, waitFor } from 'expo-router/testing-library';
 import { Alert, AppState } from 'react-native';
 
-import { LIMITS, onPressOf, SECURITY, signedIn, SIGN_IN_LINE, useDemoServer } from '@/test-utils/app';
+import { LANDING_STATEMENT, LIMITS, onPressOf, SECURITY, signedIn, useDemoServer } from '@/test-utils/app';
 import { calls, json, offline, on, REFRESH_KEY, silence, store } from '@/test-utils/server';
 
 jest.setTimeout(30_000);
@@ -14,8 +14,9 @@ jest.setTimeout(30_000);
 useDemoServer();
 
 async function openSecurity() {
-  await signedIn();
+  const app = await signedIn();
   await fireEvent.press(screen.getByRole('button', { name: /^Security, tab/ }));
+  return app;
 }
 
 /** Answer "Sign out" in the confirmation, as a member would. */
@@ -113,12 +114,14 @@ test('coming back to the app reads the tab again', async () => {
   await waitFor(() => expect(screen.queryByText('Old tablet')).toBeNull());
 });
 
-test('signing out asks first, ends the sign-in on the server and on the phone, and returns to sign-in', async () => {
+test('signing out asks first, ends the sign-in on the server and on the phone, and returns to the welcome screen', async () => {
   const confirm = confirmEverything();
-  await openSecurity();
+  const app = await openSecurity();
   await fireEvent.press(await screen.findByRole('button', { name: 'Sign out of this phone' }));
   expect(confirm).toHaveBeenCalled();
-  expect(await screen.findByText(SIGN_IN_LINE)).toBeTruthy();
+  expect(await screen.findByText(LANDING_STATEMENT)).toBeTruthy();
+  expect(app.getPathname()).toBe('/landing');
+  expect(testRouter.canGoBack()).toBe(false);
   expect(calls).toContain('DELETE /api/v1/session');
   expect(store.has(REFRESH_KEY)).toBe(false);
   expect(screen.queryByText('This phone was signed out.')).toBeNull(); // their own choice: no warning
@@ -134,7 +137,7 @@ test.each([
   await openSecurity();
   await fireEvent.press(await screen.findByRole('button', { name: 'Sign out of this phone' }));
   await act(() => jest.advanceTimersByTimeAsync(5_000));
-  expect(await screen.findByText(SIGN_IN_LINE)).toBeTruthy();
+  expect(await screen.findByText(LANDING_STATEMENT)).toBeTruthy();
   expect(store.has(REFRESH_KEY)).toBe(false);
   confirm.mockRestore();
 });

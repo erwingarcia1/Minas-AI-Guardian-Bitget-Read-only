@@ -22,6 +22,7 @@ import urllib.parse
 import pytest
 
 from sentinel.portal import alert_history_rows, serve_portal, set_member_password
+from tests.helpers.landing_redirect import assert_sent_to_the_landing_page
 
 
 def _free_port():
@@ -175,8 +176,7 @@ def test_history_page_lists_alerts_and_links_incidents(db, signed_in, portal):
 
 
 def test_history_page_requires_a_session(db, portal):
-    status, body, _c, _ct = _request(portal, "GET", "/alerts")
-    assert 'id="signin-title"' in body
+    assert_sent_to_the_landing_page(portal, "GET", "/alerts")
 
 
 def test_history_page_never_shows_another_members_alerts(db, signed_in, portal):
@@ -247,10 +247,10 @@ def test_csv_never_contains_another_members_alerts(db, signed_in, portal):
 
 
 def test_csv_requires_a_session(db, portal):
-    _status, body, _c, content_type = _request(portal, "GET", "/alerts.csv")
-    # The login page, not an empty spreadsheet: no data crosses the boundary.
+    _status, _body, _c, content_type = _request(portal, "GET", "/alerts.csv")
+    # The landing redirect, not an empty spreadsheet: no data crosses the boundary.
     assert not content_type.startswith("text/csv")
-    assert 'id="signin-title"' in body
+    assert_sent_to_the_landing_page(portal, "GET", "/alerts.csv")
 
 
 def test_csv_defangs_formula_cells(db, signed_in, portal):

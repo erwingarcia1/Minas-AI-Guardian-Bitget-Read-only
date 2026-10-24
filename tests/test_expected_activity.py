@@ -36,6 +36,7 @@ from sentinel.expected import (
     patterns,
 )
 from sentinel.portal import serve_portal, set_member_password
+from tests.helpers.landing_redirect import assert_sent_to_the_landing_page
 
 
 def _free_port():
@@ -220,8 +221,7 @@ def test_marking_another_members_alert_is_not_found(db, signed_in, portal):
 def test_marking_requires_a_session(db, signed_in, portal):
     aid, _token = signed_in
     alert_id = _alert(db, aid)
-    _status, body = _request(portal, "POST", "/expected", body={"alert_id": str(alert_id)})
-    assert 'id="signin-title"' in body
+    assert_sent_to_the_landing_page(portal, "POST", "/expected", body={"alert_id": str(alert_id)})
     assert marks_for_alert(db, alert_id) == []
 
 

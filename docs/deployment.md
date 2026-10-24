@@ -346,8 +346,12 @@ teardown of the old way in and does not recur.
        #         {"error": "unauthorized", "message": "Sign in again."}
    curl -sS -o /dev/null -D - http://guardian.minastrade.com/login
        # expect: HTTP/1.1 308; Location: https://guardian.minastrade.com/login (header case as the server sends it)
-   curl -sS https://guardian.minastrade.com/healthz | grep -c 'name="password"'
-       # expect: 1 - the portal's sign-in page; the dashboard answers only under /admin
+   curl -sS -o /dev/null -w '%{http_code} %{redirect_url}\n' https://guardian.minastrade.com/healthz
+       # expect: 303 https://guardian.minastrade.com/ - the portal sends every path it does not know,
+       #         and every member page without a session, to its landing page (decision 25);
+       #         the dashboard's /healthz answers only under /admin
+   curl -sS https://guardian.minastrade.com/ | grep -c 'id="landing-title"'
+       # expect: 1 - the landing page is the portal's front door; /login above is still the sign-in form
    ```
 
    Then try a wrong password once at `https://guardian.minastrade.com/login`
@@ -410,11 +414,14 @@ teardown of the old way in and does not recur.
    From then on the address in alert SMS and emails, and in password-reset
    links, is the new one, and the sign-in page names it - the release from
    step 6 carries that copy (CHANGELOG, "The sign-in page names the one
-   address"):
+   address") - as does the landing page in front of it, from decision 25
+   on:
 
    ```bash
    curl -s https://guardian.minastrade.com/login | grep -c 'Our only address'       # expect: 1
    curl -s https://guardian.minastrade.com/login | grep -c 'Our address has changed' # expect: 0 - the host is recognised
+   curl -s https://guardian.minastrade.com/ | grep -c 'Our only address'            # expect: 1 - the landing page names it too (decision 25)
+   curl -s https://guardian.minastrade.com/ | grep -c 'Our address has changed'      # expect: 0
    ```
 
    Telling members the address (22d, 22e step 5) is the owner's email;

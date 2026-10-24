@@ -16,6 +16,35 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Added
+
+- **The member portal has a landing page (decision 25, 2026-10-24).** A
+  visitor to https://guardian.minastrade.com meets a page that says what
+  the Guardian is, where the sign-in form used to stand: that it watches
+  exchange accounts around the clock and tells the member within minutes
+  when money starts leaving; that the key it holds is read-only, so a
+  compromise of Minas itself cannot cost the member money; how it works,
+  in three steps, with the polling cadence read from the running
+  configuration (`polling_cadence(rules)`) rather than typed into the
+  copy; the "Minas AI Guardian cannot stop an attack." callout and the
+  whole of what it does and cannot do, so the limits are read before
+  anyone signs in; the one address, named as text from the setting with
+  the anti-phishing rule under it (and the 22d "Our address has changed"
+  notice on any other host); and the way in - a "Sign in" link in the top
+  bar and the page's one gold button, both to `/login`. There is nothing
+  to sign up for, and the page says so: Minas sets monitoring up with the
+  member (decision 17 stands). No script, no external request, no new
+  primitive: `_render_landing` in `sentinel/portal.py` composes the
+  portal's existing ones, and the page is pinned by `id="landing-title"`
+  as the sign-in page is by `signin-title`; the mockup is
+  `design/portal/landing.html`. The app opens on the same page
+  (`mobile/src/app/landing.tsx`, "Welcome"; mobile/CHANGELOG.md carries
+  the app's side), and `tests/test_mobile_app.py` holds the sentences the
+  two share to the same words. The record is section 25 of
+  docs/DECISIONS-NEEDED.md, with docs/portal-design.md,
+  design/portal/DESIGN-SYSTEM.md, docs/threat-model.md A3 and the deploy
+  runbook's smoke checks amended in the same change.
+
 ### Changed
 
 - **v1.15.0 is deployed (2026-10-24, 16:58 UTC):** the QR code on both enrolment
@@ -23,6 +52,73 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   portal's dark ground, and the day's records are live at
   https://guardian.minastrade.com; the readings are in docs/DEPLOYMENTS.md
   and decisions 23 and 24 carry the deployed status. No code in this entry.
+- **The sign-in page is at `/login`, and a session that has ended lands
+  on the landing page (decision 25, 2026-10-24).** A member whose session
+  has run out no longer finds the sign-in form standing in for the page
+  they asked for: every path without a session - a member page, an
+  unknown one such as `/healthz` - answers a 303 to `/`, and the landing
+  page opens with "You were signed out." and when a session ends (the
+  idle and total limits from `SESSION_IDLE_SECONDS` and
+  `SESSION_TTL_SECONDS`, never typed in, and a password change), then
+  clears the stale cookie (`Max-Age=0`). The redirect itself leaves the
+  cookie alone, since the landing page needs to see it to say so; a
+  visitor who arrives without one sees the plain page, no notice, no
+  `Set-Cookie`. The mechanism: `_session_email()` notes a cookie that was
+  presented and rejected (expired, the epoch bumped, tampered, the member
+  gone) in a flag initialised per request, and `GET /` reads it. The
+  sign-in page is unchanged and explicitly routed at `/login`; signed in,
+  `/login` goes home (303) where it used to 404. A POST on a member route
+  without a session is a 303 to `/` too, instead of the sign-in form
+  rendered in place (the acknowledgement or snooze it carried is not
+  applied); the pre-auth flows (`/login`, `/login-code`, `/forgot`,
+  `/reset`) keep their own, a login error stays on the form, and a
+  password reset now lands on `/login` so the member lands on the form.
+  Sign-out lands on the plain landing page. The footer's limits link
+  points at `/#limits` on every page rendered without a member (the
+  landing page, an anonymous not-found page) and at `/limits` on every
+  page rendered with one (a signed-in member's not-found page included:
+  `_render_not_found` now takes the member), so nobody is bounced from
+  the footer to the page they are on. The old rule, every other
+  unauthenticated GET lands on the login page, is replaced, and what it
+  protected is kept: a member page and an unknown path answer the same
+  303, so a visitor without a session still cannot tell which paths
+  exist. The tests that pinned the old behaviour are updated, not
+  deleted (`signin-title` on `GET /` becomes `landing-title`; a member
+  path without a session asserts the 303), and
+  `tests/test_portal_landing.py` holds the new one. In the deploy runbook
+  (docs/deployment.md step 8) the smoke check for the portal root changes
+  accordingly: `/healthz` on the public address is a 303 to `/`, and `/`
+  is checked for `id="landing-title"`; the `/login` checks still hold.
+- **A UI change lands on every surface: the `ui-parity` skill and its
+  hook (2026-10-24).** The owner's fourth instruction of the day: "i want
+  you to create a skill that fires when a change is made to the UI, the
+  change should reflect in both web UIs and the mobile UIs when
+  necessary." `.claude/skills/ui-parity/SKILL.md` carries the map of
+  surfaces - which portal page, constant or token corresponds to which
+  app screen and which API route carries it (the landing to
+  `landing.tsx`, the sign-in to `sign-in.tsx` and `session.tsx`, the home
+  to `(tabs)/index.tsx` via `/api/v1/accounts`, the limits to `limits.tsx`
+  via `/api/v1/limits`, the `_PORTAL_STYLE` tokens to
+  `mobile/src/theme/tokens.json`, the brand files from `design/brand`
+  through `scripts/brand-assets.py` to `sentinel/static` and
+  `mobile/assets/images`) and which surfaces have no counterpart (the
+  dashboard; the print sheet and the pause, snooze, erase and Telegram
+  settings, portal-only by 21d; push notifications, app-only and open on
+  21e) - the decision procedure, the rules every surface obeys, the
+  guards to run by surface and the records to write.
+  `scripts/ui-parity-reminder.py` is a PostToolUse hook, registered in
+  the committed `.claude/settings.json`: whenever an edit, a write or a
+  writing shell command touches a user-facing file (`sentinel/portal.py`,
+  `sentinel/dashboard.py`, `sentinel/brand.py`, `sentinel/static/`,
+  `design/`, `mobile/src/`, `mobile/app.json`, `sentinel/api.py`,
+  `api/openapi.yaml`, `sentinel/alerts/base.py`), it names the surface,
+  the file, the counterpart surfaces and the instruction to invoke the
+  skill before finishing; a command that merely reads the same file
+  prints nothing, and the script never raises, never prints otherwise and
+  always exits 0. `tests/test_ui_parity_hook.py` runs it as a subprocess,
+  checks the settings file and holds the skill and the script to the same
+  list of surfaces. CONTRIBUTING.md has the section "A UI change lands on
+  every surface".
 
 ## [1.15.0] — 2026-10-24
 

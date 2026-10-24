@@ -16,7 +16,7 @@ import {
   type TextStyle,
   type ViewStyle,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { type Edge, SafeAreaView } from 'react-native-safe-area-context';
 
 import { colors, radius, space, tone as tones, type, type Tone } from '@/theme';
 
@@ -24,13 +24,17 @@ export function Screen({
   children,
   refreshing,
   onRefresh,
+  // A screen sits under a header, which takes the top inset; one without a
+  // header asks for 'top' too, so its content keeps clear of the status bar.
+  edges = ['left', 'right'],
 }: {
   children: ReactNode;
   refreshing?: boolean;
   onRefresh?: () => void;
+  edges?: readonly Edge[];
 }) {
   return (
-    <SafeAreaView style={styles.screen} edges={['left', 'right']}>
+    <SafeAreaView style={styles.screen} edges={edges}>
       <ScrollView
         contentContainerStyle={styles.content}
         refreshControl={
@@ -44,8 +48,14 @@ export function Screen({
   );
 }
 
+/** A heading, as the portal's h1 is one: a screen reader's heading list
+ * starts with what the screen is about, and each card's title heads its card. */
 export function Title({ children }: { children: ReactNode }) {
-  return <Text style={styles.title}>{children}</Text>;
+  return (
+    <Text style={styles.title} accessibilityRole="header">
+      {children}
+    </Text>
+  );
 }
 
 export function Eyebrow({ children }: { children: ReactNode }) {
@@ -145,9 +155,24 @@ export function Button({
   );
 }
 
-export function Notice({ tone = 'neutral', title, children }: { tone?: Tone; title: string; children?: ReactNode }) {
+export function Notice({
+  tone = 'neutral',
+  title,
+  children,
+  // Live, by default: the notice says something that happened (an ended
+  // sign-in, a failed request), so it is an alert and, when urgent, said
+  // aloud. Standing text in a notice's clothes - the limits headline, the
+  // portal's .callout-danger role="note" - is live={false}: read in place
+  // like the rest of the screen, never announced over it.
+  live = true,
+}: {
+  tone?: Tone;
+  title: string;
+  children?: ReactNode;
+  live?: boolean;
+}) {
   const t = tones[tone];
-  const urgent = tone === 'danger' || tone === 'warn';
+  const urgent = live && (tone === 'danger' || tone === 'warn');
   const text = typeof children === 'string' ? children : '';
   useEffect(() => {
     // A problem that appears is said aloud, once: someone using a screen
@@ -156,7 +181,9 @@ export function Notice({ tone = 'neutral', title, children }: { tone?: Tone; tit
     if (urgent) AccessibilityInfo.announceForAccessibilityWithOptions(text ? `${title} ${text}` : title, { queue: true });
   }, [urgent, title, text]);
   return (
-    <View style={[styles.notice, { backgroundColor: t.bg, borderColor: t.line }]} accessibilityRole="alert">
+    <View
+      style={[styles.notice, { backgroundColor: t.bg, borderColor: t.line }]}
+      accessibilityRole={live ? 'alert' : undefined}>
       <Text style={[styles.noticeTitle, { color: tone === 'neutral' ? colors.text : t.fg }]}>{title}</Text>
       {children ? <Text style={styles.body}>{children}</Text> : null}
     </View>

@@ -19,6 +19,7 @@ import pytest
 
 from sentinel.portal import serve_portal, set_member_password
 from sentinel.snooze import MAX_SNOOZE_HOURS, active_snooze
+from tests.helpers.landing_redirect import assert_sent_to_the_landing_page
 
 
 def _free_port():
@@ -124,10 +125,9 @@ def test_an_unauthenticated_post_snoozes_nothing(portal, db, alice):
     account_id, _ = alice
     alert_id = _alert(db, account_id)
 
-    _, body = _request(portal, "POST", "/snooze", body={"alert_id": str(alert_id), "hours": "4"})
+    assert_sent_to_the_landing_page(portal, "POST", "/snooze", body={"alert_id": str(alert_id), "hours": "4"})
 
     assert active_snooze(db, account_id, "key-1") is None
-    assert 'id="signin-title"' in body
 
 
 def test_a_cross_origin_post_snoozes_nothing(portal, db, alice):
