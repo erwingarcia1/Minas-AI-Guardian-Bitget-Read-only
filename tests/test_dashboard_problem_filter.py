@@ -111,7 +111,7 @@ def test_a_hostile_state_filter_is_not_reflected_into_the_page(db):
     _fleet(db)
     page = _render(db, qs={"state": [STATE_PAYLOAD]})
     assert STATE_PAYLOAD not in page
-    assert "onerror=" not in page and "<img" not in page
+    assert "onerror=" not in page and "<img src=x" not in page  # the shell's own <img> is the mark
     assert "No accounts match this filter" in page, "the page still renders, with nothing selected"
     assert "state=" not in page.split("sort by")[0].rsplit("href=", 1)[-1], (
         "the sort link carries no state when the filter is not a known bucket")

@@ -23,7 +23,7 @@ import urllib.parse
 
 import pytest
 
-from sentinel import dashboard
+from sentinel import brand, dashboard
 from sentinel.dashboard import BASE_PATH_SETTING, normalize_base_path, serve_dashboard
 from sentinel.operators import create_operator
 from sentinel.portal import set_member_password
@@ -33,8 +33,8 @@ from tests.conftest import PINNED_TOTP_NOW
 
 PASSWORD = "correct-horse-battery"
 ALICE = "alice@example.com"
-# Every href and action in a rendered page, whichever quote it uses.
-_LINKS = re.compile(r"""(?:href|action)=["']([^"']*)["']""")
+# Every href, action and src in a rendered page, whichever quote it uses.
+_LINKS = re.compile(r"""(?:href|action|src)=["']([^"']*)["']""")
 
 
 def _request(port, method, path, *, fields=None, cookie=None, headers=None):
@@ -208,8 +208,10 @@ def test_a_request_outside_the_base_path_is_not_found(admin, erwin):
     # Caddy's path matcher is case-insensitive and matches the decoded path,
     # so /Admin/... and /ADMIN/... DO reach the dashboard on the public name;
     # the dashboard's own match is exact, and they get its 404, not a page.
+    # /brand/mark.png is the portal's: the dashboard's pages point at it on
+    # the shared hostname (decision 24) and this server has no asset route.
     for path in ("/login", "/foo", "/administrator", "/admin-x/", "/triage", "/metrics/raw",
-                 "/Admin", "/ADMIN/login", "/admin%2Flogin"):
+                 "/Admin", "/ADMIN/login", "/admin%2Flogin", "/brand/mark.png"):
         status, body, _ = _request(admin, "GET", path)
         assert (status, body) == (404, "not found"), path
 
@@ -271,8 +273,11 @@ def test_every_link_and_form_on_the_signed_in_pages_carries_the_base_path_once(a
     """The whole surface, link by link: the fleet page with its filter and
     sort links, triage with both toggles and a note form, the add form, an
     account page with both portal-credential forms, the account-not-found
-    page and the metrics page. Every href and action starts with /admin and
-    none doubles it - `_url` takes app-relative paths only."""
+    page and the metrics page. Every href, action and src starts with /admin
+    and none doubles it - `_url` takes app-relative paths only - with ONE
+    documented exception: the mark and the icons (decision 24) are the
+    portal's brand files, root-relative, because on the public hostname Caddy
+    sends /brand/* to the portal and the dashboard serves no asset itself."""
     account_id, _ = _account_with_alert(db)
     set_member_password(db, ALICE, "pw-long-enough-1", grant_account_id=account_id)
     cookie, _ = _sign_in(admin, erwin)
@@ -285,24 +290,34 @@ def test_every_link_and_form_on_the_signed_in_pages_carries_the_base_path_once(a
         links = _LINKS.findall(body)
         assert links, f"{path} rendered no link at all - the sweep is broken"
         for link in links:
+            if link.startswith("/brand/"):
+                assert link in brand.WEB_ASSETS, (path, link)  # the exception is exactly the portal's files
+                continue
             assert link == "/admin" or link.startswith("/admin/"), (path, link)
             assert "/admin/admin" not in link, (path, link)
         seen.update(links)
-    # The sweep saw the forms and links the map lists, not only the nav.
+    # The sweep saw the forms and links the map lists, not only the nav -
+    # and the mark, the icon and the sign-out link the shell adds.
     for expected in ("/admin/triage", "/admin/triage?handled=1", "/admin/add", "/admin/metrics",
                      "/admin/metrics/raw", "/admin/portal-access", "/admin/portal-grant",
-                     f"/admin/account?id={account_id}", "/admin/?state=trouble", "/admin/?sort=label"):
+                     f"/admin/account?id={account_id}", "/admin/?state=trouble", "/admin/?sort=label",
+                     "/admin/logout", "/brand/mark.png", "/brand/icon.png"):
         assert expected in seen, expected
 
 
 def test_the_metrics_page_links_carry_the_base_path(admin, erwin):
-    """Rendered by sentinel/metrics.py, a different module: without the base
-    path its two links would land on the portal's root and a portal 404."""
+    """The body is sentinel/metrics.py's, the shell the dashboard's: without
+    the base path its two links would land on the portal's root and a portal
+    404."""
     cookie, _ = _sign_in(admin, erwin)
     status, body, _ = _request(admin, "GET", "/admin/metrics", cookie=cookie)
     assert status == 200
     assert 'href="/admin/"' in body and 'href="/admin/metrics/raw"' in body
     assert 'href="/"' not in body and 'href="/metrics/raw"' not in body
+    # In the dashboard's shell since decision 24: the band's marking, the
+    # operator's name, and the 15-second refresh the page always had.
+    assert '<span class="ops__tag">Operations</span>' in body and "Signed in as <b>erwin</b>" in body
+    assert '<meta http-equiv="refresh" content="15">' in body and "Runtime" in body
     assert _request(admin, "GET", "/admin/metrics/raw", cookie=cookie)[0] == 200
 
 
@@ -420,7 +435,7 @@ def test_a_hostile_filter_in_the_query_string_is_not_reflected(admin, db, erwin)
     cookie, _ = _sign_in(admin, erwin)
     status, body, _ = _request(admin, "GET", "/admin/?state=" + urllib.parse.quote(payload), cookie=cookie)
     assert status == 200
-    assert payload not in body and "onerror=" not in body and "<img" not in body
+    assert payload not in body and "onerror=" not in body and "<img src=x" not in body  # the shell's <img> is the mark
     assert "Accounts" in body
 
 
@@ -484,8 +499,10 @@ def test_last_login_is_a_completed_sign_in_not_a_password_guess(admin, db, erwin
 
 def test_the_standalone_metrics_page_keeps_its_own_links():
     """sentinel/metrics.py also serves its page on 9109, with no base path:
-    its two links stay at the root."""
+    its two links stay at the root. A different server with no logo files
+    to serve, so it wears a text header and no mark (decision 24)."""
     from sentinel.metrics import render_metrics_html
 
     page = render_metrics_html()
     assert 'href="/"' in page and 'href="/metrics/raw"' in page
+    assert "Minas AI Guardian · Metrics" in page and brand.MARK_HTML not in page

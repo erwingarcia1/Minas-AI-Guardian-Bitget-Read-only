@@ -370,7 +370,7 @@ teardown of the old way in and does not recur.
        #         the dashboard (one named matcher at Caddy, no redirect between them)
    curl -sS -o /dev/null -w '%{http_code}\n' https://guardian.minastrade.com/admin/healthz
        # expect: 401 - the health route answers the bare /healthz inside the container only
-   curl -sS https://guardian.minastrade.com/admin/login | grep -c '<h1>Ops dashboard</h1>'   # expect: 1 - the unbranded ops view (#82)
+   curl -sS https://guardian.minastrade.com/admin/login | grep -c '<h1>Ops dashboard</h1>'   # expect: 1 - the ops view's marking (decision 24)
    curl -sS https://guardian.minastrade.com/login | grep -c '<h1>Ops dashboard</h1>'         # expect: 0 - the portal is untouched
    curl -sS https://guardian.minastrade.com/admin/login | grep -o 'action="[^"]*"'           # expect: action="/admin/login"
    ```

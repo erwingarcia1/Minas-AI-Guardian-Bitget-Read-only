@@ -8,6 +8,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 from sentinel import qr
+from sentinel.brand import ICON_LINKS, MARK_HTML
 from sentinel.buildinfo import version_line
 from sentinel.config import env_setting
 from sentinel.crypto import CredentialCipher
@@ -81,50 +82,84 @@ def _url(path: str = "/") -> str:
 
 # Plain CSS constant (single braces): pages are assembled by concatenation, so
 # the stylesheet never passes through str.format / f-strings and needs no
-# brace-escaping.
+# brace-escaping. The hex values are spelled by hand for the same reason;
+# tests/test_surface_styles.py pins them equal to sentinel/brand.py's.
 _STYLE = """
-  /* Ops dashboard (#82, decision 2 on the issue): plain, dense, unbranded.
-     No mark, no wordmark, no gradients, no glow, none of the identity hues
-     (sentinel/brand.py) - an ops screenshot must not pass for a customer
-     page, and a mispasted internal URL should look visibly wrong. Light,
-     neutral, tabular: a control surface, read at a desk, not a product. */
+  /* Ops dashboard (decision 24, 2026-10-24; reverses the dashboard half of
+     decision 2 on #82): the portal's dark family - the same ground, surfaces,
+     text ramp, gold and violet, the mark and the wordmark - kept as a dense,
+     tables-first control surface. What tells an operator screen from a
+     customer page is no longer colour but the operations marking in _page:
+     the "Operations" lockup, the operator's name, the h1 with "internal ·
+     Minas staff only", and the path it lives under. No gradient, no glow, no motion:
+     colour is functional, not decorative (the brand's own rule). Gold fills
+     exactly one control per screen. */
   :root {
-    --bg:#f4f5f7; --panel:#ffffff; --panel-2:#eef0f3; --line:#c9ced6; --line-soft:#e2e5ea;
-    --txt:#16191d; --muted:#4b5563; --faint:#6b7280; --accent:#1f4e79;
-    --ok:#15803d; --crit:#b91c1c; --high:#b45309; --med:#a16207; --low:#6b7280;
+    --bg:#0d0f13; --panel:#151921; --panel-2:#1c212b;
+    --line:#2a3140; --line-strong:#3a4256; --line-soft:#232a37;
+    --txt:#f4f6fa; --muted:#aab2c1; --faint:#8b94a7;
+    --brand:#2e1a47; --brand-2:#583878;
+    --violet:#8b5cf6; --violet-text:#c4b2ff; --accent:#6d28d9;
+    --gold:#f0b429; --gold-ink:#16110a;
+    --ok:#34d399; --crit:#f87171; --bad:#f87171; --high:#fb923c; --med:#fbbf24; --low:#8b94a7;
+    --crit-bg:rgba(248,113,113,.10); --crit-ink:#fecaca; --crit-line:rgba(248,113,113,.45);
+    --ok-bg:rgba(52,211,153,.10); --ok-ink:#a7f3d0; --ok-line:rgba(52,211,153,.45);
+    --high-bg:rgba(251,146,60,.10); --high-line:rgba(251,146,60,.45); --med-bg:rgba(251,191,36,.10); --med-line:rgba(251,191,36,.45);
   }
   * { box-sizing: border-box; }
   body { margin:0; background:var(--bg); color:var(--txt);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     font-size:14px; line-height:1.45; min-height:100vh; }
+  :focus-visible { outline:3px solid var(--violet); outline-offset:2px; }
+  ::selection { background:var(--gold); color:var(--gold-ink); }
+  a { color:var(--violet-text); text-decoration:none; }
+  a:hover { text-decoration:underline; }
   .wrap { max-width:1240px; margin:0 auto; padding:16px 20px 40px; }
-  header { display:flex; align-items:center; justify-content:space-between; gap:16px;
-    padding:8px 0 12px; border-bottom:2px solid var(--txt); margin-bottom:18px; }
-  .brand { display:flex; align-items:baseline; gap:12px; }
-  .brand h1 { font-size:15px; font-weight:700; margin:0; letter-spacing:.4px; text-transform:uppercase; }
-  .brand .sub { font-size:12px; color:var(--faint); }
-  .nav { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  .live { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted);
-    background:var(--panel); border:1px solid var(--line); padding:5px 10px; border-radius:3px;
+  /* --- The header band: the lockup and the operations marking --- */
+  header { background:var(--brand); color:var(--txt); }
+  .band { max-width:1240px; margin:0 auto; padding:8px 20px; min-height:52px;
+    display:flex; align-items:center; gap:14px; flex-wrap:wrap; }
+  .ops { display:inline-flex; align-items:center; gap:10px; color:var(--txt); text-decoration:none; }
+  .ops:hover { text-decoration:none; }
+  .brand__mark { width:28px; height:28px; flex:none; display:block; object-fit:contain; }
+  .ops__name { font-size:15px; font-weight:700; white-space:nowrap; }
+  .ops__name span { color:rgba(255,255,255,.8); font-weight:600; }
+  .ops__tag { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--gold); }
+  header h1 { font-size:12px; font-weight:700; margin:0; letter-spacing:.4px; text-transform:uppercase;
+    border-left:1px solid rgba(255,255,255,.2); padding-left:14px; }
+  header .sub { font-size:12px; color:rgba(255,255,255,.65); }
+  .nav { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-left:auto; }
+  .live { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:rgba(255,255,255,.85);
+    background:transparent; border:1px solid rgba(255,255,255,.3); padding:5px 10px; border-radius:6px;
     text-decoration:none; font-variant-numeric:tabular-nums; }
-  a.live:hover { border-color:var(--accent); color:var(--accent); }
-  a.live.primary { color:#fff; background:var(--accent); border-color:var(--accent); font-weight:600; }
-  a.live.primary:hover { filter:brightness(1.1); color:#fff; }
+  a.live:hover { background:var(--brand-2); border-color:var(--brand-2); color:var(--txt); text-decoration:none; }
+  a.live.primary { color:var(--gold-ink); background:var(--gold); border-color:var(--gold); font-weight:600; }
+  a.live.primary:hover { filter:brightness(1.06); }
   .dot { width:7px; height:7px; border-radius:50%; background:var(--ok); }
-  .kpis { display:grid; grid-template-columns:repeat(4,1fr); gap:10px; margin-bottom:18px; }
-  .kpi { background:var(--panel); border:1px solid var(--line); border-radius:3px; padding:10px 12px; }
-  .kpi .label { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--faint); }
+  .who { font-size:12px; color:rgba(255,255,255,.85); white-space:nowrap; }
+  .who b { color:var(--txt); }
+  .who a { color:inherit; text-decoration:underline; text-underline-offset:3px; }
+  .who a:hover { color:var(--gold); }
+  /* --- KPIs, cards, tables --- */
+  .kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:18px; align-items:start; }
+  .kpi { background:var(--panel); border:1px solid var(--line); border-top:2px solid var(--violet);
+    border-radius:6px; padding:10px 12px; }
+  .kpi .label { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
   .kpi .val { font-size:26px; font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; line-height:1; }
-  .kpi .val.crit { color:var(--crit); } .kpi .val.ok { color:var(--ok); }
-  .kpi .foot { font-size:12px; color:var(--muted); margin-top:6px; }
+  .kpi .val.crit { color:var(--gold); } .kpi .val.ok { color:var(--ok); }
+  .kpi .foot { font-size:12px; color:var(--muted); margin-top:6px; overflow-wrap:anywhere; }
   section { margin-top:18px; }
-  .card { background:var(--panel); border:1px solid var(--line); border-radius:3px; overflow:hidden; }
-  .card-head { display:flex; align-items:baseline; justify-content:space-between; padding:8px 12px;
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .card-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:8px 12px;
     border-bottom:1px solid var(--line); background:var(--panel-2); }
-  .card-head h2 { font-size:12px; font-weight:700; margin:0; letter-spacing:.5px; text-transform:uppercase; }
+  .card-head h2 { font-size:12px; font-weight:700; margin:0; letter-spacing:.08em; text-transform:uppercase;
+    color:var(--violet-text); }
   .card-head .count { font-size:12px; color:var(--faint); font-variant-numeric:tabular-nums; }
+  .card > p { margin:12px; }
+  .card > p.mono { overflow-wrap:anywhere; }
+  .card > p.count { font-size:12px; color:var(--muted); }
   table { width:100%; border-collapse:collapse; }
-  thead th { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--faint); text-align:left;
+  thead th { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); text-align:left;
     padding:6px 12px; font-weight:600; border-bottom:1px solid var(--line); }
   tbody td { padding:6px 12px; font-size:13px; border-top:1px solid var(--line-soft); vertical-align:top; }
   tbody tr:hover { background:var(--panel-2); }
@@ -135,74 +170,82 @@ _STYLE = """
   .qr svg { display:block; }
   .rule { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
   .lbl { font-weight:600; }
-  .pill { display:inline-block; font-size:11px; font-weight:700; padding:1px 7px; border-radius:2px;
-    letter-spacing:.4px; text-transform:uppercase; border:1px solid currentColor; }
+  .dim { color:var(--faint); }
+  .pill { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; padding:1px 8px;
+    border-radius:999px; letter-spacing:.08em; text-transform:uppercase; border:1px solid var(--line-strong);
+    background:var(--panel-2); color:var(--muted); white-space:nowrap; line-height:1.6; }
+  .pill::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
   .s-active { color:var(--ok); } .s-disabled { color:var(--faint); } .s-tamper { color:var(--crit); }
   .sev-CRITICAL { color:var(--crit); } .sev-HIGH { color:var(--high); }
   .sev-MEDIUM { color:var(--med); } .sev-LOW { color:var(--low); }
   .ack-yes { color:var(--ok); } .ack-no { color:var(--faint); }
-  .ackbtn { font:inherit; font-size:12px; cursor:pointer; padding:2px 8px; border:1px solid var(--line);
-    border-radius:2px; background:var(--panel); color:var(--txt); }
-  .ackbtn:hover { border-color:var(--ok); color:var(--ok); }
-  .snoozesel { font:inherit; font-size:12px; margin-right:4px; padding:2px 4px; border:1px solid var(--line);
-    border-radius:2px; background:var(--panel); color:var(--txt); }
-  .snoozed { font-size:12px; color:var(--muted); }
+  .pill.s-active, .pill.ack-yes { border-color:var(--ok-line); background:var(--ok-bg); }
+  .pill.s-tamper, .pill.sev-CRITICAL { border-color:var(--crit-line); background:var(--crit-bg); }
+  .pill.sev-HIGH { border-color:var(--high-line); background:var(--high-bg); }
+  .pill.sev-MEDIUM { border-color:var(--med-line); background:var(--med-bg); }
+  .ackbtn { font:inherit; font-size:12px; cursor:pointer; padding:2px 8px; border:1px solid var(--line-strong);
+    border-radius:4px; background:transparent; color:var(--txt); }
+  .ackbtn:hover { background:var(--accent); border-color:var(--accent); color:var(--txt); }
   .fail { color:var(--high); font-weight:600; } .zero { color:var(--faint); }
-  @media print {
-    body { background:#fff !important; color:#111; }
-    .wrap { max-width:none; padding:0; }
-    .noprint, .nav form, .ackbtn, .snoozesel { display:none !important; }
-    .card { border:1px solid #bbb; break-inside:avoid; }
-    .dot { display:none; }
-    a { color:#111; text-decoration:none; }
-  }
   .empty { padding:22px; text-align:center; color:var(--faint); font-size:13px; }
   footer { margin-top:24px; padding-top:10px; border-top:1px solid var(--line); color:var(--faint); font-size:11.5px;
     display:flex; justify-content:space-between; flex-wrap:wrap; gap:8px; }
   footer .build { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:11px; }
-  a { color:var(--accent); }
   a.acctlink { color:var(--txt); text-decoration:none; font-weight:600; }
-  a.acctlink:hover { color:var(--accent); text-decoration:underline; }
+  a.acctlink:hover { color:var(--violet-text); text-decoration:underline; }
   /* --- Account detail --- */
   .cols { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
   .dl { display:grid; grid-template-columns:150px 1fr; gap:6px 12px; padding:10px 12px; font-size:13px; }
-  .dl dt { color:var(--faint); font-size:12px; }
+  .dl dt { color:var(--muted); font-size:12px; }
   .dl dd { margin:0; color:var(--txt); word-break:break-word; }
-  .dl dd.dim { color:var(--faint); }
   .checks { padding:2px 12px 10px; }
   .check { display:flex; align-items:center; gap:9px; padding:7px 0; border-top:1px solid var(--line-soft); font-size:13px; }
   .check:first-child { border-top:none; }
-  .check .ic { width:17px; height:17px; border-radius:2px; display:grid; place-items:center; font-size:11px; flex:none;
+  .check .ic { width:17px; height:17px; border-radius:4px; display:grid; place-items:center; font-size:11px; flex:none;
     font-weight:700; border:1px solid currentColor; }
   .check .ic.ok { color:var(--ok); } .check .ic.warn { color:var(--high); } .check .ic.na { color:var(--faint); }
   .check .txt { flex:1; } .check .meta { color:var(--faint); font-size:12px; text-align:right; }
   .det { display:flex; align-items:center; gap:10px; padding:5px 12px; border-top:1px solid var(--line-soft); font-size:12.5px; }
   .det .desc { color:var(--muted); }
-  @media (max-width:720px) { .cols { grid-template-columns:1fr; } }
   /* --- Forms (add customer, sign-in, second factor, enrolment) --- */
   form.addf { padding:14px 12px; }
   .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px 16px; }
   .fld { display:flex; flex-direction:column; gap:4px; }
-  .fld.full { grid-column:1 / -1; }
-  .fld label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--faint); }
+  .fld label { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); }
   .fld label .req { color:var(--crit); }
-  .fld input, .fld select { background:var(--panel); border:1px solid var(--line); border-radius:2px; color:var(--txt);
+  .fld input, .fld select { width:100%; min-width:0; background:var(--panel-2); border:1px solid var(--line-strong); border-radius:4px; color:var(--txt);
     padding:7px 9px; font-size:14px; font-family:inherit; }
-  .fld input:focus, .fld select:focus { outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent); }
+  .fld input::placeholder { color:var(--faint); }
+  .fld input:focus, .fld select:focus { outline:3px solid var(--violet); outline-offset:1px; border-color:var(--violet); }
   .fld .hint { font-size:11px; color:var(--faint); }
   .grouphdr { grid-column:1 / -1; font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted);
     margin-top:6px; padding-top:10px; border-top:1px solid var(--line-soft); }
   .actions { display:flex; align-items:center; gap:12px; margin-top:16px; }
-  button.submit, a.submit { display:inline-block; background:var(--accent); color:#fff; border:1px solid var(--accent);
-    border-radius:2px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; text-decoration:none; font-family:inherit; }
-  button.submit:hover, a.submit:hover { filter:brightness(1.1); }
-  .banner { padding:9px 12px; border-radius:2px; margin-bottom:14px; font-size:13px; border:1px solid; }
-  .banner.err { background:#fef2f2; border-color:var(--crit); color:#7f1d1d; }
-  .banner.ok { background:#f0fdf4; border-color:var(--ok); color:#14532d; }
+  button.submit, a.submit { display:inline-block; background:var(--accent); color:var(--txt); border:1px solid var(--accent);
+    border-radius:4px; padding:8px 16px; font-size:13px; font-weight:600; cursor:pointer; text-decoration:none; font-family:inherit; }
+  button.submit:hover, a.submit:hover { filter:brightness(1.1); text-decoration:none; }
+  .banner { padding:9px 12px; border-radius:6px; margin-bottom:14px; font-size:13px; border:1px solid; }
+  .banner.err { background:var(--crit-bg); border-color:var(--crit-line); color:var(--crit-ink); }
+  .banner.ok { background:var(--ok-bg); border-color:var(--ok-line); color:var(--ok-ink); }
   .banner code, code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
-  @media (max-width:720px) { .kpis { grid-template-columns:repeat(2,1fr); } .wrap { padding:12px; } .grid2 { grid-template-columns:1fr; } }
+  /* --- The sign-in family: one centred card, the brand ground on its head --- */
+  .signin { max-width:28rem; margin:28px auto 0; }
+  .signin .grid2 { grid-template-columns:1fr; }
+  .signin .card-head { background:var(--brand); border-color:var(--brand); }
+  .signin .card-head h2 { color:var(--txt); }
+  .signin .card-head .count { color:var(--gold); }
+  .signin .mono { overflow-wrap:anywhere; }
+  @media print {
+    *, *::before { background:#fff !important; color:#111 !important; border-color:#bbb !important; }
+    .wrap, .band { max-width:none; padding:0; }
+    .nav form, .ackbtn, .dot { display:none !important; }
+    .card, .kpi { border:1px solid #bbb; break-inside:avoid; }
+    a { text-decoration:none; }
+  }
+  @media (max-width:720px) { .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } .wrap { padding:12px; }
+    .band { padding:8px 12px; } header h1 { border-left:0; padding-left:0; }
+    .grid2 { grid-template-columns:1fr; } .cols { grid-template-columns:1fr; } }
 """
-
 
 
 # Timestamps are stored and rendered in UTC (the forensic source of truth);
@@ -245,23 +288,45 @@ def _ts(iso: str | None, fallback: str = "—") -> str:
     return f'<span class="ts" data-utc="{html.escape(iso)}">{html.escape(iso[:19].replace("T", " "))}</span>'
 
 
-def _page(nav_html: str, body_html: str, refresh: bool = True, *, signed_in: bool = True) -> str:
-    refresh_meta = '<meta http-equiv="refresh" content="30">' if refresh else ""
+def _page(nav_html: str, body_html: str, refresh: bool = True, *, signed_in: bool = True,
+          operator: str | None = None, refresh_seconds: int = 30) -> str:
+    """The shell around every dashboard page. `operator` is the signed-in
+    operator's username, named in the band with a sign-out link - part of
+    the operations marking (decision 24); the sign-in family passes none.
+    `refresh_seconds` is the meta-refresh interval while `refresh` is on:
+    30 for the fleet and triage pages, 15 for the metrics page."""
+    refresh_meta = f'<meta http-equiv="refresh" content="{refresh_seconds}">' if refresh else ""
     # The build line is for a signed-in operator. The sign-in pages answer
     # to anyone on the internet at /admin/login, and what is deployed is
     # not theirs to read.
     build = f'<span class="build">{html.escape(version_line())}</span>' if signed_in else ""
+    # The operations marking (decision 24). The dashboard wears the Minas
+    # identity on the portal's dark ground, so what tells an operator screen
+    # from a customer page is said in words on every page: the lockup's
+    # qualifier reads "Operations" (the portal's reads "Member portal"), the
+    # operator's name and a sign-out link sit in the band, and the h1 with
+    # "internal · Minas staff only" stays byte-for-byte - the deploy smoke
+    # check greps the h1. The mark and the icons are brand.py's own markup,
+    # root-relative: on the public hostname Caddy routes those paths to the
+    # portal, which serves the files; through the SSH tunnel the image does
+    # not load, and being decorative (alt="") nothing else is affected.
+    who = ""
+    if operator is not None:
+        who = (f'<span class="who">Signed in as <b>{html.escape(operator)}</b> · '
+               f'<a href="{_url("/logout")}">Sign out</a></span>')
     return (
         '<!doctype html><html lang="en"><head><meta charset="utf-8">'
         '<meta name="viewport" content="width=device-width, initial-scale=1">'
-        "<title>Ops dashboard — internal</title>" + refresh_meta + "<style>" + _STYLE + "</style></head><body>"
-        # Plain and unbranded on purpose (#82): no mark, no wordmark. The
-        # header says what this is - an internal control surface - so a
-        # screenshot or a mispasted URL reads as exactly that.
-        '<div class="wrap"><header><div class="brand">'
-        '<h1>Ops dashboard</h1><span class="sub">internal · Minas staff only</span></div>'
-        '<div class="nav">' + nav_html + "</div></header>"
-        + body_html
+        '<meta name="color-scheme" content="dark">'
+        "<title>Ops dashboard — internal</title>" + refresh_meta + ICON_LINKS
+        + "<style>" + _STYLE + "</style></head><body>"
+        '<header><div class="band">'
+        f'<a class="ops" href="{_url("/")}" aria-label="Ops dashboard home">' + MARK_HTML
+        + '<span class="ops__name">Minas AI <span>Guardian</span></span>'
+        '<span class="ops__tag">Operations</span></a>'
+        '<h1>Ops dashboard</h1><span class="sub">internal · Minas staff only</span>'
+        '<div class="nav">' + nav_html + "</div>" + who + "</div></header>"
+        '<div class="wrap">' + body_html
         # The build line is here rather than tucked in a status page because
         # "what is deployed" is a question asked while looking at something
         # else - an alert that should have fired, a fix that should have
@@ -344,8 +409,8 @@ def _render_operator_login(error: str | None = None, *, no_operators: bool = Fal
                    'Create the first one on the host: <code>sentinel operator add &lt;username&gt;</code> '
                    '(decision 19: recovery is host access, never an open dashboard).</div>')
     body = (
-        banner
-        + '<section><div class="card"><div class="card-head"><h2>Operator sign-in</h2>'
+        '<section class="signin">' + banner
+        + '<div class="card"><div class="card-head"><h2>Operator sign-in</h2>'
         '<span class="count">Minas staff only</span></div>'
         f'<form class="addf" method="post" action="{_url("/login")}">'
         '<div class="grid2">'
@@ -366,8 +431,8 @@ def _render_operator_code(pending: str, error: str | None = None) -> str:
     moments ago; nothing here says whether the username exists."""
     banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
     body = (
-        banner
-        + '<section><div class="card"><div class="card-head"><h2>Second factor</h2>'
+        '<section class="signin">' + banner
+        + '<div class="card"><div class="card-head"><h2>Second factor</h2>'
         '<span class="count">Minas staff only</span></div>'
         f'<form class="addf" method="post" action="{_url("/login/code")}">'
         f'<input type="hidden" name="pending" value="{html.escape(pending)}">'
@@ -386,8 +451,8 @@ def _render_operator_enrol(pending: str, secret: str, uri: str, error: str | Non
     try again, not locked out."""
     banner = f'<div class="banner err">✕ {html.escape(error)}</div>' if error else ""
     body = (
-        banner
-        + '<section><div class="card"><div class="card-head"><h2>Set up two-factor</h2>'
+        '<section class="signin">' + banner
+        + '<div class="card"><div class="card-head"><h2>Set up two-factor</h2>'
         '<span class="count">Required for every operator</span></div>'
         "<p>Scan this QR code with your authenticator app (or type the secret under it into the app), "
         "then enter a code to switch it on. "
@@ -405,9 +470,11 @@ def _render_operator_enrol(pending: str, secret: str, uri: str, error: str | Non
     return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False, signed_in=False)
 
 
-def _render_operator_recovery_codes(codes: list[str]) -> str:
+def _render_operator_recovery_codes(codes: list[str], *, operator: str | None = None) -> str:
+    """Shown once, on the response that also sets the session: the operator
+    who just enrolled is signed in, so the band names them."""
     body = (
-        '<section><div class="card"><div class="card-head"><h2>Save your recovery codes</h2>'
+        '<section class="signin"><div class="card"><div class="card-head"><h2>Save your recovery codes</h2>'
         '<span class="count">Shown once</span></div>'
         "<p>Each code works once and signs you in if you lose your phone. They are stored "
         "hashed, so this is the only time they can be shown. If all of them are gone too, "
@@ -416,7 +483,7 @@ def _render_operator_recovery_codes(codes: list[str]) -> str:
         f'<p style="margin-top:18px"><a class="submit" href="{_url("/")}">Continue to the dashboard</a></p>'
         "</div></section>"
     )
-    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False)
+    return _page('<span class="live"><span class="dot"></span> Ops</span>', body, refresh=False, operator=operator)
 
 
 def _unprotected_banner() -> str:
@@ -462,7 +529,7 @@ def _rules_banner(rules) -> str:
     )
 
 
-def _render(db: Database, rules=None, qs=None) -> str:
+def _render(db: Database, rules=None, qs=None, *, operator: str | None = None) -> str:
     now = datetime.now(timezone.utc)
     cutoff = (now - timedelta(hours=24)).isoformat()
     qs = qs or {}
@@ -534,7 +601,7 @@ def _render(db: Database, rules=None, qs=None) -> str:
     # unknown value already selected nothing; it now also prints nothing.
     kept_state = f"&state={html.escape(state_filter)}" if state_filter in counts else ""
     filter_row = (
-        "<p class='count' style='margin:0 0 8px'>Show: "
+        "<p class='count' style='margin:8px 12px'>Show: "
         + _filter_link("", "All")
         + " · " + _filter_link("trouble", "Trouble", counts["trouble"])
         + " · " + _filter_link("watching", "Watching", counts["watching"])
@@ -597,7 +664,7 @@ def _render(db: Database, rules=None, qs=None) -> str:
         + _sms_failures_section(db) + _drills_section(db) + _operator_pages_section(db)
         + _expected_activity_section(db)
     )
-    return _page(nav, body)
+    return _page(nav, body, operator=operator)
 
 
 def _expected_activity_section(db: Database) -> str:
@@ -846,7 +913,7 @@ def _portal_access_card(db: Database, account_id: int, email: str | None,
             '<span class="count">read-only member view</span></div>' + inner + "</div></section>")
 
 
-def _render_triage(db: Database, rules=None, show_handled: bool = False) -> str:
+def _render_triage(db: Database, rules=None, show_handled: bool = False, *, operator: str | None = None) -> str:
     """G-37 (#41): the queue of alerts nobody has answered, across every
     customer.
 
@@ -926,10 +993,11 @@ def _render_triage(db: Database, rules=None, show_handled: bool = False) -> str:
         f"<tbody>{muted_rows}</tbody></table></div></section>"
     )
     nav = f'<a class="live" href="{_url("/")}">\u2190 Dashboard</a>'
-    return _page(nav, body)
+    return _page(nav, body, operator=operator)
 
 
-def _render_account(db: Database, account_id: int, notice_html: str = "") -> str | None:
+def _render_account(db: Database, account_id: int, notice_html: str = "", *,
+                    operator: str | None = None) -> str | None:
     now = datetime.now(timezone.utc)
     with db.cursor() as cur:
         cur.execute("SELECT * FROM accounts WHERE id = ?", (account_id,))
@@ -1076,7 +1144,7 @@ def _render_account(db: Database, account_id: int, notice_html: str = "") -> str
         f"<dt>Account type</dt><dd>{_dd(_account_type_label(f('topology')))}</dd>"
         f"<dt>Status</dt><dd>{_status_pill(status)}</dd>"
         f"<dt>Onboarded</dt><dd>{_ts(f('onboarded_at'))}</dd>"
-        f"<dt>Last poll</dt><dd>{_dd((last_ok or '')[:19].replace('T', ' '))}</dd>"
+        f"<dt>Last poll</dt><dd>{_ts(last_ok)}</dd>"
         "</dl></div></section>"
         '<section><div class="card"><div class="card-head"><h2>Security posture</h2>'
         '<span class="count">what keeps this account safe</span></div>'
@@ -1091,7 +1159,7 @@ def _render_account(db: Database, account_id: int, notice_html: str = "") -> str
         "</section>"
         + _portal_access_card(db, account_id, f("alert_email"), f("alert_email_secondary"))
     )
-    return _page(nav, body, refresh=False)
+    return _page(nav, body, refresh=False, operator=operator)
 
 
 def _input(name: str, label: str, values: dict, kind: str = "text", required: bool = False, hint: str = "") -> str:
@@ -1105,7 +1173,8 @@ def _input(name: str, label: str, values: dict, kind: str = "text", required: bo
     )
 
 
-def _render_add_form(values: dict | None = None, error: str | None = None, ok: str | None = None) -> str:
+def _render_add_form(values: dict | None = None, error: str | None = None, ok: str | None = None, *,
+                     operator: str | None = None) -> str:
     values = values or {}
     ex = values.get("exchange", "bitget")
     topo = values.get("topology", "independent")
@@ -1124,7 +1193,7 @@ def _render_add_form(values: dict | None = None, error: str | None = None, ok: s
         banner = f'<div class="banner ok">{ok}</div>'  # ok is pre-escaped/safe HTML
 
     body = (
-        banner + '<div class="card"><div class="card-head"><h2>Add customer</h2>'
+        banner + '<section><div class="card"><div class="card-head"><h2>Add customer</h2>'
         '<span class="count">read-only key is verified before storing</span></div>'
         f'<form class="addf" method="post" action="{_url("/add")}"><div class="grid2">'
         + _input("name", "Name", values, required=True)
@@ -1146,19 +1215,19 @@ def _render_add_form(values: dict | None = None, error: str | None = None, ok: s
         + _input("secret", "Secret key", {}, "password", required=True)
         + '</div><div class="actions"><button class="submit" type="submit">Verify &amp; add customer</button>'
         '<span class="hint">The key is checked for read-only scope on the exchange; a trade/withdraw key is rejected.</span>'
-        "</div></form></div>"
+        "</div></form></div></section>"
     )
     nav = f'<a class="live" href="{_url("/")}">← Dashboard</a>'
     # No auto-refresh on the form (don't wipe a half-filled form).
-    return _page(nav, body, refresh=False)
+    return _page(nav, body, refresh=False, operator=operator)
 
 
-def _render_result(label: str, exchange: str, account_id: int) -> str:
+def _render_result(label: str, exchange: str, account_id: int, *, operator: str | None = None) -> str:
     ok = (
         f"✓ Verified read-only and added <code>{html.escape(label)}</code> "
         f"({html.escape(exchange)}) as account id {account_id}. It will begin polling within a minute."
     )
-    return _render_add_form(ok=ok)
+    return _render_add_form(ok=ok, operator=operator)
 
 
 def serve_dashboard(
@@ -1476,6 +1545,9 @@ def serve_dashboard(
                 return
             if not self._gate():
                 return
+            # The signed-in operator, named in the band of every page below
+            # (the operations marking, decision 24).
+            operator = self._operator()
             if path == "/metrics/raw":
                 from sentinel.metrics import raw_exposition
 
@@ -1487,33 +1559,38 @@ def serve_dashboard(
                 self.end_headers()
                 self.wfile.write(body)
             elif path == "/metrics":
-                from sentinel.metrics import render_metrics_html
+                from sentinel.metrics import render_metrics_body
 
-                self._send(render_metrics_html(base_path=_base_path).encode())
+                # In the dashboard's shell since decision 24 - the same band,
+                # nav and footer as every other page - on the 15-second
+                # refresh the page always had.
+                nav = (f'<a class="live" href="{_url("/")}">← Dashboard</a>'
+                       f'<a class="live" href="{_url("/metrics/raw")}">Raw exposition</a>')
+                self._send(_page(nav, render_metrics_body(), operator=operator, refresh_seconds=15).encode())
             elif path == "/triage":
                 qs = parse_qs(urlparse(self.path).query)
                 show_handled = qs.get("handled", ["0"])[0] == "1"
-                self._send(_render_triage(db, rules, show_handled).encode())
+                self._send(_render_triage(db, rules, show_handled, operator=operator).encode())
             elif path == "/add":
-                self._send(_render_add_form().encode())
+                self._send(_render_add_form(operator=operator).encode())
             elif path == "/account":
                 qs = parse_qs(urlparse(self.path).query)
                 try:
                     aid = int((qs.get("id", ["0"])[0]))
                 except ValueError:
                     aid = 0
-                page = _render_account(db, aid)
+                page = _render_account(db, aid, operator=operator)
                 if page is None:
                     self._send(_page(f'<a class="live" href="{_url("/")}">← Dashboard</a>',
                                      '<section><div class="card"><div class="empty">Account not found</div></div></section>',
-                                     refresh=False).encode(), 404)
+                                     refresh=False, operator=operator).encode(), 404)
                 else:
                     self._send(page.encode())
             elif path == "/favicon.ico":
                 self.send_response(204)
                 self.end_headers()
             else:
-                self._send(_render(db, rules, parse_qs(urlparse(self.path).query)).encode())
+                self._send(_render(db, rules, parse_qs(urlparse(self.path).query), operator=operator).encode())
 
         def do_POST(self):
             # One chokepoint for every POST, /login included (the portal's
@@ -1551,9 +1628,10 @@ def serve_dashboard(
                 return
             if self._refused_cross_origin():
                 return
+            operator = self._operator()
             length = int(self.headers.get("Content-Length", 0))
             if length <= 0 or length > 64 * 1024:
-                self._send(_render_add_form(error="empty or oversized submission").encode(), 400)
+                self._send(_render_add_form(error="empty or oversized submission", operator=operator).encode(), 400)
                 return
             form = parse_qs(self.rfile.read(length).decode("utf-8"))
 
@@ -1567,13 +1645,15 @@ def serve_dashboard(
             )}
 
             if not g("name") or not g("api_key") or not g("secret"):
-                self._send(_render_add_form(values, error="Name, API key and secret are required.").encode(), 400)
+                self._send(_render_add_form(values, error="Name, API key and secret are required.",
+                                            operator=operator).encode(), 400)
                 return
             if not g("email"):
                 # Decision 4 (#24): email is the channel that cannot be switched
                 # off, so an account cannot be created without one.
                 self._send(_render_add_form(
-                    values, error="A contact email is required - it is the alert channel that cannot be switched off."
+                    values, error="A contact email is required - it is the alert channel that cannot be switched off.",
+                    operator=operator,
                 ).encode(), 400)
                 return
 
@@ -1582,7 +1662,7 @@ def serve_dashboard(
             try:
                 label = generate_unique_label(db, g("name"))
                 result = onboard_account(
-                    db, cipher, actor=self._operator(),
+                    db, cipher, actor=operator,
                     operator_alerter=operator_alerter,
                     label=label, topology=g("topology") or "independent",
                     exchange=g("exchange") or "bitget", api_key=g("api_key"), secret=g("secret"),
@@ -1594,15 +1674,17 @@ def serve_dashboard(
                     telegram_handle_secondary=g("telegram_secondary") or None,
                     license=g("license") or None,
                 )
-                self._send(_render_result(label, g("exchange") or "bitget", result.account_id).encode())
+                self._send(_render_result(label, g("exchange") or "bitget", result.account_id,
+                                          operator=operator).encode())
             except OnboardingRejected as exc:
-                self._send(_render_add_form(values, error=str(exc)).encode(), 200)
+                self._send(_render_add_form(values, error=str(exc), operator=operator).encode(), 200)
             except ValueError as exc:
-                self._send(_render_add_form(values, error=str(exc)).encode(), 400)
+                self._send(_render_add_form(values, error=str(exc), operator=operator).encode(), 400)
             except Exception:  # noqa: BLE001 - never leak an exchange error verbatim (may echo creds)
                 logger.exception("add-customer onboarding failed")
                 self._send(_render_add_form(
-                    values, error="Onboarding failed unexpectedly - check the service logs (secrets redacted)."
+                    values, error="Onboarding failed unexpectedly - check the service logs (secrets redacted).",
+                    operator=operator,
                 ).encode(), 500)
 
         def _triage(self):
@@ -1727,7 +1809,7 @@ def serve_dashboard(
                 f"<b>{html.escape(email.strip().lower())}</b>: <code>{html.escape(password)}</code>"
                 " — copy it now, it is shown only once." + scope_note + "</div>"
             )
-            self._send(_render_account(db, aid, notice_html=notice).encode())
+            self._send(_render_account(db, aid, notice_html=notice, operator=actor).encode())
 
         def _portal_grant(self):
             """Grant or revoke ONE account for a contact's existing login
@@ -1769,7 +1851,7 @@ def serve_dashboard(
             verb = "now opens" if action == "grant" else "no longer opens"
             notice = (f'<div class="banner ok">✓ <b>{html.escape(email)}</b> {verb} this account.'
                       + ("" if changed else " (no change)") + "</div>")
-            self._send(_render_account(db, aid, notice_html=notice).encode())
+            self._send(_render_account(db, aid, notice_html=notice, operator=actor).encode())
 
         def _login(self):
             length = int(self.headers.get("Content-Length", 0))
@@ -1924,7 +2006,7 @@ def serve_dashboard(
             record_operator_event(db, "two_factor_enrolled", username, actor=username,
                                   detail=f"first-login enrolment from {client_ip}")
             logger.info("operator %s enrolled a second factor and signed in from %s", username, client_ip)
-            self._issue_session(username, _render_operator_recovery_codes(codes).encode())
+            self._issue_session(username, _render_operator_recovery_codes(codes, operator=username).encode())
 
         def log_message(self, *args):  # keep stdout JSON-clean
             pass

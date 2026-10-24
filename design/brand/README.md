@@ -2,9 +2,11 @@
 
 The Minas logo, supplied by the owner on 2026-10-22. It replaces the stroked
 infinity mark from the 2026-08-19 design pass everywhere the product shows a
-logo: the member portal, and the iOS and Android apps (decision 21g). The
-ops dashboard stays unbranded on purpose (decision 2 on #82), so an operator
-screen can never pass for a customer page.
+logo: the member portal, the iOS and Android apps (decision 21g) and, since
+decision 24 (2026-10-24), the ops dashboard, which carries the identity as
+the Operations surface on the same dark ground. An operator screen is told
+from a customer page by its marking - the Operations tag, the operator's
+name, the h1, the `/admin` path - not by colour.
 
 **One master, every size derived from it.** Never edit a derived file by
 hand. Run `scripts/brand-assets.py` and commit what it writes. The script
@@ -28,7 +30,7 @@ surfaces and a grey box on white, and `clean` removes it.
 | `android-foreground.png` | 1024, transparent | Expo `android.adaptiveIcon.foregroundImage`. The mark sits inside the inner 66 of 108 dp, which no device mask clips. |
 | `android-monochrome.png` | 1024, white silhouette | Expo `android.adaptiveIcon.monochromeImage`, for Android themed icons. |
 | `splash.png` | 1024, transparent | The `image` of the `expo-splash-screen` plugin. |
-| `../../sentinel/static/minas-mark.png` | 128, transparent | The portal's lockup. |
+| `../../sentinel/static/minas-mark.png` | 128, transparent | The portal's lockup, and the dashboard's band, which points at the portal's `/brand/mark.png` on the shared host. |
 | `../../sentinel/static/favicon.png` | 64, transparent | Browser tab, served at `/brand/icon.png` and `/favicon.ico`. |
 | `../../sentinel/static/apple-touch-icon.png` | 180, opaque | iPhone home screen, for anyone who saves the portal there. |
 
@@ -45,3 +47,9 @@ The logo shades from a deep violet to a muted gold. The portal's identity
 tokens are brighter: `--violet` `#8b5cf6` and `--gold` `#f0b429` in
 `sentinel/brand.py`. They were not changed with the logo. Retuning the
 palette to match is a separate decision.
+
+Two constants were added to `sentinel/brand.py` for the dashboard's header
+band (decision 24): `VIOLET_INK` `#2e1a47`, the deck system's purpleDeep,
+the dark brand ground of the band and the sign-in card head; and
+`VIOLET_LOGO` `#583878`, the dominant violet sampled from the mark, for
+the band's chip hover. The portal does not use them.

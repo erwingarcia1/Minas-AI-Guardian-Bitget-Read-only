@@ -57,6 +57,9 @@ traffic (learns which accounts are monitored).
   or full addresses beyond what the customer needs; the anti-phishing posture
   lives on the portal itself rather than in a document - the sign-in page
   names the one address (#88) and alerts carry a reference, never a link.
+  The portal and the ops dashboard share the identity and the dark ground
+  (decision 24, 2026-10-24) and are told apart by the Operations lockup, the
+  operator's name, the h1 and the `/admin` path, never by colour.
   The customer-side controls (the exchange's own login notifications,
   authenticator-app two-factor, a withdrawal allowlist) are not yet stated
   on any customer page: #125.
