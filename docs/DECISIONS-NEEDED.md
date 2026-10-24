@@ -9,10 +9,9 @@ product should do, and each was skipped rather than guessed at.
 
 **Open today (2026-10-24):** 6 (needs the lawyer; #47), 7's vendor (#63),
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
-21b/21e/21h/21i, and 23 (the QR encoder, decided by merging or not merging
-its PR). Everything else below is answered and built, and deployed where
-there is a server to deploy to - the app waits on the store accounts
-(section 21, "Not built yet"); the sections stay as the record.
+and 21b/21e/21h/21i. Everything else below is answered and built, and
+deployed where there is a server to deploy to - the app waits on the store
+accounts (section 21, "Not built yet"); the sections stay as the record.
 
 ---
 
@@ -42,8 +41,8 @@ there is a server to deploy to - the app waits on the store accounts
 | 20 | The member portal is published to the internet on Tailscale Funnel | ~~#88~~ (closed 2026-10-24; evidence in its closing comment) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in full 2026-10-23 by 22: no Tailscale, removed in one go* |
 | 21 | Native iOS and Android apps, and the JSON API they need | the apps | **PARTLY ANSWERED 2026-10-22** — customers only, React Native, in this repo, company branding, sign-in and v1 API scope as recommended; push and the web portal open; see section 21 |
 | 22 | One public address, guardian.minastrade.com; no Tailscale | ~~#88~~ (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22. **Built and deployed 2026-10-24 (v1.14.0)**; the email to members went the same day (22d); left: the Tailscale admin-console removal, the owner's |
-| 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **OPEN 2026-10-24** — merging the PR accepts it; the three renderings read by Google Authenticator on 2026-10-24 (the owner's scan); see section 23 |
-| 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24 |
+| 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **ANSWERED 2026-10-24** — `segno` accepted by the merge of the QR PR (#130); the three renderings read by Google Authenticator the same day; shipped in v1.15.0 and deployed; see section 23 |
+| 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24. **Deployed 2026-10-24 (v1.15.0)** |
 
 ---
 
@@ -2189,7 +2188,7 @@ address).
 
 ---
 
-## 23. A QR-code encoder in the two-factor enrolment path — **OPEN 2026-10-24: merging the QR PR accepts `segno`**
+## 23. A QR-code encoder in the two-factor enrolment path — **ANSWERED 2026-10-24: `segno`, accepted by the merge of #130; deployed in v1.15.0**
 
 Enrolment showed the TOTP secret as text only: the 32-character secret
 and the `otpauth://` URI, to be typed into the authenticator app. On
@@ -2239,6 +2238,10 @@ of it.
 branch's rendering of each page and of the terminal block: all three
 read. What is left to decide is the dependency, and it is decided by
 merging or not merging the PR.
+
+**Decided 2026-10-24** by the merge of #130 (the owner's merge, 15:18 UTC)
+and shipped in v1.15.0 the same day, deployed 16:58 UTC
+(docs/DEPLOYMENTS.md).
 
 ### What it blocks
 
@@ -2317,6 +2320,9 @@ class is styled; the design note names this decision and agrees with the
 sheet. `design/dashboard/DESIGN-SYSTEM.md`, `docs/portal-design.md`
 decision 2, `sentinel/brand.py`'s docstring, `design/brand/README.md`
 and docs/threat-model.md A3 are amended in the same commit.
+
+**Deployed 2026-10-24** in v1.15.0 at 16:58 UTC, the same day the owner
+approved the rendered pages (docs/DEPLOYMENTS.md).
 
 ### What it blocks
 

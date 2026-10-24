@@ -21,6 +21,69 @@ Newest entry first.
 
 ---
 
+## 2026-10-24 · v1.15.0 (current, from v1.14.0): the QR enrolment and the dashboard in the Minas identity
+
+Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
+the command typed with the `!` prefix and its output read by the session
+(docs/deployment.md "Deploying code changes"). Cut the same day from
+`main` at `cede369` by `scripts/release.sh 1.15.0`, 16:38 to 16:49: the
+scheduled-gates cover accepted the dispatched run on `f82ce64` (the
+dashboard commit; run 40108952008) as covering the tree, so the fast
+gates ran locally - ruff, the suite (579 s), the coverage floor,
+pip-audit, the issue-status audit, "scheduled gates ran (8d)" and
+release objects, with the design-guard probes and the mutation floor
+skipped under `--fast` as already run; release commit `4a5941d`
+(16:49:34), annotated tag `v1.15.0`, the GitHub Release published, CI on
+the release commit green (run 40113343239, 16:56). Times are UTC.
+
+**The deploy:** `sudo /opt/minas-guardian/scripts/deploy.sh v1.15.0` -
+preflight clean; tags fetched; running before: 1.14.0 at `2b7b6c8`;
+checkout `4a5941d`, detached; `deploy-gate: OK - HEAD is v1.15.0`; the
+image built from a 670 kB context, `pip` installing `sentinel-1.15.0`
+with `segno-1.6.6` among its dependencies; the live `config/rules.yaml`
+validated against the new image ("valid — every setting is recognised
+and in range"); the switchover recreated `minas-guardian-sentinel-1`
+only and left `caddy` running (the v1.14.0 oddity was a later `up -d`,
+which this deploy did not run); the new container up at 16:58:54 by its
+own log; healthy; the version assertion:
+
+```
+Minas AI Guardian 1.15.0
+  commit   4a5941d0207fb5c02cb14ba461c58f32ce8b0f15
+  tag      v1.15.0
+  source   build-arg
+deploy: OK — v1.15.0 is live and verified
+```
+
+**The readings afterwards** (the owner's second `!` line, read here;
+about 17:03 - `sentinel` "Up 4 minutes"):
+
+```
+sudo git describe --tags                        -> v1.15.0 (no drift suffix)
+sudo docker compose ps                          -> caddy Up 8 hours (0.0.0.0 and [::] on 80 and 443) - left running by the deploy;
+                                                   sentinel Up 4 minutes (healthy), 127.0.0.1:8390-8391 and 127.0.0.1:9109 only
+sudo docker compose exec -T sentinel sentinel version
+  Minas AI Guardian 1.15.0 · commit 4a5941d0207fb5c02cb14ba461c58f32ce8b0f15 · tag v1.15.0 · source build-arg
+sentinel log, 16:58:54                          -> "dashboard: X-Forwarded-For is believed from 10.231.0.2 only"
+                                                   "portal: X-Forwarded-For is believed from 10.231.0.2 only"; no "no trusted proxy" line
+curl /admin/login | grep -c '<h1>Ops dashboard</h1>'   -> 1   (the runbook's smoke check; the ops view's marking)
+curl /login       | grep -c '<h1>Ops dashboard</h1>'   -> 0   (the portal untouched)
+curl /admin/login | grep -c 'Operations'               -> 2   (the lockup, and the CSS comment in the served style block that names it)
+curl /login       | grep -c 'Our only address'         -> 1
+```
+
+**What shipped** (CHANGELOG `[1.15.0]`): the QR code on the dashboard's
+and the portal's enrolment pages and in `operator add` (decision 23,
+`segno`); the dashboard in the Minas identity on the portal's dark ground
+with the operations marking (decision 24); and the day's records - the
+members' email, the second operator, the repository cleanup.
+
+**Still outside this entry:** the Tailscale admin-console removal of the
+machine; the pending keys and the SMS provider (CHANGELOG's pending
+list); #125's wording; the owner's own look at `/admin` in a browser.
+
+---
+
 ## 2026-10-24 · v1.14.0 (current, from v1.12.0): the public address live, the portal and the dashboard at /admin behind Caddy, alerting restored after the 2026-09-28 pause
 
 Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
