@@ -8076,3 +8076,21 @@ touch (the fleet-health KPI always green, the triage auto-refresh wiping a
 typed note, tables with no horizontal scroll on a phone), and
 `docs/DEPLOYMENTS.md:75`, a dated record that still reads "the unbranded
 ops view" for the v1.14.0 smoke check.
+
+**Later (2026-10-24, 16:38 to 17:05 UTC): v1.15.0 cut and deployed.** The owner's
+"all green. deploy now". The two merged branches and worktrees were
+cleared first (main at `cede369`: #130 the QR code, #132 the dashboard -
+#131 had gone into the QR branch by my stacking after #130 had already
+landed, and the owner opened #132 against main; #133 re-merged
+the QR branch, content already in main). `scripts/release.sh 1.15.0` in
+the main checkout: the scheduled-gates cover accepted the dispatched run
+on `f82ce64`, the fast gates ran (the suite 579 s), release commit
+`4a5941d`, tag pushed, GitHub Release published, CI green on the release
+commit. The deploy was the owner's `!` line, read here: gate OK, the image
+built with `segno`, the config validated, the switchover recreated the
+sentinel container only (caddy left running this time), healthy, the
+version asserted. The readings and the record: docs/DEPLOYMENTS.md's
+v1.15.0 entry; decisions 23 and 24 carry the deployed status; CHANGELOG
+[Unreleased] notes the deploy. Next: the owner's look at `/admin` in a
+browser; the pending keys and the SMS provider; #125; the small
+follow-ups listed above.
