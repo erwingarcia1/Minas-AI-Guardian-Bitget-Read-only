@@ -9,10 +9,9 @@ product should do, and each was skipped rather than guessed at.
 
 **Open today (2026-10-24):** 6 (needs the lawyer; #47), 7's vendor (#63),
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
-21b/21e/21h/21i, and 22e step 5 (the email to members). Everything else below
-is answered and built, and deployed where there is a server to deploy to -
-the app waits on the store accounts (section 21, "Not built yet"); the
-sections stay as the record.
+and 21b/21e/21h/21i. Everything else below is answered and built, and
+deployed where there is a server to deploy to - the app waits on the store
+accounts (section 21, "Not built yet"); the sections stay as the record.
 
 ---
 
@@ -41,7 +40,7 @@ sections stay as the record.
 | 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | ~~#87~~, ~~#82~~ | **ANSWERED 2026-08-27** — mandatory; host-access recovery, attributed and logged; see section 19. *From 2026-10-23 the host access is SSH with the key pair at the Elastic IP (22e)* |
 | 20 | The member portal is published to the internet on Tailscale Funnel | ~~#88~~ (closed 2026-10-24; evidence in its closing comment) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in full 2026-10-23 by 22: no Tailscale, removed in one go* |
 | 21 | Native iOS and Android apps, and the JSON API they need | the apps | **PARTLY ANSWERED 2026-10-22** — customers only, React Native, in this repo, company branding, sign-in and v1 API scope as recommended; push and the web portal open; see section 21 |
-| 22 | One public address, guardian.minastrade.com; no Tailscale | ~~#88~~ (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22. **Built and deployed 2026-10-24 (v1.14.0)**; left: 22e step 5 (the email to members) and the Tailscale admin-console removal, both the owner's |
+| 22 | One public address, guardian.minastrade.com; no Tailscale | ~~#88~~ (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22. **Built and deployed 2026-10-24 (v1.14.0)**; the email to members went the same day (22d); left: the Tailscale admin-console removal, the owner's |
 
 ---
 
@@ -1948,6 +1947,64 @@ follows:
   withdrawn**: 22e step 5 precedes step 6 and is not optional. Text to
   type, never a link (decision 16): "Our only address is
   guardian.minastrade.com." Still the owner's: sending it.
+- **Sent 2026-10-24, 12:12 UTC**, on the owner's instruction, from the
+  support mailbox (support@minastech.ca) to the five portal members, one
+  plain-text message each, no signature, no link; the alert sender the
+  text names was read from the box's `SMTP_SENDER` first
+  (alerts@minastrade.com). Three independent reviews changed the draft
+  before it went: it no longer claims "we never email links" (every alert
+  ends with the front-door URL, `portal_action_line`) nor that alerts
+  "keep coming" (the pause, and this morning's refusals); it teaches the
+  rule the product keeps - we will only ever send you to
+  guardian.minastrade.com, type it yourself even when it looks like a
+  link, a message from us never asks for a password, a code or a key -
+  and points members at the home page for each account's real state.
+  The three alert contacts without a portal login did not get it; they
+  never had an address to change. The text, as the record of the only
+  announcement:
+
+  Subject: Minas AI Guardian has a new address: guardian.minastrade.com
+
+    Hello,
+
+    The Minas AI Guardian member portal has a new address:
+    guardian.minastrade.com
+
+    From now on, type it into your browser yourself whenever you sign in.
+    Do not search for it, and do not follow a link to it from any message,
+    this one included. Check the spelling before you sign in: anything
+    other than exactly guardian.minastrade.com is not ours. If you saved
+    the old address anywhere - a bookmark, a note, an icon on your phone -
+    replace it. The old address no longer works.
+
+    Nothing needs confirming, re-entering or verifying. You sign in as
+    before, with the same email address and password, and if you turned
+    on two-factor, your authenticator app and any unused recovery codes
+    still work. You will be asked to sign in again the first time, because
+    the address is new. Your accounts, alerts and settings are all there,
+    and once you are signed in the home page shows whether each of your
+    accounts is being watched right now and what, if anything, it needs
+    from you.
+
+    How to tell a message from us: not by the address it comes from, which
+    can be forged, but by what it does. It only ever sends you to
+    guardian.minastrade.com, never anywhere else, and it never asks for
+    your password, your two-factor code or your exchange API key. Alert
+    emails come from alerts@minastrade.com and tell you to sign in to see
+    the details. Your mail app may show the address as a link; type it in
+    yourself anyway. If a message ever looks wrong, do not tap or click
+    anything in it: type guardian.minastrade.com yourself and sign in. If
+    the alert is real, it will be waiting for you there.
+
+    If you would rather not take an email's word for any of this, type
+    guardian.minastrade.com into your browser: the sign-in page says the
+    same thing.
+
+    If anything is unclear, just reply to this email.
+
+    Minas AI Guardian
+    support@minastech.ca
+
 - **From 22e step 2 on, every SMS and email already carries the new
   address** (`SENTINEL_PORTAL_URL`), so a member who follows an alert
   lands on the right site before the email arrives.
@@ -2072,10 +2129,10 @@ posting to `/admin/login`; `sentinel operator list` with one operator,
 2FA `on` (22c item 1 holds); `SENTINEL_PORTAL_URL` set and the sign-in
 page saying "Our only address" (#88 closed on that evidence); the two
 timers and the digest cron back on. So: steps 1, 2, 3, 4, 6, 7 and 8 are
-done; **step 5 - the email to members with the new address - is the
-owner's and still to send**, as is the machine's removal in the
-Tailscale admin console (a browser click, the tail of step 7). 22d's
-notice on the old address was never shown to anyone, as expected: the
+done; **step 5 - the email to members with the new address - went on
+2026-10-24** (22d holds the text); the machine's removal in the Tailscale
+admin console (a browser click, the tail of step 7) is still the owner's.
+22d's notice on the old address was never shown to anyone, as expected: the
 old address stopped answering at step 6 of the teardown.
 
 **Reviewed before it faces the internet (2026-10-24).** Four readers went
