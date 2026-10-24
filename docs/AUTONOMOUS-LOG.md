@@ -7934,3 +7934,20 @@ email that is a link; decision 22d and `.env.example` still describe an
 SMS link that `sms.py` no longer sends. Left for the owner: the Tailscale
 admin-console removal, the wrong-password log reading, #125's wording,
 21h/21i/#113, the store enrolments, the `ufw` rules.
+
+**Later (2026-10-24, 12:55 UTC): a second operator, and the QR code.** The
+owner asked for an operator account to review the dashboard. Created at
+the owner's own terminal (`operator add jimrox.odezi`; the password and
+the enrolment never passed through this session). The enrolment did not
+confirm the first time - typing a 32-character secret into a phone - and
+the account sat NOT YET for a while, the state 22c item 1 forbids on a
+public address; it was completed with a QR code drawn locally from the
+otpauth line (a scratchpad helper that reads the URI at a hidden prompt
+and stores or sends nothing), and `operator list` then read both rows
+`on`. The dashboard log named the owner's real address on the password
+step and on the sign-in, so the throttle keys on it - what the runbook's
+step-8 reading was for; the literal failed-login line was not produced.
+The product gap is being closed on branch `worktree-qr-enrolment`: a QR
+code on both enrolment pages and in the terminal walk-through, the text
+secret kept as the fallback, one pure-Python dependency (`segno`); its PR
+follows the review. The records PR #128 merged at 12:37 UTC.
