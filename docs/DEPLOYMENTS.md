@@ -105,6 +105,18 @@ machine (a browser click); the email to members with the new address
 members, one plain-text message each, from support@minastech.ca; the text
 and the review that shaped it are under 22d in docs/DECISIONS-NEEDED.md.
 
+*Later again, 12:55 UTC:* a second operator account, `jimrox.odezi` (the
+owner's, display name set), created at the owner's own terminal with
+`sentinel operator add` and enrolled in two-factor; `sentinel operator
+list` read afterwards: `jimrox.odezi active on`, `john.great active on` -
+22c item 1 holds with two rows. The dashboard's log for that sign-in
+carries the owner's real client address on the password step and on the
+sign-in (not the proxy's 10.231.0.2), which is what step 8's
+wrong-password reading was for; the failed-login line itself was not
+produced, as no wrong password was entered. The enrolment pages showed
+the secret as text only, and typing it into a phone failed once; the QR
+code for them is its own change.
+
 ---
 
 ## 2026-10-23 · The box read before the public address: v1.12.0 on disk, the container stopped since 2026-09-28, Tailscale torn down (22e steps 4, 6 and 7)

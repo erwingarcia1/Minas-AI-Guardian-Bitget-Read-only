@@ -1791,6 +1791,8 @@ everyone, and recovery is `sentinel operator add` on the box (decision
    running, and it has been stopped since 2026-09-28 (section 22's
    answer block). The reading is taken on the restored container, before
    any operator is given the `/admin` address.
+   **Read again 2026-10-24, 12:55 UTC**, with a second operator
+   (`jimrox.odezi`, the owner's, enrolled at creation): both rows `on`.
 2. **The dashboard's session cookie is marked `Secure`.** Today it is
    `HttpOnly; SameSite=Lax` without `Secure` (`sentinel/dashboard.py`,
    `_issue_session`); the portal's cookie has the flag. That is harmless
