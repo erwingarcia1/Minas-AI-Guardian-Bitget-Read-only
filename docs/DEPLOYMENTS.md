@@ -101,6 +101,10 @@ note left as a comment above it. #88 closed on this evidence.
 machine (a browser click); the email to members with the new address
 (22d); the wrong-password log reading above.
 
+*Later the same day, 12:12 UTC:* the email to members went - five portal
+members, one plain-text message each, from support@minastech.ca; the text
+and the review that shaped it are under 22d in docs/DECISIONS-NEEDED.md.
+
 ---
 
 ## 2026-10-23 · The box read before the public address: v1.12.0 on disk, the container stopped since 2026-09-28, Tailscale torn down (22e steps 4, 6 and 7)

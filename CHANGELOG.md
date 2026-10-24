@@ -11,10 +11,10 @@ Guardian**.
 
 _Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, ClickSend or Twilio credentials,
-terminate the retired us-east-1 instance, the email to members with the new
-address (decision 22e step 5), the machine's removal in the Tailscale admin
-console. The #81 restart timer turned out to be installed on the host
-already (disabled in the 2026-09-28 pause, re-enabled 2026-10-24)._
+terminate the retired us-east-1 instance, the machine's removal in the
+Tailscale admin console. The #81 restart timer turned out to be installed
+on the host already (disabled in the 2026-09-28 pause, re-enabled
+2026-10-24)._
 
 ### Changed
 
@@ -24,7 +24,9 @@ already (disabled in the 2026-09-28 pause, re-enabled 2026-10-24)._
   2026-09-28 pause. Recorded, with every reading, in docs/DEPLOYMENTS.md
   and under 22e in docs/DECISIONS-NEEDED.md; #88 closed on it (the address
   chosen, served over TLS, `SENTINEL_PORTAL_URL` set, the sign-in page
-  naming it). No code in this entry.
+  naming it). The email to members with the new address (22e step 5)
+  went the same day at 12:12 UTC: five portal members, one plain-text
+  message each; the text is kept under 22d. No code in this entry.
 - **The documents say what the tree does (repository cleanup,
   2026-10-24).** README's counts (1,800+ tests across 150+ files; 13 rules,
   with the LOW `unseen_address_check_degraded` now in the catalog and

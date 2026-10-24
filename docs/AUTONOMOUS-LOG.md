@@ -7897,3 +7897,40 @@ handler, its own small PR), #126 (the dashboard's catalog, with a test
 that derives it from the detectors), the operator session epoch (the
 revamp review's open finding), the test-plumbing dedupe, and a look at
 why `up -d` recreated Caddy once.
+
+**Later (2026-10-24, 12:12 UTC): the email to members, sent (22e step 5).**
+The owner asked for it in this session. Drafted here from 22d's rule (the
+address as text to type; "we will only ever send you to
+guardian.minastrade.com") and the sign-in page's own words; three
+independent reviewers (anti-phishing posture, truthfulness against the
+live system, plain language) went through it before anything was sent.
+Two sentences of the first draft were false and would have taught members
+to distrust real alerts: "we never put sign-in links in emails" (every
+alert ends with `portal_action_line`'s "Sign in to see the details:
+https://guardian.minastrade.com", and the reset email is a link too) and
+"alerts keep coming" (nothing came between 2026-09-28 and this morning,
+and several accounts were refused by their exchanges at 09:02 UTC). The
+sent text teaches the rule the product keeps and points members at the
+home page for each account's real state; it says nothing about the pause
+or about text messages (SMS is routed but unconfigured) - separate
+announcements if the owner wants them. The recipients came from the
+production database, read by the owner with a `!` line (the classifier
+refuses this session's SSH): five portal members, one plain-text message
+each from support@minastech.ca through the Gmail connector, no signature,
+no link; `SMTP_SENDER` on the box confirmed as alerts@minastrade.com
+before the text named it. Message ids 1a16dd3a5b51237d, 1a16dd3a8546e9fa,
+1a16dd3abe958152, 1a16dd3afa16c4f8, 1a16dd3b10b09888; the preview draft
+deleted afterwards. Three alert-only contacts without a portal login (the
+addresses on the binance-jaypee, ezriel-garcia and jimrox-odezi accounts)
+did not get it: they never had an address to change, and their alerts
+already name the new one. The record: 22d (the text and the review), the
+summary table's row 22, 22e's status line, docs/DEPLOYMENTS.md's
+2026-10-24 entry and CHANGELOG's pending list, all in the same PR as this
+note. Noted for the product, not fixed: `tests/test_customer_channel_guard.py`
+asserts no URL in customer bodies but never sets `SENTINEL_PORTAL_URL`, so
+it passes only with the address unset; the sign-in page's "never enter
+your password after following a link from an email" sits beside a reset
+email that is a link; decision 22d and `.env.example` still describe an
+SMS link that `sms.py` no longer sends. Left for the owner: the Tailscale
+admin-console removal, the wrong-password log reading, #125's wording,
+21h/21i/#113, the store enrolments, the `ufw` rules.
