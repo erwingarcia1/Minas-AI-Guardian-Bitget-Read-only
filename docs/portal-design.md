@@ -18,18 +18,27 @@ the fuller design rationale.
    timestamps upgraded to local time; degrades cleanly) and the incident
    page's `window.print()` button. Anything beyond needs a decision, not a
    diff. **Consequence for #39**: dashboard filtering is server-side.
-2. **The portal carries the Minas identity; the ops dashboard stays plain,
-   dense, unbranded** (its pass shipped in v1.10.0, #82;
-   `design/dashboard/DESIGN-SYSTEM.md` is the dashboard's contract). An ops
-   screenshot must not be usable to impersonate a customer page.
+2. **The portal carries the Minas identity; so does the ops dashboard, as
+   the Operations surface, on the same dark ground.** ~~the ops dashboard
+   stays plain, dense, unbranded (its pass shipped in v1.10.0, #82)~~ -
+   **retired by decision 24 (2026-10-24):** the owner wants the Minas
+   colours and logo on every dashboard page, dark like the portal. An ops
+   screenshot must still not pass for a customer page; the dashboard's
+   operations marking carries that, not colour: the mark and wordmark
+   with the **Operations** tag (never "Member portal"), the operator's
+   name and sign-out in the header, `<h1>Ops dashboard</h1>` with
+   "internal · Minas staff only", and the `/admin` path.
+   `design/dashboard/DESIGN-SYSTEM.md` is the dashboard's contract.
+   Amended 2026-10-24.
 3. **Brand assets live in `sentinel/brand.py`**: the gold/violet identity
    and the Minas logo (supplied 2026-10-22, replacing the stroked infinity
    mark). The logo is raster, derived from one master
    (`design/brand/minas-logo.png`) by `scripts/brand-assets.py`, and served
    by the portal itself from `sentinel/static/` - still no external
    request.
-4. **Portal first**; the dashboard's pass followed in v1.10.0, under
-   `design/dashboard/DESIGN-SYSTEM.md`.
+4. **Portal first**; the dashboard's pass followed in v1.10.0 (plain,
+   2026-08-27) and was re-cut on the portal's dark ground by decision 24
+   (2026-10-24); `design/dashboard/DESIGN-SYSTEM.md` is its contract.
 
 ## Tokens (`:root`, all with role names)
 
@@ -111,9 +120,10 @@ footer is better provenance than a composed document.
    whose colours are not tokens).
 2. **Every emitted class is styled** — enforced by
    `tests/test_surface_styles.py`, along with: no shared stylesheet between
-   portal and dashboard (either direction), the brand stays in `brand.py`,
-   gold fill reserved for the primary, the touch floors, mobile-first,
-   no tables, and no motion.
+   portal and dashboard (either direction), both surfaces draw the brand
+   from `brand.py`, the dashboard's operations marking, gold fill reserved
+   for the primary, the touch floors, mobile-first, no tables, and no
+   motion.
 3. **Screens inherit.** A screen issue (#34, #10, #22, #20, #9, #45, #31,
    #18, #21) composes these primitives; a new primitive lands here and in
    the stylesheet first, in its own commit, checked against

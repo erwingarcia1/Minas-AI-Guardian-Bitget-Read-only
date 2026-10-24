@@ -1,28 +1,36 @@
-"""The Minas identity, in one place (#82).
+"""The Minas identity, in one place (#82; decision 24).
 
-The brand belongs to the CUSTOMER surface: the portal carries it, and the ops
-dashboard is deliberately plain, dense and unbranded (its stripping happens
-in its own design pass — decision 4 on #82). The reasoning is recorded on
-#82 and matters enough to restate: an ops screenshot must not be usable to
-impersonate a customer page, and a mispasted internal URL should look
-visibly wrong to whoever receives it. Distinct looks are part of the
-anti-phishing story, not aesthetics.
+Both surfaces carry it, on the same dark ground: the member portal, and -
+since decision 24 (2026-10-24, which reverses the dashboard half of
+decision 2 on #82) - the ops dashboard, which marks itself as Operations.
+What used to rest on the dashboard looking plain now rests on its marking
+and its path: the lockup's qualifier reads "Operations" where the portal's
+reads "Member portal", the signed-in operator's name sits in the header,
+every page says "Ops dashboard · internal · Minas staff only", and all of it
+lives under /admin. An ops screenshot still cannot pass for a customer page;
+it says what it is instead of looking different.
 
 Nothing here is a stylesheet. Surfaces own their stylesheets separately —
 tests/test_surface_styles.py refuses a shared one — and draw identity
 constants from here so the brand cannot drift into two spellings of gold.
-The logo lives here too, as files and the markup that shows them.
+The logo lives here too, as files and the markup that shows them: the
+portal serves the files, and the dashboard's pages point at the same paths
+on the shared hostname.
 """
 from __future__ import annotations
 
 from pathlib import Path
 
 # The identity hues. Interface palettes (backgrounds, borders, text ramps)
-# belong to each surface's stylesheet; these are the two colours that MEAN
-# Minas, referenced by the portal's tokens.
+# belong to each surface's stylesheet; these are the colours that MEAN
+# Minas, referenced by both surfaces' tokens.
 GOLD = "#f0b429"
 VIOLET = "#8b5cf6"
 VIOLET_DEEP = "#6d28d9"
+# The deck system's purpleDeep: the dashboard's header band and its sign-in card head (decision 24).
+VIOLET_INK = "#2e1a47"
+# The dominant violet sampled from the 2026-10-22 mark: the band's chip hover ground.
+VIOLET_LOGO = "#583878"
 
 # The Minas logo (supplied by the owner 2026-10-22; replaces the stroked
 # infinity mark of the 2026-08-19 design pass). Raster, not inline SVG: the

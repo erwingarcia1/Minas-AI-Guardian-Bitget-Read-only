@@ -43,6 +43,7 @@ there is a server to deploy to - the app waits on the store accounts
 | 21 | Native iOS and Android apps, and the JSON API they need | the apps | **PARTLY ANSWERED 2026-10-22** — customers only, React Native, in this repo, company branding, sign-in and v1 API scope as recommended; push and the web portal open; see section 21 |
 | 22 | One public address, guardian.minastrade.com; no Tailscale | ~~#88~~ (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22. **Built and deployed 2026-10-24 (v1.14.0)**; the email to members went the same day (22d); left: the Tailscale admin-console removal, the owner's |
 | 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **OPEN 2026-10-24** — merging the PR accepts it; the three renderings read by Google Authenticator on 2026-10-24 (the owner's scan); see section 23 |
+| 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24 |
 
 ---
 
@@ -1325,6 +1326,9 @@ What that takes:
 - **The ops dashboard stays unbranded** (#82). An operator screen must
   not be usable to impersonate a customer page, and that matters more
   now that both share one address (decision 22).
+  *Superseded 2026-10-24 by decision 24: the dashboard wears the identity
+  on the same dark ground; the marking and the path tell the surfaces
+  apart.*
 
 ### 21h. A refresh whose answer is lost — open (raised 2026-10-23)
 
@@ -1607,6 +1611,9 @@ declined. What sharing the hostname takes:
 - **The anti-impersonation rule (#82) now rests on looks and the path
   alone.** The dashboard stays plain and unbranded, and every dashboard
   page shows that it is the ops view.
+  *Superseded 2026-10-24 by decision 24: the dashboard wears the identity
+  on the same dark ground; the marking and the path tell the surfaces
+  apart.*
 - **Extra controls apply by path.** Any IP allowlist (22c, item 5) goes
   on `/admin/*` at the proxy.
 
@@ -2241,6 +2248,85 @@ is the merge.
 **Related:** decision 5 (a PDF library refused on the same ground),
 decision 19 (operator two-factor, mandatory), docs/threat-model.md A5
 (where `segno` sits in the supply-chain surface).
+
+---
+
+## 24. The ops dashboard carries the Minas identity — **ANSWERED by the owner 2026-10-24** (reverses the dashboard half of decision 2 on #82)
+
+> **The owner's words (2026-10-24):** "let everything about the admin
+> dashboard have the Minas colours and logo. the current dashboard is
+> mostly plain white, dry and boring and no company logo even." Offered a
+> light variant: "the dashboard should be dark like the portal. remember
+> that this is a thorough revamp of the project." And on how the logo
+> reaches the page: "no /admin/brand nonsense. keep it simple and just do
+> what i ask you."
+
+**What this reverses.** Decision 2 on #82 (2026-08-19) had two halves:
+"brand the portal" and "deliberately do NOT brand the ops dashboard ...
+no logo". The second half is withdrawn, and with it its restatements:
+21g's "the ops dashboard stays unbranded" (2026-10-22), 22a's "the
+anti-impersonation rule now rests on looks and the path alone"
+(2026-10-23) and the guard's "light against dark". Its reasoning - an ops
+screenshot must not be usable to impersonate a customer page, and a
+mispasted internal URL should look visibly wrong - is kept, and carried
+by an explicit operations marking instead of by the absence of the brand
+or by a different ground.
+
+**What stays decided.** Decision 1 on #82: no framework, no JavaScript
+beyond `_LOCAL_TIME_SCRIPT`, no external request. Decision 3: the
+identity lives in `sentinel/brand.py`, which the dashboard now draws
+from exactly as the portal does - one spelling of gold. The two surfaces
+keep separate stylesheets, asserted in both directions. The dashboard
+stays a dense, tables-first control surface, not a reading page.
+
+**The operations marking (required on every dashboard page, signed in
+or not).** With the ground shared, these four tell an operator screen
+from a customer page:
+
+1. The lockup: the Minas mark, the wordmark "Minas AI Guardian" and the
+   qualifier **Operations** in its own class (`ops__tag`, never the
+   portal's `brand__tag`, whose word is "Member portal").
+2. The signed-in operator's name and a sign-out control in the header
+   ("Signed in as erwin · Sign out"); the sign-in family shows the lockup
+   without a name. No customer page ever shows an operator's name.
+3. `<h1>Ops dashboard</h1>` with "internal · Minas staff only" in the
+   header, visible on every page; the title `Ops dashboard — internal`
+   and the footer sentence are byte for byte what they were, so the
+   deploy runbook's smoke check still holds.
+4. The path: everything lives under `/admin`, and the title says
+   "internal".
+
+No customer-facing copy in the shell: no tagline, no limits link, no
+reassurance sentence, never the words "Member portal".
+
+**The logo** is the portal's `/brand/*` file on the same host, reached
+through `brand.MARK_HTML` and `brand.ICON_LINKS` as they are - no new
+route, no new helper; through the SSH tunnel, where only the dashboard
+answers, the image is absent, and it is decorative.
+
+**The metrics page** (`/admin/metrics`) joins the dashboard shell; the
+retired infinity mark, the gradients and the pulse go with it.
+
+**The guards are inverted, not deleted.** `tests/test_surface_styles.py`'s
+dashboard half now requires the brand hues, equal to `brand.py`'s, and
+still refuses gradients, glow, motion, any external request and a shared
+stylesheet; the four marking parts are asserted on `_page`; both grounds
+are `#0d0f13` on purpose; the portal never emits `ops__tag` and the
+dashboard never emits `brand__tag` or "Member portal"; every emitted
+class is styled; the design note names this decision and agrees with the
+sheet. `design/dashboard/DESIGN-SYSTEM.md`, `docs/portal-design.md`
+decision 2, `sentinel/brand.py`'s docstring, `design/brand/README.md`
+and docs/threat-model.md A3 are amended in the same commit.
+
+### What it blocks
+
+Nothing.
+
+**Related:** decision 5 (print stays the browser's own; the dashboard's
+print sheet still flips to white paper and black ink), decision 19
+(operator two-factor, which gated #82's dashboard pass), #82 (the design
+decisions of 2026-08-19), docs/threat-model.md A3 (the anti-phishing
+posture).
 
 ---
 

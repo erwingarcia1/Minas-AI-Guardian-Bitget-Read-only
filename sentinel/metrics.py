@@ -194,131 +194,15 @@ class Metrics:
 
 
 # --- browser-facing styled view ------------------------------------------------
-
-_PAGE = """<!doctype html><html lang="en"><head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Minas AI Guardian · Metrics</title>
-<meta http-equiv="refresh" content="15">
-<style>
-  :root {{
-    --bg: #0b0813; --panel: #140f20; --panel-2: #191229;
-    --line: #2b2140; --line-soft: #211935;
-    --txt: #ece8f4; --muted: #9a8fb5; --faint: #6b5f8a;
-    --accent: #8b5cf6; --gold: #f0b429; --ok: #34d399;
-    --crit: #ff5d6c; --high: #ffa63d; --med: #ffd23d; --low: #8a7fa5;
-  }}
-  * {{ box-sizing: border-box; }}
-  body {{
-    margin: 0;
-    background:
-      radial-gradient(1200px 600px at 85% -10%, rgba(139,92,246,.13), transparent 60%),
-      radial-gradient(900px 500px at 0% 0%, rgba(240,180,41,.06), transparent 55%),
-      var(--bg);
-    color: var(--txt);
-    font-family: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-    -webkit-font-smoothing: antialiased; letter-spacing: .1px; min-height: 100vh;
-  }}
-  .wrap {{ max-width: 1120px; margin: 0 auto; padding: 40px 32px 64px; }}
-  header {{ display: flex; align-items: center; justify-content: space-between; margin-bottom: 34px; }}
-  .brand {{ display: flex; align-items: center; gap: 14px; }}
-  .mark {{ width: 40px; height: 40px; border-radius: 12px;
-    background: linear-gradient(145deg, #1c1230, #0d0918);
-    border: 1px solid rgba(139,92,246,.45);
-    display: grid; place-items: center;
-    box-shadow: 0 6px 22px rgba(139,92,246,.30), inset 0 1px 0 rgba(255,255,255,.08); }}
-  .mark svg {{ width: 24px; height: 24px; }}
-  .brand h1 {{ font-size: 19px; font-weight: 650; margin: 0; letter-spacing: .2px; }}
-  .brand h1 .minas {{ color: var(--gold); font-weight: 780; letter-spacing: 3px; }}
-  .brand .sub {{ font-size: 12px; color: var(--faint); margin-top: 2px; }}
-  .nav {{ display: flex; align-items: center; gap: 10px; }}
-  .chip {{ display: inline-flex; align-items: center; gap: 9px; font-size: 12.5px; color: var(--muted);
-           background: var(--panel); border: 1px solid var(--line); padding: 8px 14px;
-           border-radius: 999px; text-decoration: none; }}
-  a.chip:hover {{ border-color: var(--accent); color: var(--txt); }}
-  .dot {{ width: 8px; height: 8px; border-radius: 50%; background: var(--ok);
-          box-shadow: 0 0 0 0 rgba(52,211,153,.6); animation: pulse 2.2s infinite; }}
-  @keyframes pulse {{
-    0% {{ box-shadow: 0 0 0 0 rgba(52,211,153,.55); }}
-    70% {{ box-shadow: 0 0 0 8px rgba(52,211,153,0); }}
-    100% {{ box-shadow: 0 0 0 0 rgba(52,211,153,0); }}
-  }}
-  .grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }}
-  .metric {{
-    background: linear-gradient(180deg, var(--panel-2), var(--panel));
-    border: 1px solid var(--line); border-radius: 16px; padding: 18px 20px;
-    position: relative; overflow: hidden;
-  }}
-  .metric::after {{ content: ""; position: absolute; inset: 0 0 auto 0; height: 2px;
-    background: linear-gradient(90deg, transparent, rgba(139,92,246,.6), rgba(240,180,41,.5), transparent); opacity: .6; }}
-  .metric .name {{ font-size: 11.5px; text-transform: uppercase; letter-spacing: .8px; color: var(--faint);
-                   display: flex; justify-content: space-between; align-items: center; gap: 8px; }}
-  .tag {{ font-size: 10px; padding: 2px 8px; border-radius: 999px; letter-spacing: .5px;
-          background: rgba(139,92,246,.14); color: #b79bff; text-transform: lowercase; }}
-  .metric .val {{ font-size: 32px; font-weight: 680; margin-top: 10px; line-height: 1;
-                  font-variant-numeric: tabular-nums; }}
-  .metric .doc {{ font-size: 12px; color: var(--muted); margin-top: 8px; }}
-  .rows {{ margin-top: 12px; display: flex; flex-direction: column; gap: 7px; }}
-  .row {{ display: flex; justify-content: space-between; align-items: center; gap: 10px;
-          padding: 7px 10px; background: rgba(11,8,19,.5); border: 1px solid var(--line-soft);
-          border-radius: 10px; }}
-  .row .v {{ font-variant-numeric: tabular-nums; font-weight: 640; font-size: 14px; }}
-  .pills {{ display: flex; gap: 6px; flex-wrap: wrap; }}
-  .pill {{ display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 600;
-           padding: 3px 9px; border-radius: 999px; letter-spacing: .3px;
-           background: rgba(124,138,165,.14); color: var(--muted); }}
-  .pill::before {{ content: ""; width: 5px; height: 5px; border-radius: 50%; background: currentColor; }}
-  .sev-CRITICAL {{ color: var(--crit); background: rgba(255,93,108,.13); }}
-  .sev-HIGH {{ color: var(--high); background: rgba(255,166,61,.13); }}
-  .sev-MEDIUM {{ color: var(--med); background: rgba(255,210,61,.13); }}
-  .sev-LOW {{ color: var(--low); background: rgba(124,138,165,.15); }}
-  section {{ margin-top: 30px; }}
-  .card {{ background: var(--panel); border: 1px solid var(--line); border-radius: 16px; overflow: hidden; }}
-  .card-head {{ display: flex; align-items: baseline; justify-content: space-between;
-                padding: 16px 22px; border-bottom: 1px solid var(--line-soft); }}
-  .card-head h2 {{ font-size: 14px; font-weight: 620; margin: 0; letter-spacing: .3px; }}
-  .card-head .count {{ font-size: 12px; color: var(--faint); }}
-  table {{ width: 100%; border-collapse: collapse; }}
-  thead th {{ font-size: 11px; text-transform: uppercase; letter-spacing: .7px; color: var(--faint);
-              text-align: left; padding: 12px 22px; font-weight: 600; }}
-  tbody td {{ padding: 12px 22px; font-size: 13px; border-top: 1px solid var(--line-soft); }}
-  tbody tr:hover {{ background: rgba(139,92,246,.05); }}
-  .mono {{ font-family: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
-           font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }}
-  .num {{ font-variant-numeric: tabular-nums; font-weight: 600; }}
-  .empty {{ padding: 30px; text-align: center; color: var(--faint); font-size: 13px; }}
-  footer {{ margin-top: 28px; text-align: center; color: var(--faint); font-size: 11.5px; }}
-  @media (max-width: 860px) {{ .grid {{ grid-template-columns: 1fr 1fr; }} }}
-  @media (max-width: 620px) {{ .grid {{ grid-template-columns: 1fr; }} .wrap {{ padding: 24px 16px; }} }}
-</style></head><body>
-<div class="wrap">
-  <header>
-    <div class="brand">
-      <div class="mark"><svg viewBox="0 0 24 24" fill="none"><defs><linearGradient id="inf" x1="3" y1="20" x2="21" y2="4" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#f0b429"/><stop offset=".48" stop-color="#f0b429"/><stop offset=".58" stop-color="#8b5cf6"/><stop offset="1" stop-color="#6d28d9"/></linearGradient></defs><path fill="url(#inf)" d="M18.6 6.62c-1.44 0-2.8.56-3.77 1.53L12 10.66 10.48 12h.01L7.8 14.39c-.64.64-1.49.99-2.4.99-1.87 0-3.39-1.51-3.39-3.38S3.53 8.62 5.4 8.62c.91 0 1.76.35 2.44 1.03l1.13 1 1.51-1.34L9.22 8.2C8.2 7.18 6.84 6.62 5.4 6.62 2.42 6.62 0 9.04 0 12s2.42 5.38 5.4 5.38c1.44 0 2.8-.56 3.77-1.53l2.83-2.5.01.01L13.52 12h-.01l2.69-2.39c.64-.64 1.49-.99 2.4-.99 1.87 0 3.39 1.51 3.39 3.38s-1.52 3.38-3.39 3.38c-.9 0-1.76-.35-2.44-1.03l-1.14-1.01-1.51 1.34 1.27 1.12c1.02 1.01 2.37 1.57 3.82 1.57 2.98 0 5.4-2.41 5.4-5.38s-2.42-5.38-5.4-5.38z"/></svg></div>
-      <div><h1><span class="minas">MINAS</span> AI Guardian · Metrics</h1><div class="sub">Service telemetry — Prometheus exposition</div></div>
-    </div>
-    <div class="nav">
-      <a class="chip" href="{base_path}/">Dashboard</a>
-      <a class="chip" href="{base_path}/metrics/raw">Raw</a>
-      <span class="chip"><span class="dot"></span> Live · {now}</span>
-    </div>
-  </header>
-
-  <div class="grid">{service_cards}</div>
-
-  <section>
-    <div class="card">
-      <div class="card-head"><h2>Runtime</h2><span class="count">python / process</span></div>
-      <table>
-        <thead><tr><th>Metric</th><th>Labels</th><th>Value</th></tr></thead>
-        <tbody>{runtime_rows}</tbody>
-      </table>
-    </div>
-  </section>
-
-  <footer>Minas AI Guardian · scrapers get the raw exposition format automatically · refreshes every 15s</footer>
-</div>
-</body></html>"""
+#
+# One body, two shells (decision 24). `render_metrics_body()` is the service
+# cards and the runtime table in the ops dashboard's own classes, and the
+# dashboard wraps it in its page shell at /admin/metrics - the same band, nav
+# and footer as every other dashboard page, on a 15-second refresh.
+# `render_metrics_html()` is the page the loopback 9109 server answers a
+# browser with: a different server, with no logo files to serve, so it keeps
+# a plain dark sheet of its own in the same family - a text header, no mark,
+# no gradient, no glow, no motion.
 
 _TYPE_TAGS = {"counter": "counter", "gauge": "gauge", "histogram": "histogram", "summary": "summary"}
 
@@ -338,23 +222,27 @@ def _fmt(value: float, name: str = "") -> str:
 
 
 def _label_pills(labels: dict) -> str:
-    pills = []
+    """A sample's labels: the severity as a pill (its tone class is the
+    dashboard's own), every other label as `name=value` in monospace."""
+    parts = []
     for k, v in labels.items():
-        cls = f" sev-{v}" if k == "severity" else ""
-        pills.append(f'<span class="pill{cls}">{html_mod.escape(k)}: {html_mod.escape(str(v))}</span>')
-    return f'<span class="pills">{"".join(pills)}</span>' if pills else '<span class="mono">—</span>'
+        if k == "severity":
+            parts.append(f'<span class="pill sev-{html_mod.escape(str(v))}">{html_mod.escape(str(v))}</span>')
+        else:
+            parts.append(f'<span class="mono">{html_mod.escape(k)}={html_mod.escape(str(v))}</span>')
+    return " ".join(parts) if parts else '<span class="mono">—</span>'
 
 
-def render_metrics_html(base_path: str = "") -> str:
-    """Premium HTML view of the live Prometheus registry, themed to match
-    the status dashboard. Pure presentation - the registry stays the single
-    source of truth and scrapers never see this.
-
-    `base_path` is the dashboard's (SENTINEL_DASHBOARD_BASE_PATH, "/admin"
-    under compose): the two nav links point at the dashboard's root and at
-    its /metrics/raw, and without it they would land on the member portal's
-    root and on a portal 404 once Caddy fronts both on one name. The
-    standalone 9109 server passes nothing: loopback-only, never proxied."""
+def render_metrics_body() -> str:
+    """The live Prometheus registry as the ops dashboard's cards and table:
+    `.kpis`/`.kpi` for the service metrics, `.card` + `table` for the
+    runtime ones. Pure presentation - the registry stays the single source
+    of truth and scrapers never see this. The dashboard wraps it in `_page`
+    (sentinel/dashboard.py, the /metrics route); `render_metrics_html`
+    below wraps it in the standalone shell."""
+    if not _AVAILABLE:
+        return ('<section><div class="card"><div class="empty">prometheus_client is not installed - '
+                "no metrics to show</div></div></section>")
     service_cards: list[str] = []
     runtime_rows: list[str] = []
 
@@ -377,31 +265,114 @@ def render_metrics_html(base_path: str = "") -> str:
                 total = sum(s.value for s in labeled)
                 if not unlabeled:
                     body += f'<div class="val">{_fmt(total)}</div>'
-                rows = "".join(
-                    f'<div class="row">{_label_pills(s.labels)}<span class="v">{_fmt(s.value, s.name)}</span></div>'
+                body += "".join(
+                    f'<div class="foot">{_label_pills(s.labels)} <span class="lbl">{_fmt(s.value, s.name)}</span></div>'
                     for s in sorted(labeled, key=lambda s: -s.value)
                 )
-                body += f'<div class="rows">{rows}</div>'
             if not labeled and not unlabeled:
                 body += '<div class="val">0</div>'
 
             service_cards.append(
-                f'<div class="metric"><div class="name"><span>{html_mod.escape(pretty)}</span>'
-                f'<span class="tag">{tag}</span></div>{body}<div class="doc">{doc}</div></div>'
+                f'<div class="kpi"><div class="label">{html_mod.escape(pretty)} · {html_mod.escape(tag)}</div>'
+                f'{body}<div class="foot">{doc}</div></div>'
             )
         else:
             for s in samples:
                 runtime_rows.append(
                     f'<tr><td class="mono">{html_mod.escape(s.name)}</td>'
                     f"<td>{_label_pills(s.labels)}</td>"
-                    f'<td class="num">{_fmt(s.value, s.name)}</td></tr>'
+                    f'<td class="lbl">{_fmt(s.value, s.name)}</td></tr>'
                 )
 
-    return _PAGE.format(
-        base_path=base_path,
-        now=datetime.now(timezone.utc).strftime("%H:%M:%S UTC"),
-        service_cards="".join(service_cards) or '<div class="empty">No service metrics yet</div>',
-        runtime_rows="".join(runtime_rows) or '<tr><td colspan="3" class="empty">none</td></tr>',
+    cards = (f'<div class="kpis">{"".join(service_cards)}</div>' if service_cards else
+             '<section><div class="card"><div class="empty">No service metrics yet</div></div></section>')
+    rows = "".join(runtime_rows) or '<tr><td colspan="3" class="empty">none</td></tr>'
+    return (
+        cards
+        + '<section><div class="card"><div class="card-head"><h2>Runtime</h2>'
+        '<span class="count">python / process</span></div>'
+        "<table><thead><tr><th>Metric</th><th>Labels</th><th>Value</th></tr></thead>"
+        f"<tbody>{rows}</tbody></table></div></section>"
+    )
+
+
+# The standalone page's own sheet: the dashboard's dark family and class
+# names, without the dashboard's band (this server has no logo files).
+_STANDALONE_STYLE = """
+  :root {
+    --bg:#0d0f13; --panel:#151921; --panel-2:#1c212b; --line:#2a3140; --line-strong:#3a4256; --line-soft:#232a37;
+    --txt:#f4f6fa; --muted:#aab2c1; --faint:#8b94a7; --violet:#8b5cf6; --violet-text:#c4b2ff;
+    --ok:#34d399; --crit:#f87171; --high:#fb923c; --med:#fbbf24; --low:#8b94a7;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:14px; line-height:1.45; min-height:100vh; }
+  a { color:var(--violet-text); text-decoration:none; } a:hover { text-decoration:underline; }
+  .wrap { max-width:1240px; margin:0 auto; padding:16px 20px 40px; }
+  header { display:flex; align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;
+    padding:8px 0 12px; border-bottom:1px solid var(--line); margin-bottom:18px; }
+  header h1 { font-size:15px; font-weight:700; margin:0; }
+  header .sub { font-size:12px; color:var(--faint); }
+  .nav { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .live { display:inline-flex; align-items:center; gap:7px; font-size:12px; color:var(--muted); background:var(--panel);
+    border:1px solid var(--line); padding:5px 10px; border-radius:6px; text-decoration:none; font-variant-numeric:tabular-nums; }
+  a.live:hover { border-color:var(--violet); color:var(--txt); text-decoration:none; }
+  .dot { width:7px; height:7px; border-radius:50%; background:var(--ok); }
+  .kpis { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; margin-bottom:18px; align-items:start; }
+  .kpi { background:var(--panel); border:1px solid var(--line); border-top:2px solid var(--violet); border-radius:6px; padding:10px 12px; }
+  .kpi .label { font-size:11px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); }
+  .kpi .val { font-size:26px; font-weight:700; margin-top:4px; font-variant-numeric:tabular-nums; line-height:1; }
+  .kpi .foot { font-size:12px; color:var(--muted); margin-top:6px; overflow-wrap:anywhere; }
+  section { margin-top:18px; }
+  .card { background:var(--panel); border:1px solid var(--line); border-radius:6px; overflow:hidden; }
+  .card-head { display:flex; align-items:baseline; justify-content:space-between; gap:12px; padding:8px 12px;
+    border-bottom:1px solid var(--line); background:var(--panel-2); }
+  .card-head h2 { font-size:12px; font-weight:700; margin:0; letter-spacing:.08em; text-transform:uppercase; color:var(--violet-text); }
+  .card-head .count { font-size:12px; color:var(--faint); font-variant-numeric:tabular-nums; }
+  table { width:100%; border-collapse:collapse; }
+  thead th { font-size:11px; text-transform:uppercase; letter-spacing:.5px; color:var(--muted); text-align:left;
+    padding:6px 12px; font-weight:600; border-bottom:1px solid var(--line); }
+  tbody td { padding:6px 12px; font-size:13px; border-top:1px solid var(--line-soft); vertical-align:top; }
+  tbody tr:hover { background:var(--panel-2); }
+  .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; color:var(--muted);
+    font-variant-numeric:tabular-nums; }
+  .lbl { font-weight:600; font-variant-numeric:tabular-nums; }
+  .pill { display:inline-flex; align-items:center; gap:6px; font-size:11px; font-weight:700; padding:1px 8px;
+    border-radius:999px; letter-spacing:.08em; text-transform:uppercase; border:1px solid var(--line-strong);
+    background:var(--panel-2); color:var(--muted); white-space:nowrap; line-height:1.6; }
+  .pill::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
+  .sev-CRITICAL { color:var(--crit); } .sev-HIGH { color:var(--high); } .sev-MEDIUM { color:var(--med); } .sev-LOW { color:var(--low); }
+  .empty { padding:22px; text-align:center; color:var(--faint); font-size:13px; }
+  footer { margin-top:24px; padding-top:10px; border-top:1px solid var(--line); color:var(--faint); font-size:11.5px; }
+  @media (max-width:720px) { .kpis { grid-template-columns:repeat(2,minmax(0,1fr)); } .wrap { padding:12px; } }
+"""
+
+
+def render_metrics_html(base_path: str = "") -> str:
+    """The standalone metrics page: `render_metrics_body()` under a plain
+    text header, in a sheet of its own. Served to browsers by the loopback
+    9109 server (`_serve_metrics`), which passes no base path: its two
+    links stay at the root. The dashboard no longer renders this page - its
+    /metrics route wraps the body in the dashboard's own shell, where the
+    links carry the base path (decision 22a) and the band carries the
+    marking (decision 24)."""
+    now = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
+    return (
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width, initial-scale=1">'
+        '<meta name="color-scheme" content="dark">'
+        "<title>Minas AI Guardian · Metrics</title>"
+        '<meta http-equiv="refresh" content="15">'
+        "<style>" + _STANDALONE_STYLE + "</style></head><body>"
+        '<div class="wrap"><header><div><h1>Minas AI Guardian · Metrics</h1>'
+        '<div class="sub">Service telemetry — Prometheus exposition</div></div>'
+        f'<div class="nav"><a class="live" href="{base_path}/">Dashboard</a>'
+        f'<a class="live" href="{base_path}/metrics/raw">Raw</a>'
+        f'<span class="live"><span class="dot"></span> Live · {now}</span></div></header>'
+        + render_metrics_body()
+        + "<footer>Minas AI Guardian · scrapers get the raw exposition format automatically · refreshes every 15s</footer>"
+        "</div></body></html>"
     )
 
 
