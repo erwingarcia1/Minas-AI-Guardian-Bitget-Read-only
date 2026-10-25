@@ -661,7 +661,7 @@ def _render(db: Database, rules=None, qs=None, *, operator: str | None = None) -
         '<section><div class="card"><div class="card-head"><h2>Recent alerts</h2>'
         '<span class="count">latest 50</span></div><table><thead><tr><th>Time</th><th>Account</th>'
         f"<th>Severity</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
-        + _sms_failures_section(db) + _drills_section(db) + _operator_pages_section(db)
+        + _sms_failures_section(db) + _email_failures_section(db) + _drills_section(db) + _operator_pages_section(db)
         + _expected_activity_section(db)
     )
     return _page(nav, body, operator=operator)
@@ -725,6 +725,37 @@ def _sms_failures_section(db: Database) -> str:
         '<section><div class="card"><div class="card-head"><h2>Failed SMS deliveries</h2>'
         '<span class="count">the provider refused these · latest 20</span></div>'
         '<table><thead><tr><th>Time</th><th>Account</th><th>Phone</th><th>Rule</th><th>Provider</th>'
+        f"<th>Reason</th></tr></thead><tbody>{body}</tbody></table></div></section>"
+    )
+
+
+def _email_failures_section(db: Database) -> str:
+    """The email twin of the card above (2026-10-25). A member's password
+    reset "never arrived", and nothing an operator reads would have shown a
+    refused email: this page had the SMS card only, and a notice - the
+    reset among them - is recorded with no account, so no account page
+    shows it either. Every failed email row, whoever it was for: a
+    customer's alert, a notice, a digest, an escalation, a drill, a page to
+    Minas. A failure is a refusal or a provider never reached, and the count
+    line says both. Latest 20, each with its detail: the server's reply to a
+    refusal, the local error when the provider was never reached."""
+    with db.cursor() as cur:
+        cur.execute(
+            "SELECT d.created_at, d.recipient, d.kind, d.rule, d.detail, a.label FROM deliveries d "
+            "LEFT JOIN accounts a ON a.id = d.account_id WHERE d.channel = 'email' AND d.status = 'failed' "
+            "ORDER BY d.created_at DESC, d.id DESC LIMIT 20")
+        rows = cur.fetchall()
+    if not rows:
+        return ""
+    body = "".join(
+        f'<tr><td class="mono">{_ts(r["created_at"])}</td><td>{_dd(r["label"])}</td>'
+        f'<td class="mono">{_dd(r["recipient"])}</td><td>{_dd(r["kind"])}</td>'
+        f'<td class="rule">{_dd(r["rule"])}</td><td>{_dd(r["detail"])}</td></tr>'
+        for r in rows)
+    return (
+        '<section><div class="card"><div class="card-head"><h2>Failed email deliveries</h2>'
+        '<span class="count">the provider refused these or was not reached · latest 20</span></div>'
+        '<table><thead><tr><th>Time</th><th>Account</th><th>To</th><th>Kind</th><th>Rule</th>'
         f"<th>Reason</th></tr></thead><tbody>{body}</tbody></table></div></section>"
     )
 

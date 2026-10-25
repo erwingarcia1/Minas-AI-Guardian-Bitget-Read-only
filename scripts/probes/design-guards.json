@@ -2470,5 +2470,65 @@
    "tests/test_email_refused.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card falls off the overview (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "+ _sms_failures_section(db) + _email_failures_section(db) + _drills_section(db)",
+  "new": "+ _sms_failures_section(db) + _drills_section(db)",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card lists every email row, not only the failed ones (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "WHERE d.channel = 'email' AND d.status = 'failed' \"",
+  "new": "WHERE d.channel = 'email' \"",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card drops a failure with no account - the reset notice itself (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "\"LEFT JOIN accounts a ON a.id = d.account_id WHERE",
+  "new": "\"JOIN accounts a ON a.id = d.account_id WHERE",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card prints the server's reason unescaped (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "<td>{_dd(r[\"detail\"])}</td></tr>'",
+  "new": "<td>{r[\"detail\"]}</td></tr>'",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card renders an empty table when nothing failed (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "    if not rows:\n        return \"\"\n    body = \"\".join(\n        f'<tr><td class=\"mono\">{_ts(r[\"created_at\"])}</td><td>{_dd(r[\"label\"])}</td>'\n        f'<td class=\"mono\">{_dd(r[\"recipient\"])}</td>",
+  "new": "    if False:\n        return \"\"\n    body = \"\".join(\n        f'<tr><td class=\"mono\">{_ts(r[\"created_at\"])}</td><td>{_dd(r[\"label\"])}</td>'\n        f'<td class=\"mono\">{_dd(r[\"recipient\"])}</td>",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card lists the oldest failures, not the newest (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "\"ORDER BY d.created_at DESC, d.id DESC LIMIT 20\")",
+  "new": "\"ORDER BY d.created_at ASC, d.id ASC LIMIT 20\")",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
  }
 ]

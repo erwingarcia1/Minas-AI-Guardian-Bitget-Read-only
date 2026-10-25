@@ -16,6 +16,25 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Added
+
+- **Failed email deliveries are shown to operators (2026-10-25).** A
+  member's password reset "never arrived" (2026-10-24 and 2026-10-25),
+  and nothing an operator reads would have shown a refused email: the
+  ops overview had a card for failed texts and none for email, and a
+  notice such as the reset is recorded with no account, so no account
+  page showed it either. The overview now carries a "Failed email
+  deliveries" card, right after the SMS one. It lists the latest twenty
+  failed email rows of every kind - a customer's alert, a notice, a
+  digest, an escalation, a drill, a page to Minas - each with the time,
+  the account (a dash when there is none, as for a notice), the address,
+  the kind, the rule and the failure's detail (the server's reply to a
+  refusal, or the connection error), escaped. Nothing renders when
+  nothing failed. The ops dashboard is web-only; the app has no
+  counterpart. (The production cause of that reset was not a failed
+  email: the address typed has no portal login. Nothing was sent, and
+  the page says the same either way, by design.)
+
 ### Changed
 
 - **v1.16.0 is deployed (2026-10-24, between 23:52 and 23:56 UTC):** the
