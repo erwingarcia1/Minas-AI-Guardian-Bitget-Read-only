@@ -335,18 +335,26 @@ class AccountPoller:
         the customer is genuinely uninformed: every configured channel refused
         it, or none was configured for that severity at all. Paging on anything
         weaker would train an operator to ignore the channel, which costs more
-        than it buys (#57). And never for an alert left to the digest, where
-        zero is the design rather than a failure."""
+        than it buys (#57). And never where zero is the design rather than a
+        failure: an alert a member snoozed, or one left to the digest."""
         if self._operator_alerter is None:
             return
         with self._db.cursor() as cur:
-            cur.execute("SELECT delivered_to, repeat_of FROM alerts WHERE id = ?", (alert_id,))
+            cur.execute("SELECT delivered_to, repeat_of, snoozed_until FROM alerts WHERE id = ?", (alert_id,))
             row = cur.fetchone()
         if row is None or row["delivered_to"] > 0:
             return
         if row["repeat_of"] is not None:
             return  # a quiet coverage repeat reaches no global channel on purpose
-        # So does an alert left to the digest. MEDIUM and LOW alerts, routine
+        # So does an alert a member snoozed: dispatch withheld every send on
+        # request, and the row says "snoozed until" - the snooze working, not
+        # a channel failing, which is why it has a column of its own
+        # (tests/test_snooze.py). Not a coverage alert: the snooze withheld
+        # Minas's legs too, and "we are not watching this account" must
+        # reach a human whatever a member silenced (alerts/meaning.py).
+        if row["snoozed_until"] and not is_coverage_rule(detection.rule):
+            return
+        # And an alert left to the digest. MEDIUM and LOW alerts, routine
         # receipts included, used to page CRITICAL "nobody was told" - one
         # page per account and severity per cooldown, each an email from the
         # daily SMTP quota the customers' own alerts share. Judged on the

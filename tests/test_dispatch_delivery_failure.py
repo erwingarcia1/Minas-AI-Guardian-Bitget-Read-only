@@ -450,6 +450,55 @@ def test_a_coverage_alert_is_never_left_to_the_digest(db, cipher, tmp_path, crit
     assert _nobody_messages(db)[0].endswith("Check the channels routed for CRITICAL.")
 
 
+# --- ... and neither did an alert a member snoozed ------------------------------
+#
+# A live snooze withholds every send on request and stores the alert with
+# delivered_to = 0 and snoozed_until set - its own column so that a snooze
+# never reads as a broken channel (tests/test_snooze.py). The page read only
+# delivered_to, and called the snooze working "nobody was told".
+
+
+def _snoozed(db, account_id, detection):
+    from sentinel.alerts.dispatch import _dedup_key
+    from sentinel.snooze import snooze_alert
+
+    snooze_alert(db, account_id, _dedup_key(account_id, detection), detection.rule,
+                 hours=1, requested_by="alice@example.com")
+
+
+def test_a_snoozed_alert_pages_nobody(db, cipher):
+    account_id = _account(db, "snoozed")
+    critical = Recording()
+    poller = _paging_poller(db, cipher, RulesConfig("config/rules.yaml"),
+                            {"CRITICAL": [critical], "HIGH": [Recording()], "MEDIUM": [], "LOW": []})
+    detection = _detection()
+    _snoozed(db, account_id, detection)
+
+    poller._emit(account_id, "snoozed", detection)
+
+    with db.cursor() as cur:
+        cur.execute("SELECT delivered_to, snoozed_until FROM alerts WHERE account_id = ?", (account_id,))
+        row = cur.fetchone()
+    assert row["delivered_to"] == 0 and row["snoozed_until"], "the premise: withheld on request"
+    assert critical.sent == [], "the premise: the channel was healthy and simply not asked"
+    assert _nobody_pages(db) == []
+
+
+def test_a_snoozed_coverage_alert_still_pages(db, cipher):
+    """Not "we are not watching this account": the snooze withheld Minas's
+    legs too, and that news must reach a human whatever a member silenced."""
+    account_id = _account(db, "blind-snoozed")
+    poller = _paging_poller(db, cipher, RulesConfig("config/rules.yaml"),
+                            {"CRITICAL": [Recording()], "HIGH": [Recording()], "MEDIUM": [], "LOW": []})
+    detection = Detection(rule="account_unreachable", severity="HIGH", confidence="high",
+                          message="not watched", evidence={"consecutive_failures": 5})
+    _snoozed(db, account_id, detection)
+
+    poller._emit(account_id, "blind-snoozed", detection)
+
+    assert _nobody_pages(db) == [(account_id, "CRITICAL", "HIGH")]
+
+
 @pytest.mark.parametrize("severity, rule", [("HIGH", "withdrawal_burst"), ("CRITICAL", "withdrawal_initiated")])
 def test_a_severity_the_digest_never_reports_still_pages_when_routed_there(db, cipher, tmp_path, severity, rule):
     """build_digest reports MEDIUM and LOW only, so a HIGH or CRITICAL routed

@@ -2600,5 +2600,25 @@
    "tests/test_dispatch_delivery_failure.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: a snoozed alert pages CRITICAL \"nobody was told\" again (2026-10-25)",
+  "file": "sentinel/poller.py",
+  "old": "        if row[\"snoozed_until\"] and not is_coverage_rule(detection.rule):",
+  "new": "        if False:",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: a snoozed coverage alert pages nobody (2026-10-25)",
+  "file": "sentinel/poller.py",
+  "old": "        if row[\"snoozed_until\"] and not is_coverage_rule(detection.rule):",
+  "new": "        if row[\"snoozed_until\"]:",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
  }
 ]

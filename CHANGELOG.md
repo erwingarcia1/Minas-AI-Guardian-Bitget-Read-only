@@ -51,6 +51,16 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   where it used to send the operator to its own severity's channels.
   What customers receive is unchanged.
 
+- **Nor for an alert a member snoozed (2026-10-25).** A live snooze
+  withholds every send on request and marks the alert "snoozed until" -
+  a column of its own, so that a snooze never reads as a broken channel.
+  The page read only the delivered count, and raised a CRITICAL "nobody
+  was told" for a snoozed HIGH or CRITICAL with every channel healthy. A
+  snoozed alert now raises no page, except a coverage alert: the snooze
+  withholds Minas's own channels too, and "we are not watching this
+  account" must reach a human whatever a member silenced. What customers
+  receive is unchanged.
+
 ### Added
 
 - **Failed email deliveries are shown to operators (2026-10-25).** A
