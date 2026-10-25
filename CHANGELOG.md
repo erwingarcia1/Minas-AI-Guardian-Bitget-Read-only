@@ -16,6 +16,17 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Changed
+
+- **v1.17.0 is deployed (2026-10-25, between 14:54 and 14:57 UTC):** the
+  reset request's own limiter, the reset email after the answer, the
+  recovery pages for a signed-in browser, the liveness Email window
+  counting sends, the "Failed email deliveries" card, no "delivered to
+  nobody" page for a digest or snoozed alert, and portal access
+  following a contact move are live at https://guardian.minastrade.com;
+  the readings are in docs/DEPLOYMENTS.md and decision 26 carries the
+  deployed status. No code in this entry.
+
 ## [1.17.0] — 2026-10-25
 
 ### Changed detection behaviour
