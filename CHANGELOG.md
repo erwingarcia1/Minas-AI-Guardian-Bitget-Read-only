@@ -16,6 +16,41 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Changed detection behaviour
+
+- **Minas is no longer paged "delivered to nobody" for the MEDIUM and LOW
+  alerts the digest delivers (2026-10-25).** config/rules.yaml routes
+  MEDIUM and LOW to the digest alone, so on purpose they reach no channel
+  the moment they fire. Every one still raised a CRITICAL
+  `alert_delivered_to_nobody` page ("reached no channel at all ... nobody
+  was told"), at most one per account and alert severity every 30
+  minutes: abnormal fee spend, the receipt for a withdrawal to a
+  destination the account has withdrawn to before, a new deposit source,
+  a withdrawal with no address to check. Each page went to every CRITICAL
+  operator channel - Telegram, the team group, an email to
+  `SMTP_RECIPIENTS` from the same daily sending quota the customers'
+  alert emails use, and a text once SMS is configured.
+
+  After upgrading, a MEDIUM or LOW alert whose severity is routed to the
+  digest and nothing else raises no page. The page still fires as before
+  when something that was routed delivered nothing:
+  - a HIGH or CRITICAL alert that every channel refused, or that no
+    channel was configured for;
+  - a MEDIUM or LOW routed to the digest beside a real channel (say
+    `[digest, email]`) whose email was refused or is not configured;
+  - a coverage alert ("we are not watching this account"), however its
+    tier is routed: it never waits for a digest;
+  - a HIGH or CRITICAL routed to `[digest]` alone. The digest reports
+    only MEDIUM and LOW, so nothing would ever tell Minas about those
+    alerts otherwise.
+
+  The routing judged is the rules.yaml in force now, not the one the
+  process started with: a severity newly routed to a real channel keeps
+  paging until a restart builds that channel. The page now also names
+  the tier the alert went out on - for a coverage alert that is CRITICAL,
+  where it used to send the operator to its own severity's channels.
+  What customers receive is unchanged.
+
 ### Added
 
 - **Failed email deliveries are shown to operators (2026-10-25).** A

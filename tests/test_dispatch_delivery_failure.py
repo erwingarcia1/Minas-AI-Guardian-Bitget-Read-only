@@ -18,7 +18,11 @@ no record - every cycle, for as long as it lasted.
 
 from __future__ import annotations
 
+import json
+import os
 from unittest.mock import MagicMock
+
+import pytest
 
 from sentinel.alerts.dispatch import dispatch
 from sentinel.config import RulesConfig
@@ -261,3 +265,240 @@ def test_no_configured_channel_at_all_also_pages(db, cipher):
     poller._emit(account_id, "nochannels", _detection())
 
     assert len(recent_operator_pages(db)) == 1
+
+
+# --- ... but a tier routed only to the digest reached nobody by design --------
+#
+# config/rules.yaml routes MEDIUM and LOW to [digest] alone, and build_channels
+# skips 'digest' (`sentinel digest` delivers those tiers), so every MEDIUM and
+# LOW alert is stored with delivered_to = 0 on purpose. They paged "reached no
+# channel at all ... nobody was told" at CRITICAL (one per account and
+# severity per cooldown), each page an email to SMTP_RECIPIENTS from the same
+# daily quota the customers' own alert mail is sent from.
+
+
+def _nobody_pages(db):
+    """(account, page severity, alert severity) per alert_delivered_to_nobody row."""
+    with db.cursor() as cur:
+        cur.execute("SELECT account_id, severity, evidence_json FROM operator_pages "
+                    "WHERE rule = 'alert_delivered_to_nobody' ORDER BY id")
+        return [(r["account_id"], r["severity"], json.loads(r["evidence_json"])["severity"])
+                for r in cur.fetchall()]
+
+
+def _paging_poller(db, cipher, rules, channels):
+    from sentinel.alerts.operator import OperatorAlerter
+
+    alerter = OperatorAlerter(db, {"CRITICAL": [Recording()]}, rules)
+    return AccountPoller(db, cipher, rules, channels, operator_alerter=alerter)
+
+
+def _as_built_from_the_repo_routing():
+    """What build_channels makes of config/rules.yaml: 'digest' is skipped, so
+    MEDIUM and LOW carry no channel at all."""
+    return {"CRITICAL": [Recording()], "HIGH": [Recording()], "MEDIUM": [], "LOW": []}
+
+
+def _routing_file(tmp_path, **tiers):
+    """config/rules.yaml's routing table, with `tiers` (severity -> YAML list) changed."""
+    routing = {"CRITICAL": "[telegram, telegram_team, sms, email]", "HIGH": "[telegram, telegram_team, email]",
+               "MEDIUM": "[digest]", "LOW": "[digest]", **tiers}
+    path = tmp_path / "rules.yaml"
+    path.write_text("alerting:\n  routing:\n" + "".join(f"    {sev}: {names}\n" for sev, names in routing.items()))
+    return path
+
+
+def _fee(coin="BTC"):
+    return Detection(rule="abnormal_fee_spend", severity="MEDIUM", confidence="medium",
+                     message="fee spend", evidence={"coin": coin})
+
+
+@pytest.mark.parametrize("rule, severity", [
+    ("abnormal_fee_spend", "MEDIUM"),
+    ("baseline_drift_new_deposit_source", "LOW"),
+])
+def test_an_alert_routed_only_to_the_digest_pages_nobody(db, cipher, rule, severity):
+    """Reaching no global channel is that routing working, not failing."""
+    account_id = _account(db, "digest-only")
+    poller = _paging_poller(db, cipher, RulesConfig("config/rules.yaml"), _as_built_from_the_repo_routing())
+
+    poller._emit(account_id, "digest-only", Detection(rule=rule, severity=severity, confidence="medium",
+                                                       message="m", evidence={"coin": "BTC"}))
+
+    with db.cursor() as cur:
+        cur.execute("SELECT severity, delivered_to FROM alerts WHERE account_id = ?", (account_id,))
+        assert [tuple(r) for r in cur.fetchall()] == [(severity, 0)], "the premise: stored, on no global channel"
+    assert _nobody_pages(db) == []
+
+
+def test_a_routine_receipt_pages_nobody(db, cipher, monkeypatch):
+    """Through the real cycle. A withdrawal to a destination this account has
+    withdrawn to before is a MEDIUM receipt for the digest (2026-09-08),
+    deliberately nobody's page - and it paged Minas at CRITICAL instead."""
+    def client(withdrawals):
+        c = MagicMock()
+        c.fetch_deposits.return_value = []
+        c.fetch_withdrawals.return_value = withdrawals
+        c.fetch_closed_orders.return_value = []
+        c.fetch_balance.return_value = {"total": {"BTC": 1.0}}
+        c.fetch_account_info.return_value = account_info_response()
+        c.fetch_tickers.return_value = {}
+        c.fetch_transfers.return_value = []
+        return c
+
+    monkeypatch.setattr("sentinel.onboarding.make_client", lambda *a, **k: client([]))
+    result = onboard_account(db, cipher, label="receipt", topology="independent",
+                             api_key="k", secret="s", passphrase="p")
+    with db.cursor() as cur:
+        cur.execute("INSERT INTO known_addresses (account_id, address, coin, source, first_seen_at) "
+                    "VALUES (?, 'bc1q-familiar', 'BTC', 'withdrawal_history', '2026-01-01T00:00:00+00:00')",
+                    (result.account_id,))
+        cur.execute("SELECT * FROM accounts WHERE id = ?", (result.account_id,))
+        row = cur.fetchone()
+    monkeypatch.setattr("sentinel.poller.make_client", lambda *a, **k: client(
+        [withdrawal_record(order_id="wd-r1", address="bc1q-familiar")]))
+
+    _paging_poller(db, cipher, RulesConfig("config/rules.yaml"), _as_built_from_the_repo_routing()).run_fast_loop(row)
+
+    with db.cursor() as cur:
+        cur.execute("SELECT rule, severity, delivered_to FROM alerts WHERE account_id = ?", (result.account_id,))
+        assert [tuple(r) for r in cur.fetchall()] == [("withdrawal_initiated", "MEDIUM", 0)], (
+            "the premise: one receipt, on the digest")
+    assert _nobody_pages(db) == []
+
+
+@pytest.mark.parametrize("text", [
+    'polling:\n  jitter_seconds: "10"\n',
+    "alerting:\n  routing:\n    MEDIUM: []\n",
+], ids=["no-routing-table", "empty-medium-list"])
+def test_an_unusable_routing_is_judged_by_the_schema_default(db, cipher, tmp_path, text):
+    """build_channels routes a tier with no usable routing - no table at all,
+    or an empty list - on rules_schema.DEFAULTS: MEDIUM to the digest,
+    CRITICAL to real channels. The page must judge that same table."""
+    path = tmp_path / "rules.yaml"
+    path.write_text(text)
+    account_id = _account(db, "defaults")
+    poller = _paging_poller(db, cipher, RulesConfig(path), {"CRITICAL": [], "HIGH": [], "MEDIUM": [], "LOW": []})
+
+    poller._emit(account_id, "defaults", _fee())
+    assert _nobody_pages(db) == []
+    poller._emit(account_id, "defaults", _detection())
+    assert _nobody_pages(db) == [(account_id, "CRITICAL", "CRITICAL")], "the default exempts its digest tiers only"
+
+
+def test_the_live_routing_is_judged_not_the_one_the_channels_were_built_from(db, cipher, tmp_path):
+    """Channels are built once at startup; rules.yaml hot-reloads. A MEDIUM
+    newly routed to email cannot reach email until a restart builds that
+    channel, and this page is what says so - judged against the startup
+    routing it would stay silent while the operator believes the route live."""
+    path = _routing_file(tmp_path)
+    rules = RulesConfig(path)
+    account_id = _account(db, "reloaded")
+    poller = _paging_poller(db, cipher, rules, _as_built_from_the_repo_routing())
+
+    poller._emit(account_id, "reloaded", _fee("BTC"))
+    assert _nobody_pages(db) == []
+
+    _routing_file(tmp_path, MEDIUM="[digest, email]")
+    later = path.stat().st_mtime + 10
+    os.utime(path, (later, later))
+    assert rules.get("alerting", "routing", "MEDIUM") == ["digest", "email"], "the reload must land"
+    poller._emit(account_id, "reloaded", _fee("ETH"))
+    assert _nobody_pages(db) == [(account_id, "CRITICAL", "MEDIUM")]
+
+
+@pytest.mark.parametrize("medium_channels", [[], [Broken()]], ids=["email-unconfigured", "email-failing"])
+def test_a_real_channel_routed_beside_the_digest_still_pages(db, cipher, tmp_path, medium_channels):
+    """MEDIUM: [digest, email] asks for an email now. With SMTP unset
+    build_channels drops the leg; with SMTP refusing, the send fails. Either
+    way the email that was routed did not happen."""
+    account_id = _account(db, "beside")
+    poller = _paging_poller(db, cipher, RulesConfig(_routing_file(tmp_path, MEDIUM="[digest, email]")),
+                            {"CRITICAL": [Recording()], "HIGH": [Recording()], "MEDIUM": medium_channels, "LOW": []})
+
+    poller._emit(account_id, "beside", _fee())
+
+    assert _nobody_pages(db) == [(account_id, "CRITICAL", "MEDIUM")]
+
+
+def _nobody_messages(db):
+    with db.cursor() as cur:
+        cur.execute("SELECT message FROM operator_pages WHERE rule = 'alert_delivered_to_nobody' ORDER BY id")
+        return [r["message"] for r in cur.fetchall()]
+
+
+@pytest.mark.parametrize("critical", [None, "[digest]"], ids=["as-shipped", "direct-tier-on-the-digest"])
+def test_a_coverage_alert_is_never_left_to_the_digest(db, cipher, tmp_path, critical):
+    """A coverage alert routes on the CRITICAL tier whatever severity its
+    detector chose (meaning.routing_tier, #103 item 3) - 41 MEDIUM unreachable
+    alerts once went to a digest that never ran. Judged by its own severity's
+    routing it would be left to the digest again, and reaching nobody silent.
+    "We are not watching this account" never waits for a digest, so not even
+    a direct tier routed there excuses it. The page names the tier the alert
+    went out on, which is where the operator has to look."""
+    account_id = _account(db, "blind")
+    if critical is None:
+        rules, built = RulesConfig("config/rules.yaml"), [Broken()]
+    else:
+        rules, built = RulesConfig(_routing_file(tmp_path, CRITICAL=critical)), []
+    poller = _paging_poller(db, cipher, rules, {"CRITICAL": built, "HIGH": [Recording()], "MEDIUM": [], "LOW": []})
+
+    poller._emit(account_id, "blind", Detection(rule="account_unreachable", severity="MEDIUM", confidence="high",
+                                                message="not watched", evidence={"consecutive_failures": 5}))
+
+    assert _nobody_pages(db) == [(account_id, "CRITICAL", "MEDIUM")]
+    assert _nobody_messages(db)[0].endswith("Check the channels routed for CRITICAL.")
+
+
+@pytest.mark.parametrize("severity, rule", [("HIGH", "withdrawal_burst"), ("CRITICAL", "withdrawal_initiated")])
+def test_a_severity_the_digest_never_reports_still_pages_when_routed_there(db, cipher, tmp_path, severity, rule):
+    """build_digest reports MEDIUM and LOW only, so a HIGH or CRITICAL routed
+    to [digest] alone reaches no one at Minas, now or later - and
+    build_channels skips 'digest' without recording a problem. This page is
+    the only thing on the Minas side that says so."""
+    account_id = _account(db, "misrouted")
+    poller = _paging_poller(db, cipher, RulesConfig(_routing_file(tmp_path, **{severity: "[digest]"})),
+                            {"CRITICAL": [], "HIGH": [], "MEDIUM": [], "LOW": []})
+
+    poller._emit(account_id, "misrouted", Detection(rule=rule, severity=severity, confidence="high",
+                                                    message="m", evidence={}))
+
+    assert _nobody_pages(db) == [(account_id, "CRITICAL", severity)]
+
+
+def test_the_severities_left_to_the_digest_are_the_ones_it_reports(db):
+    """The page leaves an alert to `sentinel digest` only at a severity
+    build_digest reports, and build_digest selects by severity, not by
+    routing - so the two must agree. Run, not read: a severity the digest
+    stopped reporting would be left to a report that never mentions it."""
+    from sentinel.alerts.digest import build_digest
+    from sentinel.poller import _DIGEST_SEVERITIES
+
+    account_id = _account(db, "digest-report")
+    severities = ("CRITICAL", "HIGH", "MEDIUM", "LOW")
+    for severity in severities:
+        dispatch(db, {}, account_id, "acct", Detection(rule=f"{severity.lower()}_rule", severity=severity,
+                                                       confidence="high", message="m", evidence={}), COOLDOWNS)
+
+    body = build_digest(db)
+
+    assert {s for s in severities if f"{s.lower()}_rule" in body} == set(_DIGEST_SEVERITIES)
+
+
+def test_the_page_stays_one_per_account_and_severity(db, cipher):
+    """The dedup the page already had (per account, dedup_scope = severity):
+    two CRITICALs reaching nobody on one account are one page; a HIGH there,
+    or a CRITICAL on another account, is a page of its own."""
+    first, second = _account(db, "first"), _account(db, "second")
+    poller = _paging_poller(db, cipher, RulesConfig("config/rules.yaml"),
+                            {"CRITICAL": [Broken()], "HIGH": [Broken()], "MEDIUM": [], "LOW": []})
+
+    poller._emit(first, "first", _detection())
+    poller._emit(first, "first", Detection(rule="withdrawal_initiated", severity="CRITICAL", confidence="high",
+                                           message="another", evidence={"order_id": "wd-2"}))
+    poller._emit(first, "first", Detection(rule="withdrawal_burst", severity="HIGH", confidence="high",
+                                           message="burst", evidence={}))
+    poller._emit(second, "second", _detection())
+
+    assert _nobody_pages(db) == [(first, "CRITICAL", "CRITICAL"), (first, "CRITICAL", "HIGH"),
+                                 (second, "CRITICAL", "CRITICAL")]

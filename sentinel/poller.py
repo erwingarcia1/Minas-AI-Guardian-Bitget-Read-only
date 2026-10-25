@@ -13,7 +13,7 @@ from sentinel.alerts.fleet import (
     others_in_auth_failure,
     page_host_auth_incident,
 )
-from sentinel.alerts.meaning import coverage_repeat_cooldowns, is_coverage_rule
+from sentinel.alerts.meaning import coverage_repeat_cooldowns, is_coverage_rule, routing_tier
 from sentinel.baseline import (
     known_traded_pairs,
     known_transfer_routes,
@@ -52,6 +52,7 @@ from sentinel.exchange import ExchangeClient, TamperSignal, exchange_account_uid
 from sentinel.identity import annotate_batch_occurrences, is_unidentifiable
 from sentinel.naming import display_label
 from sentinel.numeric import to_decimal
+from sentinel.rules_schema import default_for
 
 logger = logging.getLogger("sentinel.poller")
 
@@ -126,6 +127,42 @@ def _update_poll_state(db: Database, account_id: int, **fields) -> None:
             f"UPDATE poll_state SET {set_clause} WHERE account_id = ?",
             (*fields.values(), account_id),
         )
+
+
+# What the ops digest reports (build_digest in alerts/digest.py, the part of
+# `sentinel digest` sent to Minas): it selects by severity, MEDIUM and LOW. A
+# severity routed to the digest alone is delivered later if it is one of these
+# and never otherwise - a HIGH routed there reaches no one at Minas, and
+# build_channels skips 'digest' without recording a problem.
+_DIGEST_SEVERITIES = frozenset({"MEDIUM", "LOW"})
+
+
+def _left_to_the_digest(rules, rule: str, severity: str) -> bool:
+    """True when an alert reaching no global channel is the design working:
+    its severity's routing names the digest and no other channel - MEDIUM
+    and LOW as shipped - and the digest reports that severity.
+
+    Never a coverage alert. "We are not watching this account" routes on the
+    direct tier whatever its severity and must never wait for a digest
+    (alerts/meaning.py), so reaching nobody is a failure however that tier
+    is routed. Any other alert routes on its own severity
+    (meaning.routing_tier), which is the routing judged here.
+
+    The routing is resolved as cli.build_channels resolves it - the
+    configured list, or the schema default when none is usable - but on the
+    rules as they are now, which can be newer than the table the channels
+    were built from at startup (the caller says why). The GLOBAL rules, not
+    the per-account overlay: routing is not a per-account setting
+    (overrides.validate_setting refuses a list), and the channels dispatch
+    used are global."""
+    if is_coverage_rule(rule):
+        return False
+    if severity not in _DIGEST_SEVERITIES:
+        return False
+    routed = rules.get("alerting", "routing", severity, default=None)
+    if not routed:  # None or [] - build_channels falls back on both
+        routed = default_for("alerting", "routing", severity)
+    return routed is not None and set(routed) == {"digest"}
 
 
 class AccountPoller:
@@ -298,7 +335,8 @@ class AccountPoller:
         the customer is genuinely uninformed: every configured channel refused
         it, or none was configured for that severity at all. Paging on anything
         weaker would train an operator to ignore the channel, which costs more
-        than it buys (#57)."""
+        than it buys (#57). And never for an alert left to the digest, where
+        zero is the design rather than a failure."""
         if self._operator_alerter is None:
             return
         with self._db.cursor() as cur:
@@ -308,13 +346,27 @@ class AccountPoller:
             return
         if row["repeat_of"] is not None:
             return  # a quiet coverage repeat reaches no global channel on purpose
+        # So does an alert left to the digest. MEDIUM and LOW alerts, routine
+        # receipts included, used to page CRITICAL "nobody was told" - one
+        # page per account and severity per cooldown, each an email from the
+        # daily SMTP quota the customers' own alerts share. Judged on the
+        # LIVE rules, not the routing the channels were built from: channels
+        # are built once at startup (cli.cmd_run) while rules.yaml
+        # hot-reloads, so a severity newly routed to a channel this process
+        # cannot reach before a restart still pages - nothing else tells the
+        # operator that edit has not taken.
+        if _left_to_the_digest(self._rules, detection.rule, detection.severity):
+            return
+        # The tier dispatch routed it on: a coverage alert's is the direct
+        # one, whatever its severity, and that is where to look.
+        tier = routing_tier(detection.rule, detection.severity)
         self._operator_alerter.page(
             rule="alert_delivered_to_nobody",
             severity="CRITICAL",
             message=(
                 f"A {detection.severity} alert ({detection.rule}) on {label} was detected and "
                 f"reached no channel at all. It is recorded in the customer's alert history, "
-                f"but nobody was told. Check the channels routed for {detection.severity}."
+                f"but nobody was told. Check the channels routed for {tier}."
             ),
             evidence={
                 "alert_id": alert_id,
