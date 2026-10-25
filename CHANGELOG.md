@@ -16,6 +16,17 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Changed
+
+- **v1.16.0 is deployed (2026-10-24, between 23:52 and 23:56 UTC):** the
+  landing page as the portal's front door, the sign-in at `/login`, an
+  ended session landing on the front door, the `ui-parity` skill and its
+  hook, and the day's records are live at https://guardian.minastrade.com;
+  the readings are in docs/DEPLOYMENTS.md and decision 25 carries the
+  deployed status. The app's welcome screen is in the app bundle, which
+  reaches a phone through Expo Go or a store build, not through this
+  deploy. No code in this entry.
+
 ## [1.16.0] — 2026-10-24
 
 ### Added

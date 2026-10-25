@@ -21,6 +21,82 @@ Newest entry first.
 
 ---
 
+## 2026-10-24 · v1.16.0 (current, from v1.15.0): the landing page, on the web and in the app
+
+Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
+the command typed with the `!` prefix and its output read by the session
+(docs/deployment.md "Deploying code changes"). Cut the same evening from
+`main` at `474ab55` (the merge of #135, 23:07) by `scripts/release.sh
+1.16.0`, run in the session's worktree on a `release-1.16.0` branch
+published first so the script's bare `git push` had a same-named
+upstream, then fast-forwarded onto `main` and the branch deleted: the
+scheduled-gates cover accepted the dispatched run on `474ab55` itself
+(run 40142236669, 23:19 to 23:35, probes and mutation floor green) as
+covering the tree, so the fast gates ran locally - ruff, the suite
+(440 s), the coverage floor, pip-audit, the issue-status audit,
+"scheduled gates ran (8d)" and release objects, with the design-guard
+probes and the mutation floor skipped under `--fast` as already run;
+release commit `fb70525` (23:43:57), annotated tag `v1.16.0`, the GitHub
+Release published (23:44:09), CI on the release commit green (run
+40144002099, 23:45 to 23:52). Times are UTC.
+
+**The deploy:** `sudo /opt/minas-guardian/scripts/deploy.sh v1.16.0`,
+between 23:52 and 23:56 - preflight clean; tags fetched; running before:
+1.15.0 at `4a5941d`; checkout `fb70525`, detached; `deploy-gate: OK -
+HEAD is v1.16.0 (fb70525)`; the image built from a 248 kB context, `pip`
+installing `sentinel-1.16.0` (with `segno-1.6.6`, `ccxt-4.5.63`,
+`cryptography-50.0.2` and `anthropic-2.3.0` among its dependencies); the
+live `config/rules.yaml` validated against the new image ("valid — every
+setting is recognised and in range"); the switchover recreated
+`minas-guardian-sentinel-1` only and left `caddy` running; healthy; the
+version assertion:
+
+```
+Minas AI Guardian 1.16.0
+  commit   fb70525e380756d74605a16d8b1e0dcd33268166
+  tag      v1.16.0
+  source   build-arg
+deploy: OK — v1.16.0 is live and verified
+```
+
+**The readings afterwards** (from outside, by the session, 23:56; the
+on-box `git describe` and `compose ps` readings were not taken this
+time - the version assertion above is the container's own answer):
+
+```
+curl -o /dev/null -w '%{http_code} %{redirect_url}' /healthz    -> 303 https://guardian.minastrade.com/   (the runbook's new smoke check)
+curl ... /alerts (no session)                                   -> 303 https://guardian.minastrade.com/
+curl / | grep -c 'id="landing-title"'                           -> 1   (the landing page is the front door)
+curl / | grep -c 'Our only address'                             -> 1   (the one address, from the setting)
+curl / | grep -c 'Our address has changed'                      -> 0   (the host is recognised)
+curl / | grep -c 'signin-title'                                 -> 0   (the form is no longer at /)
+curl /  (step 2's numbers)                                      -> "about every 45 seconds; permissions and allowlists about every 10 minutes" (the box's rules.yaml)
+curl /login | grep -c 'name="password"'                         -> 1   (the sign-in form, at /login)
+curl /login | grep -c 'Our only address'                        -> 1
+curl -b 'minas_portal=stale' / (headers)                        -> 200; set-cookie: minas_portal=; Max-Age=0; Path=/; HttpOnly; Secure; SameSite=Lax;
+                                                                   strict-transport-security: max-age=31536000; x-frame-options: DENY;
+                                                                   content-security-policy: frame-ancestors 'none'
+curl -b 'minas_portal=stale' / | grep -c 'You were signed out'  -> 1   (a rejected cookie says so, once, and is cleared)
+curl /api/v1/limits                                             -> 401 (the app API)
+curl /admin                                                     -> 401 (the dashboard's sign-in, still only under /admin)
+curl http://guardian.minastrade.com/                            -> 308 https://guardian.minastrade.com/
+```
+
+**What shipped** (CHANGELOG `[1.16.0]`): the landing page as the portal's
+front door, the sign-in at `/login`, an ended session landing on the
+front door with "You were signed out." (decision 25); the `ui-parity`
+skill and its hook; the v1.15.0 deploy record. The app's welcome screen
+with the same sentences is in the app bundle, which reaches a phone
+through Expo Go or a store build, not through this deploy.
+
+**Still outside this entry:** the Tailscale admin-console removal of the
+machine; the pending keys and the SMS provider (CHANGELOG's pending
+list); #125's wording; the owner's own look at `/` and `/login` in a
+browser and at the welcome screen on a phone; the Apple Developer
+Program, without which there is no iPhone build beyond Expo Go.
+
+---
+
 ## 2026-10-24 · v1.15.0 (current, from v1.14.0): the QR enrolment and the dashboard in the Minas identity
 
 Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
