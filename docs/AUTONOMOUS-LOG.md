@@ -8207,3 +8207,45 @@ Standing from the previous entry: the pending exchange keys and the SMS
 provider; #125; the fleet-health KPI, the triage auto-refresh and the
 phone-width tables on the dashboard; docs/DEPLOYMENTS.md:75's "unbranded
 ops view".
+
+**Later (2026-10-24, 23:07 to 23:56 UTC): v1.16.0 cut and deployed.** The
+owner's "merge successful. let's release and deploy" (main at `474ab55`,
+the merge of #135, 23:07). The version: 1.16.0, MINOR - a new page and a
+new app screen, nothing that changes detection behaviour, a schema or a
+setting. The slow gates had not run on the landing-page code, so the CI
+workflow was dispatched on `474ab55` (run 40142236669, probes and
+mutation floor green in sixteen minutes) while the fast gates ran here
+ahead of the script; `scripts/scheduled-gates-cover.sh` then accepted
+that run (the commit is HEAD itself, so no gate path changed since), and
+`scripts/release.sh 1.16.0` ran the fast gates only. Two things about
+cutting from this worktree: `main` is checked out in the main checkout,
+so the worktree cannot be put on it, and the worktree guard refuses
+`GIT_CONFIG_COUNT`/`push.default` injection, so the script's bare `git
+push` was given a same-named upstream by publishing `release-1.16.0`
+first, and afterwards `main` was fast-forwarded to the release commit
+and the branch deleted; and the worktree needed `.venv` linked to the
+main checkout's (the common exclude hides the link), with the editable
+install repointed at the main checkout afterwards. Release commit
+`fb70525` (23:43:57), tag pushed, GitHub Release published (23:44:09),
+CI on the release commit green (run 40144002099, 23:52). The deploy was
+the owner's `!` line, read here: preflight clean, running before 1.15.0
+at `4a5941d`, checkout `fb70525`, gate OK, the image built with
+`sentinel-1.16.0`, the live config valid against it, the switchover
+recreated the sentinel container only (caddy left running), healthy, the
+version asserted. The outside checks at 23:56, all as the runbook now
+expects: `/healthz` and `/alerts` without a session 303 to `/`; `/`
+carries `id="landing-title"`, the one address and the box's polling
+numbers (45 seconds, 10 minutes) and no sign-in form; `/login` carries
+the form and the address; a stale cookie on `/` gets "You were signed
+out." and a `Max-Age=0` clearing, under the edge headers;
+`/api/v1/limits` 401; `/admin` 401; http 308. Not taken this time: the
+on-box `git describe` and `compose ps` readings. The record:
+docs/DEPLOYMENTS.md's v1.16.0 entry; decision 25 carries the deployed
+status; CHANGELOG [Unreleased] notes the deploy. Earlier in the evening
+the owner asked how to get the app onto an iPhone: Expo Go against the
+real server is the only route until the company is in the Apple
+Developer Program (TestFlight, ad hoc and a Mac's free signing all need
+it); an Android APK from the `preview` profile needs no account. Next:
+the owner's look at `/` and `/login` in a browser and at the welcome
+screen on the phone; the pending keys and the SMS provider; #125; the
+Apple enrolment, then the TestFlight build.

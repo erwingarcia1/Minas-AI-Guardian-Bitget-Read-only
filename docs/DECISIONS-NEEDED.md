@@ -43,7 +43,7 @@ accounts (section 21, "Not built yet"); the sections stay as the record.
 | 22 | One public address, guardian.minastrade.com; no Tailscale | ~~#88~~ (the address); the hostname the apps are built against | **ANSWERED 2026-10-22 and 2026-10-23** — one hostname; the dashboard at `/admin` behind its sign-in and mandatory second factor, no IP allowlist; TLS by Caddy on the instance; Tailscale removed in one go, host access by SSH with the key pair at the Elastic IP; no overlap period for the old address; slow gates waived for the release that ships it; see section 22. **Built and deployed 2026-10-24 (v1.14.0)**; the email to members went the same day (22d); left: the Tailscale admin-console removal (the owner's) |
 | 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **ANSWERED 2026-10-24** — `segno` accepted by the merge of the QR PR (#130); the three renderings read by Google Authenticator the same day; shipped in v1.15.0 and deployed; see section 23 |
 | 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24. **Deployed 2026-10-24 (v1.15.0)** |
-| 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25 |
+| 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25. **Deployed 2026-10-24 (v1.16.0)** |
 
 ---
 
@@ -2445,6 +2445,9 @@ CONTRIBUTING.md has the section "A UI change lands on every surface".
 lands on the login page" existed so that a visitor without a session
 cannot tell which paths exist. The 303 to `/` keeps that: a member page
 and an unknown path answer identically.
+
+**Deployed 2026-10-24** in v1.16.0, between 23:52 and 23:56 UTC, the
+evening the owner merged #135 (docs/DEPLOYMENTS.md).
 
 ### What it blocks
 
