@@ -145,6 +145,52 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   reads live, and an unset `SMTP_HOST`/`SMTP_SENDER` is still dead for
   that reason.
 
+- **Moving an alert contact takes the old address's portal access with
+  it, and says what the new address needs (#61, decisions 10 and 26;
+  2026-10-25).** `sentinel set-contact` is the only way to move an
+  account's primary (`--alert-email`) or emergency
+  (`--alert-email-secondary`) contact, and it updated `accounts` alone.
+  A portal login issued from an account page is scoped to its grants
+  (#61), so a scoped login for the OLD address kept its grant: it could
+  still open the account, read it and acknowledge its alerts - which
+  stops the escalation ladder - while the destination-change notice told
+  that same address it could no longer see the account. The move now
+  revokes that grant when the old address is no longer a contact on the
+  account (`revoke_account`, recorded as `member_account_revoked` against
+  the `--as` operator). The rest of the login is untouched: an address
+  kept on as the other contact keeps its access, the login's password
+  and other accounts are unchanged, and a legacy (unscoped) login is
+  left as it was - its scope is its contact rows, which the move already
+  dropped, and revoking would have frozen them into grants. Revoked
+  rather than reworded (decision 26): a mailbox somebody moved away
+  from, perhaps because it was compromised, must not keep access.
+
+  For each moved contact the command now prints the new address's login
+  state - no login yet (issue one from the account page, "Generate
+  portal password"), a login that does not open this account (grant it,
+  "Grant this account"), or one that already does - and one line for
+  each old address whose access ended. Nothing is issued or granted for
+  the new address: scope is explicit and operator-issued. The final
+  `contact for '<label>': ...` line is unchanged.
+
+  The notice to the address being removed now says only what is true
+  after the change. "This address can no longer see the account in the
+  Minas portal" is included only when `member_accounts`, the function
+  the portal enforces access with, agrees. An address the same command
+  kept on as the emergency contact is no longer told "Alerts about this
+  account will no longer be sent to this address" - it is told it stays
+  on as the emergency contact, contacted only when the primary contact
+  has not responded to an alert.
+
+- **`sentinel set-contact --alert-phone` without `--alert-email` is
+  refused (decision 4, 2026-10-25).** Decision 4's floor - the primary
+  email cannot be removed - held against `--clear` and a blank
+  `--alert-email`, but a call with `--alert-phone` alone set the primary
+  pair to no email and that phone, writing the email NULL. Now that the
+  portal login follows a move, that typo would also have taken the
+  customer's own access. The primary pair is set together: to change
+  only the phone, restate the current email with `--alert-email`.
+
 ## [1.16.0] — 2026-10-24
 
 ### Added

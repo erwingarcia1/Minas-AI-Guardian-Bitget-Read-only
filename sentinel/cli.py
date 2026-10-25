@@ -1128,13 +1128,17 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
                 changes.append(("sms_alerts_changed",
                                 {"from": bool(before["sms_alerts_enabled"]),
                                  "to": bool(enabled)}))
-        if primary_requested and (args.clear or (args.alert_email is not None and not args.alert_email.strip())):
+        if primary_requested and (args.clear or not (args.alert_email or "").strip()):
             # Decision 4 (#24): the primary email is the floor - the one
             # channel that cannot be switched off - so it cannot be cleared
-            # either. Move it with --alert-email; clearing just the phone
-            # needs the email restated.
+            # either. Move it with --alert-email; changing or clearing just
+            # the phone needs the email restated. Until 2026-10-25 a call
+            # with --alert-phone alone got past this and wrote the email
+            # NULL - and since the portal login follows a move, it would
+            # have taken the customer's own access with it.
             print("the primary email cannot be removed: it is the alert channel that cannot be "
-                  "switched off. Pass --alert-email <address> to change it.", file=sys.stderr)
+                  "switched off. Pass --alert-email <address> to change it; to change only the "
+                  "phone, restate the current email with --alert-email.", file=sys.stderr)
             return 2
         if args.clear:
             email, phone = None, None
@@ -1171,14 +1175,66 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
                                  "email_to": sec_email,
                                  "phone_from": before["alert_phone_secondary"],
                                  "phone_to": sec_phone}))
+    from sentinel.portal import (
+        contact_accounts,
+        is_scoped,
+        member_accounts,
+        member_exists,
+        revoke_account,
+    )
+
+    # The portal login follows the move (#61, decision 10). Logins are keyed
+    # by email and a SCOPED one opens exactly its grants, so moving a contact
+    # in `accounts` alone left a scoped login for the old address holding its
+    # grant - still reading the account and acknowledging its alerts, which
+    # stops the escalation ladder - while the notice told that address it
+    # could no longer see it. Revoked rather than reworded (decision 26): a
+    # mailbox somebody moved away from, perhaps because it was compromised,
+    # must not keep access. Only for an address the move took OFF the account
+    # (one kept as the other contact keeps its access), and never for a
+    # LEGACY login: its scope is its contact rows, which the UPDATE already
+    # dropped, and revoke_account would materialise them into grants first.
+    # The new address is reported, not granted: scope is explicit and
+    # operator-issued, so the command says what is missing and where.
+    roles = {"alert_contact_updated": "primary", "secondary_contact_updated": "emergency"}
+    portal_lines: list[str] = []
+
+    def _this_account_in(rows) -> bool:
+        return any(int(r["id"]) == account_id for r in rows)
+
+    def _follow_the_move(role: str, old: str | None, new: str | None) -> None:
+        if old is not None and not _this_account_in(contact_accounts(db, old)):
+            if is_scoped(db, old):
+                if revoke_account(db, old, account_id, actor):
+                    portal_lines.append(f"portal: {old} no longer opens '{args.label}' - "
+                                        "its access to this account was removed")
+            elif member_exists(db, old):
+                portal_lines.append(f"portal: {old} no longer opens '{args.label}' - "
+                                    "it is no longer a contact on this account")
+        if new is None:
+            return
+        who = f"portal: the new {role} contact {new}"
+        if not member_exists(db, new):
+            portal_lines.append(f"{who} has no portal login yet - issue one from the account "
+                                'page ("Generate portal password")')
+        elif _this_account_in(member_accounts(db, new)):
+            portal_lines.append(f"{who} has a portal login that already opens '{args.label}'")
+        else:
+            portal_lines.append(f"{who} has a portal login that does not open '{args.label}' - "
+                                'grant it from the account page ("Grant this account")')
+
     for event_type, payload in changes:
         # `actor` is the --as name once the gate above captured one, and None
         # before operator accounts exist - the unattributed row IS the record
         # then (see the actor note on `config_changes` in schema.sql).
         append_event(db, account_id, event_type, "LOW", payload, actor=actor)
+        if event_type in roles and payload["email_from"] != payload["email_to"]:
+            # Before the notice below, which states the access this settles.
+            _follow_the_move(roles[event_type], payload["email_from"], payload["email_to"])
         if event_type == "alert_contact_updated":
-            # The address being removed loses sight of this account the moment
-            # the change lands, so the record of it never reaches them. See
+            # The address being removed - unless this change kept it on as the
+            # other contact - loses sight of this account the moment the
+            # change lands, so the record of it never reaches them. See
             # notify_alert_destination_change.
             notify_alert_destination_change(
                 db, args.label, payload["email_from"], payload["email_to"])
@@ -1202,6 +1258,9 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
             f"phone={before['alert_phone'] or '-'} "
             f"secondary_email={before['alert_email_secondary'] or '-'} "
             f"secondary_phone={before['alert_phone_secondary'] or '-'}")
+    # Once each: one address leaving both roles is one fact.
+    for line in dict.fromkeys(portal_lines):
+        print(line)
     print(f"contact for '{args.label}': " + " ".join(parts))
     return 0
 
@@ -1411,7 +1470,8 @@ def main() -> None:
     contact_parser = sub.add_parser("set-contact", help="Set/clear an account's alert destinations (primary and emergency contact)")
     contact_parser.add_argument("--label", required=True)
     contact_parser.add_argument("--alert-email")
-    contact_parser.add_argument("--alert-phone")
+    contact_parser.add_argument("--alert-phone",
+                                help="the primary phone; set with --alert-email, as a pair (decision 4)")
     contact_parser.add_argument("--clear", action="store_true", help="remove the primary email and phone")
     contact_parser.add_argument("--alert-email-secondary", help="the emergency contact's email (#91)")
     contact_parser.add_argument("--alert-phone-secondary", help="the emergency contact's phone")

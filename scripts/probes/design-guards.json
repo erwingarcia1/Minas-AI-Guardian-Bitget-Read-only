@@ -2620,5 +2620,137 @@
    "tests/test_dispatch_delivery_failure.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "#61 set-contact moves a contact and leaves the old address's scoped grant in place",
+  "file": "sentinel/cli.py",
+  "old": "                if revoke_account(db, old, account_id, actor):",
+  "new": "                if False:",
+  "tests": [
+   "tests/test_set_contact.py",
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 the revocation that follows a contact move is recorded without the operator's name",
+  "file": "sentinel/cli.py",
+  "old": "                if revoke_account(db, old, account_id, actor):",
+  "new": "                if revoke_account(db, old, account_id, None):",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 set-contact revokes through a legacy login, materialising its scope",
+  "file": "sentinel/cli.py",
+  "old": "            if is_scoped(db, old):",
+  "new": "            if member_exists(db, old):",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 set-contact revokes the grant of an address the move kept on the account",
+  "file": "sentinel/cli.py",
+  "old": "        if old is not None and not _this_account_in(contact_accounts(db, old)):",
+  "new": "        if old is not None:",
+  "tests": [
+   "tests/test_set_contact.py",
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 set-contact tells the operator a new address with no login already opens the account",
+  "file": "sentinel/cli.py",
+  "old": "        if not member_exists(db, new):",
+  "new": "        if False:",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 set-contact reads the new address's access from the contact rows instead of the isolation boundary",
+  "file": "sentinel/cli.py",
+  "old": "        elif _this_account_in(member_accounts(db, new)):",
+  "new": "        elif _this_account_in(contact_accounts(db, new)):",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 re-running set-contact with unchanged addresses reports login lines",
+  "file": "sentinel/cli.py",
+  "old": "        if event_type in roles and payload[\"email_from\"] != payload[\"email_to\"]:",
+  "new": "        if event_type in roles:",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "notices: the destination-change notice tells an address that still opens the account it cannot see it",
+  "file": "sentinel/events.py",
+  "old": "    still_opens = any(r[\"label\"] == account_label for r in member_accounts(db, old_email))",
+  "new": "    still_opens = False",
+  "tests": [
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "notices: the destination-change notice drops the portal sentence for an address that has lost the account",
+  "file": "sentinel/events.py",
+  "old": "    still_opens = any(r[\"label\"] == account_label for r in member_accounts(db, old_email))",
+  "new": "    still_opens = True",
+  "tests": [
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 4: set-contact with --alert-phone alone clears the primary email again (2026-10-25)",
+  "file": "sentinel/cli.py",
+  "old": "        if primary_requested and (args.clear or not (args.alert_email or \"\").strip()):",
+  "new": "        if primary_requested and (args.clear or (args.alert_email is not None and not args.alert_email.strip())):",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 one address leaving both roles is reported to the operator once per role",
+  "file": "sentinel/cli.py",
+  "old": "    for line in dict.fromkeys(portal_lines):",
+  "new": "    for line in portal_lines:",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "notices: the destination-change notice tells an address kept on as emergency contact that no alert will reach it",
+  "file": "sentinel/events.py",
+  "old": "    still_contact = any(r[\"label\"] == account_label for r in contact_accounts(db, old_email))",
+  "new": "    still_contact = False",
+  "tests": [
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "notices: the destination-change notice tells an address that has left the account it stays on as the emergency contact",
+  "file": "sentinel/events.py",
+  "old": "    still_contact = any(r[\"label\"] == account_label for r in contact_accounts(db, old_email))",
+  "new": "    still_contact = True",
+  "tests": [
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
  }
 ]

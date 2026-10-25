@@ -18,13 +18,17 @@ true and proves nothing about the four call sites that have to use it.
 """
 from __future__ import annotations
 
+import argparse
+
 import pytest
 
+from sentinel.cli import cmd_set_contact
 from sentinel.events import notify_alert_destination_change
 from sentinel.portal import (
     _send_password_changed_email,
     _send_reset_email,
     _send_two_factor_disabled_email,
+    member_accounts,
     set_member_password,
 )
 
@@ -106,3 +110,54 @@ def test_every_notice_sender_goes_through_the_same_adapter(db, captured):
 
     assert len(captured) == 5
     assert all(d.is_notice is True for d, _ in captured)
+
+
+# --- the destination-change notice says only what the portal does -------------
+#
+# The notice to the address being removed says "this address can no longer
+# see the account in the Minas portal". Until set-contact took the portal
+# login with the move, that was false for a SCOPED login (#61: it opens its
+# grants, which the move did not touch) and it is still false for an address
+# the same command kept on the account - moved from primary to emergency
+# contact. A tripwire that lies about access is one the customer learns to
+# disbelieve, so the sentence must agree with `member_accounts`, the
+# function the portal enforces with, after the change.
+
+PORTAL_SENTENCE = "this address can no longer see the account in the Minas portal"
+
+
+@pytest.mark.parametrize("login, move, says_closed", [
+    ("none", {}, True),
+    ("legacy", {}, True),
+    ("scoped", {}, True),
+    ("legacy", {"alert_email_secondary": EMAIL}, False),
+    ("scoped", {"alert_email_secondary": EMAIL}, False),
+], ids=["no-login", "legacy", "scoped", "legacy-kept-as-emergency", "scoped-kept-as-emergency"])
+def test_the_notice_says_the_portal_is_closed_only_when_it_is(db, captured, monkeypatch,
+                                                              login, move, says_closed):
+    account_id = _account(db, "Main", EMAIL)
+    if login == "legacy":
+        set_member_password(db, EMAIL, "a-long-portal-password")
+    elif login == "scoped":
+        set_member_password(db, EMAIL, "a-long-portal-password", grant_account_id=account_id)
+    monkeypatch.setenv("SENTINEL_DB_PATH", str(db._path))
+
+    assert cmd_set_contact(argparse.Namespace(
+        label="Main", alert_email="new@example.com", alert_phone=None, clear=False, **move)) == 0
+
+    notices = [(d, r) for d, r in captured if d.rule == "alert_destination_changed"]
+    assert len(notices) == 1
+    detection, recipients = notices[0]
+    assert recipients == (EMAIL,)
+    still_opens = any(int(r["id"]) == account_id for r in member_accounts(db, EMAIL))
+    assert (PORTAL_SENTENCE in detection.message) is says_closed
+    assert (PORTAL_SENTENCE in detection.message) is not still_opens, (
+        "the notice and the portal disagree about whether this address can still see the account")
+    # The alerts half is held to the same truth: an address kept on as the
+    # emergency contact is still written to when an alert goes unanswered.
+    kept = "alert_email_secondary" in move
+    assert ("Alerts about this account will no longer be sent to this address" in detection.message) is not kept
+    assert ("This address stays on the account as its emergency contact" in detection.message) is kept
+    # Whatever either half says, the tripwire itself is intact.
+    assert "new@example.com" in detection.message
+    assert "If you did not ask for this, contact Minas immediately" in detection.message
