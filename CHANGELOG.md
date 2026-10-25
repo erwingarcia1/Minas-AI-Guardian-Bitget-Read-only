@@ -58,6 +58,17 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   wait for the 0.35 s floor and nothing else; what remains inside the
   floor is the token's two database writes.
 
+- **A browser signed in to the portal can open the reset pages
+  (2026-10-25).** `GET /forgot` and the emailed `GET /reset?token=` link
+  were served only without a session, so a member signed in on the web
+  got "Not found" for both - the app's "Forgot password?" among them,
+  since it opens `/forgot` in the browser. Both pages now answer the same
+  with or without a session, and the reset form still spends nothing
+  until it is submitted; `/reset` with no link sends a signed-in browser
+  to its accounts, as `/login` does. Portal-only: the app's forgot path
+  is this web page opened in the browser, so no app screen changes
+  (decision 25, the "Sign-in, code, forgot, reset" row).
+
 ## [1.16.0] — 2026-10-24
 
 ### Added

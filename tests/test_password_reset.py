@@ -480,3 +480,67 @@ def test_a_slow_mail_provider_does_not_tell_a_customer_from_a_stranger(portal, d
     assert "/reset?token=" in text
     token = text.split("/reset?token=", 1)[1].split()[0]
     assert consume_reset_token(db, token) == member, "the emailed link does not redeem"
+
+
+# --- the recovery pages answer a signed-in browser too ------------------------
+#
+# The app's "Forgot password?" opens /forgot in the browser, and the emailed
+# link opens wherever the member reads their mail. A browser that also holds a
+# portal session got "Not found" for both until 2026-10-25: the two pages were
+# served only to a visitor without one.
+
+
+def _signed_in(portal):
+    status, message, _ = exchange(portal, "POST", "/login", body={"email": EMAIL, "password": "old-password"})
+    assert status == 303, "the sign-in this test depends on"
+    return message.get("Set-Cookie").split("minas_portal=", 1)[1].split(";", 1)[0]
+
+
+def test_a_signed_in_browser_gets_the_forgot_form(portal, db, member):
+    cookie = _signed_in(portal)
+
+    status, _, body = exchange(portal, "GET", "/forgot", cookie=cookie)
+
+    assert status == 200 and 'action="/forgot"' in body
+    assert body == exchange(portal, "GET", "/forgot")[2], "not the page a visitor without a session gets"
+
+
+def test_a_signed_in_browser_can_follow_the_emailed_link(portal, db, member):
+    """The form, and nothing spent: drawing it never burns the single-use
+    token, so the link still redeems from the same browser."""
+    from sentinel.portal import check_member_login
+
+    cookie = _signed_in(portal)
+    token = create_reset_token(db, member)
+
+    status, _, body = exchange(portal, "GET", f"/reset?token={token}", cookie=cookie)
+
+    assert status == 200 and 'action="/reset"' in body and f'value="{token}"' in body
+    status, message, _ = exchange(portal, "POST", "/reset", body={"token": token, "password": "brand-new-password"},
+                                  cookie=cookie)
+    assert status == 303 and message.get("Location") == "/login"
+    assert check_member_login(db, member, "brand-new-password") is True
+
+
+def test_a_signed_in_browser_with_no_link_is_sent_to_its_accounts(portal, db, member):
+    """/reset without a token has nothing to show a member; like /login, it
+    sends a signed-in browser home rather than to a second sign-in form."""
+    cookie = _signed_in(portal)
+
+    status, message, body = exchange(portal, "GET", "/reset", cookie=cookie)
+
+    assert status == 303 and message.get("Location") == "/" and body == ""
+
+
+def test_without_a_session_the_recovery_pages_answer_as_before(portal, db, member):
+    """What must not move: the form, the link's form, and - with no link -
+    the sign-in form in place."""
+    token = create_reset_token(db, member)
+
+    status, _, body = exchange(portal, "GET", "/forgot")
+    assert status == 200 and 'action="/forgot"' in body
+    status, _, body = exchange(portal, "GET", f"/reset?token={token}")
+    assert status == 200 and 'action="/reset"' in body and f'value="{token}"' in body
+    status, _, body = exchange(portal, "GET", "/reset")
+    assert status == 200 and 'id="signin-title"' in body
+    assert consume_reset_token(db, token) == member

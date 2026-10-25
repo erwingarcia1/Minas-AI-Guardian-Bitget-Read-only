@@ -2420,5 +2420,35 @@
    "tests/test_password_reset.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "portal: a browser signed in to the portal is answered Not found at /forgot",
+  "file": "sentinel/portal.py",
+  "old": "            if path == \"/forgot\":\n                self._send(_render_forgot().encode())",
+  "new": "            if path == \"/forgot\" and email is None:\n                self._send(_render_forgot().encode())",
+  "tests": [
+   "tests/test_password_reset.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: a browser signed in to the portal cannot open the emailed reset link",
+  "file": "sentinel/portal.py",
+  "old": "                if token:\n                    self._send(_render_reset_form(token).encode())",
+  "new": "                if token and email is None:\n                    self._send(_render_reset_form(token).encode())",
+  "tests": [
+   "tests/test_password_reset.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: a signed-in browser at /reset with no link is shown a second sign-in form",
+  "file": "sentinel/portal.py",
+  "old": "                elif email is None:\n                    self._send(self._login_page().encode())",
+  "new": "                elif True:\n                    self._send(self._login_page().encode())",
+  "tests": [
+   "tests/test_password_reset.py"
+  ],
+  "expect": "killed"
  }
 ]

@@ -3914,6 +3914,30 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 self._send_asset(path)
                 return
             email = self._session_email()
+            # The two recovery routes are reachable without a session - that
+            # is the entire point of a recovery route - and with one: the
+            # app's "Forgot password?" and the emailed link both open in a
+            # browser, which may hold a portal session, and until 2026-10-25
+            # that browser was answered "Not found" for both.
+            if path == "/forgot":
+                self._send(_render_forgot().encode())
+                return
+            if path == "/reset":
+                qs = parse_qs(urlparse(self.path).query)
+                token = (qs.get("token") or [""])[0]
+                # Validated on submit, not here: checking it now would burn
+                # a single-use token just for rendering a form, and a
+                # customer who reloads the page would be locked out by
+                # their own browser.
+                if token:
+                    self._send(_render_reset_form(token).encode())
+                elif email is None:
+                    self._send(self._login_page().encode())
+                else:
+                    # Signed in, with no link to redeem: the accounts, as
+                    # /login answers a signed-in browser.
+                    self._redirect("/")
+                return
             if email is None:
                 if path == "/":
                     # The front door (decision 25). A cookie that was
@@ -3928,23 +3952,6 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     return
                 if path == "/login":
                     self._send(self._login_page().encode())
-                    return
-                # The two recovery routes are reachable without a session -
-                # that is the entire point of a recovery route.
-                if path == "/forgot":
-                    self._send(_render_forgot().encode())
-                    return
-                if path == "/reset":
-                    qs = parse_qs(urlparse(self.path).query)
-                    token = (qs.get("token") or [""])[0]
-                    # Validated on submit, not here: checking it now would burn
-                    # a single-use token just for rendering a form, and a
-                    # customer who reloads the page would be locked out by
-                    # their own browser.
-                    if token:
-                        self._send(_render_reset_form(token).encode())
-                    else:
-                        self._send(self._login_page().encode())
                     return
                 # Every other unauthenticated GET - a member page, a path that
                 # does not exist - is sent to the landing page, so a visitor
