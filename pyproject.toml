@@ -1,6 +1,6 @@
 [project]
 name = "sentinel"
-version = "1.16.0"
+version = "1.17.0"
 description = "24/7 exchange-account compromise monitoring with read-only keys"
 requires-python = ">=3.11"
 dependencies = [
