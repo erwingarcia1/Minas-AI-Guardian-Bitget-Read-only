@@ -2450,5 +2450,25 @@
    "tests/test_password_reset.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "liveness: a row that was never sent (skipped, held, suppressed) counts in the email refusal window again (2026-10-25)",
+  "file": "sentinel/liveness.py",
+  "old": "                     \"AND status IN ('accepted', 'failed') \"\n",
+  "new": "",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "liveness: the email refusal window reads refusals only, so an acceptance among the newest sends no longer keeps Email live (2026-10-25)",
+  "file": "sentinel/liveness.py",
+  "old": "                     \"AND status IN ('accepted', 'failed') \"\n",
+  "new": "                     \"AND status IN ('failed') \"\n",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
  }
 ]

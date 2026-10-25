@@ -69,6 +69,18 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   is this web page opened in the browser, so no app screen changes
   (decision 25, the "Sign-in, code, forgot, reset" row).
 
+- **The liveness gate no longer calls email live through a refusal
+  outage (2026-10-25).** The Email check read the newest five email
+  delivery rows and called the channel dead only when all five had
+  failed. A row that was never a send - skipped (a member's preference
+  off, a routine receipt), held (quiet hours) or suppressed (an
+  escalation burst or backlog) - could sit among them and keep Email
+  `live` while every real send was refused. The check now reads the
+  newest five sends, accepted or failed, and nothing else. Four refusals
+  are still not five, one acceptance among the newest five sends still
+  reads live, and an unset `SMTP_HOST`/`SMTP_SENDER` is still dead for
+  that reason.
+
 ## [1.16.0] — 2026-10-24
 
 ### Added

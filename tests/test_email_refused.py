@@ -6,6 +6,11 @@ from 10:48 the next day - and nothing said so. alert_delivered_to_nobody
 did not fire because it reads the alert's GLOBAL legs (Minas's own
 channels, where Telegram kept delivering); the customer's leg is recorded
 as failed by the contact router and paged nobody.
+
+2026-10-25, the same blindness from the other side: a member's password
+reset "never arrived", and nothing Minas reads would have shown a refused
+email. The liveness Email check let a row that was never sent keep it
+LIVE through refusals.
 """
 from __future__ import annotations
 
@@ -156,11 +161,11 @@ def test_the_page_reaches_a_channel_that_is_not_email(db, monkeypatch):
     assert len(_Tg.sent) == 1
 
 
-def _delivery(db, status, detail=None, when="2026-09-22T10:48:00+00:00"):
+def _delivery(db, status, detail=None, when="2026-09-22T10:48:00+00:00", kind="alert"):
     from sentinel.alerts.delivery import record_delivery
 
     record_delivery(db, channel="email", recipient="x@example.com", status=status, audience="customer",
-                    kind="alert", detail=detail)
+                    kind=kind, detail=detail)
     with db.cursor() as cur:
         cur.execute("UPDATE deliveries SET created_at = ? WHERE id = (SELECT max(id) FROM deliveries)", (when,))
 
@@ -181,3 +186,70 @@ def test_email_is_live_while_any_recent_send_was_accepted(db):
         _delivery(db, "failed", "(550, b'quota')", when=f"2026-09-22T10:{48 + i}:00+00:00")
     _delivery(db, "accepted", when="2026-09-22T10:59:00+00:00")
     assert _by(evaluate(_facts(db, env=env)))["smtp"].state == LIVE
+
+
+# --- 2026-10-25: only a send counts towards the refusal window -------------------------------
+#
+# The window was the newest five email ROWS. Three statuses are not sends -
+# each below with the detail its writer gives it - and one of them among
+# the refusals kept Email LIVE through a total refusal outage.
+
+SMTP_ENV = {"SMTP_HOST": "smtp.test", "SMTP_SENDER": "alerts@test"}
+NEVER_SENT = {
+    "skipped": ("alert", "member preference: channel off for this severity"),
+    "held": ("alert", "quiet hours - released in the next digest"),
+    "suppressed": ("escalation", "burst bound: 3 escalations to this customer in the last 60 minutes "
+                                 "(max 3 + one summary)"),
+}
+
+
+@pytest.mark.parametrize("never_sent", [("skipped",), ("held",), ("suppressed",), ("skipped", "held", "suppressed")],
+                         ids=["skipped", "held", "suppressed", "all-three"])
+def test_a_row_that_was_never_sent_cannot_keep_email_live_through_refusals(db, never_sent):
+    for i in range(SMTP_DEAD_AFTER_REFUSALS):
+        _delivery(db, "failed", "(550, b'You have reached your daily email sending quota.')",
+                  when=f"2026-09-22T10:{48 + i}:00+00:00")
+    # Between the refusals rather than above them all: a window that only
+    # began at the newest send would pass a row stacked on top, not this.
+    for j, status in enumerate(never_sent):
+        kind, detail = NEVER_SENT[status]
+        _delivery(db, status, detail, when=f"2026-09-22T10:{50 - j}:30+00:00", kind=kind)
+    v = _by(evaluate(_facts(db, env=SMTP_ENV)))["smtp"]
+    assert v.state == DEAD, v.evidence
+    assert "newest 2026-09-22T10:52:00+00:00" in v.evidence and "quota" in v.evidence
+
+
+def test_an_accepted_send_among_the_newest_five_sends_keeps_email_live(db):
+    """What must not change: five refusals in all, rows that were never sent
+    between them, and one acceptance among the newest five SENDS is a
+    provider still taking our mail. A window of failures alone would read
+    the five refusals and call it dead."""
+    refusal = "(550, b'5.1.1 User unknown')"
+    for minute in (47, 48, 49):
+        _delivery(db, "failed", refusal, when=f"2026-09-22T10:{minute}:00+00:00")
+    _delivery(db, "accepted", when="2026-09-22T10:50:00+00:00")
+    _delivery(db, "skipped", NEVER_SENT["skipped"][1], when="2026-09-22T10:50:30+00:00")
+    _delivery(db, "failed", refusal, when="2026-09-22T10:51:00+00:00")
+    _delivery(db, "held", NEVER_SENT["held"][1], when="2026-09-22T10:51:30+00:00")
+    _delivery(db, "failed", refusal, when="2026-09-22T10:52:00+00:00")
+    v = _by(evaluate(_facts(db, env=SMTP_ENV)))["smtp"]
+    assert v.state == LIVE and "last accepted email 2026-09-22T10:50:00+00:00" in v.evidence, v.evidence
+
+
+def test_four_refusals_are_not_five_however_many_rows_were_never_sent(db):
+    """Nor does a row that was never sent count AS a refusal: four refusals
+    followed by a skipped, a held and a suppressed row are four refusals."""
+    for i in range(SMTP_DEAD_AFTER_REFUSALS - 1):
+        _delivery(db, "failed", "(550, b'quota')", when=f"2026-09-22T10:{48 + i}:00+00:00")
+    for j, status in enumerate(sorted(NEVER_SENT)):
+        kind, detail = NEVER_SENT[status]
+        _delivery(db, status, detail, when=f"2026-09-22T10:{55 + j}:00+00:00", kind=kind)
+    assert _by(evaluate(_facts(db, env=SMTP_ENV)))["smtp"].state == LIVE
+
+
+@pytest.mark.parametrize("env", [{}, {"SMTP_HOST": "smtp.test"}, {"SMTP_HOST": "  ", "SMTP_SENDER": "alerts@test"}],
+                         ids=["unset", "no-sender", "blank-host"])
+def test_email_with_smtp_unset_is_dead_for_that_reason_whatever_was_sent_before(db, env):
+    _delivery(db, "accepted", when="2026-09-22T10:59:00+00:00")
+    v = _by(evaluate(_facts(db, env=env)))["smtp"]
+    assert (v.state, v.evidence) == (DEAD, "SMTP_HOST/SMTP_SENDER unset: no email leaves this host")
