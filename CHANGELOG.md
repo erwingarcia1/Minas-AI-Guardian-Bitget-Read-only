@@ -16,6 +16,70 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Changed detection behaviour
+
+- **Minas is no longer paged "delivered to nobody" for the MEDIUM and LOW
+  alerts the digest delivers (2026-10-25).** config/rules.yaml routes
+  MEDIUM and LOW to the digest alone, so on purpose they reach no channel
+  the moment they fire. Every one still raised a CRITICAL
+  `alert_delivered_to_nobody` page ("reached no channel at all ... nobody
+  was told"), at most one per account and alert severity every 30
+  minutes: abnormal fee spend, the receipt for a withdrawal to a
+  destination the account has withdrawn to before, a new deposit source,
+  a withdrawal with no address to check. Each page went to every CRITICAL
+  operator channel - Telegram, the team group, an email to
+  `SMTP_RECIPIENTS` from the same daily sending quota the customers'
+  alert emails use, and a text once SMS is configured.
+
+  After upgrading, a MEDIUM or LOW alert whose severity is routed to the
+  digest and nothing else raises no page. The page still fires as before
+  when something that was routed delivered nothing:
+  - a HIGH or CRITICAL alert that every channel refused, or that no
+    channel was configured for;
+  - a MEDIUM or LOW routed to the digest beside a real channel (say
+    `[digest, email]`) whose email was refused or is not configured;
+  - a coverage alert ("we are not watching this account"), however its
+    tier is routed: it never waits for a digest;
+  - a HIGH or CRITICAL routed to `[digest]` alone. The digest reports
+    only MEDIUM and LOW, so nothing would ever tell Minas about those
+    alerts otherwise.
+
+  The routing judged is the rules.yaml in force now, not the one the
+  process started with: a severity newly routed to a real channel keeps
+  paging until a restart builds that channel. The page now also names
+  the tier the alert went out on - for a coverage alert that is CRITICAL,
+  where it used to send the operator to its own severity's channels.
+  What customers receive is unchanged.
+
+- **Nor for an alert a member snoozed (2026-10-25).** A live snooze
+  withholds every send on request and marks the alert "snoozed until" -
+  a column of its own, so that a snooze never reads as a broken channel.
+  The page read only the delivered count, and raised a CRITICAL "nobody
+  was told" for a snoozed HIGH or CRITICAL with every channel healthy. A
+  snoozed alert now raises no page, except a coverage alert: the snooze
+  withholds Minas's own channels too, and "we are not watching this
+  account" must reach a human whatever a member silenced. What customers
+  receive is unchanged.
+
+### Added
+
+- **Failed email deliveries are shown to operators (2026-10-25).** A
+  member's password reset "never arrived" (2026-10-24 and 2026-10-25),
+  and nothing an operator reads would have shown a refused email: the
+  ops overview had a card for failed texts and none for email, and a
+  notice such as the reset is recorded with no account, so no account
+  page showed it either. The overview now carries a "Failed email
+  deliveries" card, right after the SMS one. It lists the latest twenty
+  failed email rows of every kind - a customer's alert, a notice, a
+  digest, an escalation, a drill, a page to Minas - each with the time,
+  the account (a dash when there is none, as for a notice), the address,
+  the kind, the rule and the failure's detail (the server's reply to a
+  refusal, or the connection error), escaped. Nothing renders when
+  nothing failed. The ops dashboard is web-only; the app has no
+  counterpart. (The production cause of that reset was not a failed
+  email: the address typed has no portal login. Nothing was sent, and
+  the page says the same either way, by design.)
+
 ### Changed
 
 - **v1.16.0 is deployed (2026-10-24, between 23:52 and 23:56 UTC):** the
@@ -26,6 +90,106 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   deployed status. The app's welcome screen is in the app bundle, which
   reaches a phone through Expo Go or a store build, not through this
   deploy. No code in this entry.
+
+### Fixed
+
+- **A member's failed sign-ins no longer drop their password-reset
+  email, and their reset requests no longer lock out the password they
+  set (2026-10-25).** The reset request (`/forgot`) counted on the
+  sign-in limiter. Five failed sign-ins from one network address in
+  fifteen minutes - wrong passwords or codes on the web, or failed
+  sign-ins in the app - silently dropped the member's next reset
+  request, behind the page saying a link was on its way; five reset
+  requests then made the sign-in answer the new password with a 429 for
+  up to fifteen minutes. The reset request now counts on a limiter of
+  its own, with the same keys (#31: the address from one source, and the
+  source) and the same limits (five each in fifteen minutes); the
+  throttled answer is still the ordinary page, padded to the same floor.
+  A completed reset still clears only that login's sign-in count from
+  that source, never the source's own count - clearing that would let
+  anyone with a login refill a guessing budget by resetting it - so a
+  member who has used up their source's sign-in failures still waits out
+  the window there.
+
+- **The password-reset email is sent after the answer (#33,
+  2026-10-25).** It was sent inside the request, so every step of the
+  mail provider's conversation (connect, STARTTLS, login, send) landed
+  in the answer for an address with a login and in no other: with a
+  provider at 60 ms a reply this measured 0.69 s against 0.35 s, and a
+  stopwatch told customers from strangers, which the response floor
+  exists to prevent. It now goes through the outbox (`sentinel/outbox.py`,
+  as the app's new-device notice has since v1.13.0), and both answers
+  wait for the 0.35 s floor and nothing else; what remains inside the
+  floor is the token's two database writes.
+
+- **A browser signed in to the portal can open the reset pages
+  (2026-10-25).** `GET /forgot` and the emailed `GET /reset?token=` link
+  were served only without a session, so a member signed in on the web
+  got "Not found" for both - the app's "Forgot password?" among them,
+  since it opens `/forgot` in the browser. Both pages now answer the same
+  with or without a session, and the reset form still spends nothing
+  until it is submitted; `/reset` with no link sends a signed-in browser
+  to its accounts, as `/login` does. Portal-only: the app's forgot path
+  is this web page opened in the browser, so no app screen changes
+  (decision 25, the "Sign-in, code, forgot, reset" row).
+
+- **The liveness gate no longer calls email live through a refusal
+  outage (2026-10-25).** The Email check read the newest five email
+  delivery rows and called the channel dead only when all five had
+  failed. A row that was never a send - skipped (a member's preference
+  off, a routine receipt), held (quiet hours) or suppressed (an
+  escalation burst or backlog) - could sit among them and keep Email
+  `live` while every real send was refused. The check now reads the
+  newest five sends, accepted or failed, and nothing else. Four refusals
+  are still not five, one acceptance among the newest five sends still
+  reads live, and an unset `SMTP_HOST`/`SMTP_SENDER` is still dead for
+  that reason.
+
+- **Moving an alert contact takes the old address's portal access with
+  it, and says what the new address needs (#61, decisions 10 and 26;
+  2026-10-25).** `sentinel set-contact` is the only way to move an
+  account's primary (`--alert-email`) or emergency
+  (`--alert-email-secondary`) contact, and it updated `accounts` alone.
+  A portal login issued from an account page is scoped to its grants
+  (#61), so a scoped login for the OLD address kept its grant: it could
+  still open the account, read it and acknowledge its alerts - which
+  stops the escalation ladder - while the destination-change notice told
+  that same address it could no longer see the account. The move now
+  revokes that grant when the old address is no longer a contact on the
+  account (`revoke_account`, recorded as `member_account_revoked` against
+  the `--as` operator). The rest of the login is untouched: an address
+  kept on as the other contact keeps its access, the login's password
+  and other accounts are unchanged, and a legacy (unscoped) login is
+  left as it was - its scope is its contact rows, which the move already
+  dropped, and revoking would have frozen them into grants. Revoked
+  rather than reworded (decision 26): a mailbox somebody moved away
+  from, perhaps because it was compromised, must not keep access.
+
+  For each moved contact the command now prints the new address's login
+  state - no login yet (issue one from the account page, "Generate
+  portal password"), a login that does not open this account (grant it,
+  "Grant this account"), or one that already does - and one line for
+  each old address whose access ended. Nothing is issued or granted for
+  the new address: scope is explicit and operator-issued. The final
+  `contact for '<label>': ...` line is unchanged.
+
+  The notice to the address being removed now says only what is true
+  after the change. "This address can no longer see the account in the
+  Minas portal" is included only when `member_accounts`, the function
+  the portal enforces access with, agrees. An address the same command
+  kept on as the emergency contact is no longer told "Alerts about this
+  account will no longer be sent to this address" - it is told it stays
+  on as the emergency contact, contacted only when the primary contact
+  has not responded to an alert.
+
+- **`sentinel set-contact --alert-phone` without `--alert-email` is
+  refused (decision 4, 2026-10-25).** Decision 4's floor - the primary
+  email cannot be removed - held against `--clear` and a blank
+  `--alert-email`, but a call with `--alert-phone` alone set the primary
+  pair to no email and that phone, writing the email NULL. Now that the
+  portal login follows a move, that typo would also have taken the
+  customer's own access. The primary pair is set together: to change
+  only the phone, restate the current email with `--alert-email`.
 
 ## [1.16.0] — 2026-10-24
 

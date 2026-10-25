@@ -272,7 +272,13 @@ SMTP_DEAD_AFTER_REFUSALS = 5
 def _smtp(f: Facts):
     if not f.env_set("SMTP_HOST", "SMTP_SENDER"):
         return DEAD, "SMTP_HOST/SMTP_SENDER unset: no email leaves this host"
+    # Sends only (2026-10-25). A skipped row (preference off, a routine
+    # receipt, SMTP unset), a held one (quiet hours) and a suppressed one (an
+    # escalation burst or backlog) never reached the provider and say
+    # nothing about whether it takes our mail - yet one of them in a window
+    # of rows kept Email LIVE through a total refusal outage.
     recent = f.query("SELECT status, detail, created_at FROM deliveries WHERE channel = 'email' "
+                     "AND status IN ('accepted', 'failed') "
                      "ORDER BY created_at DESC, id DESC LIMIT ?", SMTP_DEAD_AFTER_REFUSALS)
     if recent and "__error__" not in recent[0] and len(recent) >= SMTP_DEAD_AFTER_REFUSALS \
             and all(r["status"] == "failed" for r in recent):

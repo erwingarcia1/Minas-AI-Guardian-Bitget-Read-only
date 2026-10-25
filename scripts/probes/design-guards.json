@@ -2257,8 +2257,8 @@
  {
   "name": "portal: the reset-request throttle keys on the proxy's address",
   "file": "sentinel/portal.py",
-  "old": "            ip = self._client_ip()\n            if throttle.blocked(_throttle_pair(ip, address)) or throttle.blocked(ip):",
-  "new": "            ip = self.client_address[0]\n            if throttle.blocked(_throttle_pair(ip, address)) or throttle.blocked(ip):",
+  "old": "            ip = self._client_ip()\n            if reset_throttle.blocked(_throttle_pair(ip, address)) or reset_throttle.blocked(ip):",
+  "new": "            ip = self.client_address[0]\n            if reset_throttle.blocked(_throttle_pair(ip, address)) or reset_throttle.blocked(ip):",
   "tests": [
    "tests/test_login_lockout.py"
   ],
@@ -2370,5 +2370,387 @@
   "tests": [
    "tests/test_portal_address.py"
   ]
+ },
+ {
+  "name": "portal: the reset request counts on the sign-in limiter (failed sign-ins drop the reset email, reset requests lock out the new password)",
+  "file": "sentinel/portal.py",
+  "old": "    reset_throttle = LoginThrottle()",
+  "new": "    reset_throttle = throttle",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: a reset request is charged to its source's sign-in budget",
+  "file": "sentinel/portal.py",
+  "old": "            reset_throttle.record_failure(ip)",
+  "new": "            throttle.record_failure(ip)",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#31 one source mails every member it can name: the reset limiter's per-source cap is dropped",
+  "file": "sentinel/portal.py",
+  "old": "            if reset_throttle.blocked(_throttle_pair(ip, address)) or reset_throttle.blocked(ip):",
+  "new": "            if reset_throttle.blocked(_throttle_pair(ip, address)):",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: a completed reset refills the source's sign-in budget (one login resets itself between guesses)",
+  "file": "sentinel/portal.py",
+  "old": "            throttle.reset(_throttle_pair(self._client_ip(), address))",
+  "new": "            throttle.reset(_throttle_pair(self._client_ip(), address))\n            throttle.reset(self._client_ip())",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#33 ATTACK enumerate customers by stopwatch: the reset email is sent inside the answer",
+  "file": "sentinel/portal.py",
+  "old": "                later(_send_reset_email, db, address, token)",
+  "new": "                _send_reset_email(db, address, token)",
+  "tests": [
+   "tests/test_password_reset.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: a browser signed in to the portal is answered Not found at /forgot",
+  "file": "sentinel/portal.py",
+  "old": "            if path == \"/forgot\":\n                self._send(_render_forgot().encode())",
+  "new": "            if path == \"/forgot\" and email is None:\n                self._send(_render_forgot().encode())",
+  "tests": [
+   "tests/test_password_reset.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: a browser signed in to the portal cannot open the emailed reset link",
+  "file": "sentinel/portal.py",
+  "old": "                if token:\n                    self._send(_render_reset_form(token).encode())",
+  "new": "                if token and email is None:\n                    self._send(_render_reset_form(token).encode())",
+  "tests": [
+   "tests/test_password_reset.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: a signed-in browser at /reset with no link is shown a second sign-in form",
+  "file": "sentinel/portal.py",
+  "old": "                elif email is None:\n                    self._send(self._login_page().encode())",
+  "new": "                elif True:\n                    self._send(self._login_page().encode())",
+  "tests": [
+   "tests/test_password_reset.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "liveness: a row that was never sent (skipped, held, suppressed) counts in the email refusal window again (2026-10-25)",
+  "file": "sentinel/liveness.py",
+  "old": "                     \"AND status IN ('accepted', 'failed') \"\n",
+  "new": "",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "liveness: the email refusal window reads refusals only, so an acceptance among the newest sends no longer keeps Email live (2026-10-25)",
+  "file": "sentinel/liveness.py",
+  "old": "                     \"AND status IN ('accepted', 'failed') \"\n",
+  "new": "                     \"AND status IN ('failed') \"\n",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card falls off the overview (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "+ _sms_failures_section(db) + _email_failures_section(db) + _drills_section(db)",
+  "new": "+ _sms_failures_section(db) + _drills_section(db)",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card lists every email row, not only the failed ones (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "WHERE d.channel = 'email' AND d.status = 'failed' \"",
+  "new": "WHERE d.channel = 'email' \"",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card drops a failure with no account - the reset notice itself (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "\"LEFT JOIN accounts a ON a.id = d.account_id WHERE",
+  "new": "\"JOIN accounts a ON a.id = d.account_id WHERE",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card prints the server's reason unescaped (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "<td>{_dd(r[\"detail\"])}</td></tr>'",
+  "new": "<td>{r[\"detail\"]}</td></tr>'",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card renders an empty table when nothing failed (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "    if not rows:\n        return \"\"\n    body = \"\".join(\n        f'<tr><td class=\"mono\">{_ts(r[\"created_at\"])}</td><td>{_dd(r[\"label\"])}</td>'\n        f'<td class=\"mono\">{_dd(r[\"recipient\"])}</td>",
+  "new": "    if False:\n        return \"\"\n    body = \"\".join(\n        f'<tr><td class=\"mono\">{_ts(r[\"created_at\"])}</td><td>{_dd(r[\"label\"])}</td>'\n        f'<td class=\"mono\">{_dd(r[\"recipient\"])}</td>",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "dashboard: the Failed email deliveries card lists the oldest failures, not the newest (2026-10-25)",
+  "file": "sentinel/dashboard.py",
+  "old": "\"ORDER BY d.created_at DESC, d.id DESC LIMIT 20\")",
+  "new": "\"ORDER BY d.created_at ASC, d.id ASC LIMIT 20\")",
+  "tests": [
+   "tests/test_email_refused.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: an alert left to the digest pages CRITICAL again",
+  "file": "sentinel/poller.py",
+  "old": "        if _left_to_the_digest(self._rules, detection.rule, detection.severity):",
+  "new": "        if False:",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: a coverage alert is left to the digest when its severity's routing is digest-only",
+  "file": "sentinel/poller.py",
+  "old": "    if is_coverage_rule(rule):\n        return False\n",
+  "new": "",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: a real channel routed beside the digest counts as digest-only",
+  "file": "sentinel/poller.py",
+  "old": "set(routed) == {\"digest\"}",
+  "new": "\"digest\" in routed",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: an unusable routing no longer falls back to the schema default",
+  "file": "sentinel/poller.py",
+  "old": "        routed = default_for(\"alerting\", \"routing\", severity)",
+  "new": "        routed = None",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: an empty routing list skips the fallback build_channels takes",
+  "file": "sentinel/poller.py",
+  "old": "    if not routed:  # None or [] - build_channels falls back on both",
+  "new": "    if routed is None:  # None or [] - build_channels falls back on both",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: a HIGH or CRITICAL routed to the digest alone is left to a digest that never reports it",
+  "file": "sentinel/poller.py",
+  "old": "    if severity not in _DIGEST_SEVERITIES:",
+  "new": "    if False:",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: the page sends the operator to the severity's channels, not the tier the alert went out on",
+  "file": "sentinel/poller.py",
+  "old": "Check the channels routed for {tier}.",
+  "new": "Check the channels routed for {detection.severity}.",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: a snoozed alert pages CRITICAL \"nobody was told\" again (2026-10-25)",
+  "file": "sentinel/poller.py",
+  "old": "        if row[\"snoozed_until\"] and not is_coverage_rule(detection.rule):",
+  "new": "        if False:",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "alert_delivered_to_nobody: a snoozed coverage alert pages nobody (2026-10-25)",
+  "file": "sentinel/poller.py",
+  "old": "        if row[\"snoozed_until\"] and not is_coverage_rule(detection.rule):",
+  "new": "        if row[\"snoozed_until\"]:",
+  "tests": [
+   "tests/test_dispatch_delivery_failure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 set-contact moves a contact and leaves the old address's scoped grant in place",
+  "file": "sentinel/cli.py",
+  "old": "                if revoke_account(db, old, account_id, actor):",
+  "new": "                if False:",
+  "tests": [
+   "tests/test_set_contact.py",
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 the revocation that follows a contact move is recorded without the operator's name",
+  "file": "sentinel/cli.py",
+  "old": "                if revoke_account(db, old, account_id, actor):",
+  "new": "                if revoke_account(db, old, account_id, None):",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 set-contact revokes through a legacy login, materialising its scope",
+  "file": "sentinel/cli.py",
+  "old": "            if is_scoped(db, old):",
+  "new": "            if member_exists(db, old):",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 set-contact revokes the grant of an address the move kept on the account",
+  "file": "sentinel/cli.py",
+  "old": "        if old is not None and not _this_account_in(contact_accounts(db, old)):",
+  "new": "        if old is not None:",
+  "tests": [
+   "tests/test_set_contact.py",
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 set-contact tells the operator a new address with no login already opens the account",
+  "file": "sentinel/cli.py",
+  "old": "        if not member_exists(db, new):",
+  "new": "        if False:",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 set-contact reads the new address's access from the contact rows instead of the isolation boundary",
+  "file": "sentinel/cli.py",
+  "old": "        elif _this_account_in(member_accounts(db, new)):",
+  "new": "        elif _this_account_in(contact_accounts(db, new)):",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 re-running set-contact with unchanged addresses reports login lines",
+  "file": "sentinel/cli.py",
+  "old": "        if event_type in roles and payload[\"email_from\"] != payload[\"email_to\"]:",
+  "new": "        if event_type in roles:",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "notices: the destination-change notice tells an address that still opens the account it cannot see it",
+  "file": "sentinel/events.py",
+  "old": "    still_opens = any(r[\"label\"] == account_label for r in member_accounts(db, old_email))",
+  "new": "    still_opens = False",
+  "tests": [
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "notices: the destination-change notice drops the portal sentence for an address that has lost the account",
+  "file": "sentinel/events.py",
+  "old": "    still_opens = any(r[\"label\"] == account_label for r in member_accounts(db, old_email))",
+  "new": "    still_opens = True",
+  "tests": [
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 4: set-contact with --alert-phone alone clears the primary email again (2026-10-25)",
+  "file": "sentinel/cli.py",
+  "old": "        if primary_requested and (args.clear or not (args.alert_email or \"\").strip()):",
+  "new": "        if primary_requested and (args.clear or (args.alert_email is not None and not args.alert_email.strip())):",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#61 one address leaving both roles is reported to the operator once per role",
+  "file": "sentinel/cli.py",
+  "old": "    for line in dict.fromkeys(portal_lines):",
+  "new": "    for line in portal_lines:",
+  "tests": [
+   "tests/test_set_contact.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "notices: the destination-change notice tells an address kept on as emergency contact that no alert will reach it",
+  "file": "sentinel/events.py",
+  "old": "    still_contact = any(r[\"label\"] == account_label for r in contact_accounts(db, old_email))",
+  "new": "    still_contact = False",
+  "tests": [
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "notices: the destination-change notice tells an address that has left the account it stays on as the emergency contact",
+  "file": "sentinel/events.py",
+  "old": "    still_contact = any(r[\"label\"] == account_label for r in contact_accounts(db, old_email))",
+  "new": "    still_contact = True",
+  "tests": [
+   "tests/test_account_notices.py"
+  ],
+  "expect": "killed"
  }
 ]

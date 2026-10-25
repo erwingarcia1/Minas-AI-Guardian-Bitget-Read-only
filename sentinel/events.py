@@ -103,11 +103,13 @@ def notify_alert_destination_change(db: Database, account_label: str,
     """Tell the OLD address that the alerts have been redirected (G-32, #36).
 
     This is the one settings change the activity page cannot show the person
-    who most needs it. Portal scope is the contact email, so the moment the
-    destination changes, the previous contact stops seeing that account at all
-    - including the record of the change that removed them. An attacker who
-    redirects the alerts silently removes the evidence from the only page
-    built to reveal it.
+    who most needs it. The moment the destination changes, the previous
+    contact stops seeing that account at all - unless the same change kept
+    the address on as the account's emergency contact - because a legacy
+    login's scope is its contact rows and set-contact revokes a scoped
+    login's grant with the move (#61, decision 10); that includes the record
+    of the change that removed them. An attacker who redirects the alerts
+    silently removes the evidence from the only page built to reveal it.
 
     So the notice goes to the address being removed, the way the
     password-change tripwire does. Not a receipt: it is the last message that
@@ -121,9 +123,24 @@ def notify_alert_destination_change(db: Database, account_label: str,
         return
     from sentinel.alerts.base import AlertMessage
     from sentinel.alerts.contact import ContactRouter
-    from sentinel.portal import _PlainNotice
+    from sentinel.portal import _PlainNotice, contact_accounts, member_accounts
 
     destination = new_email or "no email address"
+    # Both clauses are claims about what this address keeps, so both are
+    # read after the change rather than passed in by the caller: an address
+    # the same command kept on the account (primary moved to emergency
+    # contact) is still written to when an alert goes unanswered, and still
+    # opens it - and reading the truth here means no caller can make the
+    # notice promise what the product does not do. Access is read from
+    # member_accounts, the function the portal enforces with. A tripwire
+    # caught in one false sentence is one the customer stops believing.
+    still_contact = any(r["label"] == account_label for r in contact_accounts(db, old_email))
+    still_opens = any(r["label"] == account_label for r in member_accounts(db, old_email))
+    alerts = ("This address stays on the account as its emergency contact: it is contacted "
+              "only when the primary contact has not responded to an alert") if still_contact \
+        else "Alerts about this account will no longer be sent to this address"
+    portal = "" if still_opens else \
+        ", and this address can no longer see the account in the Minas portal"
     message = AlertMessage(
         account_label=account_label,
         rule="alert_destination_changed",
@@ -131,8 +148,7 @@ def notify_alert_destination_change(db: Database, account_label: str,
         confidence="n/a",
         message=(
             f"The alert destination for '{account_label}' was changed from {old_email} to "
-            f"{destination}. Alerts about this account will no longer be sent to this address, "
-            f"and this address can no longer see the account in the Minas portal.\n\n"
+            f"{destination}. {alerts}{portal}.\n\n"
             f"If you did not ask for this, contact Minas immediately - redirecting the alerts "
             f"is what somebody does before moving the funds."
         ),

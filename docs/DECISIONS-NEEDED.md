@@ -7,11 +7,12 @@ autonomous backlog work — see `docs/AUTONOMOUS-LOG.md` for the sessions.
 Nothing here is blocked on engineering. Every item is a choice about what the
 product should do, and each was skipped rather than guessed at.
 
-**Open today (2026-10-24):** 6 (needs the lawyer; #47), 7's vendor (#63),
+**Open today (2026-10-25):** 6 (needs the lawyer; #47), 7's vendor (#63),
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
-and 21b/21e/21h/21i. Everything else below is answered and built, and
-deployed where there is a server to deploy to - the app waits on the store
-accounts (section 21, "Not built yet"); the sections stay as the record.
+21b/21e/21h/21i, and 26b/26c/26d. Everything else below is answered and
+built, and deployed where there is a server to deploy to - the app waits on
+the store accounts (section 21, "Not built yet"), and 26a waits on the next
+release; the sections stay as the record.
 
 ---
 
@@ -44,6 +45,7 @@ accounts (section 21, "Not built yet"); the sections stay as the record.
 | 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **ANSWERED 2026-10-24** — `segno` accepted by the merge of the QR PR (#130); the three renderings read by Google Authenticator the same day; shipped in v1.15.0 and deployed; see section 23 |
 | 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24. **Deployed 2026-10-24 (v1.15.0)** |
 | 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25. **Deployed 2026-10-24 (v1.16.0)** |
+| 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR | **PARTLY ANSWERED 2026-10-25** — a contact move revokes the old address's scoped access and the notice says only what is true (26a; the owner chose the fix and left the remedy open, so the session chose revoke - the owner can reverse it); paging on a refused notice (26b), the reset link on Telegram (26c) and a "no login yet" email (26d) are open; see section 26 |
 
 ---
 
@@ -2459,6 +2461,127 @@ portal), 21c (the app's sign-in), 21d (the limits copy the app reads),
 anti-phishing posture), docs/portal-design.md and
 design/portal/DESIGN-SYSTEM.md (the landing's composition),
 CONTRIBUTING.md ("A UI change lands on every surface").
+
+---
+
+## 26. A contact move and the old address's portal login; what a refused notice pages; where a reset link goes — **PARTLY ANSWERED 2026-10-25: 26a decided in session and built; 26b, 26c and 26d open**
+
+> **The owner's words (2026-10-25):** "password reset email on members
+> portal not coming through. tried resetting password on my members
+> portal account. didn't receive any emails." Then: "it was not an admin
+> password i was trying to reset. i was my members portal password."
+
+**What happened.** Both requests (2026-10-24 23:58 UTC and 2026-10-25
+10:09 UTC) were logged by production as "password reset requested for an
+unknown address": the address typed is the alert contact on two accounts
+and has no portal login - logins were issued for four other accounts
+only. `/forgot` answers the same page whether or not an address has a
+login and sends nothing for one without (#33), so nothing was sent and
+nothing failed; email to the provider was healthy the whole time. A
+login comes only from an operator, on the account page ("Generate portal
+password", decision 10), and that was the answer given. The
+investigation behind it found six latent defects on the same paths. The
+owner chose to build the separate reset limiter, sending the reset after
+the answer, email-failure visibility (the liveness fix and a dashboard
+card, with paging held for 26b), the false CRITICAL pages, contact moves
+against logins (26a) and the signed-in 404 on the recovery pages; not the
+"no login yet" email (26d) and not filing the rest as issues. All of it is
+in CHANGELOG.md `[Unreleased]`; the handoff is in docs/AUTONOMOUS-LOG.md
+(2026-10-25).
+
+### 26a. Does a contact move take the old address's portal access? — **DECIDED IN SESSION 2026-10-25: revoke; built; the owner can reverse it**
+
+`sentinel set-contact` moved an account's contacts in `accounts` alone.
+Since #61 a login issued from an account page opens exactly its grants,
+so a scoped login for the OLD address kept opening the account - reading
+it, and acknowledging its alerts, which stops the escalation ladder -
+while the destination-change notice told that address it "can no longer
+see the account in the Minas portal". The question put to the owner
+offered both remedies ("the old address's access gets revoked or its
+notice corrected, your choice of which"); the owner chose the fix and
+named neither, so the session chose revoke and built it:
+
+- **Revoke.** The move revokes the old address's grant for that account
+  when the address is no longer a contact on it (`revoke_account`,
+  recorded as `member_account_revoked` against the `--as` operator). A
+  mailbox somebody moved away from, perhaps because it was compromised,
+  must not keep access - and the notice had already promised it. An
+  address kept on as the other contact keeps its access; the login's
+  password and other accounts are untouched; a legacy (unscoped) login
+  is left alone, since its contact rows already dropped the account.
+- **Tell the operator.** The command prints, for each moved contact,
+  whether the new address has no login yet, a login that does not open
+  this account, or one that does, and one line per old address whose
+  access ended. Nothing is issued or granted: scope stays explicit and
+  operator-issued (decision 10).
+- **A truthful notice.** Each clause is read after the change: the
+  portal sentence only when `member_accounts` agrees, and an address kept
+  on as the emergency contact is told so instead of "Alerts about this
+  account will no longer be sent to this address".
+- And `set-contact --alert-phone` without `--alert-email` is refused: it
+  used to write the primary email NULL (decision 4's floor had a gap),
+  and with this change it would also have taken the customer's own
+  access.
+
+The other remedy - leave the grant and reword the notice to say the
+login still opens the account - is one call site to switch to, if the
+owner prefers it. Production has recorded no `alert_contact_updated` or
+`secondary_contact_updated` event (read 2026-10-25), so `set-contact` has
+never moved a contact there and left no stale grant behind; only a hand
+edit in SQL could have, and the read-only query for one is in
+docs/AUTONOMOUS-LOG.md (2026-10-25).
+
+### 26b. Should a refused notice page Minas? — open
+
+A notice - the reset link, "your password was changed", "two-factor was
+turned off", the destination change, the emergency-contact note - is
+LOW, and the refused-email page (`_page_if_refused`, the 2026-09-22
+rule) fires only for a customer's CRITICAL or a coverage alert. So a
+refused notice pages nobody; since 2026-10-25 the "Failed email
+deliveries" card on the ops overview is the only place it shows.
+
+1. **Leave it** - the card, read when someone looks.
+2. **Page on a refused security notice** (password changed, two-factor
+   off, destination changed): these are the tripwires an attacker hopes
+   never arrive, and a refusal means the member was not warned.
+3. **Page on every refused notice**, the reset link included.
+
+**Recommendation: 2.** A refused reset link is self-correcting - the
+member asks again or calls Minas - but a refused tripwire is silent by
+construction. It changes the 2026-09-22 paging rule, which is why it
+waits for the owner.
+
+### 26c. Should the reset link go to a connected Telegram chat? — open
+
+A notice bypasses the member's channel preferences, so the contact router
+sends it to every channel the address has, and the reset link reaches a
+connected Telegram chat as well as the mailbox. `_send_reset_email`'s
+docstring says the plaintext token exists in one email only.
+
+1. **Email only** - the link proves control of the mailbox, which is what
+   a reset is meant to prove.
+2. **Keep the Telegram copy** - and correct the docstrings.
+
+**Recommendation: 1.** With the copy, whoever holds the member's Telegram
+can take over their portal login without the mailbox.
+
+### 26d. A "no login yet" email — open (not chosen 2026-10-25)
+
+When `/forgot` is asked for an address that is an alert contact without a
+login - this very case - email that inbox "there is no portal login for
+this address; ask Minas to issue one". The page would not change, so the
+requester learns nothing, but a stranger could trigger it (rate-limited by
+the reset limiter) and it spends email quota (the Resend free plan allows
+100 a day). Not chosen on 2026-10-25; recorded so the option is not lost.
+
+### What it blocks
+
+26b and 26c block nothing built; each is a small change once answered.
+
+**Related:** decision 4 (the primary email is the floor), decision 10 and
+#61 (scoped logins), #33 (the reset flow), #31 (the throttle keys),
+docs/threat-model.md (the portal's reset request), CHANGELOG.md
+`[Unreleased]`.
 
 ---
 

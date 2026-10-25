@@ -8,14 +8,14 @@ because the criteria do not name most of them.
 
 | Attack | Defence |
 |---|---|
-| Enumerate customers by asking for resets | identical response *and* identical timing whether the address exists |
+| Enumerate customers by asking for resets | identical response *and* identical timing whether the address exists; the email goes after the answer, so a slow mail provider is not on the stopwatch |
 | Steal a token from a database read, a log, or a backup | only the **hash** of the token is stored; the plaintext exists once, in one email |
 | Reuse a link found in a mailbox months later | single-use, and one hour to live |
 | Keep a session obtained before the compromise was noticed | resetting bumps a per-member epoch that invalidates every existing cookie |
 | Reset someone else's password with your own token | the token is bound to the email and the binding is checked, not assumed |
 | Have a password changed without the owner noticing | every change emails the owner, including one they performed themselves |
 | Brute-force the token | 32 bytes of `secrets`, compared with `compare_digest` |
-| Request thousands of resets to spam a customer or bury a real alert | the same throttle the login path uses |
+| Request thousands of resets to spam a customer or bury a real alert | a limiter of its own, keyed and sized as the login's - five per address from one source, and five per source, in fifteen minutes - and apart from it, so failed sign-ins never drop a reset email and reset requests never lock out the new password (tests/test_login_lockout.py) |
 
 The criterion "resetting signs out all other sessions" is the one that forced a
 design change. Portal sessions are stateless HMAC cookies with no server-side
@@ -406,3 +406,141 @@ def test_the_login_page_offers_the_reset_route(portal, db):
 
     assert status == 200 and 'id="signin-title"' in body
     assert "/forgot" in body
+
+
+# --- the email goes after the answer ------------------------------------------
+
+
+class _SlowProvider:
+    """A mail provider having a bad day, in place of `sentinel.net.smtp`:
+    the connection and greeting, STARTTLS, the login and the send each take
+    STEP seconds. Keeps what it is given."""
+
+    STEP = 0.3
+    messages: list = []
+
+    def __init__(self, host, port, *, timeout):
+        time.sleep(self.STEP)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def starttls(self):
+        time.sleep(self.STEP)
+
+    def login(self, username, password):
+        time.sleep(self.STEP)
+
+    def send_message(self, msg):
+        time.sleep(self.STEP)
+        _SlowProvider.messages.append(msg)
+
+
+def test_a_slow_mail_provider_does_not_tell_a_customer_from_a_stranger(portal, db, member, monkeypatch):
+    """The stopwatch half of the enumeration defence, with the mail leg real.
+
+    Sent inside the request, every step of the provider's conversation landed
+    in the answer for an address with a login and in no other answer, so a
+    provider slow enough to pass the floor told customers from strangers
+    (measured 2026-10-25: 0.69 s against 0.35 s at 60 ms a reply). The email
+    now goes after the answer: both answers wait for the floor and nothing
+    else, and the email still goes, with a link that works."""
+    from sentinel import net, outbox
+    from sentinel.portal import _RESET_RESPONSE_FLOOR_SECONDS
+
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.invalid")
+    monkeypatch.setenv("SMTP_SENDER", "guardian@example.invalid")
+    monkeypatch.setenv("SMTP_USERNAME", "guardian")
+    monkeypatch.setenv("SMTP_PASSWORD", "not-a-real-password")
+    monkeypatch.setattr(net, "smtp", _SlowProvider)
+    monkeypatch.setattr(_SlowProvider, "messages", [])
+
+    def _elapsed(email):
+        start = time.perf_counter()
+        status, _ = _post(portal, "/forgot", {"email": email})
+        assert status == 200
+        return time.perf_counter() - start
+
+    known = _elapsed(member)
+    unknown = _elapsed("nobody@example.com")
+
+    # One provider step over the floor: slack for a busy machine, and a
+    # quarter of the provider's conversation, so an answer that waited for
+    # the mail lands well past it.
+    ceiling = _RESET_RESPONSE_FLOOR_SECONDS + _SlowProvider.STEP
+    assert known < ceiling and unknown < ceiling, (
+        f"known={known:.3f}s unknown={unknown:.3f}s: the answer waited for the mail provider")
+    assert outbox.wait_until_sent(10), "the reset email never went"
+    [message] = _SlowProvider.messages
+    assert message["To"] == member
+    text = message.get_content()
+    assert "/reset?token=" in text
+    token = text.split("/reset?token=", 1)[1].split()[0]
+    assert consume_reset_token(db, token) == member, "the emailed link does not redeem"
+
+
+# --- the recovery pages answer a signed-in browser too ------------------------
+#
+# The app's "Forgot password?" opens /forgot in the browser, and the emailed
+# link opens wherever the member reads their mail. A browser that also holds a
+# portal session got "Not found" for both until 2026-10-25: the two pages were
+# served only to a visitor without one.
+
+
+def _signed_in(portal):
+    status, message, _ = exchange(portal, "POST", "/login", body={"email": EMAIL, "password": "old-password"})
+    assert status == 303, "the sign-in this test depends on"
+    return message.get("Set-Cookie").split("minas_portal=", 1)[1].split(";", 1)[0]
+
+
+def test_a_signed_in_browser_gets_the_forgot_form(portal, db, member):
+    cookie = _signed_in(portal)
+
+    status, _, body = exchange(portal, "GET", "/forgot", cookie=cookie)
+
+    assert status == 200 and 'action="/forgot"' in body
+    assert body == exchange(portal, "GET", "/forgot")[2], "not the page a visitor without a session gets"
+
+
+def test_a_signed_in_browser_can_follow_the_emailed_link(portal, db, member):
+    """The form, and nothing spent: drawing it never burns the single-use
+    token, so the link still redeems from the same browser."""
+    from sentinel.portal import check_member_login
+
+    cookie = _signed_in(portal)
+    token = create_reset_token(db, member)
+
+    status, _, body = exchange(portal, "GET", f"/reset?token={token}", cookie=cookie)
+
+    assert status == 200 and 'action="/reset"' in body and f'value="{token}"' in body
+    status, message, _ = exchange(portal, "POST", "/reset", body={"token": token, "password": "brand-new-password"},
+                                  cookie=cookie)
+    assert status == 303 and message.get("Location") == "/login"
+    assert check_member_login(db, member, "brand-new-password") is True
+
+
+def test_a_signed_in_browser_with_no_link_is_sent_to_its_accounts(portal, db, member):
+    """/reset without a token has nothing to show a member; like /login, it
+    sends a signed-in browser home rather than to a second sign-in form."""
+    cookie = _signed_in(portal)
+
+    status, message, body = exchange(portal, "GET", "/reset", cookie=cookie)
+
+    assert status == 303 and message.get("Location") == "/" and body == ""
+
+
+def test_without_a_session_the_recovery_pages_answer_as_before(portal, db, member):
+    """What must not move: the form, the link's form, and - with no link -
+    the sign-in form in place."""
+    token = create_reset_token(db, member)
+
+    status, _, body = exchange(portal, "GET", "/forgot")
+    assert status == 200 and 'action="/forgot"' in body
+    status, _, body = exchange(portal, "GET", f"/reset?token={token}")
+    assert status == 200 and 'action="/reset"' in body and f'value="{token}"' in body
+    status, _, body = exchange(portal, "GET", "/reset")
+    assert status == 200 and 'id="signin-title"' in body
+    assert consume_reset_token(db, token) == member

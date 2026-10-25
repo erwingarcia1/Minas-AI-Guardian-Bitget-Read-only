@@ -6,16 +6,24 @@ from 10:48 the next day - and nothing said so. alert_delivered_to_nobody
 did not fire because it reads the alert's GLOBAL legs (Minas's own
 channels, where Telegram kept delivering); the customer's leg is recorded
 as failed by the contact router and paged nobody.
+
+2026-10-25, the same blindness from the other side: a member's password
+reset "never arrived", and nothing Minas reads would have shown a refused
+email. The liveness Email check let a row that was never sent keep it
+LIVE through refusals, and the ops overview had no card for a failed email.
 """
 from __future__ import annotations
 
+import html
 import smtplib
+from datetime import datetime, timezone
 
 import pytest
 
 from sentinel.detectors.base import Detection
 from sentinel.liveness import DEAD, LIVE, SMTP_DEAD_AFTER_REFUSALS, evaluate
 from sentinel.net import smtp_refusal_code
+from tests.conftest import make_account
 from tests.test_alert_preferences import EMAIL, _account_with_phone, _router
 from tests.test_liveness_gate import _by, _facts
 
@@ -156,11 +164,11 @@ def test_the_page_reaches_a_channel_that_is_not_email(db, monkeypatch):
     assert len(_Tg.sent) == 1
 
 
-def _delivery(db, status, detail=None, when="2026-09-22T10:48:00+00:00"):
+def _delivery(db, status, detail=None, when="2026-09-22T10:48:00+00:00", kind="alert"):
     from sentinel.alerts.delivery import record_delivery
 
     record_delivery(db, channel="email", recipient="x@example.com", status=status, audience="customer",
-                    kind="alert", detail=detail)
+                    kind=kind, detail=detail)
     with db.cursor() as cur:
         cur.execute("UPDATE deliveries SET created_at = ? WHERE id = (SELECT max(id) FROM deliveries)", (when,))
 
@@ -181,3 +189,200 @@ def test_email_is_live_while_any_recent_send_was_accepted(db):
         _delivery(db, "failed", "(550, b'quota')", when=f"2026-09-22T10:{48 + i}:00+00:00")
     _delivery(db, "accepted", when="2026-09-22T10:59:00+00:00")
     assert _by(evaluate(_facts(db, env=env)))["smtp"].state == LIVE
+
+
+# --- 2026-10-25: only a send counts towards the refusal window -------------------------------
+#
+# The window was the newest five email ROWS. Three statuses are not sends -
+# each below with the detail its writer gives it - and one of them among
+# the refusals kept Email LIVE through a total refusal outage.
+
+SMTP_ENV = {"SMTP_HOST": "smtp.test", "SMTP_SENDER": "alerts@test"}
+NEVER_SENT = {
+    "skipped": ("alert", "member preference: channel off for this severity"),
+    "held": ("alert", "quiet hours - released in the next digest"),
+    "suppressed": ("escalation", "burst bound: 3 escalations to this customer in the last 60 minutes "
+                                 "(max 3 + one summary)"),
+}
+
+
+@pytest.mark.parametrize("never_sent", [("skipped",), ("held",), ("suppressed",), ("skipped", "held", "suppressed")],
+                         ids=["skipped", "held", "suppressed", "all-three"])
+def test_a_row_that_was_never_sent_cannot_keep_email_live_through_refusals(db, never_sent):
+    for i in range(SMTP_DEAD_AFTER_REFUSALS):
+        _delivery(db, "failed", "(550, b'You have reached your daily email sending quota.')",
+                  when=f"2026-09-22T10:{48 + i}:00+00:00")
+    # Between the refusals rather than above them all: a window that only
+    # began at the newest send would pass a row stacked on top, not this.
+    for j, status in enumerate(never_sent):
+        kind, detail = NEVER_SENT[status]
+        _delivery(db, status, detail, when=f"2026-09-22T10:{50 - j}:30+00:00", kind=kind)
+    v = _by(evaluate(_facts(db, env=SMTP_ENV)))["smtp"]
+    assert v.state == DEAD, v.evidence
+    assert "newest 2026-09-22T10:52:00+00:00" in v.evidence and "quota" in v.evidence
+
+
+def test_an_accepted_send_among_the_newest_five_sends_keeps_email_live(db):
+    """What must not change: five refusals in all, rows that were never sent
+    between them, and one acceptance among the newest five SENDS is a
+    provider still taking our mail. A window of failures alone would read
+    the five refusals and call it dead."""
+    refusal = "(550, b'5.1.1 User unknown')"
+    for minute in (47, 48, 49):
+        _delivery(db, "failed", refusal, when=f"2026-09-22T10:{minute}:00+00:00")
+    _delivery(db, "accepted", when="2026-09-22T10:50:00+00:00")
+    _delivery(db, "skipped", NEVER_SENT["skipped"][1], when="2026-09-22T10:50:30+00:00")
+    _delivery(db, "failed", refusal, when="2026-09-22T10:51:00+00:00")
+    _delivery(db, "held", NEVER_SENT["held"][1], when="2026-09-22T10:51:30+00:00")
+    _delivery(db, "failed", refusal, when="2026-09-22T10:52:00+00:00")
+    v = _by(evaluate(_facts(db, env=SMTP_ENV)))["smtp"]
+    assert v.state == LIVE and "last accepted email 2026-09-22T10:50:00+00:00" in v.evidence, v.evidence
+
+
+def test_four_refusals_are_not_five_however_many_rows_were_never_sent(db):
+    """Nor does a row that was never sent count AS a refusal: four refusals
+    followed by a skipped, a held and a suppressed row are four refusals."""
+    for i in range(SMTP_DEAD_AFTER_REFUSALS - 1):
+        _delivery(db, "failed", "(550, b'quota')", when=f"2026-09-22T10:{48 + i}:00+00:00")
+    for j, status in enumerate(sorted(NEVER_SENT)):
+        kind, detail = NEVER_SENT[status]
+        _delivery(db, status, detail, when=f"2026-09-22T10:{55 + j}:00+00:00", kind=kind)
+    assert _by(evaluate(_facts(db, env=SMTP_ENV)))["smtp"].state == LIVE
+
+
+@pytest.mark.parametrize("env", [{}, {"SMTP_HOST": "smtp.test"}, {"SMTP_HOST": "  ", "SMTP_SENDER": "alerts@test"}],
+                         ids=["unset", "no-sender", "blank-host"])
+def test_email_with_smtp_unset_is_dead_for_that_reason_whatever_was_sent_before(db, env):
+    _delivery(db, "accepted", when="2026-09-22T10:59:00+00:00")
+    v = _by(evaluate(_facts(db, env=env)))["smtp"]
+    assert (v.state, v.evidence) == (DEAD, "SMTP_HOST/SMTP_SENDER unset: no email leaves this host")
+
+
+# --- 2026-10-25: a failed email is on the ops overview ----------------------------------------
+#
+# Nothing an operator reads showed a refused email: the overview had a
+# Failed SMS deliveries card and no email one, and a notice (the password
+# reset among them) is recorded with no account, so no account page shows
+# it either.
+
+def _email_leg(db, status, *, minute, channel="email", kind="alert", rule="withdrawal_initiated",
+               account_id=None, recipient="member@example.com", audience="customer", provider="smtp", detail=None):
+    from sentinel.alerts.delivery import record_delivery
+
+    record_delivery(db, channel=channel, recipient=recipient, status=status, audience=audience, kind=kind,
+                    account_id=account_id, rule=rule, provider=provider, detail=detail,
+                    when=datetime(2026, 10, 25, 9, minute, tzinfo=timezone.utc))
+
+
+def _overview(db) -> str:
+    from sentinel.dashboard import _render
+
+    return _render(db)
+
+
+def _email_card(page: str) -> str | None:
+    """The overview's Failed email deliveries card, or None when it has none."""
+    head = page.find("<h2>Failed email deliveries</h2>")
+    if head < 0:
+        return None
+    return page[page.rindex("<section>", 0, head):page.index("</section>", head) + len("</section>")]
+
+
+def test_a_refused_reset_notice_is_on_the_overview_with_the_servers_words(db):
+    """The row a refused reset leaves: a notice with no account, refused at
+    RCPT with a 550 whose text carries angle brackets. On the overview,
+    with the dashboard's dash for the account and the reason escaped."""
+    refusal = str(smtplib.SMTPRecipientsRefused({"member@example.com": (
+        550, b"5.1.1 <member@example.com>: Recipient address rejected: User unknown")}))
+    _email_leg(db, "failed", minute=5, kind="notice", rule="password_reset_requested", detail=refusal)
+    card = _email_card(_overview(db))
+    assert card is not None, "a refused email is on no page an operator reads"
+    assert html.escape(refusal) in card and "<member@example.com>" not in card
+    assert ('<td><span class="dim">—</span></td><td class="mono">member@example.com</td>'
+            '<td>notice</td><td class="rule">password_reset_requested</td>') in card
+
+
+def test_a_refused_page_to_minas_is_on_the_overview_with_its_account(db):
+    """Through the real OperatorAlerter: a page about an account whose email
+    leg the provider refused leaves a failed operator_page row, and the
+    card names the account the page was about."""
+    from sentinel.alerts.operator import OperatorAlerter
+    from sentinel.config import RulesConfig
+
+    class _Mail:
+        route_name = "email"
+        recipients = ["ops@minas.test"]
+
+        def send(self, alert):
+            raise QUOTA
+
+    account_id = make_account(db, "acct-7")
+    alerter = OperatorAlerter(db, {"CRITICAL": [_Mail()]}, RulesConfig("config/rules.yaml"))
+    assert alerter.page(rule="alert_delivered_to_nobody", severity="CRITICAL", message="reached no channel",
+                        account_id=account_id) is not None
+    card = _email_card(_overview(db))
+    assert card is not None, "a refused page to Minas is on no page an operator reads"
+    assert ('<td>acct-7</td><td class="mono">ops@minas.test</td><td>operator_page</td>'
+            '<td class="rule">alert_delivered_to_nobody</td>') in card
+    assert html.escape(str(QUOTA)) in card
+
+
+def test_the_card_holds_failed_email_only_newest_first_twenty_of_them_after_the_sms_card(db):
+    for i in range(21):
+        _email_leg(db, "failed", minute=i, detail=f"refusal #{i:02d}")
+    # All newer than every failure, so each would be on the card if it read
+    # anything but a failed email: a send the provider took, the three rows
+    # that were never sends, and the other channels' failures.
+    _email_leg(db, "accepted", minute=30, recipient="accepted@example.com")
+    for minute, status in ((31, "skipped"), (32, "held"), (33, "suppressed")):
+        kind, detail = NEVER_SENT[status]
+        _email_leg(db, status, minute=minute, kind=kind, detail=detail)
+    _email_leg(db, "failed", minute=34, channel="sms", recipient="+15550001111", provider="clicksend",
+               detail="HTTP 401 from ClickSend")
+    _email_leg(db, "failed", minute=35, channel="telegram", recipient="12345", provider="telegram",
+               detail="403 Forbidden: bot was blocked by the user")
+    page = _overview(db)
+    card = _email_card(page)
+    assert card is not None
+    assert card.count("<tr>") == 21, "twenty failed emails, plus the header"
+    assert card.index("refusal #20") < card.index("refusal #19") < card.index("refusal #01")
+    assert "refusal #00" not in card, "latest 20: the oldest failure is off the card"
+    for elsewhere in ("accepted@example.com", "member preference", "quiet hours", "burst bound",
+                      "HTTP 401 from ClickSend", "bot was blocked"):
+        assert elsewhere not in card, elsewhere
+    sms_head = page.index("<h2>Failed SMS deliveries</h2>")
+    assert page.index("</section>", sms_head) + len("</section>") == page.index(card), "right after the SMS card"
+
+
+def test_no_failed_email_means_no_card_and_the_sms_card_is_untouched(db):
+    """What must not change: with nothing failed on email the overview is
+    the page it was - no card, no empty table - and a failed SMS stays on
+    its own card."""
+    _email_leg(db, "accepted", minute=1)
+    for minute, status in ((2, "skipped"), (3, "held"), (4, "suppressed")):
+        kind, detail = NEVER_SENT[status]
+        _email_leg(db, status, minute=minute, kind=kind, detail=detail)
+    _email_leg(db, "failed", minute=5, channel="sms", recipient="+15550001111", provider="clicksend",
+               detail="HTTP 401 from ClickSend")
+    page = _overview(db)
+    assert "Failed email deliveries" not in page and _email_card(page) is None
+    assert "<h2>Failed SMS deliveries</h2>" in page and "HTTP 401 from ClickSend" in page
+
+
+def test_markup_in_a_failed_email_never_reaches_the_overview_raw(db):
+    """What must not change: nothing from a delivery row reaches the page
+    raw. The reason is the remote server's words and the address a
+    member's; neither is ours to trust."""
+    account_id = make_account(db, "<i>acct</i>")
+    _email_leg(db, "failed", minute=7, account_id=account_id, rule="<b>rule</b>",
+               recipient="<u>x</u>@example.com", detail="550 <img src=x onerror=alert(1)>")
+    page = _overview(db)
+    for raw in ("<img src=x onerror=alert(1)>", "<i>acct</i>", "<b>rule</b>", "<u>x</u>@example.com"):
+        assert raw not in page, raw
+    # And it is there, escaped: absent from a card that dropped the row would
+    # prove nothing about the escaping.
+    card = _email_card(page)
+    assert card is not None, "the row must be on the card for its escaping to be tested"
+    for escaped in ("550 &lt;img src=x onerror=alert(1)&gt;", "&lt;i&gt;acct&lt;/i&gt;",
+                    "&lt;b&gt;rule&lt;/b&gt;", "&lt;u&gt;x&lt;/u&gt;@example.com"):
+        assert escaped in card, escaped

@@ -8249,3 +8249,126 @@ it); an Android APK from the `preview` profile needs no account. Next:
 the owner's look at `/` and `/login` in a browser and at the welcome
 screen on the phone; the pending keys and the SMS provider; #125; the
 Apple enrolment, then the TestFlight build.
+
+# 2026-10-25 · A reset that "never arrived", and six defects on the paths it ran through (decision 26)
+
+**The owner's words (2026-10-25):** "password reset email on members
+portal not coming through. tried resetting password on my members portal
+account. didn't receive any emails." Then, after a first reading aimed at
+the operator sign-in: "it was not an admin password i was trying to
+reset. i was my members portal password." Branch
+`reset-and-email-signals`, nine commits, one PR. Nothing was cut or
+deployed.
+
+**The diagnosis.** Read-only, through the owner's `!` lines: the
+classifier refuses ssh reads from the session too ("Production Reads"),
+so each read was a scratchpad script piped over ssh, tested first against
+a throwaway database built with `tests.conftest.make_account`, with other
+people's addresses masked in its output. Production (v1.16.0) logged both
+requests as "password reset requested for an unknown address" (2026-10-24
+23:58 and 2026-10-25 10:09 UTC): no `password_resets` row, no
+`deliveries` row, and the provider accepted 7 digests and 14 operator
+pages in the same 72 hours. The address typed is the alert contact on
+accounts 10 and 13 and has no portal login - logins were only ever issued
+for accounts 7, 8, 9 and 14 - and production has recorded no contact
+change at all. `/forgot` answers the same page either way by design
+(#33). The owner was told to issue a login from account 10's page
+("Generate portal password") and grant account 13 to it ("Grant this
+account", not "Reset portal password"), then set their own password
+through "Forgot password?".
+
+**How the work was done.** An investigation workflow over the reset
+path, the mail leg and the paging found six defects (none refuted by its
+verifiers; three spot-checked here in the code). The owner chose, in one
+question: the separate reset limiter, sending after the answer,
+email-failure visibility (paging held), the false CRITICAL pages, contact
+moves against logins, and the signed-in 404; not the "no login yet" email
+and not filing the rest as issues. The build workflow ran four builders in
+parallel over disjoint files, tests first, each followed by an adversarial
+reviewer who ran the new tests against an `origin/main` archive (every
+trigger failed there and passes here; every defence passes on both) and
+counted every probe anchor without running the probe tool. Three slices
+came back "ship" with minor findings; the contacts slice came back
+"fix-needed": `set-contact --alert-phone` without `--alert-email` wrote the
+primary email NULL (decision 4's floor had that gap all along), and with
+the new revocation it would also have taken the customer's own portal
+access. Integration here: that guard and its test; the snooze case of the
+same false page (the pages reviewer reproduced it); a coverage guard in
+the digest exemption - a coverage alert never waits for a digest, however
+its tier is routed - and the tier in the page's text; the notice's second
+false sentence (an address kept on as the emergency contact was told no
+alert would reach it); the reviewers' wording fixes, a deterministic
+outbox order in two tests, and a markup test that now proves the row is
+on the card; and "(the owner's call)" in two comments became "(decision
+26)", because the owner chose the fix and left the remedy open.
+
+**What changed.** The reset request counts on a limiter of its own, keyed
+and sized as sign-in's; the reset email goes after the answer through the
+outbox; `GET /forgot` and `GET /reset?token=` answer a signed-in browser.
+The liveness Email window counts sends only. The ops overview has a
+"Failed email deliveries" card. `alert_delivered_to_nobody` skips an alert
+left to the digest and a snoozed alert (never a coverage alert), and names
+the tier. `set-contact` revokes the old address's scoped grant when a move
+takes it off the account, prints the new address's login state, refuses a
+phone-only change, and its notice says only what is true after the
+change. 38 new design-guard probes and one re-anchor ("the reset-request
+throttle keys on the proxy's address"); the mutation-selection reasons of
+three test files name their new imports; README's command table;
+docs/threat-model.md; decision 26.
+
+**Gates, on the final tree before the split:** `ruff check sentinel tests` clean; the full suite
+2303 passed (552 s); the design-guard probes 285/285 as expected
+(`--workers auto`, 11 minutes), the 38 new ones and the re-anchor
+among them.
+
+**The split.** One commit per fix, each with its own tests, probes and
+CHANGELOG entry: the reset limiter, the email after the answer, the
+signed-in recovery pages, the liveness window, the card, the digest page,
+the snooze page, the contact move, the records. A scratchpad script
+built each commit's files from the final tree - HEAD plus the labelled
+line changes, with the pieces a later commit rewrites reverted - and was
+checked to reproduce HEAD with nothing landed and the final tree with
+everything. Each commit's state was built in a scratch copy of the tree
+and passed py_compile, ruff, its own test files and the static check
+that every probe lands exactly once before it was committed.
+
+**Left for the owner:** the merge; the cut and the deploy (yours); 26b
+(should a refused security notice page Minas - recommended), 26c (the
+reset link reaches a connected Telegram chat - recommended: email only)
+and 26d (the "no login yet" email, not chosen); whether `/forgot`'s "‹
+Back to sign in" should read differently for a signed-in member; and the
+login for the address in the report, from the dashboard, if not done yet.
+
+**Found and not built** (the owner did not choose to file them as issues,
+so they are recorded here):
+- `send_member_digests` marks a refused member digest as sent - the
+  router swallows the error; the refused row now shows on the card.
+- The password-changed email in `POST /reset` still runs inside the
+  request: no enumeration leak, since the token proves the mailbox, but a
+  slow provider delays the redirect.
+- A chunked request body reaches `/forgot` as an empty address; a CSRF
+  403 on the portal logs nothing.
+- The liveness DEAD evidence says "the provider is refusing us" for
+  connection errors too, and one email row per recipient means "the last
+  5 sends" can be one send to five addresses.
+- The SMS failures card reads `sms_deliveries`, which excludes operator
+  pages; the email card includes them.
+- The Resend free plan caps at 100 emails a day.
+- `member_account_granted`/`member_account_revoked` are not on
+  `/activity` (a two-surface change under decision 25); a removed
+  emergency contact gets no notice at all (pre-existing - with 26a a
+  scoped one now also loses access without one); `set-contact` leaves the
+  old address's pause requests and snoozes.
+- The ops dashboard's triage queue still flags MEDIUM and LOW digest
+  alerts "delivered to nobody"; config/rules.yaml's header says routing
+  hot-reloads, but the channels are built at startup.
+- No supported path revokes a grant left where the address is no longer a
+  contact (the dashboard's form acts on current contacts only). None
+  exists in production through `set-contact`; a hand edit in SQL could
+  have left one. The read-only query for the box: `SELECT g.email,
+  a.label, g.granted_at FROM member_account_grants g JOIN portal_members m
+  ON m.email = g.email AND m.scoped = 1 JOIN accounts a ON a.id =
+  g.account_id WHERE g.email NOT IN (coalesce(a.alert_email, ''),
+  coalesce(a.alert_email_secondary, ''));`
+- Both failure cards scan `deliveries` on every 30-second refresh with no
+  `(channel, status, created_at)` index; bounded by retention, fine today.

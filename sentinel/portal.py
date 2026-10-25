@@ -31,7 +31,7 @@ from sentinel.db import Database
 from sentinel.edge import EdgeHandler, portal_host, portal_url, trusted_proxies_from_env
 from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
 from sentinel.naming import display_label
-from sentinel.outbox import answering
+from sentinel.outbox import answering, later
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
 from sentinel.passwords import LoginThrottle, hash_password, verify_password
 from sentinel.rules_schema import default_for
@@ -3041,9 +3041,11 @@ def _reset_url(token: str) -> str:
 def _send_reset_email(db: Database, address: str, token: str) -> None:
     """The one place the plaintext token exists outside the customer's mailbox.
 
-    Guarded: a mail failure is logged, not raised. The alternative is a 500
-    that tells the sender their address is real, which is the enumeration leak
-    the whole flow is built to avoid."""
+    Guarded: a mail failure is logged, not raised. Written when the send ran
+    inside the request, where the alternative was a 500 telling the sender
+    their address is real - the enumeration leak the whole flow is built to
+    avoid. `_forgot` now calls it after the answer (sentinel/outbox.py), and
+    the guard stays: the failure is still this flow's to log."""
     from sentinel.alerts.base import AlertMessage
     from sentinel.alerts.contact import ContactRouter
 
@@ -3685,10 +3687,14 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
     deliberately once that proxy exists (G-36).
 
     Behind that proxy the TCP peer is the proxy, so the client address the
-    throttle keys on comes from sentinel/edge.py: X-Forwarded-For, believed
+    throttles key on comes from sentinel/edge.py: X-Forwarded-For, believed
     only from a peer in SENTINEL_TRUSTED_PROXIES (decision 22c item 6)."""
     secret = _session_secret(db)
     throttle = LoginThrottle()
+    # The reset request's own budget, apart from sign-in's (see `_forgot`).
+    # Built second: tests/test_login_lockout.py's spy reads the first one
+    # built as the sign-in limiter.
+    reset_throttle = LoginThrottle()
     trusted = trusted_proxies_from_env("portal")
 
     def _throttle_pair(ip: str, identity: str) -> str:
@@ -3726,8 +3732,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             return True  # non-browser clients send neither header
         return urlparse(origin).netloc == (handler.headers.get("Host") or "")
 
-    # Decision 21: the apps' JSON API, on this server's secret, throttle and
-    # cipher - one sign-in limiter for the web and the app, not two.
+    # Decision 21: the apps' JSON API, on this server's secret, sign-in
+    # throttle and cipher - one sign-in limiter for the web and the app, not
+    # two. The reset request's limiter is not a sign-in limiter and is not
+    # shared.
     from sentinel.api import MAX_BODY_BYTES, Api
 
     api = Api(db, secret, throttle, _throttle_pair, cipher=cipher, rules=rules)
@@ -3906,6 +3914,30 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 self._send_asset(path)
                 return
             email = self._session_email()
+            # The two recovery routes are reachable without a session - that
+            # is the entire point of a recovery route - and with one: the
+            # app's "Forgot password?" and the emailed link both open in a
+            # browser, which may hold a portal session, and until 2026-10-25
+            # that browser was answered "Not found" for both.
+            if path == "/forgot":
+                self._send(_render_forgot().encode())
+                return
+            if path == "/reset":
+                qs = parse_qs(urlparse(self.path).query)
+                token = (qs.get("token") or [""])[0]
+                # Validated on submit, not here: checking it now would burn
+                # a single-use token just for rendering a form, and a
+                # customer who reloads the page would be locked out by
+                # their own browser.
+                if token:
+                    self._send(_render_reset_form(token).encode())
+                elif email is None:
+                    self._send(self._login_page().encode())
+                else:
+                    # Signed in, with no link to redeem: the accounts, as
+                    # /login answers a signed-in browser.
+                    self._redirect("/")
+                return
             if email is None:
                 if path == "/":
                     # The front door (decision 25). A cookie that was
@@ -3920,23 +3952,6 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     return
                 if path == "/login":
                     self._send(self._login_page().encode())
-                    return
-                # The two recovery routes are reachable without a session -
-                # that is the entire point of a recovery route.
-                if path == "/forgot":
-                    self._send(_render_forgot().encode())
-                    return
-                if path == "/reset":
-                    qs = parse_qs(urlparse(self.path).query)
-                    token = (qs.get("token") or [""])[0]
-                    # Validated on submit, not here: checking it now would burn
-                    # a single-use token just for rendering a form, and a
-                    # customer who reloads the page would be locked out by
-                    # their own browser.
-                    if token:
-                        self._send(_render_reset_form(token).encode())
-                    else:
-                        self._send(self._login_page().encode())
                     return
                 # Every other unauthenticated GET - a member page, a path that
                 # does not exist - is sent to the landing page, so a visitor
@@ -4351,24 +4366,37 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
         def _forgot(self, form):
             """Request a reset link (#33).
 
-            Throttled on the same limiter as login, per address and per IP.
+            Throttled per (source, address) pair and per source - the sign-in
+            limiter's keys (#31), never the bare address - and to its limits.
             Without it this endpoint sends mail to anyone, as fast as anyone
             asks - a way to bury a real alert under a hundred reset emails, or
-            simply to make Minas a spam source."""
+            simply to make Minas a spam source.
+
+            On a limiter of its own, not the sign-in's (2026-10-25). Sharing
+            one cost the member both ways: five failed sign-ins from their
+            network address - the web's passwords and codes, the app's -
+            dropped their reset request behind the page saying a link was on
+            its way, and five reset requests answered the password they then
+            set with a 429 for up to fifteen minutes."""
             # Both paths are padded to the same floor before responding.
             # Identical wording is not enough on its own: issuing a token
-            # writes twice and sends mail, and an unknown address does
-            # neither, so a stopwatch answers the question the wording
-            # refuses to. The floor is generous next to that difference and
-            # small next to a human.
+            # writes twice and an unknown address writes nothing, so a
+            # stopwatch answers the question the wording refuses to. The
+            # floor is generous next to that difference and small next to a
+            # human.
             #
-            # Residual, stated rather than hidden: a mail server slow enough
-            # to blow through the floor still leaks. Moving the send off this
-            # path entirely is the real fix and needs a queue.
+            # The email is not part of that difference: it goes after the
+            # answer (sentinel/outbox.py, 2026-10-25). Sent inside the
+            # request, every step of the mail provider's conversation landed
+            # in the answer for a real login and in no other, and a provider
+            # slow enough to pass the floor told customers from strangers.
+            # Residual, stated rather than hidden: the token's two writes are
+            # still inside the answer, so a database slow enough to pass the
+            # floor would leak the same way.
             deadline = time.monotonic() + _RESET_RESPONSE_FLOOR_SECONDS
             address = normalize_email((form.get("email", [""])[0] or ""))
             ip = self._client_ip()
-            if throttle.blocked(_throttle_pair(ip, address)) or throttle.blocked(ip):
+            if reset_throttle.blocked(_throttle_pair(ip, address)) or reset_throttle.blocked(ip):
                 logger.warning("reset request throttled for %s from %s", address or "<empty>", ip)
                 # Same acknowledgement even when throttled: "you are being
                 # rate limited" is itself a signal that this address is worth
@@ -4376,13 +4404,13 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 self._pad_to(deadline)
                 self._send(_render_forgot(notice=_RESET_ACK).encode())
                 return
-            throttle.record_failure(_throttle_pair(ip, address))
-            throttle.record_failure(ip)
+            reset_throttle.record_failure(_throttle_pair(ip, address))
+            reset_throttle.record_failure(ip)
 
             token = create_reset_token(db, address)
             if token:
                 logger.info("password reset requested for %s from %s", address, ip)
-                _send_reset_email(db, address, token)
+                later(_send_reset_email, db, address, token)
             else:
                 logger.info("password reset requested for an unknown address from %s", ip)
             # One sentence, both paths, always 200, same elapsed time.
@@ -4410,6 +4438,12 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             set_member_password(db, address, password, invalidate_sessions=True,
                                 notify=lambda addr: _send_password_changed_email(db, addr))
             logger.info("password reset completed for %s from %s", address, self._client_ip())
+            # The sign-in count for this login from this source, and no
+            # more. The source's own count stays: clearing it would let anyone
+            # with a login of their own refill a guessing budget by resetting
+            # it - five guesses at strangers, a reset, five more. Residual,
+            # stated: a member who spent their source's sign-in failures before
+            # resetting still waits out the window there, new password and all.
             throttle.reset(_throttle_pair(self._client_ip(), address))
             # No session issued. Setting a password proves control of the
             # mailbox, not knowledge of the password, and signing them straight
