@@ -27,6 +27,26 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   reaches a phone through Expo Go or a store build, not through this
   deploy. No code in this entry.
 
+### Fixed
+
+- **A member's failed sign-ins no longer drop their password-reset
+  email, and their reset requests no longer lock out the password they
+  set (2026-10-25).** The reset request (`/forgot`) counted on the
+  sign-in limiter. Five failed sign-ins from one network address in
+  fifteen minutes - wrong passwords or codes on the web, or failed
+  sign-ins in the app - silently dropped the member's next reset
+  request, behind the page saying a link was on its way; five reset
+  requests then made the sign-in answer the new password with a 429 for
+  up to fifteen minutes. The reset request now counts on a limiter of
+  its own, with the same keys (#31: the address from one source, and the
+  source) and the same limits (five each in fifteen minutes); the
+  throttled answer is still the ordinary page, padded to the same floor.
+  A completed reset still clears only that login's sign-in count from
+  that source, never the source's own count - clearing that would let
+  anyone with a login refill a guessing budget by resetting it - so a
+  member who has used up their source's sign-in failures still waits out
+  the window there.
+
 ## [1.16.0] — 2026-10-24
 
 ### Added

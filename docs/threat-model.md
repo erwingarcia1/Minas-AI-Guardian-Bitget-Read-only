@@ -131,7 +131,14 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
   `https://guardian.minastrade.com`, through Caddy on the host (decision
   22b): its login is exposed to credential stuffing, mitigated by the login
   throttle and TOTP where enrolled; the portal must never gain an operator
-  capability (tests/test_member_roles.py holds the boundary). The ops
+  capability (tests/test_member_roles.py holds the boundary). Its
+  password-reset request (`/forgot`) gives one page after one floor of
+  time (0.35 s) whether or not the address has a login. It is limited on
+  a budget of its own, keyed as sign-in is (five per address from one
+  source, and five per source, in fifteen minutes): a member's failed
+  sign-ins cannot swallow their reset email, and reset requests cannot
+  lock out the password they set (tests/test_login_lockout.py holds
+  both). The ops
   dashboard is internet-reachable too, at `/admin` (decisions 22a, 22e),
   with no IP allowlist in front of it (22c item 5, answered no): operator
   sign-in with a mandatory second factor and the login throttle are the
@@ -139,8 +146,9 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
   `Sec-Fetch-Site` or `Origin`) must also carry a `Referer` whose path is
   under `/admin`, or it is refused and logged: that is what tells the
   dashboard's own forms from one planted on a same-origin portal page,
-  and it binds nothing that is not a browser. Behind Caddy both throttles
-  key on the real client address, which each server takes from
+  and it binds nothing that is not a browser. Behind Caddy every
+  throttle (the portal's sign-in and reset limiters, the dashboard's) keys
+  on the real client address, which each server takes from
   `X-Forwarded-For` only when the connection comes from Caddy's fixed
   address (22c item 6: `SENTINEL_TRUSTED_PROXIES` for the portal,
   `SENTINEL_DASHBOARD_TRUSTED_PROXIES` for the dashboard, both pinned in

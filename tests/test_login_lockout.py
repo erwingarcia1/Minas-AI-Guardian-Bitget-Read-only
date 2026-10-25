@@ -40,6 +40,7 @@ from sentinel.passwords import LoginThrottle
 from sentinel.portal import (
     SESSION_IDLE_SECONDS,
     SESSION_TTL_SECONDS,
+    create_reset_token,
     make_session_token,
     serve_portal,
     session_hard_deadline,
@@ -550,6 +551,177 @@ def test_the_apps_sign_in_ignores_a_spoofed_address_from_an_untrusted_peer(db, c
         assert status == 401, body
     status, body, _ = _api_sign_in(client, PASSWORD, VISITOR_B, secret)
     assert status == 429 and body["error"] == "too_many_attempts"
+
+
+# --- the reset request counts on a limiter of its own (2026-10-25) ------------
+#
+# /forgot used to count on the sign-in limiter, and the member paid both ways.
+# Five failed sign-ins from one address - wrong passwords, wrong codes, the
+# app's - and their next reset request was dropped behind the page saying a
+# link was on its way; five reset requests, and the sign-in answered the new
+# password with a 429 for up to fifteen minutes. Each limiter now counts only
+# its own requests, by the same keys (#31) and to the same limits.
+
+@pytest.fixture
+def reset_emails(monkeypatch):
+    """Every reset email the portal sends, as (address, token)."""
+    sent = []
+    monkeypatch.setattr("sentinel.portal._send_reset_email",
+                        lambda _db, address, token: sent.append((address, token)))
+    monkeypatch.setattr("sentinel.portal._RESET_RESPONSE_FLOOR_SECONDS", 0)  # the timing floor is not under test
+    return sent
+
+
+def _mailed(reset_emails):
+    """The addresses mailed so far."""
+    return [address for address, _ in reset_emails]
+
+
+@pytest.fixture
+def proxied_portal(db, behind_the_proxy):
+    """A portal behind the proxy: its port. The trusted proxy is read when
+    the server starts, so the setting comes first."""
+    server = serve_portal(db, 0, host="127.0.0.1")
+    yield server.server_address[1]
+    server.shutdown()
+    server.server_close()
+
+
+def test_five_wrong_passwords_do_not_swallow_the_members_reset_email(db, reset_emails, proxied_portal):
+    """The member who asks for a reset is the one who has just typed the
+    password wrong five times. Their request must be sent though the sign-in
+    from that address is throttled - its answer is the ordinary page either
+    way, so a dropped request read exactly like a sent one."""
+    _account(db)
+    set_member_password(db, ALICE, "correct horse", notify=None)
+    for _ in range(5):
+        assert _portal_login(proxied_portal, "wrong", VISITOR_A) == 200
+    assert _portal_login(proxied_portal, "wrong", VISITOR_A) == 429  # the sign-in limiter is full
+    assert _portal_post(proxied_portal, "/forgot", {"email": ALICE}, VISITOR_A)[0] == 200
+    assert _mailed(reset_emails) == [ALICE], "five failed sign-ins dropped the member's reset email"
+    with db.cursor() as cur:
+        cur.execute("SELECT count(*) AS n FROM password_resets WHERE email = ? AND used_at IS NULL", (ALICE,))
+        assert cur.fetchone()["n"] == 1, "no live reset link was issued"
+
+
+def test_five_failed_app_sign_ins_do_not_swallow_the_reset_email(db, cipher, api_server, behind_the_proxy,
+                                                                 reset_emails):
+    """The same through the app, whose sign-in counts on the web's limiter
+    (decision 21) and whose "Forgot password?" opens this web page."""
+    from tests.helpers.api_client import add_account, enrolled_member
+
+    add_account(db, ALICE)
+    enrolled_member(db, cipher, ALICE)
+    client = api_server()
+    for _ in range(5):
+        status, body, _ = _api_sign_in(client, "wrong", VISITOR_A)
+        assert status == 401, body
+    status, body, _ = _api_sign_in(client, "wrong", VISITOR_A)
+    assert status == 429, body  # the sign-in limiter is full
+    assert _portal_post(client.port, "/forgot", {"email": ALICE}, VISITOR_A)[0] == 200
+    assert _mailed(reset_emails) == [ALICE], "five failed app sign-ins dropped the member's reset email"
+
+
+def test_reset_requests_do_not_lock_the_new_password_out(db, reset_emails, proxied_portal):
+    """The other direction. A member who sends five reset requests while
+    the mail is slow, follows the newest link and sets a password, signs in
+    with it straight away - not after a 429 of up to fifteen minutes."""
+    _account(db)
+    set_member_password(db, ALICE, "correct horse", notify=None)
+    for _ in range(5):
+        assert _portal_post(proxied_portal, "/forgot", {"email": ALICE}, VISITOR_A)[0] == 200
+    assert _mailed(reset_emails) == [ALICE] * 5
+    _, newest = reset_emails[-1]
+    status, _ = _portal_post(proxied_portal, "/reset", {"token": newest, "password": "a brand new password"},
+                             VISITOR_A)
+    assert status == 303, "the newest link did not redeem"
+    assert _portal_login(proxied_portal, "a brand new password", VISITOR_A) == 303, (
+        "five reset requests locked the member out of the password they had just set")
+
+
+def test_the_reset_request_counts_on_its_own_limiter_by_the_sign_in_keys(db, monkeypatch):
+    """The keys, by the spy above: the reset limiter counts (ip, address)
+    and ip - never the bare address (#31) - and the sign-in limiter, built
+    first, hears nothing of a reset request."""
+    monkeypatch.setattr("sentinel.portal.LoginThrottle", _SpyThrottle)
+    monkeypatch.setattr("sentinel.portal._RESET_RESPONSE_FLOOR_SECONDS", 0)  # the timing floor is not under test
+    _SpyThrottle.instances = []
+    server = serve_portal(db, 0, host="127.0.0.1")
+    try:
+        conn = http.client.HTTPConnection("127.0.0.1", server.server_address[1], timeout=5)
+        conn.request("POST", "/forgot", body=urllib.parse.urlencode({"email": ALICE}),
+                     headers={"Content-Type": "application/x-www-form-urlencoded"})
+        conn.getresponse().read()
+        conn.close()
+    finally:
+        server.shutdown()
+        server.server_close()
+    sign_in, *others = _SpyThrottle.instances
+    assert sign_in.blocked_keys == [] and sign_in.failure_keys == [], (
+        "a reset request was counted on the sign-in limiter")
+    [reset] = [spy for spy in others if spy.blocked_keys or spy.failure_keys]
+    assert set(reset.blocked_keys + reset.failure_keys) == {f"127.0.0.1|{ALICE}", "127.0.0.1"}
+
+
+def test_the_sixth_reset_request_is_dropped_behind_the_same_page(db, reset_emails, proxied_portal):
+    """What the reset limiter is for, unchanged: a hundred reset emails can
+    bury a real alert. Five per address per source in the window, and the
+    sixth gets the page the first five got, to the byte - "you are being
+    rate limited" would say the address is worth rate limiting."""
+    _account(db)
+    set_member_password(db, ALICE, "correct horse", notify=None)
+    answers = [_portal_post(proxied_portal, "/forgot", {"email": ALICE}, VISITOR_A) for _ in range(6)]
+    assert _mailed(reset_emails) == [ALICE] * 5, "the sixth request from one source was not throttled"
+    assert answers[5] == answers[0] and answers[5][0] == 200, "the throttled answer is not the ordinary one"
+
+
+def test_one_source_is_capped_across_addresses_on_the_reset_limiter(db, reset_emails, proxied_portal):
+    """The per-address key alone would let one source mail five links to
+    every member it can name; the bare source key caps it across addresses,
+    as at sign-in. Another source is not counted with it."""
+    members = [f"member{n}@example.com" for n in range(6)]
+    for address in members:
+        set_member_password(db, address, "correct horse", notify=None)
+    for address in members:
+        assert _portal_post(proxied_portal, "/forgot", {"email": address}, VISITOR_A)[0] == 200
+    assert _mailed(reset_emails) == members[:5], "one source mailed a sixth address inside the window"
+    assert _portal_post(proxied_portal, "/forgot", {"email": members[5]}, VISITOR_B)[0] == 200
+    assert _mailed(reset_emails) == members, "another source was capped by the first one's requests"
+
+
+def test_a_reset_request_does_not_reopen_a_throttled_sign_in(db, reset_emails, proxied_portal):
+    """Apart in both directions: a reset request is not a sign-in failure,
+    and not a sign-in success either. After five wrong passwords the sixth
+    sign-in is still a 429, with a reset request between them."""
+    _account(db)
+    set_member_password(db, ALICE, "correct horse", notify=None)
+    for _ in range(5):
+        assert _portal_login(proxied_portal, "wrong", VISITOR_A) == 200
+    assert _portal_post(proxied_portal, "/forgot", {"email": ALICE}, VISITOR_A)[0] == 200
+    assert _portal_login(proxied_portal, "correct horse", VISITOR_A) == 429, (
+        "a reset request reopened a throttled sign-in")
+
+
+def test_a_completed_reset_does_not_refill_the_sources_sign_in_budget(db, proxied_portal):
+    """Deliberate - the residual of keeping the two apart. Redeeming a link
+    clears the sign-in count for that address from that source, and no more:
+    clearing the source's own count too would let anyone with a login of
+    their own refill a guessing budget with one reset of it - five guesses
+    at strangers, a reset, five more. So a source whose sign-in budget is
+    spent stays throttled through a reset, the member's own included."""
+    _account(db)
+    set_member_password(db, ALICE, "correct horse", notify=None)
+
+    def guess(n):
+        fields = {"email": f"stranger{n}@example.com", "password": "guess"}
+        return _portal_post(proxied_portal, "/login", fields, VISITOR_A)[0]
+
+    for n in range(5):
+        assert guess(n) == 200
+    fields = {"token": create_reset_token(db, ALICE), "password": "a brand new password"}
+    assert _portal_post(proxied_portal, "/reset", fields, VISITOR_A)[0] == 303, "the reset itself is not throttled"
+    assert guess(5) == 429, "a completed reset refilled the source's guessing budget"
+    assert _portal_login(proxied_portal, "a brand new password", VISITOR_A) == 429
 
 
 def _dashboard_post(port, path, fields, forwarded_for):

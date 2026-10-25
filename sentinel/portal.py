@@ -3685,10 +3685,14 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
     deliberately once that proxy exists (G-36).
 
     Behind that proxy the TCP peer is the proxy, so the client address the
-    throttle keys on comes from sentinel/edge.py: X-Forwarded-For, believed
+    throttles key on comes from sentinel/edge.py: X-Forwarded-For, believed
     only from a peer in SENTINEL_TRUSTED_PROXIES (decision 22c item 6)."""
     secret = _session_secret(db)
     throttle = LoginThrottle()
+    # The reset request's own budget, apart from sign-in's (see `_forgot`).
+    # Built second: tests/test_login_lockout.py's spy reads the first one
+    # built as the sign-in limiter.
+    reset_throttle = LoginThrottle()
     trusted = trusted_proxies_from_env("portal")
 
     def _throttle_pair(ip: str, identity: str) -> str:
@@ -3726,8 +3730,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             return True  # non-browser clients send neither header
         return urlparse(origin).netloc == (handler.headers.get("Host") or "")
 
-    # Decision 21: the apps' JSON API, on this server's secret, throttle and
-    # cipher - one sign-in limiter for the web and the app, not two.
+    # Decision 21: the apps' JSON API, on this server's secret, sign-in
+    # throttle and cipher - one sign-in limiter for the web and the app, not
+    # two. The reset request's limiter is not a sign-in limiter and is not
+    # shared.
     from sentinel.api import MAX_BODY_BYTES, Api
 
     api = Api(db, secret, throttle, _throttle_pair, cipher=cipher, rules=rules)
@@ -4351,10 +4357,18 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
         def _forgot(self, form):
             """Request a reset link (#33).
 
-            Throttled on the same limiter as login, per address and per IP.
+            Throttled per (source, address) pair and per source - the sign-in
+            limiter's keys (#31), never the bare address - and to its limits.
             Without it this endpoint sends mail to anyone, as fast as anyone
             asks - a way to bury a real alert under a hundred reset emails, or
-            simply to make Minas a spam source."""
+            simply to make Minas a spam source.
+
+            On a limiter of its own, not the sign-in's (2026-10-25). Sharing
+            one cost the member both ways: five failed sign-ins from their
+            network address - the web's passwords and codes, the app's -
+            dropped their reset request behind the page saying a link was on
+            its way, and five reset requests answered the password they then
+            set with a 429 for up to fifteen minutes."""
             # Both paths are padded to the same floor before responding.
             # Identical wording is not enough on its own: issuing a token
             # writes twice and sends mail, and an unknown address does
@@ -4368,7 +4382,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             deadline = time.monotonic() + _RESET_RESPONSE_FLOOR_SECONDS
             address = normalize_email((form.get("email", [""])[0] or ""))
             ip = self._client_ip()
-            if throttle.blocked(_throttle_pair(ip, address)) or throttle.blocked(ip):
+            if reset_throttle.blocked(_throttle_pair(ip, address)) or reset_throttle.blocked(ip):
                 logger.warning("reset request throttled for %s from %s", address or "<empty>", ip)
                 # Same acknowledgement even when throttled: "you are being
                 # rate limited" is itself a signal that this address is worth
@@ -4376,8 +4390,8 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 self._pad_to(deadline)
                 self._send(_render_forgot(notice=_RESET_ACK).encode())
                 return
-            throttle.record_failure(_throttle_pair(ip, address))
-            throttle.record_failure(ip)
+            reset_throttle.record_failure(_throttle_pair(ip, address))
+            reset_throttle.record_failure(ip)
 
             token = create_reset_token(db, address)
             if token:
@@ -4410,6 +4424,12 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             set_member_password(db, address, password, invalidate_sessions=True,
                                 notify=lambda addr: _send_password_changed_email(db, addr))
             logger.info("password reset completed for %s from %s", address, self._client_ip())
+            # The sign-in count for this login from this source, and no
+            # more. The source's own count stays: clearing it would let anyone
+            # with a login of their own refill a guessing budget by resetting
+            # it - five guesses at strangers, a reset, five more. Residual,
+            # stated: a member who spent their source's sign-in failures before
+            # resetting still waits out the window there, new password and all.
             throttle.reset(_throttle_pair(self._client_ip(), address))
             # No session issued. Setting a password proves control of the
             # mailbox, not knowledge of the password, and signing them straight

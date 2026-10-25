@@ -2257,8 +2257,8 @@
  {
   "name": "portal: the reset-request throttle keys on the proxy's address",
   "file": "sentinel/portal.py",
-  "old": "            ip = self._client_ip()\n            if throttle.blocked(_throttle_pair(ip, address)) or throttle.blocked(ip):",
-  "new": "            ip = self.client_address[0]\n            if throttle.blocked(_throttle_pair(ip, address)) or throttle.blocked(ip):",
+  "old": "            ip = self._client_ip()\n            if reset_throttle.blocked(_throttle_pair(ip, address)) or reset_throttle.blocked(ip):",
+  "new": "            ip = self.client_address[0]\n            if reset_throttle.blocked(_throttle_pair(ip, address)) or reset_throttle.blocked(ip):",
   "tests": [
    "tests/test_login_lockout.py"
   ],
@@ -2370,5 +2370,45 @@
   "tests": [
    "tests/test_portal_address.py"
   ]
+ },
+ {
+  "name": "portal: the reset request counts on the sign-in limiter (failed sign-ins drop the reset email, reset requests lock out the new password)",
+  "file": "sentinel/portal.py",
+  "old": "    reset_throttle = LoginThrottle()",
+  "new": "    reset_throttle = throttle",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: a reset request is charged to its source's sign-in budget",
+  "file": "sentinel/portal.py",
+  "old": "            reset_throttle.record_failure(ip)",
+  "new": "            throttle.record_failure(ip)",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#31 one source mails every member it can name: the reset limiter's per-source cap is dropped",
+  "file": "sentinel/portal.py",
+  "old": "            if reset_throttle.blocked(_throttle_pair(ip, address)) or reset_throttle.blocked(ip):",
+  "new": "            if reset_throttle.blocked(_throttle_pair(ip, address)):",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "portal: a completed reset refills the source's sign-in budget (one login resets itself between guesses)",
+  "file": "sentinel/portal.py",
+  "old": "            throttle.reset(_throttle_pair(self._client_ip(), address))",
+  "new": "            throttle.reset(_throttle_pair(self._client_ip(), address))\n            throttle.reset(self._client_ip())",
+  "tests": [
+   "tests/test_login_lockout.py"
+  ],
+  "expect": "killed"
  }
 ]

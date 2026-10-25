@@ -15,7 +15,7 @@ because the criteria do not name most of them.
 | Reset someone else's password with your own token | the token is bound to the email and the binding is checked, not assumed |
 | Have a password changed without the owner noticing | every change emails the owner, including one they performed themselves |
 | Brute-force the token | 32 bytes of `secrets`, compared with `compare_digest` |
-| Request thousands of resets to spam a customer or bury a real alert | the same throttle the login path uses |
+| Request thousands of resets to spam a customer or bury a real alert | a limiter of its own, keyed and sized as the login's - five per address from one source, and five per source, in fifteen minutes - and apart from it, so failed sign-ins never drop a reset email and reset requests never lock out the new password (tests/test_login_lockout.py) |
 
 The criterion "resetting signs out all other sessions" is the one that forced a
 design change. Portal sessions are stateless HMAC cookies with no server-side
