@@ -133,12 +133,14 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
   throttle and TOTP where enrolled; the portal must never gain an operator
   capability (tests/test_member_roles.py holds the boundary). Its
   password-reset request (`/forgot`) gives one page after one floor of
-  time (0.35 s) whether or not the address has a login. It is limited on
-  a budget of its own, keyed as sign-in is (five per address from one
-  source, and five per source, in fifteen minutes): a member's failed
-  sign-ins cannot swallow their reset email, and reset requests cannot
-  lock out the password they set (tests/test_login_lockout.py holds
-  both). The ops
+  time (0.35 s) whether or not the address has a login, and since
+  2026-10-25 sends its email after the answer, so a slow mail provider no
+  longer tells a customer from a stranger; what remains inside the floor
+  is the token's two database writes. It is limited on a budget of its
+  own, keyed as sign-in is (five per address from one source, and five
+  per source, in fifteen minutes): a member's failed sign-ins cannot
+  swallow their reset email, and reset requests cannot lock out the
+  password they set (tests/test_login_lockout.py holds both). The ops
   dashboard is internet-reachable too, at `/admin` (decisions 22a, 22e),
   with no IP allowlist in front of it (22c item 5, answered no): operator
   sign-in with a mandatory second factor and the login throttle are the

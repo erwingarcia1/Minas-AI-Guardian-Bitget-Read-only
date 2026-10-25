@@ -47,6 +47,17 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   member who has used up their source's sign-in failures still waits out
   the window there.
 
+- **The password-reset email is sent after the answer (#33,
+  2026-10-25).** It was sent inside the request, so every step of the
+  mail provider's conversation (connect, STARTTLS, login, send) landed
+  in the answer for an address with a login and in no other: with a
+  provider at 60 ms a reply this measured 0.69 s against 0.35 s, and a
+  stopwatch told customers from strangers, which the response floor
+  exists to prevent. It now goes through the outbox (`sentinel/outbox.py`,
+  as the app's new-device notice has since v1.13.0), and both answers
+  wait for the 0.35 s floor and nothing else; what remains inside the
+  floor is the token's two database writes.
+
 ## [1.16.0] — 2026-10-24
 
 ### Added

@@ -8,7 +8,7 @@ because the criteria do not name most of them.
 
 | Attack | Defence |
 |---|---|
-| Enumerate customers by asking for resets | identical response *and* identical timing whether the address exists |
+| Enumerate customers by asking for resets | identical response *and* identical timing whether the address exists; the email goes after the answer, so a slow mail provider is not on the stopwatch |
 | Steal a token from a database read, a log, or a backup | only the **hash** of the token is stored; the plaintext exists once, in one email |
 | Reuse a link found in a mailbox months later | single-use, and one hour to live |
 | Keep a session obtained before the compromise was noticed | resetting bumps a per-member epoch that invalidates every existing cookie |
@@ -406,3 +406,77 @@ def test_the_login_page_offers_the_reset_route(portal, db):
 
     assert status == 200 and 'id="signin-title"' in body
     assert "/forgot" in body
+
+
+# --- the email goes after the answer ------------------------------------------
+
+
+class _SlowProvider:
+    """A mail provider having a bad day, in place of `sentinel.net.smtp`:
+    the connection and greeting, STARTTLS, the login and the send each take
+    STEP seconds. Keeps what it is given."""
+
+    STEP = 0.3
+    messages: list = []
+
+    def __init__(self, host, port, *, timeout):
+        time.sleep(self.STEP)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def starttls(self):
+        time.sleep(self.STEP)
+
+    def login(self, username, password):
+        time.sleep(self.STEP)
+
+    def send_message(self, msg):
+        time.sleep(self.STEP)
+        _SlowProvider.messages.append(msg)
+
+
+def test_a_slow_mail_provider_does_not_tell_a_customer_from_a_stranger(portal, db, member, monkeypatch):
+    """The stopwatch half of the enumeration defence, with the mail leg real.
+
+    Sent inside the request, every step of the provider's conversation landed
+    in the answer for an address with a login and in no other answer, so a
+    provider slow enough to pass the floor told customers from strangers
+    (measured 2026-10-25: 0.69 s against 0.35 s at 60 ms a reply). The email
+    now goes after the answer: both answers wait for the floor and nothing
+    else, and the email still goes, with a link that works."""
+    from sentinel import net, outbox
+    from sentinel.portal import _RESET_RESPONSE_FLOOR_SECONDS
+
+    monkeypatch.setenv("SMTP_HOST", "smtp.example.invalid")
+    monkeypatch.setenv("SMTP_SENDER", "guardian@example.invalid")
+    monkeypatch.setenv("SMTP_USERNAME", "guardian")
+    monkeypatch.setenv("SMTP_PASSWORD", "not-a-real-password")
+    monkeypatch.setattr(net, "smtp", _SlowProvider)
+    monkeypatch.setattr(_SlowProvider, "messages", [])
+
+    def _elapsed(email):
+        start = time.perf_counter()
+        status, _ = _post(portal, "/forgot", {"email": email})
+        assert status == 200
+        return time.perf_counter() - start
+
+    known = _elapsed(member)
+    unknown = _elapsed("nobody@example.com")
+
+    # One provider step over the floor: slack for a busy machine, and a
+    # quarter of the provider's conversation, so an answer that waited for
+    # the mail lands well past it.
+    ceiling = _RESET_RESPONSE_FLOOR_SECONDS + _SlowProvider.STEP
+    assert known < ceiling and unknown < ceiling, (
+        f"known={known:.3f}s unknown={unknown:.3f}s: the answer waited for the mail provider")
+    assert outbox.wait_until_sent(10), "the reset email never went"
+    [message] = _SlowProvider.messages
+    assert message["To"] == member
+    text = message.get_content()
+    assert "/reset?token=" in text
+    token = text.split("/reset?token=", 1)[1].split()[0]
+    assert consume_reset_token(db, token) == member, "the emailed link does not redeem"

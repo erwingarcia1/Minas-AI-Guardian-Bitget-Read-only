@@ -31,7 +31,7 @@ from sentinel.db import Database
 from sentinel.edge import EdgeHandler, portal_host, portal_url, trusted_proxies_from_env
 from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
 from sentinel.naming import display_label
-from sentinel.outbox import answering
+from sentinel.outbox import answering, later
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
 from sentinel.passwords import LoginThrottle, hash_password, verify_password
 from sentinel.rules_schema import default_for
@@ -3041,9 +3041,11 @@ def _reset_url(token: str) -> str:
 def _send_reset_email(db: Database, address: str, token: str) -> None:
     """The one place the plaintext token exists outside the customer's mailbox.
 
-    Guarded: a mail failure is logged, not raised. The alternative is a 500
-    that tells the sender their address is real, which is the enumeration leak
-    the whole flow is built to avoid."""
+    Guarded: a mail failure is logged, not raised. Written when the send ran
+    inside the request, where the alternative was a 500 telling the sender
+    their address is real - the enumeration leak the whole flow is built to
+    avoid. `_forgot` now calls it after the answer (sentinel/outbox.py), and
+    the guard stays: the failure is still this flow's to log."""
     from sentinel.alerts.base import AlertMessage
     from sentinel.alerts.contact import ContactRouter
 
@@ -4371,14 +4373,19 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             set with a 429 for up to fifteen minutes."""
             # Both paths are padded to the same floor before responding.
             # Identical wording is not enough on its own: issuing a token
-            # writes twice and sends mail, and an unknown address does
-            # neither, so a stopwatch answers the question the wording
-            # refuses to. The floor is generous next to that difference and
-            # small next to a human.
+            # writes twice and an unknown address writes nothing, so a
+            # stopwatch answers the question the wording refuses to. The
+            # floor is generous next to that difference and small next to a
+            # human.
             #
-            # Residual, stated rather than hidden: a mail server slow enough
-            # to blow through the floor still leaks. Moving the send off this
-            # path entirely is the real fix and needs a queue.
+            # The email is not part of that difference: it goes after the
+            # answer (sentinel/outbox.py, 2026-10-25). Sent inside the
+            # request, every step of the mail provider's conversation landed
+            # in the answer for a real login and in no other, and a provider
+            # slow enough to pass the floor told customers from strangers.
+            # Residual, stated rather than hidden: the token's two writes are
+            # still inside the answer, so a database slow enough to pass the
+            # floor would leak the same way.
             deadline = time.monotonic() + _RESET_RESPONSE_FLOOR_SECONDS
             address = normalize_email((form.get("email", [""])[0] or ""))
             ip = self._client_ip()
@@ -4396,7 +4403,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             token = create_reset_token(db, address)
             if token:
                 logger.info("password reset requested for %s from %s", address, ip)
-                _send_reset_email(db, address, token)
+                later(_send_reset_email, db, address, token)
             else:
                 logger.info("password reset requested for an unknown address from %s", ip)
             # One sentence, both paths, always 200, same elapsed time.

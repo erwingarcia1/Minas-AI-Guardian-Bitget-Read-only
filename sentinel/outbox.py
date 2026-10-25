@@ -12,6 +12,11 @@ reach Minas" about a sign-in that had created a device and spent the
 member's code, and "Not acknowledged" about an acknowledgement that had
 already stopped the escalation.
 
+The password-reset email goes the same way (2026-10-25), for a reason of its
+own: sent inside the request, every step of the provider's conversation
+landed in the answer for an address with a login and in no other, so a
+stopwatch told a customer from a stranger (#33).
+
 The portal serves each request inside `answering()`. A delivery made through
 `later()` while it runs is queued, and once the answer has been written the
 queue runs - in the order it was filled, each delivery under its own guard

@@ -28,6 +28,7 @@ import urllib.parse
 import pytest
 
 from sentinel import api as api_module
+from sentinel import outbox
 from sentinel.dashboard import serve_dashboard
 from sentinel.edge import (
     DASHBOARD_TRUSTED_PROXIES_SETTING,
@@ -483,8 +484,12 @@ def test_behind_the_proxy_one_visitors_reset_requests_do_not_block_another(db, b
         port = server.server_address[1]
         for _ in range(6):
             assert _portal_post(port, "/forgot", {"email": ALICE}, VISITOR_A)[0] == 200
+        # The email goes after the answer (sentinel/outbox.py): read the
+        # list once what was queued has gone, and no longer than that.
+        assert outbox.wait_until_sent(5), "a reset email queued after the answer never went"
         assert sent == [ALICE] * 5, "the sixth request from one visitor was not throttled"
         assert _portal_post(port, "/forgot", {"email": ALICE}, VISITOR_B)[0] == 200
+        assert outbox.wait_until_sent(5), "a reset email queued after the answer never went"
         assert sent == [ALICE] * 6, (
             "a visitor through the same proxy got no reset email because of someone else's requests")
     finally:
@@ -573,7 +578,9 @@ def reset_emails(monkeypatch):
 
 
 def _mailed(reset_emails):
-    """The addresses mailed so far."""
+    """The addresses mailed so far. The email goes after the answer
+    (sentinel/outbox.py), so this waits for what was queued - bounded."""
+    assert outbox.wait_until_sent(5), "a reset email queued after the answer never went"
     return [address for address, _ in reset_emails]
 
 
@@ -630,6 +637,7 @@ def test_reset_requests_do_not_lock_the_new_password_out(db, reset_emails, proxi
     set_member_password(db, ALICE, "correct horse", notify=None)
     for _ in range(5):
         assert _portal_post(proxied_portal, "/forgot", {"email": ALICE}, VISITOR_A)[0] == 200
+        _mailed(reset_emails)  # each delivered before the next is asked for, so [-1] is the newest
     assert _mailed(reset_emails) == [ALICE] * 5
     _, newest = reset_emails[-1]
     status, _ = _portal_post(proxied_portal, "/reset", {"token": newest, "password": "a brand new password"},
@@ -684,6 +692,7 @@ def test_one_source_is_capped_across_addresses_on_the_reset_limiter(db, reset_em
         set_member_password(db, address, "correct horse", notify=None)
     for address in members:
         assert _portal_post(proxied_portal, "/forgot", {"email": address}, VISITOR_A)[0] == 200
+        _mailed(reset_emails)  # each delivered before the next is asked for, so the list is in request order
     assert _mailed(reset_emails) == members[:5], "one source mailed a sixth address inside the window"
     assert _portal_post(proxied_portal, "/forgot", {"email": members[5]}, VISITOR_B)[0] == 200
     assert _mailed(reset_emails) == members, "another source was capped by the first one's requests"

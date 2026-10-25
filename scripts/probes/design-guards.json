@@ -2410,5 +2410,15 @@
    "tests/test_login_lockout.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "#33 ATTACK enumerate customers by stopwatch: the reset email is sent inside the answer",
+  "file": "sentinel/portal.py",
+  "old": "                later(_send_reset_email, db, address, token)",
+  "new": "                _send_reset_email(db, address, token)",
+  "tests": [
+   "tests/test_password_reset.py"
+  ],
+  "expect": "killed"
  }
 ]
