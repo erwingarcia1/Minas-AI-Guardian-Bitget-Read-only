@@ -7,6 +7,21 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
 
 ### Changed
 
+- **Version 1.0.0, built for Google Play.** The first store build goes to
+  Play's internal testing track for the team, then to production after
+  Google's review; the `mobile-v1.0.0` tag goes on the build that reaches
+  production. `app.json` names the EAS project (`jimroxodezis-team`'s
+  `minas-ai-guardian`), which holds the Android upload key; EAS numbers
+  the builds (versionCode 1 was the first preview APK).
+
+- **Android no longer asks for storage or "display over other apps".**
+  Expo's template requests READ/WRITE_EXTERNAL_STORAGE and
+  SYSTEM_ALERT_WINDOW; the app reads no files and draws no overlays, and
+  the first preview build asked for all three. `android.blockedPermissions`
+  removes them, so the app requests INTERNET and VIBRATE, plus the
+  biometric pair expo-secure-store declares.
+  `tests/test_mobile_app.py` pins the list.
+
 - **The activity screen names its one exception (decision 6b).** "This
   record is append-only" now goes on: when a person named in it asks
   Minas to delete their data, their email address, phone number and
@@ -14,7 +29,9 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   sentence is the portal's `ACTIVITY_PROMISE`, word for word;
   `tests/test_mobile_app.py` pins the copy. The new entry ("A person's
   details were erased at their request") arrives through
-  `/api/v1/activity` like every other.
+  `/api/v1/activity` like every other. Not in the first internal-test
+  build (versionCode 2, built from 4ccfa99 before this landed); the next
+  build carries it.
 
 - **An ended sign-in lands on the welcome screen, which says why.** When
   the server ends a phone's sign-in (signed out from the portal or another

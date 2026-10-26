@@ -161,11 +161,15 @@ preview APK needs neither store account.
 
 - **Push notifications:** waiting on decision 21e.
 - **Store accounts.** The app is published as `com.minastrade.guardian`
-  (21f), but neither the Apple Developer Program nor the Google Play
-  account exists yet. Enrol the company in both; identity verification
-  takes days. Google also asks a new personal account for a 14-day
-  closed test before production, and an organisation account avoids
-  that.
+  (21f). The Google Play account exists: an organisation account, whose
+  developer name is "Minas AI", so there is no 14-day closed test before
+  production. The first Android build is uploaded to internal testing by
+  hand in Play Console (Play App Signing on, with Google's key; EAS keeps
+  the upload key). The Apple Developer Program account is not ready yet.
+- **Before Play production:** the privacy policy page (Play wants its
+  address in the listing and in the app), the Data safety form, the
+  content rating, the store listing, and a way for Google's reviewer to
+  sign in past two-factor (the owner decides this after internal testing).
 - **Account changes:** the settings only the account's main contact may
   change come with API v2.
 
