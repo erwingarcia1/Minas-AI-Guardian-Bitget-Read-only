@@ -8471,3 +8471,21 @@ sends before it writes its row; RulesConfig's rejection log line says
 telegram-disconnected notice is routed after its chat is revoked; a
 QUIT that gets a non-221 reply after DATA was accepted reads as a
 refusal, for alerts and tripwires alike.
+
+**Later (2026-10-26, 12:30 to 15:06 UTC): v1.18.0 cut and deployed.** The
+owner merged #140 (`c49e3e0`, 12:30) and said "merged. i want a
+release." The version: 1.18.0, MINOR - the tripwire page is a new
+capability; nothing rejects a config, migrates the database or removes a
+setting, and both changes sit under "Changed detection behaviour". The CI
+workflow was dispatched on `c49e3e0` (run 40323982781, scheduled-gates
+12:37 to 12:52, green); `scripts/release.sh 1.18.0` ran in the main
+checkout on `main`, its cover accepted that run, and the fast gates ran
+here (the suite 368 s). Release commit `7fc8e7c`, the annotated tag
+pushed, the GitHub Release published 13:00:07, CI on the release commit
+green (run 40326886468, 13:07). The deploy was the owner's `!` line,
+finished by 15:04, read here: running before 1.17.0 at `22d7fec`, the gate
+OK, the image built with `sentinel-1.18.0`, the live config valid,
+`sentinel` recreated alone with `caddy` left running, healthy, the version
+asserted. The outside checks at 15:06 read as expected
+(docs/DEPLOYMENTS.md). The record is the branch `deploy-record-1-18-0`.
+Next, the owner's: 26e, 26b's two further tripwires, 26d.

@@ -21,6 +21,86 @@ Newest entry first.
 
 ---
 
+## 2026-10-26 · v1.18.0 (current, from v1.17.0): a refused security tripwire pages Minas; the reset link by email only
+
+Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
+the command typed with the `!` prefix and its output read by the session
+(docs/deployment.md "Deploying code changes"). Cut the same day from
+`main` at `c49e3e0` (the merge of #140, 12:30) by `scripts/release.sh
+1.18.0`, run in the main checkout on `main`: the CI workflow was
+dispatched on `c49e3e0` (run 40323982781, its scheduled-gates job 12:37
+to 12:52, probes and mutation floor green), and the scheduled-gates cover
+accepted that run as covering the tree, so the fast gates ran locally -
+ruff, the suite (368 s), the coverage floor, pip-audit, the issue-status
+audit, "scheduled gates ran (8d)" and release objects, with the
+design-guard probes and the mutation floor skipped under `--fast` as
+already run; release commit `7fc8e7c`, annotated tag `v1.18.0`, the
+GitHub Release published (13:00:07), CI on the release commit green (run
+40326886468, 13:00 to 13:07). Times are UTC.
+
+**The deploy:** `sudo /opt/minas-guardian/scripts/deploy.sh v1.18.0`,
+finished by 15:04 (the command's output reached the session at
+15:04:28) - preflight clean; tags fetched; running before: 1.17.0 at
+`22d7fec`; checkout `7fc8e7c`, detached; `deploy-gate: OK - HEAD is
+v1.18.0 (7fc8e7c)`; the image built from a 417 kB context, `pip`
+installing `sentinel-1.18.0` (with `ccxt-4.5.63`, `cryptography-50.0.2`,
+`anthropic-2.3.0` and `segno-1.6.6` among its dependencies, as in
+1.17.0); the live `config/rules.yaml` validated against the new image
+("valid — every setting is recognised and in range"); the switchover
+recreated `minas-guardian-sentinel-1` only and left `caddy` running;
+healthy; the version assertion:
+
+```
+Minas AI Guardian 1.18.0
+  commit   7fc8e7ce855d30d2412104be188cc879313d33e5
+  tag      v1.18.0
+  source   build-arg
+deploy: OK — v1.18.0 is live and verified
+```
+
+**The readings afterwards** (from outside, by the session, 15:06; the
+on-box `git describe` and `compose ps` readings were not taken - the
+version assertion above is the container's own answer):
+
+```
+curl -o /dev/null -w '%{http_code} %{redirect_url}' /healthz    -> 303 https://guardian.minastrade.com/
+curl ... /alerts (no session)                                   -> 303 https://guardian.minastrade.com/
+curl / | grep -c 'id="landing-title"'                           -> 1   (the front door is unchanged)
+curl / | grep -c 'signin-title'                                 -> 0
+curl / | grep -c 'Our address has changed'                      -> 0   (the host is recognised)
+curl /login | grep -c 'name="password"'                         -> 1
+curl /forgot                                                    -> 200, the form (action="/forgot")
+curl /reset (no link, no session)                               -> 200, the sign-in page (id="signin-title")
+curl /reset?token=<not a token>                                 -> 200, the reset form - nothing is checked or spent on GET
+curl -b 'minas_portal=stale' /forgot                            -> 200, the form
+curl /forgot (headers)                                          -> cache-control: no-store; strict-transport-security: max-age=31536000;
+                                                                   x-frame-options: DENY; content-security-policy: frame-ancestors 'none'
+curl /api/v1/limits                                             -> 401 (the app API)
+curl /admin                                                     -> 401 (the dashboard's sign-in, still only under /admin)
+curl http://guardian.minastrade.com/                            -> 308 https://guardian.minastrade.com/
+```
+
+Not read from outside, because each needs a member, a refusing provider
+or an operator session: the `security_notice_undelivered` page itself,
+and the reset email's single channel. The tests and the design-guard
+probes are their evidence (CHANGELOG `[1.18.0]`).
+
+**What shipped** (CHANGELOG `[1.18.0]`): a refused "password changed",
+"two-factor switched off" or "alerts going somewhere new" notice pages
+Minas at CRITICAL - masked address, the account or the login's accounts,
+the server's words masked, `failed_at` pointing at the failed row - and a
+connected Telegram chat that took the copy is counted, never a reason to
+skip the page (decision 26b); `sentinel set-contact` builds an operator
+alerter for that notice; the reset link goes to the mailbox only (26c);
+the v1.17.0 deploy record.
+
+**Still outside this entry:** decisions 26d, 26e and 26b's two further
+tripwires (the owner's); the pending keys and the SMS provider
+(CHANGELOG's pending list); the Tailscale admin-console removal of the
+machine.
+
+---
+
 ## 2026-10-25 · v1.17.0 (current, from v1.16.0): the reset path, failed email on the overview, no false "delivered to nobody" pages, portal access follows a contact move
 
 Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
