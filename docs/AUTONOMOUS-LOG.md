@@ -8372,3 +8372,24 @@ so they are recorded here):
   coalesce(a.alert_email_secondary, ''));`
 - Both failure cards scan `deliveries` on every 30-second refresh with no
   `(channel, status, created_at)` index; bounded by retention, fine today.
+
+**Later (2026-10-25, 13:43 to 14:57 UTC): v1.17.0 cut and deployed.** The
+owner merged #138 (`902270b`, 13:43) and said "merge successful. let's
+release and deploy". The version: 1.17.0, MINOR - the dashboard card is
+new capability; nothing rejects a config, migrates the database or
+removes a setting, and the false-page changes sit under "Changed
+detection behaviour" as CONTRIBUTING asks. The CI workflow was
+dispatched on `902270b` (run 40201378747, scheduled-gates 14:15 to 14:32,
+green) while the merged worktree left from the v1.16.0 record was
+removed (clean, its commit on `origin/main`); `scripts/release.sh 1.17.0`
+then ran in the main checkout on `main`, its cover accepted that run, and
+the fast gates ran here (the suite 735 s). Release commit `22d7fec`,
+annotated tag pushed, the GitHub Release published 14:47:05, CI on the
+release commit green (run 40203850604, 14:54). The deploy was the
+owner's `!` line, read here: running before 1.16.0 at `fb70525`, the gate
+OK, the image built with `sentinel-1.17.0`, the live config valid,
+`sentinel` recreated alone with `caddy` left running, healthy, the
+version asserted. The outside checks at 14:57 read as expected, the
+recovery routes included (docs/DEPLOYMENTS.md). The record is this
+branch, `deploy-record-1-17-0`. Next: the portal login for the address
+in the report, if it is not issued yet; 26b and 26c.

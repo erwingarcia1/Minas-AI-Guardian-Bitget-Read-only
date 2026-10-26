@@ -21,6 +21,90 @@ Newest entry first.
 
 ---
 
+## 2026-10-25 · v1.17.0 (current, from v1.16.0): the reset path, failed email on the overview, no false "delivered to nobody" pages, portal access follows a contact move
+
+Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
+the command typed with the `!` prefix and its output read by the session
+(docs/deployment.md "Deploying code changes"). Cut the same afternoon
+from `main` at `902270b` (the merge of #138, 13:43) by
+`scripts/release.sh 1.17.0`, run in the main checkout on `main`: the CI
+workflow was dispatched on `902270b` (run 40201378747, its
+scheduled-gates job 14:15 to 14:32, probes and mutation floor green),
+and the scheduled-gates cover accepted that run as covering the tree, so
+the fast gates ran locally - ruff, the suite (735 s), the coverage floor,
+pip-audit, the issue-status audit, "scheduled gates ran (8d)" and release
+objects, with the design-guard probes and the mutation floor skipped
+under `--fast` as already run; release commit `22d7fec` (14:46:54),
+annotated tag `v1.17.0`, the GitHub Release published (14:47:05), CI on
+the release commit green (run 40203850604, 14:47 to 14:54). Times are
+UTC.
+
+**The deploy:** `sudo /opt/minas-guardian/scripts/deploy.sh v1.17.0`,
+between 14:54 and 14:57 - preflight clean; tags fetched; running before:
+1.16.0 at `fb70525`; checkout `22d7fec`, detached; `deploy-gate: OK -
+HEAD is v1.17.0 (22d7fec)`; the image built from a 527 kB context, `pip`
+installing `sentinel-1.17.0` (with `ccxt-4.5.63`, `cryptography-50.0.2`,
+`anthropic-2.3.0` and `segno-1.6.6` among its dependencies, as in
+1.16.0); the live `config/rules.yaml` validated against the new image
+("valid — every setting is recognised and in range"); the switchover
+recreated `minas-guardian-sentinel-1` only and left `caddy` running;
+healthy; the version assertion:
+
+```
+Minas AI Guardian 1.17.0
+  commit   22d7fecbc58b8d93758207f5864d52065d9a8619
+  tag      v1.17.0
+  source   build-arg
+deploy: OK — v1.17.0 is live and verified
+```
+
+**The readings afterwards** (from outside, by the session, 14:57; the
+on-box `git describe` and `compose ps` readings were not taken - the
+version assertion above is the container's own answer):
+
+```
+curl -o /dev/null -w '%{http_code} %{redirect_url}' /healthz    -> 303 https://guardian.minastrade.com/
+curl ... /alerts (no session)                                   -> 303 https://guardian.minastrade.com/
+curl / | grep -c 'id="landing-title"'                           -> 1   (the front door is unchanged)
+curl / | grep -c 'signin-title'                                 -> 0
+curl / | grep -c 'Our address has changed'                      -> 0   (the host is recognised)
+curl /login | grep -c 'name="password"'                         -> 1
+curl /forgot                                                    -> 200, the form (action="/forgot")
+curl /reset (no link, no session)                               -> 200, the sign-in page (id="signin-title"), as before
+curl /reset?token=<not a token>                                 -> 200, the reset form - nothing is checked or spent on GET
+curl -b 'minas_portal=stale' /forgot                            -> 200, the form (the recovery routes answer before the session check)
+curl /forgot (headers)                                          -> cache-control: no-store; strict-transport-security: max-age=31536000;
+                                                                   x-frame-options: DENY; content-security-policy: frame-ancestors 'none'
+curl /api/v1/limits                                             -> 401 (the app API)
+curl /admin                                                     -> 401 (the dashboard's sign-in, still only under /admin)
+curl http://guardian.minastrade.com/                            -> 308 https://guardian.minastrade.com/
+```
+
+Not read from outside, because each needs a session or a real member: a
+signed-in browser at `/forgot` and on the emailed link, the reset
+email's timing for an address with a login, the "Failed email
+deliveries" card (it renders only when a failed email row exists), the
+liveness window and the operator pages. The tests and the design-guard
+probes are their evidence (CHANGELOG `[1.17.0]`).
+
+**What shipped** (CHANGELOG `[1.17.0]`): the reset request on a limiter
+of its own; the reset email after the answer; the recovery pages for a
+browser signed in to the portal; the liveness Email window counting
+sends only; the "Failed email deliveries" card on the ops overview; no
+CRITICAL "delivered to nobody" page for an alert left to the digest or
+snoozed by a member (never for a coverage alert), and the page naming
+the tier; `set-contact` revoking the old address's scoped portal access
+with a move, printing the new address's login state, refusing a
+phone-only change, and a notice that says only what is true (decision
+26a); the v1.16.0 deploy record.
+
+**Still outside this entry:** the portal login for the address in the
+2026-10-25 report, issued from the dashboard (the owner's); decision
+26b, 26c and 26d; the pending keys and the SMS provider (CHANGELOG's
+pending list); the Tailscale admin-console removal of the machine.
+
+---
+
 ## 2026-10-24 · v1.16.0 (current, from v1.15.0): the landing page, on the web and in the app
 
 Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,

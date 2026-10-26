@@ -11,8 +11,8 @@ product should do, and each was skipped rather than guessed at.
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
 21b/21e/21h/21i, and 26b/26c/26d. Everything else below is answered and
 built, and deployed where there is a server to deploy to - the app waits on
-the store accounts (section 21, "Not built yet"), and 26a waits on the next
-release; the sections stay as the record.
+the store accounts (section 21, "Not built yet"); the sections stay as the
+record.
 
 ---
 
@@ -45,7 +45,7 @@ release; the sections stay as the record.
 | 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **ANSWERED 2026-10-24** — `segno` accepted by the merge of the QR PR (#130); the three renderings read by Google Authenticator the same day; shipped in v1.15.0 and deployed; see section 23 |
 | 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24. **Deployed 2026-10-24 (v1.15.0)** |
 | 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25. **Deployed 2026-10-24 (v1.16.0)** |
-| 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR | **PARTLY ANSWERED 2026-10-25** — a contact move revokes the old address's scoped access and the notice says only what is true (26a; the owner chose the fix and left the remedy open, so the session chose revoke - the owner can reverse it); paging on a refused notice (26b), the reset link on Telegram (26c) and a "no login yet" email (26d) are open; see section 26 |
+| 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR | **PARTLY ANSWERED 2026-10-25** — a contact move revokes the old address's scoped access and the notice says only what is true (26a; the owner chose the fix and left the remedy open, so the session chose revoke - the owner can reverse it); paging on a refused notice (26b), the reset link on Telegram (26c) and a "no login yet" email (26d) are open; see section 26. **Deployed 2026-10-25 (v1.17.0)** |
 
 ---
 
@@ -2530,6 +2530,9 @@ owner prefers it. Production has recorded no `alert_contact_updated` or
 never moved a contact there and left no stale grant behind; only a hand
 edit in SQL could have, and the read-only query for one is in
 docs/AUTONOMOUS-LOG.md (2026-10-25).
+
+**Deployed 2026-10-25** in v1.17.0, between 14:54 and 14:57 UTC
+(docs/DEPLOYMENTS.md).
 
 ### 26b. Should a refused notice page Minas? — open
 
