@@ -90,7 +90,7 @@ and tags are only cut by `scripts/release.sh`, which refuses an empty
 |---|---|
 | `sentinel onboard --exchange X --label Y` | Verify read-only key (fail-closed) + seed baseline |
 | `sentinel run` | Monitoring engine + ops dashboard + member portal + metrics |
-| `sentinel set-contact --label X …` | Set an account's alert contacts, primary and emergency (`--clear-secondary` removes the emergency one; the primary email cannot be removed); a move takes the old address's scoped portal access to that account and prints the new address's login state; `--sms-alerts on\|off` toggles the SMS preference |
+| `sentinel set-contact --label X …` | Set an account's alert contacts, primary and emergency (`--clear-secondary` removes the emergency one; the primary email cannot be removed); a move takes the old address's scoped portal access to that account and prints the new address's login state; Minas is paged if the email provider refuses the notice to the old address (decision 26b); `--sms-alerts on\|off` toggles the SMS preference |
 | `sentinel digest` | Send the MEDIUM/LOW daily digest |
 | `sentinel ack <id>` | Acknowledge an alert (stops CRITICAL escalation) |
 | `sentinel triage --label X` | AI incident narrative (optional; additive only) |

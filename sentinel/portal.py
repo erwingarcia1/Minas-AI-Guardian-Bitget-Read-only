@@ -3039,7 +3039,16 @@ def _reset_url(token: str) -> str:
 
 
 def _send_reset_email(db: Database, address: str, token: str) -> None:
-    """The one place the plaintext token exists outside the customer's mailbox.
+    """The one place the plaintext token exists outside the customer's mailbox,
+    and the mailbox is the only place it goes (decision 26c, 2026-10-25).
+
+    `email_only`: a notice follows its address to every channel the address
+    has, so until 26c the link also reached any Telegram chat the member had
+    connected (#18). The link proves control of the mailbox, which is what a
+    reset is meant to prove; the Telegram copy let whoever held the member's
+    Telegram take over their portal login without it. No operator alerter
+    either: a refused reset link corrects itself - the member asks again, or
+    calls Minas - and 26b pages only for the tripwires.
 
     Guarded: a mail failure is logged, not raised. Written when the send ran
     inside the request, where the alternative was a 500 telling the sender
@@ -3064,19 +3073,25 @@ def _send_reset_email(db: Database, address: str, token: str) -> None:
     )
     try:
         ContactRouter(db=db).send(
-            _PlainNotice(message), "your Minas AI Guardian login", [address], [],
+            _PlainNotice(message, email_only=True), "your Minas AI Guardian login", [address], [],
         )
     except Exception as exc:  # noqa: BLE001 - never leak existence through an error
         logger.error("could not send the password-reset email: %s", exc)
 
 
-def _send_two_factor_disabled_email(db: Database, address: str) -> None:
+def _send_two_factor_disabled_email(db: Database, address: str, operator_alerter=None) -> None:
     """Sent whenever two-factor is removed.
 
     The same reasoning as the password-change notice: a change the owner did
     not make is the only signal they will get. Removing a second factor is if
     anything the more important of the two, because it is what an attacker
-    does *after* getting in and *before* doing anything else."""
+    does *after* getting in and *before* doing anything else.
+
+    `operator_alerter` pages Minas when the email provider refuses this
+    notice (decision 26b), whatever a connected Telegram chat took - the
+    page says how many did, since whoever has the session can connect one:
+    the owner was not warned by email, and a person has to make sure they
+    are. serve_portal passes its own."""
     from sentinel.alerts.base import AlertMessage
     from sentinel.alerts.contact import ContactRouter
 
@@ -3092,17 +3107,23 @@ def _send_two_factor_disabled_email(db: Database, address: str) -> None:
         ),
         evidence={},
     )
-    ContactRouter(db=db).send(
+    ContactRouter(db=db, operator_alerter=operator_alerter).send(
         _PlainNotice(message), "your Minas AI Guardian login", [address], [],
     )
 
 
-def _send_password_changed_email(db: Database, address: str) -> None:
+def _send_password_changed_email(db: Database, address: str, operator_alerter=None) -> None:
     """Sent on EVERY password change, including one the owner just made.
 
     Not a receipt - a tripwire. A change the owner did not make is the only
     signal they will get that somebody else has their mailbox, and the cost of
-    one extra email to the person who expected it is nothing against that."""
+    one extra email to the person who expected it is nothing against that.
+
+    `operator_alerter` pages Minas when the email provider refuses this
+    notice (decision 26b), whatever a connected Telegram chat took - the
+    page says how many did, since whoever has the session can connect one:
+    the owner was not warned by email, and a person has to make sure they
+    are. serve_portal passes its own."""
     from sentinel.alerts.base import AlertMessage
     from sentinel.alerts.contact import ContactRouter
 
@@ -3118,7 +3139,7 @@ def _send_password_changed_email(db: Database, address: str) -> None:
         ),
         evidence={},
     )
-    ContactRouter(db=db).send(
+    ContactRouter(db=db, operator_alerter=operator_alerter).send(
         _PlainNotice(message), "your Minas AI Guardian login", [address], [],
     )
 
@@ -3133,16 +3154,21 @@ class _PlainNotice:
     alerts were moved to, the fact that a second factor was removed - so
     anything that reformats a detection into a summary must render these
     verbatim instead. Every notice in this module goes through this class, so
-    declaring it here is what stops the next one being added without it."""
+    declaring it here is what stops the next one being added without it.
+
+    `email_only` (decision 26c) keeps a notice to the mailbox: no Telegram
+    copy and no text, whatever else the address has connected. The reset
+    link is the one notice that sets it - see `_send_reset_email`."""
 
     is_notice = True
 
-    def __init__(self, alert):
+    def __init__(self, alert, *, email_only: bool = False):
         self.rule = alert.rule
         self.severity = alert.severity
         self.confidence = alert.confidence
         self.message = alert.message
         self.evidence = alert.evidence
+        self.email_only = email_only
 
 
 def _render_forgot(notice: str | None = None) -> str:
@@ -4285,8 +4311,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
 
             if path.endswith("/disable"):
+                # serve_portal's alerter: a refused tripwire pages (26b).
                 ok = disable_2fa(db, cipher, _MEMBER, email, code,
-                                 notify=lambda addr: _send_two_factor_disabled_email(db, addr))
+                                 notify=lambda addr: _send_two_factor_disabled_email(
+                                     db, addr, operator_alerter=operator_alerter))
                 if not ok:
                     self._send(_render_security(
                         db, email, error="That code was not accepted. Two-factor is still on.").encode())
@@ -4435,8 +4463,10 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     notice="That link is no longer valid. Request a new one.").encode())
                 return
 
+            # serve_portal's alerter: a refused tripwire pages (26b).
             set_member_password(db, address, password, invalidate_sessions=True,
-                                notify=lambda addr: _send_password_changed_email(db, addr))
+                                notify=lambda addr: _send_password_changed_email(
+                                    db, addr, operator_alerter=operator_alerter))
             logger.info("password reset completed for %s from %s", address, self._client_ip())
             # The sign-in count for this login from this source, and no
             # more. The source's own count stays: clearing it would let anyone

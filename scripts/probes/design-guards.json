@@ -2752,5 +2752,485 @@
    "tests/test_account_notices.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "26c the reset link reaches a connected Telegram chat again: the sender drops email_only",
+  "file": "sentinel/portal.py",
+  "old": "_PlainNotice(message, email_only=True)",
+  "new": "_PlainNotice(message)",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26c an email-only notice keeps its Telegram copy",
+  "file": "sentinel/alerts/contact.py",
+  "old": "            self._telegram_targets = []\n            phones = []\n",
+  "new": "            phones = []\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26c an email-only notice is still texted",
+  "file": "sentinel/alerts/contact.py",
+  "old": "            self._telegram_targets = []\n            phones = []\n",
+  "new": "            self._telegram_targets = []\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a refused tripwire pages nobody: the call after the Telegram leg is gone",
+  "file": "sentinel/alerts/contact.py",
+  "old": "            self._page_if_tripwire_undelivered(refused_tripwire, detection, account_label, emails_for_email,\n                                               failed, accepted)\n",
+  "new": "            pass\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a failing tripwire page costs the member's text and the caller (guard removed)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "            except Exception as page_exc:  # noqa: BLE001 - the legs after this one, and the caller, come first\n                logger.error(\"could not page the undelivered %s notice: %s\", rule, page_exc)\n",
+  "new": "            except ZeroDivisionError:\n                raise\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the tripwire page carries the full address",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                masked = mask_address(recipient)\n",
+  "new": "                masked = recipient\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the server's refusal reaches the page with the address in it",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                words = _masked_text(str(exc), recipients)\n",
+  "new": "                words = str(exc)\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b one tripwire page for every member: the dedup scope forgets the address",
+  "file": "sentinel/alerts/contact.py",
+  "old": "dedup_scope=f\"{rule}:{recipient.strip().lower()}:{account_label}\",",
+  "new": "dedup_scope=f\"{rule}:{account_label}\",",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the tripwire page is HIGH, not CRITICAL",
+  "file": "sentinel/alerts/contact.py",
+  "old": "rule=\"security_notice_undelivered\", severity=\"CRITICAL\", message=message,",
+  "new": "rule=\"security_notice_undelivered\", severity=\"HIGH\", message=message,",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b telegram_disconnected joins the tripwires without the owner",
+  "file": "sentinel/alerts/contact.py",
+  "old": "    \"password_changed\": \"their portal password was changed\",\n",
+  "new": "    \"password_changed\": \"their portal password was changed\",\n    \"telegram_disconnected\": \"their Telegram alerts were disconnected\",\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the portal's reset sends its tripwire with no alerter",
+  "file": "sentinel/portal.py",
+  "old": "notify=lambda addr: _send_password_changed_email(\n                                    db, addr, operator_alerter=operator_alerter))",
+  "new": "notify=lambda addr: _send_password_changed_email(\n                                    db, addr))",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the portal's two-factor removal sends its tripwire with no alerter",
+  "file": "sentinel/portal.py",
+  "old": "notify=lambda addr: _send_two_factor_disabled_email(\n                                     db, addr, operator_alerter=operator_alerter))",
+  "new": "notify=lambda addr: _send_two_factor_disabled_email(\n                                     db, addr))",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the destination-change notice is sent with no alerter",
+  "file": "sentinel/events.py",
+  "old": "        ContactRouter(db=db, operator_alerter=operator_alerter).send(\n            _PlainNotice(message), account_label, [old_email], [],",
+  "new": "        ContactRouter(db=db).send(\n            _PlainNotice(message), account_label, [old_email], [],",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b set-contact never builds the alerter for the destination notice",
+  "file": "sentinel/cli.py",
+  "old": "operator_alerter=_destination_notice_alerter(db) if due else None)",
+  "new": "operator_alerter=None)",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b set-contact builds the alerter when no notice is due",
+  "file": "sentinel/cli.py",
+  "old": "operator_alerter=_destination_notice_alerter(db) if due else None)",
+  "new": "operator_alerter=_destination_notice_alerter(db))",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b set-contact fails when paging cannot be built (guard removed)",
+  "file": "sentinel/cli.py",
+  "old": "    except Exception as exc:  # noqa: BLE001 - the move and the notice come first\n",
+  "new": "    except ZeroDivisionError as exc:\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the reorder undone: the tripwire pages from the email leg, before the Telegram leg can say what it did",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                        refused_tripwire = exc\n",
+  "new": "                        self._page_if_tripwire_undelivered(exc, detection, account_label, emails_for_email, failed, 0)\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a chat connected to the login silences the page again (the told-on-Telegram skip restored)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "        if refused_tripwire is not None:\n            self._page_if_tripwire_undelivered(",
+  "new": "        if refused_tripwire is not None and not accepted:\n            self._page_if_tripwire_undelivered(",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the Telegram leg counts no chat: a page whose chat took the copy says the member was told nowhere",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                accepted += 1\n",
+  "new": "",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a Telegram leg that raises loses the tripwire page (the count left unset)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "        accepted = 0\n        try:\n            accepted = self._send_telegram(",
+  "new": "        try:\n            accepted = self._send_telegram(",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a send that never reached the provider pages again (the refusal condition dropped)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                and getattr(detection, \"rule\", None) in TRIPWIRE_NOTICE_RULES\n                and smtp_refusal_code(exc) is not None)\n",
+  "new": "                and getattr(detection, \"rule\", None) in TRIPWIRE_NOTICE_RULES)\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "#58/26b a failing missing-provider page costs the tripwire's Telegram copy (_warn_once guard removed)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "        except Exception as page_exc:  # noqa: BLE001 - a failing page must not cost the legs after it\n            logger.error(\"could not page the missing %s provider: %s\", key, page_exc)\n",
+  "new": "        except ZeroDivisionError:\n            raise\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b two accounts moved off one address are one page: the dedup scope forgets the account",
+  "file": "sentinel/alerts/contact.py",
+  "old": "dedup_scope=f\"{rule}:{recipient.strip().lower()}:{account_label}\",",
+  "new": "dedup_scope=f\"{rule}:{recipient.strip().lower()}\",",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a local part standing alone in the server's reply is not masked",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                for part in dict.fromkeys((local, local.split(\"+\", 1)[0])):\n",
+  "new": "                for part in ():\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a mask goes into re.sub as a template string again",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                text = re.sub(re.escape(spelling), lambda _, m=masked: m, text, flags=re.IGNORECASE)\n",
+  "new": "                text = re.sub(re.escape(spelling), masked, text, flags=re.IGNORECASE)\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b an address that is not a recipient reaches the page (the second masking pass dropped)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "    return _ADDRESS_SHAPED.sub(lambda found: mask_address(found.group(0)), text)\n",
+  "new": "    return text\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the page loses its pointer: no failed_at",
+  "file": "sentinel/alerts/contact.py",
+  "old": "\"account_label\": label, \"failed_at\": failed.isoformat(),\n",
+  "new": "\"account_label\": label,\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the failed rows and the page's failed_at are two clock readings",
+  "file": "sentinel/alerts/contact.py",
+  "old": "self._record(\"email\", email, \"failed\", provider=\"smtp\", detail=str(exc), when=failed)",
+  "new": "self._record(\"email\", email, \"failed\", provider=\"smtp\", detail=str(exc))",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a login tripwire's page does not name the accounts the login opens",
+  "file": "sentinel/alerts/contact.py",
+  "old": "_LOGIN_TRIPWIRES = frozenset({\"password_changed\", \"two_factor_disabled\"})",
+  "new": "_LOGIN_TRIPWIRES = frozenset()",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b an account list that cannot be read costs the page (lookup guard removed)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "        except Exception as exc:  # noqa: BLE001 - the page goes without them rather than not at all\n",
+  "new": "        except ZeroDivisionError as exc:\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b an account list that cannot be read is told as a login that opens nothing",
+  "file": "sentinel/alerts/contact.py",
+  "old": "            logger.error(\"could not read the accounts a login opens, for its page: %s\", exc)\n            return None\n",
+  "new": "            logger.error(\"could not read the accounts a login opens, for its page: %s\", exc)\n            return []\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the page no longer says what Telegram did (telegram_accepted pinned to 0)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "\"telegram_accepted\": chats_told}",
+  "new": "\"telegram_accepted\": 0}",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the page is told no chat took the copy (the count dropped at the call)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                                               failed, accepted)\n",
+  "new": "                                               failed, 0)\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a page whose chat took the copy says the member was told nowhere (the told sentence ignores the count)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                if chats_told:\n",
+  "new": "                if False:\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a Telegram post that was refused counts as a copy taken (the count moved above raise_for_status)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                resp.raise_for_status()\n                accepted += 1\n",
+  "new": "                accepted += 1\n                resp.raise_for_status()\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the page claims the notice reached nobody (its lead loses 'email')",
+  "file": "sentinel/alerts/contact.py",
+  "old": "f\"A security notice's email did not reach the member: the {rule} notice about '{label}' \"",
+  "new": "f\"A security notice did not reach the member: the {rule} notice about '{label}' \"",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a chat with no bot token to post with counts as a copy taken",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                \"their copies are not being delivered\",\n            )\n            return 0\n",
+  "new": "                \"their copies are not being delivered\",\n            )\n            return 1\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a non-ASCII address's bytes-repr spelling is not masked (one spelling only)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "dict.fromkeys((address, str(address.encode(\"utf-8\", \"backslashreplace\"))[2:-1]))",
+  "new": "(address,)",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a plus-addressed member's base local part is not masked",
+  "file": "sentinel/alerts/contact.py",
+  "old": "dict.fromkeys((local, local.split(\"+\", 1)[0]))",
+  "new": "(local,)",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the local-part pass reads the plain spelling only (a non-ASCII local part alone leaks)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                local = spelling.rpartition(\"@\")[0]\n",
+  "new": "                local = address.rpartition(\"@\")[0]\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a local part standing alone in another casing is not masked (the local pass's IGNORECASE dropped)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                                      lambda _, m=part_masked: m, text, flags=re.IGNORECASE)\n",
+  "new": "                                      lambda _, m=part_masked: m, text)\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the page's account sentence names every account again (uncapped)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "    named = \", \".join(f\"'{name}'\" for name in accounts[:_ACCOUNTS_NAMED])\n",
+  "new": "    named = \", \".join(f\"'{name}'\" for name in accounts)\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the page's evidence carries every account again (uncapped)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "evidence[\"accounts\"] = None if accounts is None else accounts[:_ACCOUNTS_NAMED]",
+  "new": "evidence[\"accounts\"] = accounts",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b an account list that cannot be read is told as a login that opens nothing (the cap's edit)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "evidence[\"accounts\"] = None if accounts is None else accounts[:_ACCOUNTS_NAMED]",
+  "new": "evidence[\"accounts\"] = [] if accounts is None else accounts[:_ACCOUNTS_NAMED]",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b a long account label reaches the page whole (the name cut dropped)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "            return [_masked_text(str(row[\"label\"]), recipients)[:_ACCOUNT_NAME_CHARS]\n",
+  "new": "            return [_masked_text(str(row[\"label\"]), recipients)\n",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the page stops saying how many accounts the login opens past ten (accounts_total dropped)",
+  "file": "sentinel/alerts/contact.py",
+  "old": "                    if accounts is not None and len(accounts) > _ACCOUNTS_NAMED:\n                        evidence[\"accounts_total\"] = len(accounts)\n",
+  "new": "",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b the sentence drops the accounts it does not name (no 'and N more')",
+  "file": "sentinel/alerts/contact.py",
+  "old": "(f\" and {more} more\" if more > 0 else \"\")",
+  "new": "\"\"",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "26b failed_at is cut to the second again, so no equality finds the row",
+  "file": "sentinel/alerts/contact.py",
+  "old": "\"failed_at\": failed.isoformat(),",
+  "new": "\"failed_at\": failed.isoformat(timespec=\"seconds\"),",
+  "tests": [
+   "tests/test_security_notice_delivery.py"
+  ],
+  "expect": "killed"
  }
 ]
