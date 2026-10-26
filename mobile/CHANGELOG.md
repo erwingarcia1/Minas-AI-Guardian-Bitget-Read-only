@@ -7,6 +7,21 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
 
 ### Changed
 
+- **Version 1.0.0, built for Google Play.** The first store build goes to
+  Play's internal testing track for the team, then to production after
+  Google's review; the `mobile-v1.0.0` tag goes on the build that reaches
+  production. `app.json` names the EAS project (`jimroxodezis-team`'s
+  `minas-ai-guardian`), which holds the Android upload key; EAS numbers
+  the builds (versionCode 1 was the first preview APK).
+
+- **Android no longer asks for storage or "display over other apps".**
+  Expo's template requests READ/WRITE_EXTERNAL_STORAGE and
+  SYSTEM_ALERT_WINDOW; the app reads no files and draws no overlays, and
+  the first preview build asked for all three. `android.blockedPermissions`
+  removes them, so the app requests INTERNET and VIBRATE, plus the
+  biometric pair expo-secure-store declares.
+  `tests/test_mobile_app.py` pins the list.
+
 - **An ended sign-in lands on the welcome screen, which says why.** When
   the server ends a phone's sign-in (signed out from the portal or another
   phone, 30 days unopened, a password change, a sign-in used from two

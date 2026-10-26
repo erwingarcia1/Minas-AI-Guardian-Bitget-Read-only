@@ -77,6 +77,20 @@ def test_the_apps_identity_is_the_publishers_and_never_changes():
     assert expo["android"]["package"] == "com.minastrade.guardian"
 
 
+def test_android_is_asked_for_nothing_the_app_does_not_use():
+    """Expo's Android template requests shared storage and "display over
+    other apps"; the app reads no files and draws no overlays. The first
+    preview build (2026-10-26) asked for all three, and the Play listing
+    shows every permission to the person deciding whether to trust an app
+    that reads their exchange account."""
+    expo = json.loads((MOBILE / "app.json").read_text())["expo"]
+    assert set(expo["android"]["blockedPermissions"]) >= {
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.SYSTEM_ALERT_WINDOW",
+    }
+
+
 def test_the_generated_client_knows_exactly_the_servers_routes():
     """The Mobile workflow regenerates the file and fails on a difference;
     this is the server suite's own view of the same fact."""
