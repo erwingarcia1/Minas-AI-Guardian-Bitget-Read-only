@@ -16,6 +16,16 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Changed
+
+- **v1.18.0 is deployed (2026-10-26, finished by 15:04 UTC):** a refused
+  password-changed, two-factor-off or alert-email-changed notice pages
+  Minas at CRITICAL, whatever a connected Telegram chat took (decision
+  26b), and the password-reset link goes to the mailbox only (26c), live
+  at https://guardian.minastrade.com; the readings are in
+  docs/DEPLOYMENTS.md and decision 26 carries the deployed status. No
+  code in this entry.
+
 ## [1.18.0] — 2026-10-26
 
 ### Changed detection behaviour

@@ -11,8 +11,8 @@ product should do, and each was skipped rather than guessed at.
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
 21b/21e/21h/21i, 26d, 26e and 26b's two further tripwires. Everything else
 below is answered and built, and deployed where there is a server to deploy
-to - the app waits on the store accounts (section 21, "Not built yet"), and
-26b and 26c on the next release; the sections stay as the record.
+to - the app waits on the store accounts (section 21, "Not built yet"); the
+sections stay as the record.
 
 ---
 
@@ -45,7 +45,7 @@ to - the app waits on the store accounts (section 21, "Not built yet"), and
 | 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **ANSWERED 2026-10-24** — `segno` accepted by the merge of the QR PR (#130); the three renderings read by Google Authenticator the same day; shipped in v1.15.0 and deployed; see section 23 |
 | 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24. **Deployed 2026-10-24 (v1.15.0)** |
 | 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25. **Deployed 2026-10-24 (v1.16.0)** |
-| 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR; the notice-pages PR | **PARTLY ANSWERED** — 26a: a contact move revokes the old address's scoped access (decided in session; **deployed 2026-10-25, v1.17.0**); 26b: a refused password-changed, two-factor-off or alert-email-changed notice pages Minas at CRITICAL, whatever a connected Telegram chat took (**answered by the owner 2026-10-25, built**); 26c: the reset link by email only (**answered by the owner 2026-10-25, built**); open: 26d (a "no login yet" email), 26e (connecting a Telegram chat tells the member nothing) and 26b's two further tripwires; see section 26 |
+| 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR; the notice-pages PR | **PARTLY ANSWERED** — 26a: a contact move revokes the old address's scoped access (decided in session; **deployed 2026-10-25, v1.17.0**); 26b: a refused password-changed, two-factor-off or alert-email-changed notice pages Minas at CRITICAL, whatever a connected Telegram chat took (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); 26c: the reset link by email only (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); open: 26d (a "no login yet" email), 26e (connecting a Telegram chat tells the member nothing) and 26b's two further tripwires; see section 26 |
 
 ---
 
@@ -2464,7 +2464,7 @@ CONTRIBUTING.md ("A UI change lands on every surface").
 
 ---
 
-## 26. A contact move and the old address's portal login; what a refused notice pages; where a reset link goes — **PARTLY ANSWERED: 26a decided in session (deployed in v1.17.0); 26b and 26c ANSWERED by the owner 2026-10-25 and built; 26d and 26e open**
+## 26. A contact move and the old address's portal login; what a refused notice pages; where a reset link goes — **PARTLY ANSWERED: 26a decided in session (deployed in v1.17.0); 26b and 26c ANSWERED by the owner 2026-10-25 (deployed in v1.18.0); 26d and 26e open**
 
 > **The owner's words (2026-10-25):** "password reset email on members
 > portal not coming through. tried resetting password on my members
@@ -2534,7 +2534,7 @@ docs/AUTONOMOUS-LOG.md (2026-10-25).
 **Deployed 2026-10-25** in v1.17.0, between 14:54 and 14:57 UTC
 (docs/DEPLOYMENTS.md).
 
-### 26b. Should a refused notice page Minas? — **ANSWERED by the owner 2026-10-25: option 2; built**
+### 26b. Should a refused notice page Minas? — **ANSWERED by the owner 2026-10-25: option 2; deployed 2026-10-26 (v1.18.0)**
 
 A notice - the reset link, "your password was changed", "two-factor was
 turned off", the destination change, the emergency-contact note - is
@@ -2595,7 +2595,7 @@ what an attacker does after getting in). Each takes its line in
 build `ContactRouter(db=db)` today, and the app's `Api` has none to
 pass) and a `WIRED` execution test.
 
-### 26c. Should the reset link go to a connected Telegram chat? — **ANSWERED by the owner 2026-10-25: email only; built**
+### 26c. Should the reset link go to a connected Telegram chat? — **ANSWERED by the owner 2026-10-25: email only; deployed 2026-10-26 (v1.18.0)**
 
 A notice bypasses the member's channel preferences, so the contact router
 sends it to every channel the address has, and the reset link reaches a
