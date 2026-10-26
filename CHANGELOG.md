@@ -18,6 +18,32 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
 
 ### Changed
 
+- **An erasure leaves nothing that names the person, anywhere (decision
+  6b, 2026-10-26).** The confirmation promised "nothing that identifies
+  you", and it was not true: the tombstone's `data_erased` entry kept the
+  address as its actor and the erased accounts' names; the confirmation's
+  own delivery row kept the address for 730 days; and on other people's
+  accounts (where the person was the emergency contact, or their login
+  opened them) the address, phones, Telegram chat and phone names stayed
+  in the activity entries, deliveries, snoozes, marks and pause requests.
+  Now the gap records account ids and counts only, and is recorded
+  against `[erased]` when the person asked for it themselves. Every
+  other table is searched for the person's details, which are replaced
+  with `[erased]`: whole addresses only, numbers only where no digit
+  adjoins them, a phone's name only beside the person's address, and an
+  account's name only in rows that belong to no account. A second pass
+  runs after the confirmation is sent. The other customer's entries stay,
+  and one new entry on their activity page, "A person's details were
+  erased at their request", says how many records changed. The
+  activity page's promise ("never edited or removed") names this one
+  exception, on the web and in the app (decision 25; the app's copy is
+  pinned to the portal's `ACTIVITY_PROMISE`). The erasure log lines
+  drop the address: the portal's keeps the request's IP. The
+  confirmation, the delete-my-data panel and the "deleted" page say
+  that backups made before today and the server logs are not edited.
+  `tests/test_erasure.py` reads every column of every table after an
+  erasure; eleven new design-guard probes cover the matching rules.
+
 - **v1.18.0 is deployed (2026-10-26, finished by 15:04 UTC):** a refused
   password-changed, two-factor-off or alert-email-changed notice pages
   Minas at CRITICAL, whatever a connected Telegram chat took (decision

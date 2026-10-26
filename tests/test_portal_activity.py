@@ -382,12 +382,20 @@ def test_no_update_or_delete_against_events_outside_retention():
 
     `sentinel/retention.py` deletes whole rows once they age out (#60), which
     is a different act from rewriting one: nothing that survives has been
-    altered. Everything else must never issue either statement against
-    `events` — including the portal, which is why this test lives beside the
-    page that makes the promise to the customer."""
+    altered. `sentinel/erasure.py` is the one module that rewrites: it
+    deletes an erased customer's rows and replaces an erased person's
+    details with "[erased]" in other accounts' rows (decision 6b), and the
+    page names that exception in the same sentence as the promise (its
+    tables are named at run time, so this scan could not see it anyway).
+    Everything else must never issue either statement against `events` —
+    including the portal, which is why this test lives beside the page that
+    makes the promise to the customer."""
+    from sentinel.portal import ACTIVITY_PROMISE
+
+    assert "with one exception" in ACTIVITY_PROMISE and "[erased]" in ACTIVITY_PROMISE
     offenders = []
     for path in sorted((ROOT / "sentinel").rglob("*.py")):
-        if path.name == "retention.py":
+        if path.name in ("retention.py", "erasure.py"):
             continue
         source = path.read_text()
         for match in re.finditer(r"(UPDATE\s+events|DELETE\s+FROM\s+events)", source,

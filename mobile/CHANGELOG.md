@@ -7,6 +7,15 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
 
 ### Changed
 
+- **The activity screen names its one exception (decision 6b).** "This
+  record is append-only" now goes on: when a person named in it asks
+  Minas to delete their data, their email address, phone number and
+  Telegram identity are replaced with [erased], and an entry says so. The
+  sentence is the portal's `ACTIVITY_PROMISE`, word for word;
+  `tests/test_mobile_app.py` pins the copy. The new entry ("A person's
+  details were erased at their request") arrives through
+  `/api/v1/activity` like every other.
+
 - **An ended sign-in lands on the welcome screen, which says why.** When
   the server ends a phone's sign-in (signed out from the portal or another
   phone, 30 days unopened, a password change, a sign-in used from two

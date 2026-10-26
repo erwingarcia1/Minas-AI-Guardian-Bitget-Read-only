@@ -5,7 +5,13 @@ import { useRequest } from '@/api/use-request';
 import { Body, Card, KV, Loaded, Screen, Title, when } from '@/ui';
 
 // The portal's activity page: every change to how the accounts are watched or
-// reached, including Minas's own. Append-only; nothing here is ever edited.
+// reached, including Minas's own. Append-only; nothing here is ever edited,
+// except that an erased person's details read [erased] (decision 6b).
+//
+// A copy of the portal's ACTIVITY_PROMISE, kept equal by tests/test_mobile_app.py.
+const PROMISE =
+  'This record is append-only: entries are never edited or removed, by us or by anybody else, with one exception: when a person named in it asks us to delete their data, their email address, phone number and Telegram identity are replaced with [erased], and an entry here says so.';
+
 export default function Activity() {
   const load = useCallback(() => api.GET('/api/v1/activity'), []);
   const { data, error, loading, refreshing, reload } = useRequest(load);
@@ -16,8 +22,7 @@ export default function Activity() {
         {(activity) => (
           <>
             <Body muted>
-              {`${activity.events.length} change(s). Detections are not listed here — they are under Alerts. ` +
-                'This record is append-only: entries are never edited or removed, by us or by anybody else.'}
+              {`${activity.events.length} change(s). Detections are not listed here — they are under Alerts. ` + PROMISE}
             </Body>
             {activity.events.length === 0 ? (
               <Body muted>

@@ -1854,6 +1854,9 @@ def activity_detail(event_type: str, payload: dict) -> str:
         detail = f"login {shown(payload.get('login'))} · {shown(payload.get('device'))}"
         reason = REVOKE_REASONS.get(payload.get("reason"))
         return detail + (f" · {reason}" if reason else "")
+    if event_type == "contact_details_erased":
+        total = sum((payload.get("rows_redacted") or {}).values())
+        return f"{total} record(s) now show [erased] in place of their email, phone or Telegram"
     return ""
 
 
@@ -2256,6 +2259,17 @@ def retention_summary(rules=None) -> list[tuple[str, str]]:
     ]
 
 
+# What the activity page promises about its own record (G-32, #36), and the
+# one exception (decision 6b, 2026-10-26). The app's activity screen carries
+# a copy; tests/test_mobile_app.py keeps the two equal. A trusted literal.
+ACTIVITY_PROMISE = (
+    "This record is append-only: entries are never edited or removed, by us or by "
+    "anybody else, with one exception: when a person named in it asks us to delete "
+    "their data, their email address, phone number and Telegram identity are "
+    "replaced with [erased], and an entry here says so."
+)
+
+
 # What the Guardian can and cannot do (G-44, #48), as data: the limits page
 # and the app read the same sentences (decision 21d). Trusted literals; the
 # page interpolates them unescaped exactly as it always has.
@@ -2555,8 +2569,7 @@ def _render_activity(db: Database, email: str) -> str:
         '<div class="page-head"><h1>Who has touched your accounts</h1>'
         f'<p class="muted">{len(rows)} change(s). Every change to how your accounts are '
         "watched or reached, including the ones Minas makes. Detections are not listed here "
-        '— they are on <a href="/alerts">your alert history</a>. This record is append-only: '
-        "entries are never edited or removed, by us or by anybody else.</p></div>"
+        f'— they are on <a href="/alerts">your alert history</a>. {ACTIVITY_PROMISE}</p></div>'
         f'<section class="panel">{items}</section>'
     )
     return _page(body, email, "/activity", title="Activity — Minas AI Guardian")
@@ -3482,8 +3495,11 @@ def _erasure_section(db: Database, email: str) -> str:
         "credentials and every record for the accounts you are the main contact of "
         f"(<strong>{primary}</strong>), your login and its settings, and your contact details. "
         "What remains is one entry stating that a deletion happened at your request, with the date "
-        "and the number of records removed - nothing that identifies you. Monitoring of those accounts "
-        "stops.</p>"
+        "and the number of records removed - nothing that identifies you. Where your details appear "
+        "in the history of somebody else's account, that history keeps its entries, with [erased] "
+        "in place of your email address, phone number and Telegram identity. Backups made before "
+        "today and our server logs are not edited, and still hold a copy. Monitoring of those "
+        "accounts stops.</p>"
         + (f'<p class="muted">On <strong>{secondary}</strong> you are the second contact: you will be '
            "removed as a contact; that account belongs to someone else.</p>" if secondary else "")
         + '<p style="margin-top:var(--space-3)"><a class="btn btn--secondary btn--sm" href="/export.json">'
@@ -3503,7 +3519,8 @@ def _render_erased(email: str) -> str:
         '<section class="panel"><h2>Your data has been deleted</h2>'
         f'<p>Everything Minas AI Guardian held for <strong>{html.escape(email)}</strong> has been removed, '
         "and a confirmation has been sent to that address. One entry remains in our records stating that "
-        "a deletion happened at your request. Monitoring of your accounts has stopped.</p>"
+        "a deletion happened at your request. Backups made before today and our server logs are not "
+        "edited, and still hold a copy. Monitoring of your accounts has stopped.</p>"
         "<p>Thank you for using Minas AI Guardian.</p></section>",
         None, title="Data deleted — Member portal", shell=True)
 
@@ -4143,7 +4160,9 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             except ValueError as exc:
                 self._send(_render_security(db, email, error=str(exc)).encode(), 400)
                 return
-            logger.warning("member %s erased their data from %s", email, self._client_ip())
+            # The address is what was erased; the log keeps the act and where
+            # it came from (decision 6b).
+            logger.warning("a member erased their data from %s", self._client_ip())
             body = _render_erased(email).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
