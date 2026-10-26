@@ -1502,8 +1502,8 @@
  {
   "name": "#46 erasure leaves no gap record (the data_erased event dropped)",
   "file": "sentinel/erasure.py",
-  "old": "    for acct in erased_accounts:\n        append_event(db, acct[\"id\"], \"data_erased\", \"LOW\", gap, actor=actor)\n",
-  "new": "    for acct in []:\n        append_event(db, acct[\"id\"], \"data_erased\", \"LOW\", gap, actor=actor)\n",
+  "old": "    for acct in erased_accounts:\n        append_event(db, acct[\"id\"], \"data_erased\", \"LOW\", gap, actor=recorded_actor)\n",
+  "new": "    for acct in []:\n        append_event(db, acct[\"id\"], \"data_erased\", \"LOW\", gap, actor=recorded_actor)\n",
   "tests": [
    "tests/test_erasure.py"
   ],
@@ -1524,6 +1524,116 @@
   "file": "sentinel/erasure.py",
   "old": "        cur.execute(\"SELECT id, label FROM accounts WHERE lower(alert_email) = ? AND erased_at IS NULL \"\n                    \"ORDER BY id\", (normalized,))\n",
   "new": "        cur.execute(\"SELECT id, label FROM accounts WHERE (lower(alert_email) = ? OR lower(alert_email_secondary) = ?) AND erased_at IS NULL \"\n                    \"ORDER BY id\", (normalized, normalized))\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: the redaction pass dropped (other accounts keep the erased person's details)",
+  "file": "sentinel/erasure.py",
+  "old": "        redacted, touched = _redact_everywhere(cur, redactor, {a[\"id\"] for a in erased_accounts})\n",
+  "new": "        redacted, touched = {}, {}\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: the second pass dropped (the confirmation's delivery row keeps the address)",
+  "file": "sentinel/erasure.py",
+  "old": "                _redact_everywhere(cur, redactor, set())\n",
+  "new": "                pass\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: the other account is not told (the contact_details_erased entry dropped)",
+  "file": "sentinel/erasure.py",
+  "old": "    for account_id, rows in sorted(touched.items()):\n",
+  "new": "    for account_id, rows in []:\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: a self-service erasure is recorded against the erased address",
+  "file": "sentinel/erasure.py",
+  "old": "    recorded_actor = ERASED if actor == normalized else actor\n",
+  "new": "    recorded_actor = actor\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: the stored gap names the erased accounts",
+  "file": "sentinel/erasure.py",
+  "old": "        \"accounts\": [{\"id\": a[\"id\"]} for a in erased_accounts],\n",
+  "new": "        \"accounts\": erased_accounts,\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: an address matches inside a longer one (al@ inside sal@)",
+  "file": "sentinel/erasure.py",
+  "old": "        self.email = re.compile(r\"(?<![\\w.%+-])\" + re.escape(email) + r\"(?![\\w-]|\\.\\w)\", re.IGNORECASE)\n",
+  "new": "        self.email = re.compile(re.escape(email), re.IGNORECASE)\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: a number matches inside a longer number",
+  "file": "sentinel/erasure.py",
+  "old": "        self.numbers = [re.compile(r\"(?<!\\d)\" + re.escape(n) + r\"(?!\\d)\") for n in numbers]\n",
+  "new": "        self.numbers = [re.compile(re.escape(n)) for n in numbers]\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: an erased account's name is redacted on live accounts too",
+  "file": "sentinel/erasure.py",
+  "old": "                new = redactor.stored(c, row[c], labels=account_id is None)\n",
+  "new": "                new = redactor.stored(c, row[c], labels=True)\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: a phone's name is redacted wherever it appears",
+  "file": "sentinel/erasure.py",
+  "old": "                    (ERASED if beside and isinstance(v, str) and v in self.devices\n",
+  "new": "                    (ERASED if isinstance(v, str) and v in self.devices\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: a failed confirmation logs the address in the error",
+  "file": "sentinel/erasure.py",
+  "old": "            logger.error(\"erasure confirmation failed: %s\", redactor.text(str(exc)))\n",
+  "new": "            logger.error(\"erasure confirmation failed: %s\", str(exc))\n",
+  "tests": [
+   "tests/test_erasure.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 6b: a two-character phone number is matched in other accounts' history",
+  "file": "sentinel/erasure.py",
+  "old": "        numbers = [p for p in {*phones, *chats} if p and sum(ch.isdigit() for ch in p) >= 6]\n",
+  "new": "        numbers = [p for p in {*phones, *chats} if p]\n",
   "tests": [
    "tests/test_erasure.py"
   ],

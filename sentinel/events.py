@@ -24,7 +24,12 @@ def append_event(
 ) -> int:
     """Writes one row to the append-only event log. The application must
     never UPDATE or DELETE the events table - it is the forensic record that
-    baselines and alert evidence are derived from.
+    baselines and alert evidence are derived from. Two exceptions:
+    retention deletes whole rows once they age out (the limits page states
+    the period), and an erasure deletes the erased accounts' rows and
+    replaces the erased person's details with "[erased]" in the rows of
+    other accounts (sentinel/erasure.py, decision 6b; the activity page's
+    promise names it).
 
     `actor` is the operator username where a person did this, and None where
     nothing did - a detector firing has nobody behind it (G-50). It stays
@@ -70,6 +75,7 @@ ADMIN_EVENT_TYPES = (
     "monitoring_key_replaced",
     "member_app_signed_in",  # decision 21c: a phone signed in to this login
     "member_app_device_revoked",
+    "contact_details_erased",  # decision 6b: a person named here asked for erasure
 )
 
 # How each reads to a customer. The dashboard shows event_type; this page is
@@ -95,6 +101,7 @@ ADMIN_EVENT_LABELS = {
     "monitoring_key_replaced": "Monitoring key replaced",
     "member_app_signed_in": "Phone app signed in",
     "member_app_device_revoked": "Phone app signed out",
+    "contact_details_erased": "A person's details were erased at their request",
 }
 
 

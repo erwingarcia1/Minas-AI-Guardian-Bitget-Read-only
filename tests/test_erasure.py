@@ -106,7 +106,7 @@ def test_the_gap_is_recorded_as_a_gap_on_the_tombstone(db):
     payload = json.loads(rows[0]["payload_json"])
     assert payload["gap"] is True
     assert "cannot be reconstructed" in payload["note"]
-    assert payload["rows_removed"]["alerts"] == 1 and payload["accounts"][0]["label"] == "a"
+    assert payload["rows_removed"]["alerts"] == 1 and payload["accounts"] == [{"id": a}]
 
 
 def test_a_second_contact_is_removed_not_the_primarys_data(db):
@@ -119,7 +119,8 @@ def test_a_second_contact_is_removed_not_the_primarys_data(db):
         row = cur.fetchone()
         cur.execute("SELECT count(*) AS n FROM alerts WHERE account_id = ?", (b,))
         alerts = cur.fetchone()["n"]
-        cur.execute("SELECT event_type, payload_json FROM events WHERE account_id = ? ORDER BY id DESC LIMIT 1", (b,))
+        cur.execute("SELECT event_type, payload_json FROM events WHERE account_id = ? "
+                    "AND event_type = 'alert_contact_updated' ORDER BY id DESC LIMIT 1", (b,))
         last = cur.fetchone()
     assert row["alert_email"] == BOB and row["alert_email_secondary"] is None
     assert row["encrypted_api_key"] == "K" and row["erased_at"] is None
@@ -231,3 +232,282 @@ def test_the_cli_erase_needs_a_name_and_confirmation(db, capsys, monkeypatch):
     monkeypatch.setattr("builtins.input", lambda *_: "no")
     assert cmd_erase(argparse.Namespace(email=ALICE, as_operator="erwin", yes=False)) == 1
     assert "not erased" in capsys.readouterr().err
+
+
+# --- nothing that identifies the person survives (decision 6b, 2026-10-26) ----------------
+
+ALICE_PHONE = "+16045550101"
+ALICE_PHONE_2 = "+16045550102"
+ALICE_HANDLE = "@alice_tg"
+ALICE_CHAT = "987654321"
+ALICE_DEVICE = "Alice's Pixel 8"
+BOB_PHONE = "+16045550199"
+
+
+def _alice_everywhere(db):
+    """Alice is the primary of 'alice-acct' and the emergency contact on
+    Bob's 'b', and has left a trace in every kind of row another account
+    keeps: entries in Bob's activity, deliveries to her phone and chat,
+    a snooze, an expected-activity mark, a pause request, an operator page,
+    and her phone's sign-in."""
+    from sentinel.events import append_event, record_member_security_event
+
+    a = _account(db, "alice-acct", ALICE, phone=ALICE_PHONE)
+    b = _account(db, "b", BOB, secondary=ALICE, phone=BOB_PHONE)
+    with db.cursor() as cur:
+        cur.execute("UPDATE accounts SET telegram_handle = ? WHERE id = ?", (ALICE_HANDLE, a))
+        cur.execute("UPDATE accounts SET alert_phone_secondary = ?, telegram_handle_secondary = ? "
+                    "WHERE id = ?", (ALICE_PHONE_2, ALICE_HANDLE, b))
+    set_member_password(db, ALICE, "pw-long-enough-1")
+    _history(db, a)
+    alert_b = _history(db, b)
+    append_event(db, b, "alert_contact_updated", "LOW",
+                 {"email_from": None, "email_to": ALICE, "phone_from": None, "phone_to": ALICE_PHONE_2},
+                 actor="erwin")
+    record_member_security_event(db, ALICE, "member_password_changed")
+    append_event(db, b, "member_app_signed_in", "LOW", {"login": ALICE, "device": ALICE_DEVICE},
+                 actor=ALICE)
+    with db.cursor() as cur:
+        for channel, recipient in (("sms", ALICE_PHONE_2), ("telegram", ALICE_CHAT), ("email", ALICE)):
+            cur.execute("INSERT INTO deliveries (account_id, alert_id, rule, channel, recipient, audience, "
+                        "kind, status, detail, created_at) VALUES (?, ?, 'r', ?, ?, 'secondary', "
+                        "'escalation', 'accepted', ?, '2026-01-02')",
+                        (b, alert_b, channel, recipient, f"escalated to {recipient}"))
+        cur.execute("INSERT INTO telegram_links (member_email, chat_id, status, created_at) "
+                    "VALUES (?, ?, 'connected', '2026-01-01')", (ALICE, ALICE_CHAT))
+        cur.execute("INSERT INTO api_devices (email, name, session_epoch, refresh_hash, "
+                    "refresh_expires_at, created_at) VALUES (?, ?, 1, 'h1', '2027-01-01', '2026-01-01')",
+                    (ALICE, ALICE_DEVICE))
+        cur.execute("INSERT INTO snoozes (account_id, dedup_key, rule, requested_by, created_at, expires_at) "
+                    "VALUES (?, 'k', 'r', ?, '2026-01-01', '2026-01-02')", (b, ALICE))
+        cur.execute("INSERT INTO expected_activity (alert_id, account_id, rule, dedup_key, note, marked_by, "
+                    "created_at) VALUES (?, ?, 'r', 'k', ?, ?, '2026-01-01')",
+                    (alert_b, b, f"{ALICE} says this was her", ALICE))
+        cur.execute("INSERT INTO pause_requests (account_id, requested_by, requested_at, execute_at, status) "
+                    "VALUES (?, ?, '2026-01-01', '2026-01-02', 'cancelled')", (b, ALICE))
+        cur.execute("INSERT INTO operator_pages (account_id, rule, severity, dedup_key, message, evidence_json, "
+                    "sent_at) VALUES (NULL, 'security_notice_undelivered', 'CRITICAL', 'k', ?, ?, '2026-01-01')",
+                    (f"The notice to {ALICE} about alice-acct was refused.",
+                     json.dumps({"recipient": ALICE, "account": "alice-acct", "chat_id": int(ALICE_CHAT)})))
+    return a, b
+
+
+def _confirmation_recorded(db):
+    """What the real confirmation does: ContactRouter records its delivery,
+    addressed to the person, after everything else has gone."""
+    def notify(address, gap):
+        with db.cursor() as cur:
+            cur.execute("INSERT INTO deliveries (account_id, rule, channel, recipient, audience, kind, status, "
+                        "created_at) VALUES (NULL, 'data_erased', 'email', ?, 'customer', 'notice', "
+                        "'failed', '2026-01-03')", (address,))
+    return notify
+
+
+def _traces(db, needles):
+    """Every (table, column, value) in the database that still contains one
+    of the needles, compared case-insensitively. Every table, so a table
+    added later is covered without anybody remembering to list it."""
+    hits = []
+    with db.cursor() as cur:
+        cur.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")
+        tables = [r["name"] for r in cur.fetchall()]
+        for table in tables:
+            cur.execute(f"SELECT * FROM {table}")
+            for row in cur.fetchall():
+                for column in row.keys():
+                    value = row[column]
+                    if value is None:
+                        continue
+                    text = str(value).lower()
+                    for needle in needles:
+                        if needle.lower() in text:
+                            hits.append((table, column, value))
+    return hits
+
+
+ALICE_NEEDLES = (ALICE, ALICE_PHONE, ALICE_PHONE_2, "alice_tg", ALICE_CHAT, ALICE_DEVICE, "alice-acct")
+
+
+@pytest.mark.parametrize("actor", [ALICE, "erwin"])
+def test_nothing_anywhere_in_the_database_still_names_the_person(db, actor):
+    """The confirmation promises "nothing that identifies you". Checked by
+    reading every column of every table afterwards, including the delivery
+    row the confirmation itself writes."""
+    _alice_everywhere(db)
+    assert _traces(db, ALICE_NEEDLES), "the fixture must leave traces to erase"
+    erase_member(db, ALICE, actor=actor, notify=_confirmation_recorded(db))
+    assert _traces(db, ALICE_NEEDLES) == []
+
+
+def test_the_other_customers_record_keeps_every_entry_and_says_what_was_erased(db):
+    """Decision 6b: on Bob's account the entries stay - what changed, and
+    when - with "[erased]" where Alice's details were, and one new entry
+    on his activity page says so."""
+    from sentinel.events import ADMIN_EVENT_TYPES
+    from sentinel.portal import activity_detail
+
+    _a, b = _alice_everywhere(db)
+    with db.cursor() as cur:
+        cur.execute("SELECT id, event_type FROM events WHERE account_id = ? ORDER BY id", (b,))
+        before = [tuple(r) for r in cur.fetchall()]
+    erase_member(db, ALICE, actor=ALICE)
+    with db.cursor() as cur:
+        cur.execute("SELECT id, event_type, payload_json, actor FROM events WHERE account_id = ? ORDER BY id", (b,))
+        after = cur.fetchall()
+        cur.execute("SELECT recipient FROM deliveries WHERE account_id = ? AND audience = 'secondary'", (b,))
+        recipients = {r["recipient"] for r in cur.fetchall()}
+    assert [(r["id"], r["event_type"]) for r in after[:len(before)]] == before, "no entry was removed"
+    contact_change = json.loads(next(r for r in after if r["event_type"] == "alert_contact_updated"
+                                     and "email_to" in r["payload_json"])["payload_json"])
+    assert contact_change["email_to"] == "[erased]" and contact_change["phone_to"] == "[erased]"
+    signed_in = next(r for r in after if r["event_type"] == "member_app_signed_in")
+    assert signed_in["actor"] == "[erased]"
+    assert json.loads(signed_in["payload_json"]) == {"login": "[erased]", "device": "[erased]"}
+    note = after[-1]
+    assert note["event_type"] == "contact_details_erased" and note["event_type"] in ADMIN_EVENT_TYPES
+    assert note["actor"] == "[erased]"
+    payload = json.loads(note["payload_json"])
+    assert payload["rows_redacted"]["events"] >= 3 and payload["rows_redacted"]["deliveries"] >= 2
+    assert "[erased]" in activity_detail(note["event_type"], payload)
+    assert recipients == {"[erased]"}
+
+
+def test_redaction_touches_only_the_persons_details(db):
+    """Bob's own address and phone stay, a longer number that merely
+    contains Alice's chat id stays, and another customer's label that
+    merely starts with hers stays."""
+    from sentinel.events import append_event
+
+    _a, b = _alice_everywhere(db)
+    _account(db, "trading", ALICE)
+    c = _account(db, "alice-acct-2", "carol@example.com")
+    evidence = {"amount": "1" + ALICE_CHAT + "0", "who": [BOB, ALICE, "m" + ALICE]}
+    append_event(db, b, "withdrawal_initiated", "HIGH", evidence)
+    append_event(db, b, "account_named", "LOW", {"from": "trading", "to": "Bob's trading"}, actor=BOB)
+    append_event(db, c, "account_named", "LOW", {"from": "alice-acct-2", "to": "Carol"}, actor="carol@example.com")
+    erase_member(db, ALICE, actor=ALICE)
+    with db.cursor() as cur:
+        cur.execute("SELECT payload_json FROM events WHERE account_id = ? AND event_type = 'withdrawal_initiated' "
+                    "ORDER BY id DESC LIMIT 1", (b,))
+        kept = json.loads(cur.fetchone()["payload_json"])
+        cur.execute("SELECT alert_email, alert_phone FROM accounts WHERE id = ?", (b,))
+        bob = cur.fetchone()
+        cur.execute("SELECT label FROM accounts WHERE id = ?", (c,))
+        carol = cur.fetchone()["label"]
+        cur.execute("SELECT payload_json FROM events WHERE account_id = ? AND event_type = 'account_named'", (c,))
+        renamed = json.loads(cur.fetchone()["payload_json"])
+        cur.execute("SELECT count(*) AS n FROM events WHERE account_id = ? AND event_type = 'contact_details_erased'",
+                    (c,))
+        noted = cur.fetchone()["n"]
+        cur.execute("SELECT payload_json FROM events WHERE account_id = ? AND event_type = 'account_named'", (b,))
+        bobs_name = json.loads(cur.fetchone()["payload_json"])
+    assert kept == {"amount": "1" + ALICE_CHAT + "0", "who": [BOB, "[erased]", "m" + ALICE]}
+    assert bobs_name == {"from": "trading", "to": "Bob's trading"}, \
+        "an erased account's name is a word on a live account, not Alice"
+    assert (bob["alert_email"], bob["alert_phone"]) == (BOB, BOB_PHONE)
+    assert carol == "alice-acct-2" and renamed["from"] == "alice-acct-2"
+    assert noted == 0, "an account nothing was erased from gets no entry"
+
+
+def test_a_phones_name_is_erased_only_beside_the_persons_address(db):
+    """"iPhone" alone names nobody: Bob's phone keeps its name, and
+    Alice's sign-in loses hers."""
+    from sentinel.events import append_event
+
+    b = _account(db, "b", BOB, secondary=ALICE)
+    set_member_password(db, ALICE, "pw-long-enough-1")
+    with db.cursor() as cur:
+        cur.execute("INSERT INTO api_devices (email, name, session_epoch, refresh_hash, refresh_expires_at, "
+                    "created_at) VALUES (?, 'iPhone', 1, 'h2', '2027-01-01', '2026-01-01')", (ALICE,))
+    append_event(db, b, "member_app_signed_in", "LOW", {"login": ALICE, "device": "iPhone"}, actor=ALICE)
+    append_event(db, b, "member_app_signed_in", "LOW", {"login": BOB, "device": "iPhone"}, actor=BOB)
+    sessions = {"sessions": [{"login": ALICE, "device": "iPhone"}, {"login": BOB, "device": "iPhone"}]}
+    with db.cursor() as cur:
+        cur.execute("INSERT INTO operator_pages (account_id, rule, severity, dedup_key, message, evidence_json, "
+                    "sent_at) VALUES (?, 'r', 'LOW', 'k', 'm', ?, '2026-01-01')", (b, json.dumps(sessions)))
+    erase_member(db, ALICE, actor=ALICE)
+    with db.cursor() as cur:
+        cur.execute("SELECT payload_json FROM events WHERE account_id = ? AND event_type = 'member_app_signed_in' "
+                    "ORDER BY id", (b,))
+        rows = [json.loads(r["payload_json"]) for r in cur.fetchall()]
+        cur.execute("SELECT evidence_json FROM operator_pages WHERE account_id = ?", (b,))
+        page = json.loads(cur.fetchone()["evidence_json"])
+    assert rows == [{"login": "[erased]", "device": "[erased]"}, {"login": BOB, "device": "iPhone"}]
+    assert page == {"sessions": [{"login": "[erased]", "device": "[erased]"}, {"login": BOB, "device": "iPhone"}]}
+
+
+def test_the_gap_names_no_one(db):
+    """The tombstone's one event: counts and dates, no address and no
+    account name - the name is usually the customer's own."""
+    a = _account(db, "alice-acct", ALICE)
+    _history(db, a)
+    erase_member(db, ALICE, actor=ALICE)
+    with db.cursor() as cur:
+        cur.execute("SELECT payload_json, actor FROM events WHERE account_id = ?", (a,))
+        row = cur.fetchone()
+    assert row["actor"] == "[erased]"
+    payload = json.loads(row["payload_json"])
+    assert payload["accounts"] == [{"id": a}]
+    assert payload["requested_by"] == "the account's primary contact"
+    assert ALICE not in row["payload_json"] and "alice-acct" not in row["payload_json"]
+
+
+def test_the_confirmation_still_names_what_was_deleted(db):
+    """The person is told which accounts went, by name, in the message to
+    them; only the stored record leaves the names out."""
+    _alice_everywhere(db)
+    told = []
+    erase_member(db, ALICE, actor=ALICE, notify=lambda address, gap: told.append(confirmation_text(gap)))
+    assert "alice-acct" in told[0]
+    assert "[erased] in place of your email address" in told[0] and "Backups made before today" in told[0]
+
+
+def test_the_confirmation_mentions_other_accounts_only_when_there_were_any(db):
+    a = _account(db, "alice-acct", ALICE)
+    _history(db, a)
+    told = []
+    erase_member(db, ALICE, actor=ALICE, notify=lambda address, gap: told.append(confirmation_text(gap)))
+    assert "[erased]" not in told[0] and "Backups made before today" in told[0]
+
+
+def test_the_erasure_logs_no_address(db, caplog):
+    import logging
+
+    _alice_everywhere(db)
+
+    def boom(address, gap):
+        raise RuntimeError(f"550 mailbox {address} refused")
+
+    with caplog.at_level(logging.INFO):
+        erase_member(db, ALICE, actor=ALICE, notify=boom)
+    assert caplog.records and ALICE not in caplog.text
+
+
+def test_the_other_customers_activity_page_says_what_was_erased(db):
+    """Decision 6b, "and say so": Bob reads the entry, and the promise on
+    the same page names the exception."""
+    from sentinel.portal import ACTIVITY_PROMISE, _render_activity
+
+    _alice_everywhere(db)
+    erase_member(db, ALICE, actor=ALICE)
+    page = _render_activity(db, BOB)
+    assert "A person&#x27;s details were erased at their request" in page
+    assert "now show [erased] in place of their email, phone or Telegram" in page
+    assert ACTIVITY_PROMISE in page
+    assert ALICE not in page
+
+
+def test_a_stray_short_number_in_a_contact_column_blanks_nothing_else(db):
+    """A contact column holding "+1" is bad data, not a phone number: it
+    must not turn every "+1" in somebody else's history into [erased]."""
+    from sentinel.events import append_event
+
+    b = _account(db, "b", BOB, secondary=ALICE)
+    with db.cursor() as cur:
+        cur.execute("UPDATE accounts SET alert_phone_secondary = '+1' WHERE id = ?", (b,))
+    append_event(db, b, "withdrawal_initiated", "HIGH", {"note": "+1 more withdrawal"})
+    erase_member(db, ALICE, actor="erwin")
+    with db.cursor() as cur:
+        cur.execute("SELECT payload_json FROM events WHERE account_id = ? AND event_type = 'withdrawal_initiated'",
+                    (b,))
+        assert json.loads(cur.fetchone()["payload_json"]) == {"note": "+1 more withdrawal"}

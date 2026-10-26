@@ -85,6 +85,13 @@ def test_the_generated_client_knows_exactly_the_servers_routes():
     assert paths == {template for _, template in ROUTES}
 
 
+def test_the_apps_activity_screen_makes_the_portals_promise():
+    """Decision 25 and 6b: what the activity record promises about itself,
+    including its one exception, reads the same on the web and the phone."""
+    source = (MOBILE / "src" / "app" / "activity.tsx").read_text()
+    assert f"'{portal.ACTIVITY_PROMISE}'" in source
+
+
 def test_the_apps_landing_says_what_the_portals_does():
     """Decision 25: the app opens on the portal's landing page, in the
     portal's words. The sentences live in sentinel/portal.py; the app
