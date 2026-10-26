@@ -8393,3 +8393,81 @@ version asserted. The outside checks at 14:57 read as expected, the
 recovery routes included (docs/DEPLOYMENTS.md). The record is this
 branch, `deploy-record-1-17-0`. Next: the portal login for the address
 in the report, if it is not issued yet; 26b and 26c.
+
+# 2026-10-26 · Decisions 26b and 26c: a refused security tripwire pages Minas; the reset link by email only
+
+**The owner's words (2026-10-25, after v1.17.0 was deployed):** "go ahead",
+to the two recommendations left open in section 26 - 26b, "should a
+refused 'password changed', 'two-factor turned off' or 'alert email
+changed' notice page Minas? I'd say yes"; 26c, "should the reset link also
+go to a member's connected Telegram? I'd say email only". Branch
+`notice-pages`, stacked on `deploy-record-1-17-0` (#139, the v1.17.0
+record, unmerged when this started). Nothing was cut or deployed.
+
+**What the scouting found first.** Every notice sender built
+`ContactRouter(db=db)` with no operator alerter, so no notice could ever
+page, whatever the rule said; and the three tripwires are sent from two
+processes - the portal's `POST /reset` and `POST /security/2fa/disable`
+inside `sentinel run`, and `sentinel set-contact` as a CLI of its own.
+26c was a router question: a notice bypasses preferences, so
+`_apply_preferences` made its address a Telegram target.
+
+**How it was built.** Three workflows. The first: one builder (both
+changes live in `sentinel/alerts/contact.py`), tests first, then three
+reviewers with one lens each - load-bearing tests, wiring in every
+process, security and the records. All three said "fix-needed": the
+build paged on a provider never reached as well as on a refusal (the
+owner was asked about refusals; #58 keeps a dead wire a log line), the
+page claimed "the member has NOT been told" while a connected Telegram
+chat could take the copy right after, `_warn_once`'s page was unguarded
+on a path that now had an alerter, the dedup collapsed two accounts, the
+masking had gaps, and the comment's "adding either is one line" was
+false. The second round applied those - and one design call of mine: a
+refused tripwire whose copy a connected chat accepted would not page,
+on the owner's own reasoning that a refusal means the member was never
+warned. Both of its verifiers proved that wrong, end to end through the
+real portal: whoever holds a member's session can connect a chat of
+their own (`POST /telegram/link`, which emails the member nothing), then
+turn two-factor off while the provider refuses mail - their chat takes
+the copy and the page is silenced. The builder's version had paged
+there; mine did not. The third round withdrew the skip: every refusal
+pages, and the page reports how many connected chats took the copy and
+that such a chat may not be the member's. The last verifier found three
+wording and test gaps (the "person who made the change" phrase is false
+for a contact move, which an operator makes; no test counted two chats;
+two records said more than the code), applied here from its own proven
+diffs. The connect-without-notice gap itself is a product question,
+recorded as 26e.
+
+**What changed.** `TRIPWIRE_NOTICE_RULES` names the three notices; a
+REFUSED one pages `security_notice_undelivered` at CRITICAL, decided
+after the Telegram leg so the page can say what it did; masked address
+(both spellings, the lone local part and a plus-address's base, three
+characters or more), the account or the login's accounts (ten at most),
+the server's words masked, `failed_at` equal to the failed row's
+`created_at`; dedup per notice, address and account; `_warn_once`'s page
+guarded. The portal's two routes pass `serve_portal`'s alerter;
+`set-contact` builds one for that notice and never fails because of it.
+`_PlainNotice(email_only=True)` for the reset link, honoured by the
+router. `security_notice_undelivered` is `NO_ADVICE` in RULE_ADVICE (hard
+rule 5). docs/threat-model.md, README's set-contact row, CHANGELOG
+`[Unreleased]` (both under "Changed detection behaviour"), decision 26
+(26b and 26c answered, 26e raised, 26b's two further tripwires left for
+the owner). 48 new design-guard probes; tests/test_security_notice_delivery.py
+(63 tests) in the mutation selection.
+
+**Gates, on the final tree:** `ruff check sentinel tests` clean; the
+full suite 2366 passed (348 s); the design-guard probes 333/333 as
+expected (`--workers auto`, 8 minutes), the 48 new ones among them.
+
+**Left for the owner:** the merge (after #139's); the release and the
+deploy (yours); 26e (recommended: a "Telegram connected" tripwire email,
+and a completed reset disconnects every chat); 26b's two further
+tripwires (recommended: both); 26d. Pre-existing and recorded for later:
+the dashboard's "Generate portal password" replaces an existing member's
+password without the password-changed notice; `OperatorAlerter.page`
+sends before it writes its row; RulesConfig's rejection log line says
+"an operator page has been raised" in a CLI process too; the
+telegram-disconnected notice is routed after its chat is revoked; a
+QUIT that gets a non-221 reply after DATA was accepted reads as a
+refusal, for alerts and tripwires alike.

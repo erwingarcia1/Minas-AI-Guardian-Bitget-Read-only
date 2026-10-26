@@ -140,7 +140,31 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
   own, keyed as sign-in is (five per address from one source, and five
   per source, in fifteen minutes): a member's failed sign-ins cannot
   swallow their reset email, and reset requests cannot lock out the
-  password they set (tests/test_login_lockout.py holds both). The ops
+  password they set (tests/test_login_lockout.py holds both). The reset
+  link goes by email only - no Telegram copy and no text (decision 26c,
+  2026-10-25): a notice otherwise follows its address to every channel
+  the address has, and a copy in a Telegram chat the member connected
+  would let whoever holds that chat take over the login without the
+  mailbox the reset exists to prove. Three tripwire notices - "your
+  password was changed", "two-factor was turned off", "your alerts were
+  redirected" - page Minas at CRITICAL when the email provider refuses
+  one (decision 26b, 2026-10-25): the member was not warned by email,
+  and a person has to make sure they are. Every refusal pages. The page
+  reports how many Telegram chats connected to the login took the
+  notice's copy, and that count cannot silence it: whoever is signed in
+  to a login can connect a chat of their own, and the member is not
+  emailed when one is, so a chat that took the copy may not be the
+  member's. A send that never reached the provider
+  stays a log line, as for an alert (#58). The page names the address
+  masked and points, by the instant the rows were written, at the
+  notice's failed delivery row, which has it in full (the ops overview's
+  "Failed email deliveries" card shows the latest 20); a page about a
+  login names the accounts it opens, ten at most. Residual, stated: a
+  tripwire the provider accepts and bounces later is not seen -
+  acceptance is the last word SMTP gives; the reset link passes through
+  the mail provider like any email; and the Telegram-disconnected and
+  new-phone notices, which call themselves tripwires too, do not page
+  (not decided). The ops
   dashboard is internet-reachable too, at `/admin` (decisions 22a, 22e),
   with no IP allowlist in front of it (22c item 5, answered no): operator
   sign-in with a mandatory second factor and the login throttle are the

@@ -99,7 +99,8 @@ ADMIN_EVENT_LABELS = {
 
 
 def notify_alert_destination_change(db: Database, account_label: str,
-                                    old_email: str | None, new_email: str | None) -> None:
+                                    old_email: str | None, new_email: str | None,
+                                    operator_alerter=None) -> None:
     """Tell the OLD address that the alerts have been redirected (G-32, #36).
 
     This is the one settings change the activity page cannot show the person
@@ -118,7 +119,13 @@ def notify_alert_destination_change(db: Database, account_label: str,
 
     Guarded like every other notice on a change path: a mail failure is logged,
     never raised. The change has already happened, and an exception here would
-    make a dead SMTP server look like a failed settings update."""
+    make a dead SMTP server look like a failed settings update.
+
+    `operator_alerter` pages Minas when the email provider refuses the notice
+    (decision 26b), whatever a connected Telegram chat took - the page says
+    how many did: the address that has just lost the alerts was not warned
+    by email, and a person has to make sure it is. `sentinel set-contact`
+    builds one for exactly this notice."""
     if not old_email or old_email == new_email:
         return
     from sentinel.alerts.base import AlertMessage
@@ -155,7 +162,7 @@ def notify_alert_destination_change(db: Database, account_label: str,
         evidence={},
     )
     try:
-        ContactRouter(db=db).send(
+        ContactRouter(db=db, operator_alerter=operator_alerter).send(
             _PlainNotice(message), account_label, [old_email], [],
         )
     except Exception as exc:  # noqa: BLE001 - the change has already happened

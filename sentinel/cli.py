@@ -1045,6 +1045,29 @@ def cmd_drill(args: argparse.Namespace) -> int:
     return 0 if outcome["result"] == "passed" else 1
 
 
+def _destination_notice_alerter(db: Database):
+    """The operator alerter for the destination-change notice (decision 26b),
+    built the way cmd_drill builds one: when the email provider refuses that
+    notice, the address that has just lost the alerts was not warned by
+    email, and Minas is paged to make sure it is - whatever a connected
+    Telegram chat took, which the page reports and is never silenced by.
+
+    Or None, with one warning on stderr, when the rules or the channels cannot
+    be built. The caller builds it only when the notice is about to go, after
+    the move has landed: paging is not the command, and neither the move nor
+    the notice may fail because paging could not be set up."""
+    try:
+        from sentinel.alerts.operator import OperatorAlerter
+
+        rules = RulesConfig(_env_raw("SENTINEL_RULES_PATH", "./config/rules.yaml"))
+        return OperatorAlerter(db, build_operator_channels(rules), rules)
+    except Exception as exc:  # noqa: BLE001 - the move and the notice come first
+        print(f"warning: the destination-change notice goes without paging - if it is "
+              f"refused, Minas will not be paged, because the operator alerter could not be "
+              f"built: {exc}", file=sys.stderr)
+        return None
+
+
 def cmd_set_contact(args: argparse.Namespace) -> int:
     """Set/clear an existing account's alert destinations. Pass
     --alert-email/--alert-phone to set the primary; --clear to remove both.
@@ -1235,9 +1258,14 @@ def cmd_set_contact(args: argparse.Namespace) -> int:
             # The address being removed - unless this change kept it on as the
             # other contact - loses sight of this account the moment the
             # change lands, so the record of it never reaches them. See
-            # notify_alert_destination_change.
+            # notify_alert_destination_change. When the email provider
+            # refuses that notice, Minas is paged (decision 26b), whatever a
+            # connected Telegram chat took: the alerter is built only when
+            # the notice is due - the condition it is sent on.
+            due = bool(payload["email_from"]) and payload["email_from"] != payload["email_to"]
             notify_alert_destination_change(
-                db, args.label, payload["email_from"], payload["email_to"])
+                db, args.label, payload["email_from"], payload["email_to"],
+                operator_alerter=_destination_notice_alerter(db) if due else None)
         elif event_type == "secondary_contact_updated" \
                 and payload["email_to"] and payload["email_to"] != payload["email_from"]:
             # A newly-listed emergency contact gets the one-time note saying

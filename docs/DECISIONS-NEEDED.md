@@ -7,12 +7,12 @@ autonomous backlog work — see `docs/AUTONOMOUS-LOG.md` for the sessions.
 Nothing here is blocked on engineering. Every item is a choice about what the
 product should do, and each was skipped rather than guessed at.
 
-**Open today (2026-10-25):** 6 (needs the lawyer; #47), 7's vendor (#63),
+**Open today (2026-10-26):** 6 (needs the lawyer; #47), 7's vendor (#63),
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
-21b/21e/21h/21i, and 26b/26c/26d. Everything else below is answered and
-built, and deployed where there is a server to deploy to - the app waits on
-the store accounts (section 21, "Not built yet"); the sections stay as the
-record.
+21b/21e/21h/21i, 26d, 26e and 26b's two further tripwires. Everything else
+below is answered and built, and deployed where there is a server to deploy
+to - the app waits on the store accounts (section 21, "Not built yet"), and
+26b and 26c on the next release; the sections stay as the record.
 
 ---
 
@@ -45,7 +45,7 @@ record.
 | 23 | A QR-code encoder (`segno`) in the two-factor enrolment path | the QR PR | **ANSWERED 2026-10-24** — `segno` accepted by the merge of the QR PR (#130); the three renderings read by Google Authenticator the same day; shipped in v1.15.0 and deployed; see section 23 |
 | 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24. **Deployed 2026-10-24 (v1.15.0)** |
 | 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25. **Deployed 2026-10-24 (v1.16.0)** |
-| 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR | **PARTLY ANSWERED 2026-10-25** — a contact move revokes the old address's scoped access and the notice says only what is true (26a; the owner chose the fix and left the remedy open, so the session chose revoke - the owner can reverse it); paging on a refused notice (26b), the reset link on Telegram (26c) and a "no login yet" email (26d) are open; see section 26. **Deployed 2026-10-25 (v1.17.0)** |
+| 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR; the notice-pages PR | **PARTLY ANSWERED** — 26a: a contact move revokes the old address's scoped access (decided in session; **deployed 2026-10-25, v1.17.0**); 26b: a refused password-changed, two-factor-off or alert-email-changed notice pages Minas at CRITICAL, whatever a connected Telegram chat took (**answered by the owner 2026-10-25, built**); 26c: the reset link by email only (**answered by the owner 2026-10-25, built**); open: 26d (a "no login yet" email), 26e (connecting a Telegram chat tells the member nothing) and 26b's two further tripwires; see section 26 |
 
 ---
 
@@ -2464,7 +2464,7 @@ CONTRIBUTING.md ("A UI change lands on every surface").
 
 ---
 
-## 26. A contact move and the old address's portal login; what a refused notice pages; where a reset link goes — **PARTLY ANSWERED 2026-10-25: 26a decided in session and built; 26b, 26c and 26d open**
+## 26. A contact move and the old address's portal login; what a refused notice pages; where a reset link goes — **PARTLY ANSWERED: 26a decided in session (deployed in v1.17.0); 26b and 26c ANSWERED by the owner 2026-10-25 and built; 26d and 26e open**
 
 > **The owner's words (2026-10-25):** "password reset email on members
 > portal not coming through. tried resetting password on my members
@@ -2534,7 +2534,7 @@ docs/AUTONOMOUS-LOG.md (2026-10-25).
 **Deployed 2026-10-25** in v1.17.0, between 14:54 and 14:57 UTC
 (docs/DEPLOYMENTS.md).
 
-### 26b. Should a refused notice page Minas? — open
+### 26b. Should a refused notice page Minas? — **ANSWERED by the owner 2026-10-25: option 2; built**
 
 A notice - the reset link, "your password was changed", "two-factor was
 turned off", the destination change, the emergency-contact note - is
@@ -2554,7 +2554,48 @@ member asks again or calls Minas - but a refused tripwire is silent by
 construction. It changes the 2026-09-22 paging rule, which is why it
 waits for the owner.
 
-### 26c. Should the reset link go to a connected Telegram chat? — open
+**The answer (2026-10-25):** the owner's "go ahead" to the recommendation,
+asked as "if a 'password changed', 'two-factor turned off' or 'alert email
+changed' notice is refused, should that page Minas? I'd say yes". Built:
+
+- The three notices - `password_changed`, `two_factor_disabled`,
+  `alert_destination_changed` - are `TRIPWIRE_NOTICE_RULES` in
+  `sentinel/alerts/contact.py`. When the email provider REFUSES one (an
+  SMTP 4xx/5xx reply), Minas gets a CRITICAL `security_notice_undelivered`
+  page, deduplicated per notice, address and account. A send that never
+  reached the provider is not a refusal and stays a log line, as for an
+  alert (#58): the question was asked about refusals.
+- The page always fires on a refusal, whatever the Telegram leg did. A
+  first fix round made a connected chat that took the copy skip the
+  page; both of its verifiers proved that anyone holding the member's
+  session can connect a chat of their own (connecting emails the member
+  nothing - 26e) and so switch the page off for the very change it
+  exists to catch. Withdrawn: the page reports how many connected chats
+  took the copy (`telegram_accepted`) and that such a chat may not be
+  the member's.
+- The page carries the address masked, the account (or, for a login
+  notice, the accounts the login opens, at most ten by name), the SMTP
+  code and the server's words with any address in them masked, and
+  `failed_at` - exactly the failed delivery row's `created_at`, where the
+  full address is.
+- Wiring, in every process that sends one: the portal's `POST /reset`
+  and `POST /security/2fa/disable` pass `serve_portal`'s own operator
+  alerter; `sentinel set-contact` builds one for that notice and, if it
+  cannot, warns once and moves the contact anyway.
+  `tests/test_security_notice_delivery.py` pins each through its real
+  path, and its `WIRED` registry fails until a new rule has such a test.
+
+**Still open within 26b:** two more notices call themselves tripwires in
+their docstrings - "Telegram alerts were disconnected"
+(`telegram_disconnected`) and the app's new-phone sign-in
+(`app_signed_in`, decision 21c) - and were left out because the owner was
+not asked. **Recommendation: add both**, by the same reasoning (each is
+what an attacker does after getting in). Each takes its line in
+`TRIPWIRE_NOTICE_RULES`, an operator alerter on its sender (both senders
+build `ContactRouter(db=db)` today, and the app's `Api` has none to
+pass) and a `WIRED` execution test.
+
+### 26c. Should the reset link go to a connected Telegram chat? — **ANSWERED by the owner 2026-10-25: email only; built**
 
 A notice bypasses the member's channel preferences, so the contact router
 sends it to every channel the address has, and the reset link reaches a
@@ -2568,6 +2609,14 @@ docstring says the plaintext token exists in one email only.
 **Recommendation: 1.** With the copy, whoever holds the member's Telegram
 can take over their portal login without the mailbox.
 
+**The answer (2026-10-25):** the owner's "go ahead" to option 1. Built:
+`_send_reset_email` sends its notice `email_only`, and the contact
+router gives such a notice no Telegram copy and no text, so the
+plaintext token exists outside the mailbox nowhere but in the mail
+provider's hands. Every other notice keeps every channel - the "your
+password was changed" notice that follows a reset still reaches a
+connected chat.
+
 ### 26d. A "no login yet" email — open (not chosen 2026-10-25)
 
 When `/forgot` is asked for an address that is an alert contact without a
@@ -2577,9 +2626,30 @@ requester learns nothing, but a stranger could trigger it (rate-limited by
 the reset limiter) and it spends email quota (the Resend free plan allows
 100 a day). Not chosen on 2026-10-25; recorded so the option is not lost.
 
+### 26e. Connecting a Telegram chat tells the member nothing — open (raised 2026-10-25)
+
+Found by the review of 26b. `POST /telegram/link` needs only a portal
+session: it mints a link code, the bot confirms it from whatever chat
+sends `/start <code>`, and the member gets an activity row ("Telegram
+alerts connected") and no email. A second chat does not replace the
+first. And a password reset retires the login's sessions but not its
+Telegram links, so a chat somebody else connected outlives the member's
+recovery and keeps receiving every alert and notice the address gets.
+
+1. **Leave it** - the activity page shows the connection.
+2. **A "Telegram connected" tripwire email** to the login's address on
+   every new connection, with the chat's name, and in
+   `TRIPWIRE_NOTICE_RULES` so a refused one pages Minas.
+3. **2, and a completed password reset disconnects every chat** (the
+   member reconnects the ones that are theirs).
+
+**Recommendation: 3.** A reset is what a member does when they think
+someone else got in, and today it leaves that person's chat connected.
+
 ### What it blocks
 
-26b and 26c block nothing built; each is a small change once answered.
+Nothing. 26d, 26e and the two further tripwires in 26b are each a small
+change once answered.
 
 **Related:** decision 4 (the primary email is the floor), decision 10 and
 #61 (scoped logins), #33 (the reset flow), #31 (the throttle keys),

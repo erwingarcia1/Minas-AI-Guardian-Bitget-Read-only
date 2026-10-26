@@ -109,6 +109,7 @@ RULE_ADVICE: dict[str, str | None] = {
     "exchange_records_untimestamped": NO_ADVICE,
     "alert_delivered_to_nobody": NO_ADVICE,
     "customer_email_refused": NO_ADVICE,
+    "security_notice_undelivered": NO_ADVICE,  # decision 26b: a tripwire notice's email was refused
     "escalation_delivered_to_nobody": NO_ADVICE,
     "contact_channel_has_no_provider": NO_ADVICE,
     "alert_routing_fell_back_to_defaults": NO_ADVICE,

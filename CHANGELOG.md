@@ -16,6 +16,83 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Changed detection behaviour
+
+- **A security notice the email provider refuses now pages Minas
+  (decision 26b, 2026-10-25).** Three notices are tripwires an attacker
+  hopes never arrive: "Your Minas AI Guardian password was changed" (sent
+  when a portal password reset completes), "Two-factor authentication was
+  switched off", and "Your Minas AI Guardian alerts are going somewhere
+  new" (sent to the address `sentinel set-contact` moves the alerts away
+  from). None of them could page before: a notice is LOW, the
+  refused-email page fires only for a customer's CRITICAL or a coverage
+  alert, and every notice was sent with no operator alerter at all.
+
+  After upgrading, Minas gets a CRITICAL `security_notice_undelivered`
+  page whenever the email provider refuses one of the three, on every
+  CRITICAL operator channel - Telegram, the team group, a text once SMS
+  is configured, and an email to `SMTP_RECIPIENTS`, which fails too when
+  the provider is refusing everything. It fires at most once per notice,
+  address and account inside the CRITICAL operator cooldown (30 minutes
+  as shipped). A send that never reaches the provider stays a log line,
+  as for an alert (#58).
+
+  A Telegram chat that took the notice's copy does not silence the page:
+  whoever is signed in to a login can connect a chat of their own, and
+  the member is not emailed when one is, so the chat may not be the
+  member's. The page says how many connected chats took the copy
+  (`telegram_accepted` in its evidence), and when one did, that it may
+  not be the member's. The page also carries:
+  - which notice it was, and what the member has not been told - "by
+    email or on Telegram" when no chat took the copy, "by email" when one
+    did;
+  - the address masked (`al***@example.com`), and the server's words
+    with any address in them masked too - as written, as the bytes of a
+    non-ASCII address, and its name part, or a plus-address's name before
+    the `+`, where the server quotes that alone (three characters or
+    more: a shorter one is left as it is, so the server's reply stays
+    readable);
+  - for a contact move, the account; for a password or two-factor
+    change, the accounts that login opens - ten at most by name, each cut
+    to 60 characters, then how many more, so the page fits one Telegram
+    message;
+  - `failed_at`, exactly the `created_at` of the notice's failed
+    delivery row, which holds the full address (the overview's "Failed
+    email deliveries" card shows that row while it is among the latest
+    20);
+  - a request to reach the member another way, and to treat a change
+    they did not make as an incident.
+
+  Not paged: a notice the provider accepted (a later bounce is not seen);
+  SMTP not configured (the Email liveness check already reads DEAD); and
+  every other notice - the reset link, which corrects itself, the
+  emergency-contact notes, the pause, erasure and digest mail, and the
+  Telegram-disconnected and new-phone notices, which call themselves
+  tripwires and wait for the owner's word.
+
+  `sentinel set-contact` now builds an operator alerter for that one
+  notice, from `SENTINEL_RULES_PATH` (default `./config/rules.yaml`); if
+  the rules or the channels cannot be built, it prints one warning and
+  the move and the notice go ahead. One side effect: those three notice
+  paths can now also raise the existing `contact_channel_has_no_provider`
+  page (HIGH, at most hourly per channel) when SMTP or the Telegram bot
+  token is unset, as the engine's alerts already do - and if raising that
+  page fails, the rest of the delivery still goes, Telegram copy and text
+  included, for alerts as well as notices. What customers receive is
+  unchanged. docs/threat-model.md states the page and what it cannot see.
+
+- **The password-reset link goes to the member's mailbox only (decision
+  26c, 2026-10-25).** A notice is sent to every channel its address has,
+  so a member with Telegram connected also got their reset link in that
+  chat, and whoever held the chat could then set a new password without
+  the mailbox the reset exists to prove. After upgrading, the link
+  arrives by email alone. The "your password was changed" notice that
+  follows a reset still reaches the connected chat as well as the
+  mailbox, like every other notice, and if its email is refused, Minas is
+  paged (the entry above). Portal-only: notices have no app counterpart -
+  the app's "Forgot password?" opens `/forgot` in the browser.
+  docs/threat-model.md says it.
+
 ### Changed
 
 - **v1.17.0 is deployed (2026-10-25, between 14:54 and 14:57 UTC):** the
