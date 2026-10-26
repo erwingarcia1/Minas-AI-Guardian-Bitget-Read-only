@@ -106,6 +106,17 @@ def test_the_apps_activity_screen_makes_the_portals_promise():
     assert f"'{portal.ACTIVITY_PROMISE}'" in source
 
 
+def test_the_app_links_to_the_portals_privacy_policy():
+    """Decision 27: Google Play wants the policy reachable in the app. The
+    app opens the portal's page in the browser - one copy of the words -
+    from the screens whose portal counterparts link to it: the welcome
+    screen (the landing page's footer), the sign-in screen (the sign-in
+    page) and Settings (every signed-in page's footer)."""
+    for screen in ("landing.tsx", "sign-in.tsx", "(tabs)/settings.tsx"):
+        source = (MOBILE / "src" / "app" / screen).read_text()
+        assert "Linking.openURL(`${API_URL}/privacy`)" in source, screen
+
+
 def test_the_apps_landing_says_what_the_portals_does():
     """Decision 25: the app opens on the portal's landing page, in the
     portal's words. The sentences live in sentinel/portal.py; the app

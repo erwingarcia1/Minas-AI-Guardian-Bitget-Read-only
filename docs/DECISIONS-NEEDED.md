@@ -9,7 +9,8 @@ product should do, and each was skipped rather than guessed at.
 
 **Open today (2026-10-26):** 6 (needs the lawyer; #47), 7's vendor (#63),
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
-21b/21e/21h/21i, 26d, 26e and 26b's two further tripwires. Everything else
+21b/21e/21h/21i, 26d, 26e and 26b's two further tripwires, and 27's open
+facts and approval (the privacy policy). Everything else
 below is answered and built, and deployed where there is a server to deploy
 to - the app waits on the store accounts (section 21, "Not built yet"); the
 sections stay as the record.
@@ -46,6 +47,7 @@ sections stay as the record.
 | 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24. **Deployed 2026-10-24 (v1.15.0)** |
 | 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25. **Deployed 2026-10-24 (v1.16.0)** |
 | 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR; the notice-pages PR | **PARTLY ANSWERED** — 26a: a contact move revokes the old address's scoped access (decided in session; **deployed 2026-10-25, v1.17.0**); 26b: a refused password-changed, two-factor-off or alert-email-changed notice pages Minas at CRITICAL, whatever a connected Telegram chat took (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); 26c: the reset link by email only (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); open: 26d (a "no login yet" email), 26e (connecting a Telegram chat tells the member nothing) and 26b's two further tripwires; see section 26 |
+| 27 | The privacy policy at `/privacy` (Google Play needs it in the listing and in the app) | the Play production release | **PARTLY ANSWERED 2026-10-26** — drafted on the site from the owner's answers (contact, "Minas AI", Anthropic named, keys and contacts kept until the customer asks, erasure fixed by 6b); eight facts open for the owner and the lawyer, then approval; see section 27 |
 
 ---
 
@@ -2675,6 +2677,63 @@ change once answered.
 #61 (scoped logins), #33 (the reset flow), #31 (the throttle keys),
 docs/threat-model.md (the portal's reset request), CHANGELOG.md
 `[Unreleased]`.
+
+---
+
+## 27. The privacy policy at /privacy — **PARTLY ANSWERED 2026-10-26: drafted on the site; eight facts and the approval are the owner's and the lawyer's**
+
+> **Owner, 2026-10-26**, publishing the Android app: Google Play's User
+> Data policy wants a privacy policy's address in the store listing and in
+> the app. The owner's answers: draft it **on the site**
+> (`/privacy`), for the owner and the lawyer to approve before it ships;
+> contact **support@minastech.ca**; the developer is **"Minas AI"**;
+> **name Anthropic** as a processor, for the optional incident summary
+> (triage) and for Minas's own operating and support work; keep keys and
+> contacts after monitoring stops **"until they ask; the policy says
+> so"**; and **fix erasure to match** its "nothing that identifies you"
+> promise (done: decision 6b).
+
+**What is built (the privacy-page PR, held as a draft until approval).**
+`GET /privacy`, public and the same with a session, in the portal's
+frame; every footer links to it, the sign-in page too, and the app opens
+it in the browser from its welcome, sign-in and Settings screens. The
+text is drawn from the data inventory of 2026-10-26 and says only what
+the code makes true: numbers (session lengths, the app's 30 days, every
+retention period) and whether the AI summary is on come from the code
+and the configuration; the app's server is named from the setting.
+`PRIVACY_APPROVED = False` shows "Draft for review."; a test refuses the
+flag while any "[To confirm" mark is left.
+
+**Open — each is a "[To confirm: …]" on the page:**
+
+1. Minas AI's registered legal name and postal address.
+2. Whether SMS alerts are being sent, and the SMS provider's name.
+3. The data-processing terms with Amazon Web Services, Resend and
+   Anthropic, and the safeguards the governing law requires for data
+   leaving Japan (and Canada).
+4. How quickly a request is answered (PIPEDA's limit is 30 days).
+5. Which data-protection authority a member can complain to (the
+   governing law: section 6's jurisdiction question).
+6. The minimum age.
+7. How long server logs are kept (the application sets nothing).
+8. How long backups are kept (no rotation is written down; an erasure
+   does not edit a backup).
+
+**Commitments to confirm as written** (not marked, but the owner's
+promises): members are told by email before a change to what is collected
+or who handles it; Minas staff's AI tools can read the service's records
+while operating and supporting it; the portal loads nothing from any
+other site.
+
+**To approve:** answer each item, replace its mark, set `PRIVACY_DATED`
+to the date of approval, and set `PRIVACY_APPROVED = True`
+(`sentinel/portal.py`); merge, and the next release carries it. Then the
+store listing takes `https://<the one address>/privacy`, and the app build
+that goes to production carries the links.
+
+**Related:** decision 6 and 6b (retention and erasure), decision 21
+(the app), docs/data-retention.md, `mobile/README.md` ("Before Play
+production").
 
 ---
 

@@ -1,10 +1,11 @@
 import { Link } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert as Confirm } from 'react-native';
+import { Alert as Confirm, Linking } from 'react-native';
 
 import { api, describeError } from '@/api/client';
 import { useRequest } from '@/api/use-request';
 import { useSession } from '@/auth/session';
+import { API_URL } from '@/config';
 import { Badge, Body, Button, Card, KV, Loaded, Notice, Screen, Section, Title, when } from '@/ui';
 
 export default function Security() {
@@ -121,6 +122,8 @@ export default function Security() {
         <Link href="/limits" asChild>
           <Button label="What the Guardian can and cannot do" variant="secondary" onPress={() => {}} />
         </Link>
+        {/* The portal's footer link (decision 27), opened in the browser. */}
+        <Button label="Privacy policy" variant="secondary" onPress={() => Linking.openURL(`${API_URL}/privacy`)} />
         <Body muted>Alert channels, quiet hours, Telegram and your data are on the member portal.</Body>
       </Section>
 

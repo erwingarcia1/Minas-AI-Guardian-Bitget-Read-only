@@ -1,7 +1,8 @@
 import { useRouter } from 'expo-router';
-import { Image, StyleSheet, Text, View } from 'react-native';
+import { Image, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { useSession } from '@/auth/session';
+import { API_URL } from '@/config';
 import { colors, space, type } from '@/theme';
 import { Body, Button, Card, Eyebrow, Notice, Screen, Section, Title } from '@/ui';
 
@@ -115,6 +116,12 @@ export default function Landing() {
       <Body muted style={styles.phish}>
         {'Minas will never email you a link asking for your password or API key. Sign in only here, or on the portal address you were given.'}
       </Body>
+
+      {/* The portal's footer link (decision 27): the policy is one web page,
+          opened in the browser, so there is one copy of its words. */}
+      <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`${API_URL}/privacy`)} hitSlop={8}>
+        <Text style={styles.link}>Privacy policy</Text>
+      </Pressable>
     </Screen>
   );
 }
@@ -126,4 +133,5 @@ const styles = StyleSheet.create({
   name: { color: colors.text, fontSize: type.xl, fontWeight: '700' },
   group: { gap: space(3) },
   phish: { fontSize: type.sm, textAlign: 'center' },
+  link: { color: colors.gold, fontSize: type.sm, textAlign: 'center' },
 });

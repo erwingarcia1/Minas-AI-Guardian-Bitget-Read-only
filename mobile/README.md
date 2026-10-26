@@ -166,8 +166,9 @@ preview APK needs neither store account.
   production. The first Android build is uploaded to internal testing by
   hand in Play Console (Play App Signing on, with Google's key; EAS keeps
   the upload key). The Apple Developer Program account is not ready yet.
-- **Before Play production:** the privacy policy page (Play wants its
-  address in the listing and in the app), the Data safety form, the
+- **Before Play production:** the privacy policy's approval (the page is
+  drafted at `/privacy` and linked from the welcome, sign-in and Settings
+  screens; decision 27 lists what is open), the Data safety form, the
   content rating, the store listing, and a way for Google's reviewer to
   sign in past two-factor (the owner decides this after internal testing).
 - **Account changes:** the settings only the account's main contact may

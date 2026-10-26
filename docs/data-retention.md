@@ -1,7 +1,7 @@
 # Data Retention — FLAGGED FOR LEGAL REVIEW (not yet reviewed)
 
 Status: **Legal/compliance has NOT reviewed this offering** (confirmed at
-project kickoff, 2026-07-02; still true as of 2026-08-17). This document
+project kickoff, 2026-07-02; still true as of 2026-10-26). This document
 exists so engineering choices don't silently become policy. Nothing here is
 legal advice; it is a list of the decisions a lawyer needs to make, with the
 current engineering practice stated accurately underneath them.
@@ -41,7 +41,10 @@ described below cannot stop silently (#73).
 | Customer API keys (encrypted at rest) | `accounts` | Until the account is deleted |
 | Customer contact details (emails, phones, Telegram handles) | `accounts` | Until changed or the account is deleted |
 | Baselines (known addresses, traded pairs, transfer routes, fee EMA) | never pruned | Deleting a baseline row invents an anomaly |
-| Identity & auth (operators, portal members, 2FA enrolments) | never pruned | Offboarding is `disable`, never deletion (G-50) |
+| Identity & auth (operators, portal members, 2FA enrolments) | never pruned | Operators: offboarding is `disable`, never deletion (G-50). A member's login goes with an erasure |
+| Phones signed in to the app, Telegram links, account grants, pause requests | `api_devices`, `telegram_links`, `member_account_grants`, `pause_requests` | never pruned; a member's go with an erasure |
+| Server logs | the container's and the host's logs | Not set by the application. **Open** (decision 27) |
+| Backups | `/var/backups/minas-guardian/` on the host | No rotation written down. **Open** (decision 27). A backup is not edited by an erasure |
 
 Hosting: AWS Tokyo (ap-northeast-1). Data residency questions below should be
 answered for AWS Japan.
@@ -64,7 +67,10 @@ answered for AWS Japan.
 3. **Customer consent**: monitoring agreement must cover what we collect,
    that staff can see activity data, and the AI-triage processing (event
    data is sent to Anthropic's API when triage is enabled — currently OFF by
-   default partly for this reason).
+   default partly for this reason), and that Minas staff's AI tools
+   (Anthropic) can read service records while operating and supporting it
+   (the owner chose to name Anthropic as a processor for both, 2026-10-26;
+   the privacy policy at `/privacy` says so, decision 27).
 4. **Breach notification**: thresholds and timelines per jurisdiction if the
    event log (financial privacy) is exposed.
 
@@ -73,9 +79,11 @@ answered for AWS Japan.
 - Triage (third-party LLM processing of event data) ships **disabled**.
 - Retention pruning runs hourly with the windows above; `0` in config means
   "keep forever" and is a legitimate per-table choice.
-- Offboarding today = `status='disabled'` (stops polling, keeps history).
-  True deletion path deliberately not built until the erasure-vs-forensics
-  question is answered (#46 tracks it).
+- Offboarding today = `status='disabled'` (stops polling, keeps history,
+  the key and the contacts) until the customer asks for deletion; the
+  owner chose this on 2026-10-26 and the privacy policy says so
+  (decision 27). Deletion on request is built: the interim answer below
+  (decision 6, and 6b for other people's records).
 - The customer-visible summary (`/limits` on the portal) is derived from the
   same config the pruner reads, so the page and the practice cannot disagree.
 

@@ -210,6 +210,24 @@ screen is the same page in native primitives, without the numbers.
 
 ---
 
+## Privacy policy
+
+`GET /privacy` (decision 27, drafted 2026-10-26) is a document, not a
+screen to act on, so it is built from the primitives above and carries
+no button. In order: a `page-head` (eyebrow "Minas AI Guardian", `h1`
+"Privacy policy", the dated line, muted); while the policy is a draft, an
+info `notice` ("Draft for review.", `role="note"`); one `panel` per
+section, each an `h2` over plain paragraphs; and "How long we keep it" as
+a `kv` list, the limits page's retention rows read from the same
+configuration plus logs and backups. The facts still open read
+"[To confirm: …]" in the text itself. It is public and the same with a
+session (the visitor gets the landing frame, a member the member frame);
+every footer links to it, and so does the sign-in card under its
+anti-phishing note. No mockup file: the page adds no layout the landing
+and limits mockups do not already show.
+
+---
+
 ## Sign-in anti-phishing line
 
 A shield-prefixed note under the form states Minas never emails a link asking
