@@ -98,3 +98,25 @@ states the date, the number of records removed, and that nothing before it
 can be reconstructed. **The forensic gap is recorded as a gap**, never left
 as silence that looks like nothing happened. The person receives a written
 confirmation saying exactly this.
+
+Everywhere else, the person's details are replaced, not left behind
+(decision 6b, 2026-10-26). Their address, phone numbers, Telegram identity,
+phone names and the names of the erased accounts also sit in rows that
+belong to other people's accounts: "emergency contact changed" entries,
+their own password changes and phone sign-ins (recorded on every account
+their login opened), deliveries to them, and the snoozes, marks and pause
+requests they made. Those rows are the other customer's history, so they
+stay, with `[erased]` in place of the details, and each such account gets
+one `contact_details_erased` entry on its activity page saying how many
+records changed. The activity page names this as the one exception to
+"never edited". A second pass runs after the confirmation is sent, because
+sending it records a delivery to the erased address. The matching is exact
+so nobody else's data changes: a whole address only (al@ is not inside
+sal@), a number (of six digits or more) only where no digit adjoins it, a
+phone's name only beside the person's own address, an account's name only
+in rows that belong to no account. `tests/test_erasure.py` reads every
+column of every table afterwards and finds nothing.
+
+Not edited: backups made before the erasure and the server logs. The
+confirmation and the portal say so. How long each is kept is still open
+(the backup schedule has no rotation written down).

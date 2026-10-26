@@ -25,7 +25,7 @@ sections stay as the record.
 | 3 | Incident page "what to do next" wording | ~~#29~~ | **ANSWERED 2026-08-27** with 9 — one canonical text; reversible steps only; observed facts, no inferences; see section 3 |
 | 4 | Alert channel defaults + quiet hours | ~~#24~~ | **ANSWERED 2026-08-27** — off by default, non-critical, local time 22:00–07:00, queued to digest, email un-disableable, unknown tz = cannot enable; see section 4 |
 | 5 | PDF export for incidents | ~~#29~~ | **ANSWERED 2026-08-27** — print stylesheet + browser print-to-PDF, no library; see section 5 |
-| 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), ~~#46~~ (G-42) — lawyer pending | **ANSWERED 2026-08-27 interim** — lawyer engaged (crypto-shredding question); 24 months configurable; erasure = hard delete + recorded gap + told; see section 6 |
+| 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), ~~#46~~ (G-42) — lawyer pending | **ANSWERED 2026-08-27 interim** — lawyer engaged (crypto-shredding question); 24 months configurable; erasure = hard delete + recorded gap + told; **6b ANSWERED 2026-10-26**: an erased person's details on other people's accounts are replaced with [erased], and the account is told; see section 6 |
 | 7 | External uptime monitoring: latency, vendor, what customers hear | #63 (vendor still owner's) | **ANSWERED 2026-08-27** — dead-man's switch, third party, 15 min, gaps in the digest; see section 7 |
 | 8 | How long may a customer silence a CRITICAL? | — | **ANSWERED 2026-08-13** — 1 h / 4 h / 24 h caps, `alerting.snooze_cap_hours`; shipped; see section 8 |
 | 9 | What the incident page tells a customer to do next | ~~#29~~ | **ANSWERED 2026-08-27** with 3 — see section 9 |
@@ -436,6 +436,26 @@ may mean something more specific to you.
 > a deletion whose gap is written down can be reasoned about later.
 > Publishing the policy and the sign-off (criteria 2 and 4) still wait for
 > the lawyer.
+>
+> **6b — an erasure and other people's records (owner, 2026-10-26: "Redact,
+> and say so").** Found while drafting the privacy policy: the confirmation
+> promised "nothing that identifies you", but the person's address stayed
+> as the actor of the tombstone's own entry, in the confirmation's delivery
+> row, and on other customers' accounts where they were the emergency
+> contact or their login reached: the "emergency contact changed" entries,
+> their own password changes and sign-ins, deliveries, snoozes and marks.
+> Those accounts' activity page promises its record is "never edited or
+> removed". The choice was between redacting those entries (the promise
+> names an exception) and leaving them (the confirmation and the policy
+> say the details remain in other people's history). **Answer:** replace
+> the person's email address, phone numbers, Telegram identity and phone
+> names with `[erased]` everywhere; keep the entries; add one
+> `contact_details_erased` entry on each account touched; and name the
+> exception in the activity page's promise, on the web and in the app.
+> Built in `sentinel/erasure.py`; `docs/data-retention.md` describes the
+> matching rules. Backups made before an erasure and the server logs are
+> not edited, and the confirmation says so; how long they are kept is
+> still open.
 
 
 **This one is not yours to answer alone — it needs a lawyer**, and it has the
