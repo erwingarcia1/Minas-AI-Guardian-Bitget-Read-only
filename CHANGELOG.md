@@ -16,6 +16,27 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Added
+
+- **A privacy policy at /privacy, as a draft for approval (decision
+  27).** Google Play wants one in the store listing and in the app. The
+  page is public and the same with a session; every footer links to it,
+  and so does the sign-in page; the app opens it in the browser from its
+  welcome, sign-in and Settings screens (both surfaces, decision 25). It
+  says what is held and why, the one cookie, who else handles the data
+  (Amazon Web Services in Tokyo, Resend, Telegram, Anthropic for the
+  optional incident summary and for Minas's operating and support work,
+  the exchanges), how long each thing is kept, and how to see, correct,
+  delete and stop it. The numbers are read from the code and the
+  configuration, never typed in. Eight facts the code cannot answer read
+  "[To confirm: …]"; the page says "Draft for review." while
+  `PRIVACY_APPROVED` is False, and a test refuses the flag while any mark
+  is left. The limits page's deletion line now mentions `[erased]` in
+  other people's records (6b), its baselines line no longer says they go
+  when monitoring stops (they stay until the account is deleted), and
+  `docs/data-retention.md` drops the claim that deletion was not built.
+  `tests/test_privacy_page.py` holds it; four new design-guard probes.
+
 ### Changed
 
 - **An erasure leaves nothing that names the person, anywhere (decision

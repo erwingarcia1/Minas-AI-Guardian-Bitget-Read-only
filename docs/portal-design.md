@@ -110,7 +110,16 @@ contract, `design/portal/DESIGN-SYSTEM.md` is the fuller design rationale.
   without a member (the landing page, an anonymous not-found page) and at
   `/limits` on every page rendered with one (`_render_not_found` takes the
   member for that reason), so a visitor is never bounced from the footer
-  to the page they are on.
+  to the page they are on. **The privacy policy** (decision 27) is
+  `GET /privacy`, public and the same with a session: the landing frame
+  for a visitor, the member frame (subnav, signed-in meta) for a member.
+  A `.page-head` (eyebrow, `<h1 id="privacy-title">`, the dated line),
+  a `.notice--info` "Draft for review." while `PRIVACY_APPROVED` is
+  False, one `.panel` per section, and a `.kv` list of retention periods
+  read from the configuration. No button: nothing on it to do. Every
+  footer links to it, and the sign-in page, which has no footer, carries
+  the link under its `.phish` note. The app opens the same page in the
+  browser from its welcome, sign-in and Settings screens.
 
 ## Mobile and touch
 

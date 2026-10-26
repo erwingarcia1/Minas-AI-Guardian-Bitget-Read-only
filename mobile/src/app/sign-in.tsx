@@ -117,6 +117,11 @@ export default function SignIn() {
             address you were given.
           </Body>
 
+          {/* The portal's sign-in page carries the same link (decision 27). */}
+          <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`${API_URL}/privacy`)} hitSlop={8}>
+            <Text style={styles.link}>Privacy policy</Text>
+          </Pressable>
+
           {__DEV__ ? <Body muted style={styles.phish}>{`Development build. Server: ${API_URL}`}</Body> : null}
         </ScrollView>
       </KeyboardAvoidingView>

@@ -1047,6 +1047,7 @@ def _page(body_html: str, email: str | None = None, active: str = "",
         '<footer class="footer"><div class="container footer__row">'
         '<span class="footer__tag">Minas AI Guardian</span>'
         f'<a href="{limits_href}">What this product can and cannot do</a>'
+        '<a href="/privacy">Privacy policy</a>'
         '<span class="subtle">Read-only monitoring. We cannot move your funds.</span>'
         "</div></footer>"
     )
@@ -1331,6 +1332,8 @@ def _render_login(error: str | None = None, host: str | None = None) -> str:
         + _ICON_SHIELD
         + '<p><strong style="color:var(--text)">Minas will never email you a link asking '
         f"for your API key.</strong> {rule}</p></div>"
+        # The sign-in family has no footer, so the policy is linked here.
+        '<p class="muted" style="margin-top:var(--space-4)"><a href="/privacy">Privacy policy</a></p>'
         "</section>"
     )
     return _page(body, title="Sign in — Minas AI Guardian", shell=True)
@@ -2253,9 +2256,11 @@ def retention_summary(rules=None) -> list[tuple[str, str]]:
          "until your account is deleted"),
         ("When you ask for your data to be deleted",
          "deleted immediately, from the security page or by asking Minas — what remains is one entry "
-         "stating that a deletion happened, with the date and the number of records removed"),
+         "stating that a deletion happened, with the date and the number of records removed, and "
+         "[erased] where your details were in somebody else's account history"),
         ("Baselines of your normal activity (addresses, pairs, routes)",
-         "kept while your account is monitored — deleting one would make your own history look like an attack"),
+         "kept until your account is deleted — deleting one while it is monitored would make your own "
+         "history look like an attack"),
     ]
 
 
@@ -2320,6 +2325,16 @@ LIMITS_WHY = (
 # Flipped only by the legal review decision 6 is waiting on; the page's
 # "not yet reviewed" notice and the app's flag both read it.
 RETENTION_REVIEWED = False
+
+# The privacy policy (decision 27). Google Play wants its address in the
+# store listing and in the app; the owner asked for it on the site, for the
+# owner and the lawyer to approve before it ships (2026-10-26). Until then
+# every fact still open reads "[To confirm: ...]" and the page says it is a
+# draft; flipping PRIVACY_APPROVED requires that no such mark is left
+# (tests/test_privacy_page.py). Escaped when rendered.
+PRIVACY_APPROVED = False
+PRIVACY_DATED = "Draft of 26 October 2026"
+PRIVACY_CONTACT = "support@minastech.ca"
 
 # The landing page (decision 25), as data: the app's welcome screen carries
 # these sentences verbatim (tests/test_mobile_app.py pins them), like the
@@ -2449,6 +2464,166 @@ def _render_limits(db: Database, email: str, rules=None) -> str:
         + _sensitivity_section(db, email, rules)
     )
     return _page(body, email, "/limits", title="Limits — Minas AI Guardian")
+
+
+def privacy_sections(rules=None) -> list[tuple[str, str, list[str]]]:
+    """The privacy policy as (anchor, heading, paragraphs), decision 27.
+
+    Every statement is one the code makes true, drawn from the data
+    inventory of 2026-10-26: what the tables hold, what leaves the server
+    and to whom. Numbers come from the code or the configuration, never
+    typed in, and the one address comes from the setting (#88). What the
+    code cannot answer - the legal entity, the governing law, how long logs
+    and backups are kept - is marked "[To confirm: ...]" for the owner and
+    the lawyer, never guessed."""
+    from sentinel.api import REFRESH_TTL_SECONDS
+
+    host = portal_host()
+    server = host or "the Minas server"
+    enabled = (rules.get("triage", "enabled", default=False) if rules is not None
+               else default_for("triage", "enabled"))
+    triage = "on" if enabled else "off"
+    return [
+        ("who", "Who we are", [
+            "Minas AI Guardian is a read-only monitoring service for crypto exchange accounts, run by "
+            "Minas AI (“Minas”, “we”). [To confirm: Minas AI's registered legal name and postal "
+            "address.]",
+            f"Questions about this policy or about your data: {PRIVACY_CONTACT}.",
+        ]),
+        ("what", "What we hold, and why", [
+            "Your exchange API key. A read-only key you give us so that the Guardian can read your "
+            "account. It is encrypted before it is stored and used for one thing: reading your account "
+            "from the exchange. Minas checks that the key cannot trade or withdraw, and refuses one that "
+            "can.",
+            "What the key reads. Balances, deposits, withdrawals, transfers and trades, and the key's "
+            "permissions and the account's allowlists, from the exchange's own API. The "
+            "Guardian compares each reading with what it has seen before; that comparison is what "
+            "produces an alert.",
+            "How to reach you. The email address, phone number and Telegram chat you give us for "
+            "alerts, and the same for an emergency contact if you name one. An emergency contact is "
+            "told once that they have been named, and after that hears from us only about an alert "
+            "that went unanswered. When SMS alerts are on, your phone number and the alert's text go "
+            "to the SMS provider. [To confirm: whether SMS alerts are being sent, and the provider's "
+            "name.]",
+            "Your sign-in. Your email address; your password, stored only as a scrypt hash, never as "
+            "the password itself; your two-factor secret, encrypted, and your recovery codes, hashed; "
+            "your settings (time zone, quiet hours, alert channels, digest schedule); and when you last "
+            "signed in.",
+            "The record. Every alert we send, who it went to, on which channel, and whether the "
+            "provider accepted it; and every change to how your accounts are watched or reached, with "
+            "who made it. This is the history you see under Alerts and Activity.",
+            "The phone app. The name of each phone you sign in on, and when it signed in and last "
+            f"renewed its sign-in, which ends after {REFRESH_TTL_SECONDS // 86400} days unopened. The "
+            "app keeps one sign-in token in the phone's secure storage (the iOS Keychain or the Android "
+            "Keystore). It contains no analytics, advertising or tracking code, and it talks only to "
+            f"{server}.",
+            "Server logs. Our servers log each request, with its IP address, to run the service and "
+            "investigate problems.",
+            "We do not sell your data, use it for advertising, or build profiles of you.",
+        ]),
+        ("cookies", "Cookies", [
+            f"The member portal sets one cookie, {SESSION_COOKIE}, when you sign in. It holds your "
+            f"session and nothing else, and it ends after {SESSION_IDLE_SECONDS // 3600} hours without "
+            f"activity, after {SESSION_TTL_SECONDS // 3600} hours in all, and when you sign out. It is "
+            "marked HttpOnly, Secure and SameSite=Lax.",
+            "There are no analytics, advertising or tracking cookies, and the portal loads nothing from "
+            "any other site.",
+        ]),
+        ("others", "Who else handles it", [
+            "Amazon Web Services runs the server that stores all of it, in its Tokyo region, in Japan.",
+            "Resend delivers our emails, so it receives your email address and the text of each email "
+            "we send you.",
+            "Telegram delivers alerts to a chat you connect, so it receives the text of those alerts.",
+            "Anthropic provides AI tools Minas uses in two ways. An optional summary of an incident "
+            f"sends the account's recent activity record to Anthropic; it is switched {triage}. And Minas "
+            "staff use Anthropic's AI tools to operate and support the service; those tools can read "
+            "the service's records, including yours, while staff investigate a problem.",
+            "Your exchange (Bitget, Bybit, OKX or Binance) receives the Guardian's read requests, made "
+            "with your key. It already holds your account; we send it nothing else about you.",
+            "Minas staff can see your accounts' records, to run the service and to answer you.",
+            "Your data is stored in Japan, and the services above may handle it in other countries, "
+            "including the United States. [To confirm: the data-processing terms in place with Amazon "
+            "Web Services, Resend and Anthropic, and the safeguards the governing law requires for "
+            "these transfers.]",
+        ]),
+        ("rights", "Your choices", [
+            "See it and take a copy. Everything we hold about your accounts is on the portal, and "
+            "Security → Download my data gives you a copy as a file.",
+            "Correct it. Alert channels, quiet hours and the digest are changed in the portal. To "
+            f"change an alert address or phone number, write to {PRIVACY_CONTACT}: Minas makes the "
+            "change and tells the old address.",
+            "Delete it. Security → Delete my data deletes it immediately, with your password (and your "
+            "two-factor code, if it is on); you can also ask us by email. What stays is one entry "
+            "recording that a deletion happened, with the date and the number of records removed. "
+            "Where your details appear in somebody else's account history, for example as their "
+            "emergency contact, they are replaced with [erased]. Backups made before the deletion and "
+            "our server logs are not edited. The phone app cannot delete: use the portal or write to "
+            "us.",
+            "Stop monitoring. Write to us; an account's main contact can also request a pause in "
+            "the portal, which waits 24 hours and can be cancelled until then. Stopping does not "
+            "delete anything: your key, your "
+            "contacts and your history stay until you delete your data or ask us to.",
+            "We answer every request. [To confirm: the time within which we answer.]",
+            "If you are unhappy with how we handle your data, tell us first. [To confirm: the "
+            "data-protection authority you can complain to under the governing law.]",
+        ]),
+        ("children", "Children", [
+            "Minas AI Guardian is for adults managing their own exchange accounts. [To confirm: the "
+            "minimum age.]",
+        ]),
+        ("changes", "Changes to this policy", [
+            "When this policy changes, the date at the top changes. Before a change to what we collect "
+            "or who handles it, members are told by email.",
+        ]),
+    ]
+
+
+def privacy_retention(rules=None) -> list[tuple[str, str]]:
+    """How long, for the privacy policy: the limits page's list, read from
+    the same configuration the deletion job runs on, plus what that list
+    does not cover."""
+    return retention_summary(rules) + [
+        ("Your sign-in, its settings and the phones signed in to the app",
+         "until you delete your data or ask us to"),
+        ("Server logs", "[To confirm: how long server logs are kept.]"),
+        ("Backups", "[To confirm: how long backups are kept.] A backup is not edited when data is "
+         "deleted, so it holds a copy until it is itself deleted"),
+    ]
+
+
+def _render_privacy(email: str | None, rules=None) -> str:
+    """The privacy policy (decision 27): public, the same page with or
+    without a session. The app opens it in the browser, so there is one
+    copy of the words."""
+    draft = "" if PRIVACY_APPROVED else (
+        '<div class="notice notice--info" role="note">' + _ICON_INFO
+        + '<div><p class="notice__title">Draft for review.</p>'
+        '<p class="notice__body">This policy has not been approved yet. The parts marked '
+        "“To confirm” are still open.</p></div></div>"
+    )
+    sections = "".join(
+        f'<section class="panel" aria-labelledby="privacy-{anchor}"><h2 id="privacy-{anchor}">'
+        f'{html.escape(heading)}</h2><div class="stack">'
+        + "".join(f"<p>{html.escape(text)}</p>" for text in paragraphs)
+        + "</div></section>"
+        for anchor, heading, paragraphs in privacy_sections(rules)
+    )
+    keeps = "".join(
+        f'<div class="kv__row"><dt>{html.escape(what)}</dt>'
+        f'<dd class="muted">{html.escape(how_long)}</dd></div>'
+        for what, how_long in privacy_retention(rules)
+    )
+    body = (
+        '<div class="page-head"><span class="eyebrow">Minas AI Guardian</span>'
+        '<h1 id="privacy-title">Privacy policy</h1>'
+        f'<p class="muted">{html.escape(PRIVACY_DATED)}</p></div>'
+        + draft + sections
+        + '<section class="panel" aria-labelledby="privacy-keeps"><h2 id="privacy-keeps">'
+        "How long we keep it</h2>"
+        '<p class="count">read from the running configuration</p>'
+        f'<dl class="kv">{keeps}</dl></section>'
+    )
+    return _page(body, email, landing=email is None, title="Privacy policy — Minas AI Guardian")
 
 
 def member_sensitivity(db: Database, email: str, rules=None) -> list[dict]:
@@ -3964,6 +4139,12 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             # that browser was answered "Not found" for both.
             if path == "/forgot":
                 self._send(_render_forgot().encode())
+                return
+            # The privacy policy (decision 27) is public: the store listing,
+            # the app and the sign-in page link to it, and it is the same
+            # page for a member, framed with their navigation.
+            if path == "/privacy":
+                self._send(_render_privacy(email, rules).encode())
                 return
             if path == "/reset":
                 qs = parse_qs(urlparse(self.path).query)
