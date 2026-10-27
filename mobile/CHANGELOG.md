@@ -32,7 +32,16 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   Google's review; the `mobile-v1.0.0` tag goes on the build that reaches
   production. `app.json` names the EAS project (`jimroxodezis-team`'s
   `minas-ai-guardian`), which holds the Android upload key; EAS numbers
-  the builds (versionCode 1 was the first preview APK).
+  the builds (versionCode 1 was the first preview APK). versionCode 2
+  (EAS build `f7bbcbb3`, from 4ccfa99) went to the owner for internal
+  testing. versionCode 3 (EAS build `7b999234`, from `b6e8b6a`,
+  2026-10-27) is the production candidate: it adds the privacy links and
+  the activity screen's exception, and nothing else in the app changed.
+  Its manifest requests INTERNET, VIBRATE, USE_BIOMETRIC,
+  USE_FINGERPRINT and AndroidX's own
+  `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`; `android.permission.DUMP`
+  appears only as the guard on AndroidX's `ProfileInstallReceiver`, not
+  as a request.
 
 - **Android no longer asks for storage or "display over other apps".**
   Expo's template requests READ/WRITE_EXTERNAL_STORAGE and
@@ -50,8 +59,8 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   `tests/test_mobile_app.py` pins the copy. The new entry ("A person's
   details were erased at their request") arrives through
   `/api/v1/activity` like every other. Not in the first internal-test
-  build (versionCode 2, built from 4ccfa99 before this landed); the next
-  build carries it.
+  build (versionCode 2, built from 4ccfa99 before this landed);
+  versionCode 3 carries it.
 
 - **An ended sign-in lands on the welcome screen, which says why.** When
   the server ends a phone's sign-in (signed out from the portal or another

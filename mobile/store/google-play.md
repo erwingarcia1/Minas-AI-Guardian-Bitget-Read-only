@@ -15,9 +15,9 @@ anyone but the owner. `tests/test_store_listing.py` holds it to the code:
   crash-reporting or advertising SDK would change them.
 
 Copy the text inside each block exactly. The privacy policy was approved
-for publication on 2026-10-27 (decision 27); its address is usable once
-the release that carries it is deployed. Until then, use the internal
-testing track, which needs neither.
+for publication on 2026-10-27 (decision 27) and has been live since
+v1.19.0 was deployed the same day, so its address can go in the console
+now.
 
 ## Main store listing
 
@@ -84,7 +84,7 @@ Minas will never email you a link asking for your password or API key.
 | Email address | support@minastech.ca |
 | Website | https://guardian.minastrade.com |
 | Phone number | Leave empty |
-| Privacy policy | https://guardian.minastrade.com/privacy (live once the release carrying it is deployed) |
+| Privacy policy | https://guardian.minastrade.com/privacy (live since v1.19.0, 2026-10-27) |
 
 ### Graphics
 
@@ -151,7 +151,7 @@ What the app does not collect, though you might expect it to:
 
 | Item | Answer | Note |
 |---|---|---|
-| Privacy policy | https://guardian.minastrade.com/privacy | Approved 2026-10-27; live once the release carrying it is deployed |
+| Privacy policy | https://guardian.minastrade.com/privacy | Approved 2026-10-27; live since v1.19.0, deployed the same day |
 | Ads | No, the app does not contain ads | |
 | App access | Open (decision 28) | Google's reviewer needs a login that gets past two-factor without a live code. The owner decides this after internal testing |
 | Content rating | Answer the questionnaire honestly | No violence, sexual content, profanity, gambling or user-to-user contact. Expect the lowest rating. The app shows financial account data, not trading or gambling |

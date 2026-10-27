@@ -8603,3 +8603,24 @@ ufw until the owner closes it. Next, the owner's: the privacy address
 in the Play listing and a production app build with the links;
 screenshots and the content rating; 28; the lawyer on 27's items 3 and
 5; 26d, 26e and 26b's two further tripwires.
+
+**Later (2026-10-27, 17:17 to 18:40 UTC): the v1.19.0 record, and the
+production `.aab`.** The owner merged #149 (`b6e8b6a`, 17:17), and CI on
+`main` was green. The owner: "build the production aab with the privacy
+links". The app's typecheck, its 87 tests and the audit passed on
+`b6e8b6a`; nothing overrides `EXPO_PUBLIC_API_URL`, and EAS holds no
+environment variables for the profile. `eas build --profile production
+--platform android` (eas-cli 25.3.0, from the clean main checkout):
+build `7b999234`, versionCode 2 to 3 by EAS's remote counter, the same
+upload keystore. The fingerprint upload failed on a network error,
+which affects only EAS's fingerprint record. It waited in Expo's free
+queue 17:26 to 18:20 and finished at 18:33. Downloaded and read here:
+62.7 MB, signed; package `com.minastrade.guardian`, versionName 1.0.0;
+five requested permissions (INTERNET, VIBRATE, the biometric pair,
+AndroidX's own receiver permission), with `DUMP` only as the guard on
+`ProfileInstallReceiver`; the bundle names `guardian.minastrade.com`,
+`/privacy`, "Privacy policy" and `[erased]`, and no LAN or localhost
+address. App changes since versionCode 2: the three privacy links and
+the activity screen's exception, nothing else. The `mobile-v1.0.0` tag
+waits for the build that reaches production. The record is the branch
+`app-build-1-0-0-3`.
