@@ -15,8 +15,10 @@ anyone but the owner. `tests/test_store_listing.py` holds it to the code:
   crash-reporting or advertising SDK would change them.
 
 Copy the text inside each block exactly. The privacy policy's address is
-usable only once decision 27 is approved (draft PR #144). Until then, use
-the internal testing track, which needs neither.
+usable only once decision 27 is approved and a release carries the page:
+it is on `main` as a draft (#144), still saying "Draft for review." with
+eight facts open. Until then, use the internal testing track, which needs
+neither.
 
 ## Main store listing
 

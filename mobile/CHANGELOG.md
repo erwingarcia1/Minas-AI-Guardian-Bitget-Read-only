@@ -7,6 +7,13 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
 
 ### Added
 
+- **A "Privacy policy" link on the welcome, sign-in and Settings
+  screens (decision 27).** It opens the portal's `/privacy` page in the
+  browser, so there is one copy of the words; Google Play wants the policy
+  reachable in the app. The portal links to it from the same places (its
+  footer and its sign-in page). `tests/test_mobile_app.py` pins the three
+  links.
+
 - **The Google Play listing and Data safety answers, drafted**
   (`store/google-play.md`), for the owner to copy into Play Console. The
   listing's sentences are the portal's landing and limits copy, word for

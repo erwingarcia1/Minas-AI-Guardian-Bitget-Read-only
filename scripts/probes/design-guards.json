@@ -3342,5 +3342,45 @@
    "tests/test_security_notice_delivery.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "decision 27: the privacy draft stops saying it is a draft",
+  "file": "sentinel/portal.py",
+  "old": "    draft = \"\" if PRIVACY_APPROVED else (\n",
+  "new": "    draft = \"\" if True else (\n",
+  "tests": [
+   "tests/test_privacy_page.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 27: the privacy policy needs a session",
+  "file": "sentinel/portal.py",
+  "old": "            if path == \"/privacy\":\n",
+  "new": "            if path == \"/privacy\" and email is not None:\n",
+  "tests": [
+   "tests/test_privacy_page.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 27: the footer stops linking the privacy policy",
+  "file": "sentinel/portal.py",
+  "old": "        '<a href=\"/privacy\">Privacy policy</a>'\n",
+  "new": "        ''\n",
+  "tests": [
+   "tests/test_privacy_page.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 27: the AI summary is said to be off whatever the configuration says",
+  "file": "sentinel/portal.py",
+  "old": "    triage = \"on\" if enabled else \"off\"\n",
+  "new": "    triage = \"off\"\n",
+  "tests": [
+   "tests/test_privacy_page.py"
+  ],
+  "expect": "killed"
  }
 ]
