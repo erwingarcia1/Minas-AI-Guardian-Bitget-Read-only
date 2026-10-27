@@ -8489,3 +8489,83 @@ OK, the image built with `sentinel-1.18.0`, the live config valid,
 asserted. The outside checks at 15:06 read as expected
 (docs/DEPLOYMENTS.md). The record is the branch `deploy-record-1-18-0`.
 Next, the owner's: 26e, 26b's two further tripwires, 26d.
+
+# 2026-10-26/27 · The app on Google Play: the 1.0.0 build, an erasure that matches its promise (6b), a draft privacy policy (27), the listing
+
+**The owner's words (2026-10-26, after v1.18.0 was deployed):** "i want to
+test on android and deploy to google playstore. the google playstore is
+ready but the apple app store account is not ready yet", and later, "i
+can't test the android app now as i don't have an android phone to test.
+let's deploy to playstore so my team members can test." The iPhone had
+run the app against the live server through Expo Go earlier the same day
+("iphone app is working with the live server now").
+
+**The account and the build.** An organisation Play account, developer
+name "Minas AI", so internal testing then production, with no 14-day
+closed test. The owner kept the package `com.minastrade.guardian` (21f)
+and put the EAS project under the Expo organisation `jimroxodezis-team`
+(`npx eas-cli init`), which created the Android keystore with the first
+preview APK: Play's upload key. #142 made the app 1.0.0 and blocked the
+three Android permissions Expo's template asks for and the app never
+uses (storage, "display over other apps"). EAS build `f7bbcbb3`
+(versionCode 2, from 4ccfa99) is the `.aab` the owner uploads to
+internal testing by hand, with Play App Signing on Google's key; its
+manifest was read after the build and the three permissions were gone.
+The free EAS queue took about an hour each time.
+
+**Erasure, fixed to match its promise (#143, decision 6b).** Drafting the
+privacy policy needed a data inventory, and the inventory found the
+erasure confirmation's "nothing that identifies you" untrue in three
+places. Asked which gives way when the person's details sit in another
+customer's activity log, which promises "never edited", the owner chose
+"Redact, and say so". Every table but `accounts` is now searched after an
+erasure and the person's details become `[erased]`, matched exactly
+enough that nobody else's data changes; the other account gets one entry
+saying so, and the activity page's promise names the exception on the web
+and in the app. A test reads every column of every table afterwards. 14
+design-guard probes cover it.
+
+**The privacy policy (#144, decision 27).** `/privacy`, public, linked
+from every footer, the sign-in page and three app screens, its numbers
+read from the code and the configuration. The owner's answers are in it:
+contact support@minastech.ca, "Minas AI", Anthropic named for the AI
+incident summary and for Minas's own operating and support work, keys
+and contacts kept until the customer asks. Eight facts are "[To confirm:
+…]" for the owner and the lawyer, and `PRIVACY_APPROVED = False` shows
+"Draft for review.". **The PR was opened as a draft and merged as one**
+(the owner's call): the next server release makes the draft public as it
+stands unless the eight facts are answered first.
+
+**The listing (#145).** `mobile/store/google-play.md`: the name, short and
+full description in the portal's own sentences, the Data safety answers
+(three data types declared, nothing shared, financial data not collected
+by the app, with the fallback if Google disagrees), the rest of App
+content, and the icon and feature graphic from the logo master
+(`scripts/brand-assets.py store`). `tests/test_store_listing.py` fails on
+copy drift, an over-long text, a prevention claim, or a new runtime
+dependency until the Data safety answers are re-read.
+
+**Gates:** every PR ran ruff and the full suite before its push (2397 on
+the last), the design-guard probes where the portal or erasure changed
+(348/348), and the app's typecheck, jest, audit and bundle export; CI
+green on each before the owner merged.
+
+**Left for the owner:** the Play upload and the testers (internal
+testing); the eight facts of decision 27 and its approval; decision 28
+(the reviewer's sign-in, recommended D); the release that carries 6b and
+the privacy page (v1.19.0) and its deploy; screenshots from a test
+account; content rating in the console; then a production `.aab` with
+the privacy links (the internal one predates them). Still open from
+before: 26d, 26e and 26b's two further tripwires.
+
+**Things the next session should know.** The repository is public (found
+2026-10-26, public since it was created); the owner will make it private
+within days. Until then, commit no customer's or staff member's address,
+phone, chat id or name. #142's merge commit (9852f72) has Git's default
+message without the co-author line; the amend's force-push was refused
+and left alone. Metro was left running from the main checkout for the
+iPhone test, with port 8081 open in ufw for the home network: stop it,
+and close the port with `sudo ufw delete allow from 192.168.1.0/24 to any
+port 8081 proto tcp`, when Expo Go is no longer needed. Work this session
+ran in git worktrees beside the main checkout (`../mg-*`), so Metro in
+the main one was never disturbed; each was removed after its merge.

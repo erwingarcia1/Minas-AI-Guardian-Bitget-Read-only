@@ -9,8 +9,9 @@ product should do, and each was skipped rather than guessed at.
 
 **Open today (2026-10-26):** 6 (needs the lawyer; #47), 7's vendor (#63),
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
-21b/21e/21h/21i, 26d, 26e and 26b's two further tripwires, and 27's open
-facts and approval (the privacy policy). Everything else
+21b/21e/21h/21i, 26d, 26e and 26b's two further tripwires, 27's open
+facts and approval (the privacy policy), and 28 (the Play reviewer's
+sign-in). Everything else
 below is answered and built, and deployed where there is a server to deploy
 to - the app waits on the store accounts (section 21, "Not built yet"); the
 sections stay as the record.
@@ -48,6 +49,7 @@ sections stay as the record.
 | 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25. **Deployed 2026-10-24 (v1.16.0)** |
 | 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR; the notice-pages PR | **PARTLY ANSWERED** — 26a: a contact move revokes the old address's scoped access (decided in session; **deployed 2026-10-25, v1.17.0**); 26b: a refused password-changed, two-factor-off or alert-email-changed notice pages Minas at CRITICAL, whatever a connected Telegram chat took (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); 26c: the reset link by email only (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); open: 26d (a "no login yet" email), 26e (connecting a Telegram chat tells the member nothing) and 26b's two further tripwires; see section 26 |
 | 27 | The privacy policy at `/privacy` (Google Play needs it in the listing and in the app) | the Play production release | **PARTLY ANSWERED 2026-10-26** — drafted on the site from the owner's answers (contact, "Minas AI", Anthropic named, keys and contacts kept until the customer asks, erasure fixed by 6b); eight facts open for the owner and the lawyer, then approval; see section 27 |
+| 28 | How Google's reviewer signs in past two-factor | the Play production release | **OPEN** — the owner decides after internal testing (2026-10-26); recommended: a review login that opens only a demo account, its second factor a fixed code scoped to that login; see section 28 |
 
 ---
 
@@ -1314,6 +1316,16 @@ owner's call.
 > with the owner, 2026-10-23); enrolment is the next step, and the app
 > cannot reach customers through a store until both are done.
 > `mobile/eas.json` holds the build profiles for when they are.
+>
+> **Update 2026-10-26: the Google Play account exists**, an organisation
+> account whose developer name is "Minas AI" (so no 14-day closed test
+> before production). The EAS project is `minas-ai-guardian` under the
+> Expo organisation `jimroxodezis-team`, which holds the Android upload
+> key; Play App Signing holds the app signing key. The first store build,
+> 1.0.0 (versionCode 2, from commit 4ccfa99), went to the owner for
+> Play's internal testing track. Production waits on decision 27 (the
+> privacy policy) and decision 28 (the reviewer's sign-in). The Apple
+> Developer Program account is not ready yet.
 
 **App review.** The app shows exchange account activity and moves no
 funds. Read the current App Store Review Guidelines on cryptocurrency
@@ -1462,7 +1474,9 @@ against decision 22's hostname.
   - ~~the app's bundle identifier and package name, which wait on the
     publishing entity (21f, the owner's call)~~ — answered 2026-10-23, see
     21f;
-  - store accounts and builds.
+  - ~~store accounts and builds~~ — the Google Play account and the
+    first Android build exist (2026-10-26, see 21f's update); the Apple
+    account and any iOS build do not.
 
 **Related:** decision 13 (browser push, no-JS posture), decision 20
 (member surface boundary, member two-factor), decision 22 (the address),
@@ -2734,6 +2748,58 @@ that goes to production carries the links.
 **Related:** decision 6 and 6b (retention and erasure), decision 21
 (the app), docs/data-retention.md, `mobile/README.md` ("Before Play
 production").
+
+---
+
+## 28. How Google's reviewer signs in past two-factor — **OPEN: the owner decides after internal testing (2026-10-26)**
+
+**Why it is asked.** Google reviews an app before production, and its
+App access form wants sign-in details the reviewer can use more than once,
+with no one-time code: Google's reviewers do not run an authenticator.
+The app signs in with email, password and the member's TOTP, and it
+requires two-factor to be on (decision 21c; `sentinel/api.py`): a phone
+holds its sign-in for weeks, and a stolen sign-in can acknowledge an
+alert, which stops CRITICAL escalation. So every real login is out of
+reach for the reviewer by design. The owner, asked on 2026-10-26: "Decide
+after internal test".
+
+**Options:**
+
+- **A — Lift two-factor for one review login.** The smallest change: a
+  per-login flag that lets the app sign in without a code. It is a
+  password-only phone sign-in that lasts weeks, the exact thing 21c
+  refused; if the login can open a real account, its password alone opens
+  it.
+- **B — Recovery codes.** No code: a member's recovery codes already sign
+  in. But each works once and Google wants reusable credentials, so the
+  review fails the day the codes run out, and Google may review again at
+  every update.
+- **C — A demo mode in the app.** A "Look around" button on the welcome
+  screen showing fixed sample data, no server. No credential exists at
+  all. But the reviewer sees a copy of the app, not the app; every screen
+  needs a sample twin that must not drift; and a demo that looks like a
+  member's accounts is a phishing kit's first screen.
+- **D — A review login with a fixed code, scoped to a demo account.** One
+  login (flagged in the database, set by an operator command, never by
+  the portal) whose second factor is a fixed six-digit code. The server
+  refuses the flag on a login that opens any account but a Minas-owned
+  demo account with synthetic history and no exchange key. Each sign-in
+  with it is logged and listed on the dashboard. The reviewer uses the
+  real app against the real server; if the details leak, they open
+  invented data. Code: the flag, the refusal, the demo account's seed
+  data, tests, and the dashboard line.
+
+**Recommendation: D.** It keeps 21c's rule for every real login, makes a
+leak worthless, and lets Google review the app it will ship. The demo
+account must never be a customer's or the drill account (decision 2's
+drill account fires real messages).
+
+**What I can build without the answer:** nothing; each option changes
+who can sign in. **Blocked without it:** the Play production release.
+
+**Related:** decision 21c (app sign-in), decision 2 (the drill account),
+decision 27 (the privacy policy, the other production precondition),
+`mobile/store/google-play.md` ("App access").
 
 ---
 
