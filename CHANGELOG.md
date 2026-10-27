@@ -16,6 +16,18 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Changed
+
+- **v1.19.0 is deployed (2026-10-27, finished by 16:29 UTC):** the
+  privacy policy is live at https://guardian.minastrade.com/privacy,
+  approved and linked from the landing and sign-in pages (decision 27);
+  an erasure replaces the person's details with `[erased]` in other
+  people's records (6b); and the daily backup timer is installed on the
+  host, its first copy written at 16:29, the liveness gate's backup line
+  passing, and the beta pause's older copy deleted by the owner. The
+  readings are in docs/DEPLOYMENTS.md; decisions 6b and 27 carry the deployed status. No
+  code in this entry.
+
 ## [1.19.0] — 2026-10-27
 
 ### Added
