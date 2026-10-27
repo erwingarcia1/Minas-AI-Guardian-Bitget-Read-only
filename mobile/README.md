@@ -166,9 +166,10 @@ preview APK needs neither store account.
   production. The first Android build is uploaded to internal testing by
   hand in Play Console (Play App Signing on, with Google's key; EAS keeps
   the upload key). The Apple Developer Program account is not ready yet.
-- **Before Play production:** the privacy policy's approval (the page is
-  drafted at `/privacy` and linked from the welcome, sign-in and Settings
-  screens; decision 27 lists what is open), the Data safety form, the
+- **Before Play production:** the privacy policy is approved and live at
+  `https://guardian.minastrade.com/privacy` (decision 27, v1.19.0), linked
+  from the welcome, sign-in and Settings screens from versionCode 3 on;
+  still to do are its address in Play Console, the Data safety form, the
   content rating, the store listing, and a way for Google's reviewer to
   sign in past two-factor (the owner decides this after internal testing).
   The listing and the Data safety answers are drafted in

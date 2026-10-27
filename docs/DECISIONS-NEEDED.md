@@ -1328,6 +1328,13 @@ owner's call.
 > Play's internal testing track. Production waits on decision 27 (the
 > privacy policy) and decision 28 (the reviewer's sign-in). The Apple
 > Developer Program account is not ready yet.
+>
+> **Update 2026-10-27:** decision 27 is answered and `/privacy` has been
+> live since v1.19.0. The production candidate is 1.0.0 (versionCode 3,
+> EAS build `7b999234`, from `b6e8b6a`), which carries the privacy links
+> on the welcome, sign-in and Settings screens. Production now waits on
+> decision 28 and on Play Console's App content: the privacy address, the
+> Data safety form, the content rating and the screenshots.
 
 **App review.** The app shows exchange account activity and moves no
 funds. Read the current App Store Review Guidelines on cryptocurrency
