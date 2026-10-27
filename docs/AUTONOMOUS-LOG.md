@@ -8569,3 +8569,37 @@ and close the port with `sudo ufw delete allow from 192.168.1.0/24 to any
 port 8081 proto tcp`, when Expo Go is no longer needed. Work this session
 ran in git worktrees beside the main checkout (`../mg-*`), so Metro in
 the main one was never disturbed; each was removed after its merge.
+
+**Later (2026-10-27, 13:23 to 16:31 UTC): daily backups (#147), the
+privacy facts (#148), v1.19.0 cut and deployed.** The owner's host
+readings (13:23) showed no backup at all: `/var/backups/minas-guardian/`
+held only the September pause's `held-2026-09-28`. The owner: "let's do
+daily backups that lasts 28 days" - #147, `scripts/host/backup.sh` and
+`minas-backup.timer`, with a by-hand copy taken at 13:46 from its steps,
+since the timer could be installed only after a release. The owner
+answered decision 27's facts (13:45; the age first 15, then 18 "since the
+exchanges use 18"; for the lawyer's two items, "use your initiative for
+now") - #148, `PRIVACY_APPROVED = True`. Both were merged by 14:43
+(`6dfa9b0`), and the owner said "cut v1.19.0" (14:55). The version:
+1.19.0, MINOR - the backup and the privacy page are new; nothing rejects
+a config or migrates the database. The CI workflow was dispatched on
+`6dfa9b0` (run 40525932525, scheduled-gates 14:56 to 15:13, green);
+`scripts/release.sh 1.19.0` ran in the main checkout, its cover accepted
+that run, and the fast gates ran here (the suite 517 s). Release commit
+`a3082b5`, the tag pushed, the GitHub Release published 15:23:29, CI on
+the release commit green (run 40530478056, 15:31). The deploy and the
+timer's install were the owner's, their output pasted at 16:29: running
+before 1.18.0 at `7fc8e7c`, the gate OK, the live config valid,
+`sentinel` recreated alone, healthy, the version asserted; the service's
+first backup, 8,121,386 bytes at 16:29:05, root-only. In a second paste
+(about 16:41) the owner deleted `held-2026-09-28`, older than the
+policy's 28 days; the timer's next firing read 03:30 tomorrow, and the
+liveness gate's backup line passed for the first time ("newest backup is
+0.2h old", every mechanism live or held). The outside checks
+at 16:31 read as expected: `/privacy` approved, and linked from the
+landing and sign-in pages (docs/DEPLOYMENTS.md). The record is the
+branch `deploy-record-1-19-0`. Metro was stopped; port 8081 stays open in
+ufw until the owner closes it. Next, the owner's: the privacy address
+in the Play listing and a production app build with the links;
+screenshots and the content rating; 28; the lawyer on 27's items 3 and
+5; 26d, 26e and 26b's two further tripwires.

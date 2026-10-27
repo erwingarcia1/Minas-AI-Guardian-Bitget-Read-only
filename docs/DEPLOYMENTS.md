@@ -21,6 +21,127 @@ Newest entry first.
 
 ---
 
+## 2026-10-27 · v1.19.0 (current, from v1.18.0): an erasure that names no one, the privacy policy at /privacy, the daily backup
+
+Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
+the output pasted into the session and read there (docs/deployment.md
+"Deploying code changes"). Cut the same day from `main` at `6dfa9b0` (the
+merge of #148, 14:43) by `scripts/release.sh 1.19.0`, run in the main
+checkout on `main`: the CI workflow was dispatched on `6dfa9b0` (run
+40525932525, its scheduled-gates job 14:56 to 15:13, probes and mutation
+floor green), and the scheduled-gates cover accepted that run as covering
+the tree, so the fast gates ran locally - ruff, the suite (517 s), the
+coverage floor, pip-audit, the issue-status audit, "scheduled gates ran
+(8d)" and release objects, with the design-guard probes and the mutation
+floor skipped under `--fast` as already run; release commit `a3082b5`,
+annotated tag `v1.19.0`, the GitHub Release published (15:23:29), CI on
+the release commit green (run 40530478056, 15:23 to 15:31). Times are UTC.
+
+**The deploy:** `sudo /opt/minas-guardian/scripts/deploy.sh v1.19.0`,
+finished by 16:29 (the backup service, started after it in the same
+paste, stamped its copy 16:29:05; the output reached the session at
+16:29:31) - preflight clean; tags fetched; running before: 1.18.0 at
+`7fc8e7c`; checkout `a3082b5`, detached; `deploy-gate: OK - HEAD is
+v1.19.0 (a3082b5)`; the image built in 41 s from a 335 kB context,
+`pip install ".[triage]"` 25 s; the live `config/rules.yaml` validated
+against the new image ("valid — every setting is recognised and in
+range"); the switchover started `minas-guardian-sentinel-1` and left
+`caddy` running; healthy; the version assertion:
+
+```
+Minas AI Guardian 1.19.0
+  commit   a3082b57607247ea7e970c30d6b052514dc5c23c
+  tag      v1.19.0
+  source   build-arg
+deploy: OK — v1.19.0 is live and verified
+```
+
+**The daily backup, installed** (docs/deployment.md "The daily backup"),
+in the same paste:
+
+```
+sudo cp /opt/minas-guardian/scripts/host/minas-backup.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now minas-backup.timer
+  -> Created symlink /etc/systemd/system/timers.target.wants/minas-backup.timer
+sudo systemctl start minas-backup.service
+sudo journalctl -u minas-backup.service -n 5
+  -> backup written: /var/backups/minas-guardian/sentinel-2026-10-27T162905Z.db.gz (8121386 bytes); kept for 28 days
+  -> minas-backup.service: Deactivated successfully. (4.209 s CPU)
+sudo ls -la /var/backups/minas-guardian/
+  -> drwx------  root root           .
+     drwxr-xr-x  root root           held-2026-09-28                    (Sep 28: the beta pause's copy)
+     -rw-------  root root  8071694  sentinel-2026-10-27T134651Z.db.gz  (13:46: by hand, #147's steps)
+     -rw-------  root root  8121386  sentinel-2026-10-27T162905Z.db.gz  (16:29: the service's first)
+```
+
+The script keeps a copy only after `PRAGMA integrity_check` answers "ok",
+so the file is that check's evidence. The directory is 0700 now; it was
+0755, holding only `held-2026-09-28`, when the owner listed it at 13:23.
+The by-hand copy carries the script's name pattern, so the 28-day rule
+removes it too. `held-2026-09-28` did not, and it was already older than
+the 28 days the privacy policy states, so the owner deleted it. The
+owner's second paste, about 16:41:
+
+```
+sudo rm -r /var/backups/minas-guardian/held-2026-09-28
+systemctl list-timers minas-backup.timer
+  -> NEXT Wed 2026-10-28 03:30:00 UTC  LEFT 10h  LAST -  minas-backup.timer  minas-backup.service
+sudo /opt/minas-guardian/scripts/host/liveness.sh
+  -> ok    Database backup                  newest backup is 0.2h old
+     ok    Operator accounts, Member digest, Restart-on-unhealthy timer, the liveness gate itself, Telegram, Email
+     held  Dedicated drill account (#37), SMS provider (beta), Per-account thresholds, Dead-man's switch (#63)
+     every declared mechanism is live or deliberately held
+```
+
+The backup line had failed since the gate was built; it passes now.
+
+**The readings afterwards** (from outside, by the session, 16:31; the
+on-box `git describe` and `compose ps` readings were not taken - the
+version assertion above is the container's own answer):
+
+```
+curl /privacy                                                   -> 200; "Last updated 27 October 2026"; "Draft for review" 0; "To confirm" 0;
+                                                                   "Minas Academy (…), of Toronto, Canada"; "aged 18 and over"; "within 28 days" x2;
+                                                                   "SMS alerts are not being sent yet" (no SMS provider in production)
+curl /privacy (headers)                                         -> cache-control: no-store; strict-transport-security: max-age=31536000;
+                                                                   x-frame-options: DENY; content-security-policy: frame-ancestors 'none'
+curl -b 'minas_portal=stale' /privacy                           -> 200 (public, with or without a session)
+curl / | grep -c 'href="/privacy"'                              -> 1   (the landing's footer)
+curl /login | grep -c 'href="/privacy"'                         -> 1
+curl / | grep -c 'id="landing-title"'                           -> 1   (the front door is unchanged)
+curl / | grep -c 'Our address has changed'                      -> 0   (the host is recognised)
+curl /login | grep -c 'name="password"'                         -> 1
+curl -o /dev/null -w '%{http_code} %{redirect_url}' /healthz    -> 303 https://guardian.minastrade.com/
+curl ... /alerts (no session)                                   -> 303 https://guardian.minastrade.com/
+curl /api/v1/limits                                             -> 401 (the app API)
+curl /admin                                                     -> 401 (the dashboard's sign-in, still only under /admin)
+curl http://guardian.minastrade.com/                            -> 308 https://guardian.minastrade.com/
+```
+
+Not read from outside, because each needs a member or an erasure: the
+`[erased]` redaction on other people's accounts, their
+`contact_details_erased` entry and the activity page's new promise, and
+the erasure confirmation's sentence on backups and logs. The tests and
+the design-guard probes are their evidence (CHANGELOG `[1.19.0]`).
+
+**What shipped** (CHANGELOG `[1.19.0]`): the daily database backup, kept
+28 days (#85); the privacy policy at `/privacy`, with the owner's answers
+and approved (decision 27), linked from every portal footer and the
+sign-in page (the app's links reach members with its next build); an
+erasure that replaces the person's details with `[erased]` in other
+people's records and says so on their activity page (6b); the v1.18.0
+deploy record.
+
+**Still outside this entry:** the privacy address in the Play listing and a production app build with
+the links (the internal-test build predates them); the lawyer's review of
+decision 27's items 3 and 5; decisions 26d, 26e, 26b's two further
+tripwires and 28; the pending keys and the SMS provider (CHANGELOG's
+pending list); the stale "# PAUSED 2026-09-28" comment above root's
+active digest line in crontab; the Tailscale admin-console removal of
+the machine.
+
+---
+
 ## 2026-10-26 · v1.18.0 (current, from v1.17.0): a refused security tripwire pages Minas; the reset link by email only
 
 Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,

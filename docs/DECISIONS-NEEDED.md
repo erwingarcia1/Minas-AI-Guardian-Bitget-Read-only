@@ -27,7 +27,7 @@ sections stay as the record.
 | 3 | Incident page "what to do next" wording | ~~#29~~ | **ANSWERED 2026-08-27** with 9 — one canonical text; reversible steps only; observed facts, no inferences; see section 3 |
 | 4 | Alert channel defaults + quiet hours | ~~#24~~ | **ANSWERED 2026-08-27** — off by default, non-critical, local time 22:00–07:00, queued to digest, email un-disableable, unknown tz = cannot enable; see section 4 |
 | 5 | PDF export for incidents | ~~#29~~ | **ANSWERED 2026-08-27** — print stylesheet + browser print-to-PDF, no library; see section 5 |
-| 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), ~~#46~~ (G-42) — lawyer pending | **ANSWERED 2026-08-27 interim** — lawyer engaged (crypto-shredding question); 24 months configurable; erasure = hard delete + recorded gap + told; **6b ANSWERED 2026-10-26**: an erased person's details on other people's accounts are replaced with [erased], and the account is told; see section 6 |
+| 6 | Retention periods (**needs a lawyer, not you**) | #47 (G-43), ~~#46~~ (G-42) — lawyer pending | **ANSWERED 2026-08-27 interim** — lawyer engaged (crypto-shredding question); 24 months configurable; erasure = hard delete + recorded gap + told; **6b ANSWERED 2026-10-26**: an erased person's details on other people's accounts are replaced with [erased], and the account is told; **deployed 2026-10-27 (v1.19.0)**; see section 6 |
 | 7 | External uptime monitoring: latency, vendor, what customers hear | #63 (vendor still owner's) | **ANSWERED 2026-08-27** — dead-man's switch, third party, 15 min, gaps in the digest; see section 7 |
 | 8 | How long may a customer silence a CRITICAL? | — | **ANSWERED 2026-08-13** — 1 h / 4 h / 24 h caps, `alerting.snooze_cap_hours`; shipped; see section 8 |
 | 9 | What the incident page tells a customer to do next | ~~#29~~ | **ANSWERED 2026-08-27** with 3 — see section 9 |
@@ -48,7 +48,7 @@ sections stay as the record.
 | 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24. **Deployed 2026-10-24 (v1.15.0)** |
 | 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25. **Deployed 2026-10-24 (v1.16.0)** |
 | 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR; the notice-pages PR | **PARTLY ANSWERED** — 26a: a contact move revokes the old address's scoped access (decided in session; **deployed 2026-10-25, v1.17.0**); 26b: a refused password-changed, two-factor-off or alert-email-changed notice pages Minas at CRITICAL, whatever a connected Telegram chat took (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); 26c: the reset link by email only (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); open: 26d (a "no login yet" email), 26e (connecting a Telegram chat tells the member nothing) and 26b's two further tripwires; see section 26 |
-| 27 | The privacy policy at `/privacy` (Google Play needs it in the listing and in the app) | ~~the Play production release~~ | **ANSWERED 2026-10-27** — Minas Academy of Toronto, publishing as Minas AI; 30 days to answer; 18 and over; SMS not sent; logs until the next deploy; backups 28 days; providers' business data-processing terms and the Privacy Commissioner of Canada, pending the lawyer; approved for publication; see section 27 |
+| 27 | The privacy policy at `/privacy` (Google Play needs it in the listing and in the app) | ~~the Play production release~~ | **ANSWERED 2026-10-27** — Minas Academy of Toronto, publishing as Minas AI; 30 days to answer; 18 and over; SMS not sent; logs until the next deploy; backups 28 days; providers' business data-processing terms and the Privacy Commissioner of Canada, pending the lawyer; approved for publication; **deployed 2026-10-27 (v1.19.0)**; see section 27 |
 | 28 | How Google's reviewer signs in past two-factor | the Play production release | **OPEN** — the owner decides after internal testing (2026-10-26); recommended: a review login that opens only a demo account, its second factor a fixed code scoped to that login; see section 28 |
 
 ---
@@ -459,7 +459,9 @@ may mean something more specific to you.
 > Built in `sentinel/erasure.py`; `docs/data-retention.md` describes the
 > matching rules. Backups made before an erasure and the server logs are
 > not edited, and the confirmation says so; how long they are kept is
-> still open.
+> still open. **Deployed 2026-10-27** in v1.19.0 (docs/DEPLOYMENTS.md).
+> Decision 27 has since answered how long: backups 28 days, server logs
+> until the next update.
 
 
 **This one is not yours to answer alone — it needs a lawyer**, and it has the
@@ -2694,7 +2696,7 @@ docs/threat-model.md (the portal's reset request), CHANGELOG.md
 
 ---
 
-## 27. The privacy policy at /privacy — **ANSWERED 2026-10-27: the eight facts filled in and approved for publication by the owner; the lawyer's review of the transfer terms and the complaints authority to follow**
+## 27. The privacy policy at /privacy — **ANSWERED 2026-10-27: the eight facts filled in and approved for publication by the owner; deployed 2026-10-27 (v1.19.0); the lawyer's review of the transfer terms and the complaints authority to follow**
 
 > **Owner, 2026-10-26**, publishing the Android app: Google Play's User
 > Data policy wants a privacy policy's address in the store listing and in
@@ -2743,7 +2745,10 @@ flag while any "[To confirm" mark is left.
   the policy will use is still the owner's to confirm.
 - **8.** The owner: daily backups, kept 28 days. There had been none.
   Built as `scripts/host/backup.sh` and `minas-backup.timer`, so a
-  deletion reaches the backups within 28 days.
+  deletion reaches the backups within 28 days. Installed on the host
+  with v1.19.0 on 2026-10-27; its first copy was written at 16:29 UTC.
+  The beta pause's `held-2026-09-28` copy, outside that rule and
+  already older than 28 days, was deleted by the owner the same day.
 
 **The rest, answered 2026-10-27.** The owner: **1.** Minas Academy,
 Toronto, Canada, a mostly remote company; the page says it publishes on
@@ -2779,6 +2784,11 @@ to the date of approval, and set `PRIVACY_APPROVED = True`
 (`sentinel/portal.py`); merge, and the next release carries it. Then the
 store listing takes `https://<the one address>/privacy`, and the app build
 that goes to production carries the links.
+
+**Deployed 2026-10-27** in v1.19.0 (docs/DEPLOYMENTS.md): from outside,
+`/privacy` reads as approved, with no draft notice and no mark, and the
+landing and sign-in pages link to it. Still to do: the store listing's
+privacy address and the production app build with the links.
 
 **Related:** decision 6 and 6b (retention and erasure), decision 21
 (the app), docs/data-retention.md, `mobile/README.md` ("Before Play
