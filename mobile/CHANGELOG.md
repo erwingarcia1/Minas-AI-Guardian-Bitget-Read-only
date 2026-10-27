@@ -14,6 +14,17 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   footer and its sign-in page). `tests/test_mobile_app.py` pins the three
   links.
 
+- **The Google Play listing and Data safety answers, drafted**
+  (`store/google-play.md`), for the owner to copy into Play Console. The
+  listing's sentences are the portal's landing and limits copy, word for
+  word, inside Google's limits. Data safety declares three things: the
+  email address, the phone's name and sign-in token, and acknowledging or
+  signing out. Nothing is shared, and nothing financial leaves the phone.
+  `tests/test_store_listing.py` fails on drift, on an over-long text, and
+  on a new runtime dependency until the Data safety answers are re-read.
+  The listing's icon (512 px) and feature graphic (1024 × 500) come from
+  the logo master by `scripts/brand-assets.py store`.
+
 ### Changed
 
 - **Version 1.0.0, built for Google Play.** The first store build goes to

@@ -15,6 +15,7 @@ needs Pillow, which is not a dependency of the service.
 ```bash
 python3 scripts/brand-assets.py clean <new-logo.png>   # only when a new logo is supplied
 python3 scripts/brand-assets.py derive
+python3 scripts/brand-assets.py store                  # the two Google Play graphics
 ```
 
 `clean` exists because the logo as supplied carries a nearly transparent
@@ -33,6 +34,8 @@ surfaces and a grey box on white, and `clean` removes it.
 | `../../sentinel/static/minas-mark.png` | 128, transparent | The portal's lockup, and the dashboard's band, which points at the portal's `/brand/mark.png` on the shared host. |
 | `../../sentinel/static/favicon.png` | 64, transparent | Browser tab, served at `/brand/icon.png` and `/favicon.ico`. |
 | `../../sentinel/static/apple-touch-icon.png` | 180, opaque | iPhone home screen, for anyone who saves the portal there. |
+| `../../mobile/store/play-icon.png` | 512, 32-bit | Google Play's listing icon: the app icon's composition. Written by `brand-assets.py store`. |
+| `../../mobile/store/play-feature-graphic.png` | 1024 × 500, opaque | Google Play's feature graphic: the mark, the name and the landing page's eyebrow line. Written by `brand-assets.py store`, which needs a font file (Inter, or DejaVu Sans). |
 
 ## The background colour
 

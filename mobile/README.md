@@ -171,6 +171,9 @@ preview APK needs neither store account.
   screens; decision 27 lists what is open), the Data safety form, the
   content rating, the store listing, and a way for Google's reviewer to
   sign in past two-factor (the owner decides this after internal testing).
+  The listing and the Data safety answers are drafted in
+  [`store/google-play.md`](store/google-play.md), held to the code by
+  `tests/test_store_listing.py`.
 - **Account changes:** the settings only the account's main contact may
   change come with API v2.
 
