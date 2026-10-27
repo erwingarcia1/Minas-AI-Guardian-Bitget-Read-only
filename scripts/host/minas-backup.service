@@ -1,0 +1,11 @@
+# The service half of the daily backup timer (#85; owner, 2026-10-27).
+# Install: see docs/deployment.md "Where backups go".
+[Unit]
+Description=Back up the Minas Guardian database
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/minas-guardian/scripts/host/backup.sh
+Nice=10

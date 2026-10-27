@@ -774,10 +774,10 @@ protects each IP; keep it at ~60% of Bitget's 100 req/s ceiling.
   Manager** or **SSM Parameter Store (SecureString)** and inject it into the
   environment at boot; give the instance an IAM role scoped to that one
   secret.
-- Back up the SQLite volume with EBS snapshots (or a nightly
-  `docker run --rm -v minas-guardian_sentinel-data:/data ... tar` job) — the
-  DB is useless to a thief without the master key, but you still need it to
-  restore service.
+- The SQLite database is backed up daily and kept 28 days ("The daily
+  backup" below). The DB is useless to a thief without the master key, but
+  you still need the key to restore service. EBS snapshots of the whole
+  disk are a further option for recovering the machine itself.
 
 ### Where backups go: `/var/backups/minas-guardian/`, never the checkout
 
@@ -796,6 +796,74 @@ file in the tree.**
 sudo mkdir -p /var/backups/minas-guardian
 sudo cp -a /path/to/copy /var/backups/minas-guardian/sentinel_data.backup-$(date -u +%Y-%m-%d)
 ```
+
+### The daily backup (#85; the owner, 2026-10-27: daily, kept 28 days)
+
+Until 2026-10-27 nothing made backups: the directory held only the
+one-off `held-2026-09-28` from the beta pause, and the liveness gate had
+reported the mechanism dead. `scripts/host/backup.sh`, run at 03:30 UTC by
+`minas-backup.timer`, now:
+
+1. copies the live database with SQLite's backup API **inside the
+   container**, which gives a consistent snapshot while the engine keeps
+   writing, and keeps nothing unless the copy passes
+   `PRAGMA integrity_check`;
+2. brings it out with `docker compose cp`, compresses it, and writes it as
+   `sentinel-<UTC time>.db.gz`, mode 0600 in a 0700 directory: it holds
+   every customer's contacts, alerts and encrypted keys;
+3. deletes its own copies older than 28 days, and nothing else in the
+   directory.
+
+`SENTINEL_MASTER_KEY` is not in the backup. Restoring service needs it
+too, from `.env` or the password manager ("Secrets posture" above).
+
+**Install** (the script runs from the checkout, so it is on the host from
+the first release that carries it):
+
+```bash
+sudo cp /opt/minas-guardian/scripts/host/minas-backup.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now minas-backup.timer
+sudo systemctl start minas-backup.service      # the first backup, now
+sudo journalctl -u minas-backup.service -n 5   # "backup written: ..."
+sudo ls -la /var/backups/minas-guardian/
+```
+
+**Until that release is deployed**, the same backup by hand, from the host:
+
+```bash
+cd /opt/minas-guardian
+sudo docker compose exec -T sentinel python -c "import os, sqlite3; s = sqlite3.connect(os.environ['SENTINEL_DB_PATH']); c = sqlite3.connect('/tmp/minas-backup.db'); s.backup(c); print(c.execute('PRAGMA integrity_check').fetchone()[0])"
+# it must print "ok"; then:
+sudo docker compose cp sentinel:/tmp/minas-backup.db /var/tmp/minas-backup.db
+sudo docker compose exec -T sentinel rm -f /tmp/minas-backup.db
+sudo gzip -9 /var/tmp/minas-backup.db
+sudo install -d -m 700 /var/backups/minas-guardian
+sudo install -m 600 /var/tmp/minas-backup.db.gz /var/backups/minas-guardian/sentinel-$(date -u +%Y-%m-%dT%H%M%SZ).db.gz
+sudo rm /var/tmp/minas-backup.db.gz
+```
+
+The timer's 28-day rule deletes these too, since they carry the same name.
+
+**`held-2026-09-28`** is not the script's: it is never deleted
+automatically. It is a copy of everyone's data as it was on 2026-09-28,
+which no later erasure has touched. Delete it once the daily copies are
+running, unless there is a reason to keep it.
+
+**Restore.** Rehearse this once on a scratch machine before it is needed.
+Pick the copy, stop the service, put the copy in place with any stale
+write-ahead log removed, and start again:
+
+```bash
+cd /opt/minas-guardian
+sudo docker compose stop sentinel
+sudo docker compose run --rm --no-deps -v /var/backups/minas-guardian:/backups:ro --entrypoint sh sentinel \
+  -c 'rm -f /data/sentinel.db-wal /data/sentinel.db-shm && gunzip -c /backups/sentinel-<UTC time>.db.gz > /data/sentinel.db'
+sudo docker compose start sentinel
+```
+
+What the restored database does not have is everything since the copy:
+alerts, deliveries, contact changes, and any erasure done since, which
+must be done again.
 
 ## Email authentication (SPF, DKIM, DMARC)
 

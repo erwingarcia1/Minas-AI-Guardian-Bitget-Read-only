@@ -299,8 +299,10 @@ ENTRIES: tuple[Entry, ...] = (
           "a cron line runs `sentinel digest` AND a digest delivery was accepted in the last 48h",
           ("sentinel digest", "cron"), _digest),
     Entry("backup", "Database backup", "#85",
-          "a nightly job writing to /var/backups/minas-guardian (docs/deployment.md 'Where backups go')",
-          "a file in /var/backups/minas-guardian newer than 48h", ("/var/backups/minas-guardian",), _backup),
+          "install scripts/host/minas-backup.{service,timer} and `systemctl enable --now minas-backup.timer` "
+          "(docs/deployment.md 'Where backups go')",
+          "a file in /var/backups/minas-guardian newer than 48h",
+          ("/var/backups/minas-guardian", "minas-backup.timer"), _backup),
     Entry("drill_account", "Dedicated drill account", "#37",
           "`sentinel onboard ... --drill` for a Minas-owned account, on production",
           "an active account with is_drill = 1", ("onboard --drill", "drills.enabled"), _drill_account,
