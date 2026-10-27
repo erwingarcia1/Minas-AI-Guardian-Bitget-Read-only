@@ -18,6 +18,25 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
 
 ### Added
 
+- **A daily database backup, kept 28 days (#85; the owner, 2026-10-27).**
+  There was none: the backup directory held one copy from the September
+  pause, and the liveness gate had reported backups dead since it was
+  built. `scripts/host/backup.sh`, run at 03:30 UTC by
+  `minas-backup.timer`:
+  - copies the live database with SQLite's backup API inside the
+    container, and keeps nothing unless the copy passes
+    `PRAGMA integrity_check`;
+  - writes it compressed and root-only (0600 in a 0700 directory),
+    assembled elsewhere and moved in whole, so a failed run leaves nothing
+    the liveness gate could read as fresh;
+  - deletes its own copies older than 28 days, and nothing else.
+
+  The liveness gate declares the new timer.
+  `tests/test_backup_script.py` runs the real script against a stub
+  `docker` and a real SQLite database. Install and restore steps, and a
+  by-hand backup for before this release is deployed, are in
+  docs/deployment.md "The daily backup".
+
 - **A privacy policy at /privacy, as a draft for approval (decision
   27).** Google Play wants one in the store listing and in the app. The
   page is public and the same with a session; every footer links to it,

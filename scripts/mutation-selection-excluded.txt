@@ -14,6 +14,7 @@ tests/test_api_contract.py: imports api, expected, portal - nothing under the mu
 tests/test_api_reads.py: imports api, events, expected, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_api_routes.py: imports api, passwords, portal, totp - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_api_session.py: imports api, erasure, outbox, portal, totp - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_backup_script.py: imports no sentinel module (runs scripts/host/backup.sh) - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_baseline.py: imports baseline - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_brand_assets.py: imports brand, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_bind_address.py: imports cli, dashboard, edge, metrics, portal - nothing under the mutated paths (alerts/, detectors/, config.py)

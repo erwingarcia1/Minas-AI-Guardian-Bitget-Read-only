@@ -1,0 +1,14 @@
+# The daily backup (#85; the owner, 2026-10-27: daily, kept 28 days). At
+# 03:30 UTC, away from the 08:00 digest; Persistent=true runs a missed day
+# as soon as the machine is back. The liveness gate reports a backup older
+# than 48 hours, so one missed run is tolerated and two are not.
+[Unit]
+Description=Back up the Minas Guardian database daily
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+Persistent=true
+Unit=minas-backup.service
+
+[Install]
+WantedBy=timers.target

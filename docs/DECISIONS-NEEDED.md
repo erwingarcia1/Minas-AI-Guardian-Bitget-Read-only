@@ -2733,6 +2733,18 @@ flag while any "[To confirm" mark is left.
 8. How long backups are kept (no rotation is written down; an erasure
    does not edit a backup).
 
+**Answered so far (2026-10-27):**
+
+- **2.** SMS alerts are not being sent: production's log says "channel
+  'sms' routed for CRITICAL but not configured (missing env vars)".
+- **7.** The facts are in: the application's log, which carries IP
+  addresses, is capped at 100 MB and is deleted whenever the container is
+  replaced, which is every deploy. Caddy has no access log. The wording
+  the policy will use is still the owner's to confirm.
+- **8.** The owner: daily backups, kept 28 days. There had been none.
+  Built as `scripts/host/backup.sh` and `minas-backup.timer`, so a
+  deletion reaches the backups within 28 days.
+
 **Commitments to confirm as written** (not marked, but the owner's
 promises): members are told by email before a change to what is collected
 or who handles it; Minas staff's AI tools can read the service's records
