@@ -22,6 +22,8 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   signing out. Nothing is shared, and nothing financial leaves the phone.
   `tests/test_store_listing.py` fails on drift, on an over-long text, and
   on a new runtime dependency until the Data safety answers are re-read.
+  The listing's icon (512 px) and feature graphic (1024 × 500) come from
+  the logo master by `scripts/brand-assets.py store`.
 
 ### Changed
 

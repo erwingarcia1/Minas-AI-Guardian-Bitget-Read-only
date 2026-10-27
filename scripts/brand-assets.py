@@ -34,13 +34,31 @@ Android's own pages, 2026-10-22):
 The app in mobile/ gets byte-identical copies of the four store files under
 the names its app.json uses (mobile/assets/images/): Metro serves only what
 is inside the app's folder. tests/test_mobile_app.py fails if a copy drifts.
+
+    python3 scripts/brand-assets.py store                  # the Google Play graphics
+
+writes the two images Play Console asks for (sizes from Play's own help,
+2026-10-26), uploaded by the owner and committed as the record:
+
+    mobile/store/play-icon.png           512 px, 32-bit PNG - the listing's
+                                          icon, the launcher icon's
+                                          composition; Play rounds the corners
+    mobile/store/play-feature-graphic.png  1024 x 500, 24-bit PNG - the mark,
+                                          "Minas AI Guardian" and the landing
+                                          page's eyebrow line, on the portal's
+                                          ground
+
+`store` is separate from `derive` because the feature graphic sets type,
+and type needs a font file: Inter where it is installed, DejaVu Sans
+otherwise (the portal itself uses the reader's system font). The font it
+used is printed; rerunning it elsewhere may change the text's shapes.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parent.parent
 MASTER = ROOT / "design" / "brand" / "minas-logo.png"
@@ -122,10 +140,86 @@ def derive() -> None:
         print(f"copied design/brand/{source} -> mobile/assets/images/{name}")
 
 
+# The portal's tokens (mobile/src/theme/tokens.json) the feature graphic uses.
+TEXT = (244, 246, 250)
+TEXT_MUTED = (170, 178, 193)
+GOLD = (240, 180, 41)
+VIOLET_LOGO = (88, 56, 120)  # sentinel/brand.py: the mark's dominant violet
+# The landing page's eyebrow (sentinel/portal.py `_render_landing`).
+EYEBROW = "Read-only monitoring for crypto exchange accounts"
+FONTS = {
+    "bold": ("/usr/share/fonts/opentype/inter/Inter-Bold.otf",
+             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"),
+    "medium": ("/usr/share/fonts/opentype/inter/Inter-Medium.otf",
+               "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"),
+}
+
+
+def _font(weight: str, size: int) -> ImageFont.FreeTypeFont:
+    for candidate in FONTS[weight]:
+        if Path(candidate).exists():
+            return ImageFont.truetype(candidate, size)
+    sys.exit(f"no {weight} font found; looked for {', '.join(FONTS[weight])}")
+
+
+def _feature_graphic(master: Image.Image) -> Image.Image:
+    """1024 x 500: the mark beside the name ("Guardian" in gold, as the
+    app's welcome screen sets it) over the eyebrow line, centred, with a
+    soft violet glow behind the mark. Everything sits well inside the
+    edges, which Play crops on some screens."""
+    width, height = 1024, 500
+    out = Image.new("RGBA", (width, height), (*BACKGROUND, 255))
+    title, eyebrow = _font("bold", 66), _font("medium", 25)
+    measure = ImageDraw.Draw(out)
+    name_w = measure.textlength("Minas AI ", font=title) + measure.textlength("Guardian", font=title)
+    eyebrow_w = measure.textlength(EYEBROW, font=eyebrow)
+    mark_side, gap = 200, 44
+    text_w = max(name_w, eyebrow_w)
+    left = round((width - (mark_side + gap + text_w)) / 2)
+    mark_top = (height - mark_side) // 2
+    # The glow: a radial falloff of the mark's violet, centred on the mark.
+    # Pillow's gradient reads 179 at the middle of each edge (0 at the
+    # centre, distance x 1.4), so the fade ends there and the square's edge
+    # never shows.
+    glow_d = 600
+    falloff = Image.radial_gradient("L").resize((glow_d, glow_d), Image.LANCZOS)
+    alpha = falloff.point(lambda v: round(max(0.0, 1 - v / 179) ** 2 * 0.55 * 255))
+    glow = Image.new("RGBA", (glow_d, glow_d), (*VIOLET_LOGO, 255))
+    glow.putalpha(alpha)
+    out.alpha_composite(glow, (left + mark_side // 2 - glow_d // 2, height // 2 - glow_d // 2))
+    mark = _resize(_square(master, 0.0), mark_side)
+    out.alpha_composite(mark, (left, mark_top))
+    draw = ImageDraw.Draw(out)
+    text_x = left + mark_side + gap
+    ascent, descent = title.getmetrics()
+    block = ascent + descent + 18 + sum(eyebrow.getmetrics())
+    top = (height - block) // 2
+    draw.text((text_x, top), "Minas AI ", font=title, fill=TEXT)
+    draw.text((text_x + measure.textlength("Minas AI ", font=title), top), "Guardian", font=title, fill=GOLD)
+    draw.text((text_x, top + ascent + descent + 18), EYEBROW, font=eyebrow, fill=TEXT_MUTED)
+    return out.convert("RGB")
+
+
+def store() -> None:
+    master = Image.open(MASTER).convert("RGBA")
+    folder = ROOT / "mobile" / "store"
+    folder.mkdir(parents=True, exist_ok=True)
+    outputs = {
+        folder / "play-icon.png": _placed(master, 512, 0.72, BACKGROUND),
+        folder / "play-feature-graphic.png": _feature_graphic(master),
+    }
+    for path, image in outputs.items():
+        image.save(path, optimize=True)
+        print(f"wrote {path.relative_to(ROOT)} {image.size} {image.mode} {path.stat().st_size} bytes")
+    print(f"fonts: {_font('bold', 10).path}, {_font('medium', 10).path}")
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "clean":
         clean(Path(sys.argv[2]))
     elif len(sys.argv) == 2 and sys.argv[1] == "derive":
         derive()
+    elif len(sys.argv) == 2 and sys.argv[1] == "store":
+        store()
     else:
         sys.exit(__doc__)

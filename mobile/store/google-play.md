@@ -89,13 +89,16 @@ Minas will never email you a link asking for your password or API key.
 
 ### Graphics
 
-Not drafted here.
+| Asset | File | Spec |
+|---|---|---|
+| App icon | [`play-icon.png`](play-icon.png) | 512 × 512, 32-bit PNG. The launcher icon's composition; Play rounds the corners itself |
+| Feature graphic | [`play-feature-graphic.png`](play-feature-graphic.png) | 1024 × 500, 24-bit PNG, no transparency. The mark, "Minas AI Guardian" and the landing page's eyebrow line |
+| Phone screenshots | Not made | Two to eight. Take them on a phone signed in to a test account, not a customer's: alerts and balances are personal data |
 
-- **App icon:** 512 × 512 PNG.
-- **Feature graphic:** 1024 × 500.
-- **Phone screenshots:** two to eight. Take them on a phone signed in to a test account, not a customer's: alerts and balances are personal data.
-
-The icon and the feature graphic should come from `design/brand/minas-logo.png` by `scripts/brand-assets.py`, like every other derived image.
+Both images come from `design/brand/minas-logo.png` by
+`python3 scripts/brand-assets.py store`. Never edit them by hand.
+`tests/test_brand_assets.py` holds their sizes and keeps the feature
+graphic's line equal to the landing page's.
 
 ## Data safety
 

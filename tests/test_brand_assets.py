@@ -48,6 +48,29 @@ def test_every_logo_file_is_the_size_its_platform_asks_for(path, size, colour):
     assert _png(ROOT / path) == (size, size, colour)
 
 
+def test_the_play_graphics_are_what_play_console_asks_for():
+    """Google Play's listing graphics (scripts/brand-assets.py store): the
+    icon a 512 px 32-bit PNG under 1 MB, the feature graphic 1024 x 500
+    with no alpha (Play refuses one with transparency)."""
+    icon = ROOT / "mobile" / "store" / "play-icon.png"
+    feature = ROOT / "mobile" / "store" / "play-feature-graphic.png"
+    assert _png(icon) == (512, 512, RGBA) and icon.stat().st_size < 1024 * 1024
+    assert _png(feature) == (1024, 500, RGB) and feature.stat().st_size < 15 * 1024 * 1024
+
+
+def test_the_feature_graphic_says_what_the_landing_page_says():
+    """Its one line of copy is the landing page's eyebrow (decision 25).
+    The script runs without the service's dependencies, so it carries a
+    copy; this keeps the copy honest."""
+    import re
+
+    from sentinel.portal import _render_landing
+
+    script = (ROOT / "scripts" / "brand-assets.py").read_text()
+    eyebrow = re.search(r'^EYEBROW = "([^"]+)"$', script, re.M).group(1)
+    assert f'<span class="eyebrow">{eyebrow}</span>' in _render_landing()
+
+
 def test_every_file_the_portal_serves_is_packaged():
     """`pip install .` (the Docker image) ships only what package-data
     names, and brand.py reads these at import: a file left out is a service
