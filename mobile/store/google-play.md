@@ -154,7 +154,7 @@ What the app does not collect, though you might expect it to:
 |---|---|---|
 | Privacy policy | https://guardian.minastrade.com/privacy | Once decision 27 is approved |
 | Ads | No, the app does not contain ads | |
-| App access | Open | Google's reviewer needs a login that gets past two-factor without a live code. The owner decides this after internal testing |
+| App access | Open (decision 28) | Google's reviewer needs a login that gets past two-factor without a live code. The owner decides this after internal testing |
 | Content rating | Answer the questionnaire honestly | No violence, sexual content, profanity, gambling or user-to-user contact. Expect the lowest rating. The app shows financial account data, not trading or gambling |
 | Target audience | 18 and over | Matches the policy's "for adults"; the minimum age is open in decision 27 |
 | News app | No | |
