@@ -14,11 +14,10 @@ anyone but the owner. `tests/test_store_listing.py` holds it to the code:
   the test until someone re-checks the answers. An analytics,
   crash-reporting or advertising SDK would change them.
 
-Copy the text inside each block exactly. The privacy policy's address is
-usable only once decision 27 is approved and a release carries the page:
-it is on `main` as a draft (#144), still saying "Draft for review." with
-eight facts open. Until then, use the internal testing track, which needs
-neither.
+Copy the text inside each block exactly. The privacy policy was approved
+for publication on 2026-10-27 (decision 27); its address is usable once
+the release that carries it is deployed. Until then, use the internal
+testing track, which needs neither.
 
 ## Main store listing
 
@@ -85,7 +84,7 @@ Minas will never email you a link asking for your password or API key.
 | Email address | support@minastech.ca |
 | Website | https://guardian.minastrade.com |
 | Phone number | Leave empty |
-| Privacy policy | https://guardian.minastrade.com/privacy (once decision 27 is approved) |
+| Privacy policy | https://guardian.minastrade.com/privacy (live once the release carrying it is deployed) |
 
 ### Graphics
 
@@ -152,11 +151,11 @@ What the app does not collect, though you might expect it to:
 
 | Item | Answer | Note |
 |---|---|---|
-| Privacy policy | https://guardian.minastrade.com/privacy | Once decision 27 is approved |
+| Privacy policy | https://guardian.minastrade.com/privacy | Approved 2026-10-27; live once the release carrying it is deployed |
 | Ads | No, the app does not contain ads | |
 | App access | Open (decision 28) | Google's reviewer needs a login that gets past two-factor without a live code. The owner decides this after internal testing |
 | Content rating | Answer the questionnaire honestly | No violence, sexual content, profanity, gambling or user-to-user contact. Expect the lowest rating. The app shows financial account data, not trading or gambling |
-| Target audience | 18 and over | Matches the policy's "for adults"; the minimum age is open in decision 27 |
+| Target audience | 18 and over | The policy's minimum age (decision 27), the same as the four exchanges require of their own account holders |
 | News app | No | |
 | Health app | No | |
 | Government app | No | |

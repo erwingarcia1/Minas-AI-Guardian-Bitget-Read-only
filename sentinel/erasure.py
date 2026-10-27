@@ -378,6 +378,8 @@ def erase_member(db: Database, email: str, *, actor: str | None, notify=None) ->
 
 
 def confirmation_text(gap: dict) -> str:
+    from sentinel.portal import BACKUP_KEEP_DAYS
+
     labels = ", ".join(a["label"] for a in gap["accounts"]) or "no monitored account"
     total = sum(gap["rows_removed"].values())
     elsewhere = sum((gap.get("rows_redacted_elsewhere") or {}).values())
@@ -391,6 +393,8 @@ def confirmation_text(gap: dict) -> str:
         + "What remains: one entry in our records stating that a deletion happened at your request, "
         "with the date and the number of records removed - nothing that identifies you or "
         "describes what your accounts did. Nothing before that moment can be reconstructed by us.\n\n"
-        "Backups made before today and our server logs are not edited, and still hold a copy.\n\n"
+        f"Backups made before today are not edited; each is deleted {BACKUP_KEEP_DAYS} days after it "
+        "was made. Our server logs are not edited either, and are deleted when the service is next "
+        "updated.\n\n"
         "Monitoring of those accounts has stopped. Contact Minas if you did not ask for this."
     )

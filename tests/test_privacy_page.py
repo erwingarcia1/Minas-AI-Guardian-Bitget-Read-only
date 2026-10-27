@@ -163,3 +163,47 @@ def test_approval_needs_every_open_fact_answered():
         assert marks == 0, "approved with questions still open"
     else:
         assert marks > 0
+
+
+# --- the owner's answers (2026-10-27) ----------------------------------------------------
+
+def test_it_names_the_company_and_the_developer_name_on_google_play():
+    """Google wants the policy to name the developer as the store listing
+    does ("Minas AI"); the company behind it is Minas Academy."""
+    page = _text(_render_privacy(None))
+    assert "run by Minas Academy" in page and "of Toronto, Canada" in page
+    assert "publishes it on Google Play as Minas AI" in page
+
+
+def test_the_owners_answers_are_on_the_page():
+    page = _text(_render_privacy(None))
+    assert "We answer every request within 30 days." in page
+    assert "for people aged 18 and over" in page
+    assert "Office of the Privacy Commissioner of Canada" in page
+    assert "standard contractual clauses" in page
+
+
+def test_the_sms_sentence_names_the_provider_the_sender_would_use(monkeypatch):
+    for name in ("CLICKSEND_USERNAME", "CLICKSEND_API_KEY", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN",
+                 "TWILIO_FROM_NUMBER"):
+        monkeypatch.delenv(name, raising=False)
+    assert "SMS alerts are not being sent yet." in _text(_render_privacy(None))
+    monkeypatch.setenv("TWILIO_ACCOUNT_SID", "sid")
+    monkeypatch.setenv("TWILIO_AUTH_TOKEN", "token")
+    monkeypatch.setenv("TWILIO_FROM_NUMBER", "+15550100")
+    assert "SMS alerts go through Twilio" in _text(_render_privacy(None))
+    monkeypatch.setenv("CLICKSEND_USERNAME", "user")
+    monkeypatch.setenv("CLICKSEND_API_KEY", "key")
+    assert "SMS alerts go through ClickSend" in _text(_render_privacy(None))
+
+
+def test_the_backup_period_is_the_backup_scripts():
+    """The page promises what scripts/host/backup.sh does; the host can
+    override the script's default, so the default is what both must say."""
+    import re
+    from pathlib import Path
+
+    script = (Path(__file__).resolve().parent.parent / "scripts/host/backup.sh").read_text()
+    default = int(re.search(r'KEEP_DAYS="\$\{MINAS_BACKUP_KEEP_DAYS:-(\d+)\}"', script).group(1))
+    assert portal.BACKUP_KEEP_DAYS == default == 28
+    assert f"a deletion reaches the backups within {default} days" in _text(_render_privacy(None))

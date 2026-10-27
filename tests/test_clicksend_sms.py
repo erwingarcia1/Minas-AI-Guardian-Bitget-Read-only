@@ -6,7 +6,7 @@ import pytest
 
 from sentinel.alerts.base import AlertMessage
 from sentinel.alerts.clicksend import ClickSendSmsChannel
-from sentinel.alerts.sms import TwilioSmsChannel, build_sms_channel
+from sentinel.alerts.sms import TwilioSmsChannel, build_sms_channel, sms_provider_name
 
 
 def _alert():
@@ -152,3 +152,25 @@ def test_fewer_results_than_numbers_still_yields_one_receipt_per_number():
         )
         receipts = ClickSendSmsChannel("u", "k", None, ["+16470000001", "+16470000002"]).send(_alert())
     assert [(r["to"], r["provider_message_id"]) for r in receipts] == [("+16470000001", "m1"), ("+16470000002", None)]
+
+
+@pytest.mark.parametrize("env, expected", [
+    ({}, None),
+    ({"TWILIO_ACCOUNT_SID": "sid", "TWILIO_AUTH_TOKEN": "tok", "TWILIO_FROM_NUMBER": "+1"}, "Twilio"),
+    ({"TWILIO_ACCOUNT_SID": "sid", "TWILIO_AUTH_TOKEN": "tok"}, None),
+    ({"CLICKSEND_USERNAME": "u", "CLICKSEND_API_KEY": "k"}, "ClickSend"),
+    ({"CLICKSEND_USERNAME": "u", "CLICKSEND_API_KEY": "k", "TWILIO_ACCOUNT_SID": "sid",
+      "TWILIO_AUTH_TOKEN": "tok", "TWILIO_FROM_NUMBER": "+1"}, "ClickSend"),
+    ({"CLICKSEND_USERNAME": "u", "CLICKSEND_API_KEY": "  "}, None),
+])
+def test_the_provider_named_is_the_provider_used(monkeypatch, env, expected):
+    """The privacy policy names sms_provider_name() (decision 27); it must
+    agree with what build_sms_channel actually builds."""
+    for name in ("CLICKSEND_USERNAME", "CLICKSEND_API_KEY", "TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN",
+                 "TWILIO_FROM_NUMBER"):
+        monkeypatch.delenv(name, raising=False)
+    for name, value in env.items():
+        monkeypatch.setenv(name, value)
+    built = build_sms_channel(["+1555"])
+    kind = {ClickSendSmsChannel: "ClickSend", TwilioSmsChannel: "Twilio"}.get(type(built))
+    assert sms_provider_name() == kind == expected
