@@ -3382,5 +3382,26 @@
    "tests/test_privacy_page.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "decision 27: the privacy page names Twilio when ClickSend is the sender",
+  "file": "sentinel/alerts/sms.py",
+  "old": "        return \"ClickSend\"\n    if env_setting(\"TWILIO_ACCOUNT_SID\")",
+  "new": "        return \"Twilio\"\n    if env_setting(\"TWILIO_ACCOUNT_SID\")",
+  "tests": [
+   "tests/test_clicksend_sms.py",
+   "tests/test_privacy_page.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 27: the privacy page promises a backup period the script does not keep",
+  "file": "sentinel/portal.py",
+  "old": "BACKUP_KEEP_DAYS = 28\n",
+  "new": "BACKUP_KEEP_DAYS = 30\n",
+  "tests": [
+   "tests/test_privacy_page.py"
+  ],
+  "expect": "killed"
  }
 ]

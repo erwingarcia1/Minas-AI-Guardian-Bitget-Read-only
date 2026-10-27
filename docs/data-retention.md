@@ -43,7 +43,7 @@ described below cannot stop silently (#73).
 | Baselines (known addresses, traded pairs, transfer routes, fee EMA) | never pruned | Deleting a baseline row invents an anomaly |
 | Identity & auth (operators, portal members, 2FA enrolments) | never pruned | Operators: offboarding is `disable`, never deletion (G-50). A member's login goes with an erasure |
 | Phones signed in to the app, Telegram links, account grants, pause requests | `api_devices`, `telegram_links`, `member_account_grants`, `pause_requests` | never pruned; a member's go with an erasure |
-| Server logs | the container's and the host's logs | Not set by the application. **Open** (decision 27) |
+| Server logs | the `sentinel` container's log (requests and errors, with IP addresses); Caddy keeps no access log | Deleted whenever the container is replaced, which is every deploy, and capped at 5 × 20 MB by `docker-compose.yml` (decision 27, 2026-10-27) |
 | Backups | `/var/backups/minas-guardian/` on the host | Daily at 03:30 UTC, kept **28 days** (owner, 2026-10-27; `scripts/host/backup.sh`). A backup is not edited by an erasure, so an erasure reaches the backups within 28 days. `held-2026-09-28`, from the beta pause, is not rotated: delete it by hand |
 
 Hosting: AWS Tokyo (ap-northeast-1). Data residency questions below should be

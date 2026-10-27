@@ -39,6 +39,19 @@ def format_sms_body(alert: AlertMessage, max_len: int = SMS_MAX_LEN,
     return body[:max_len]
 
 
+def sms_provider_name() -> str | None:
+    """The SMS provider this process would send through - "ClickSend",
+    "Twilio", or None - by the rule `build_sms_channel` applies: ClickSend
+    when its credentials are present, Twilio otherwise. The privacy policy
+    names it (decision 27), so the page and the sender cannot disagree;
+    tests/test_clicksend_sms.py holds the two to the same answer."""
+    if env_setting("CLICKSEND_USERNAME") and env_setting("CLICKSEND_API_KEY"):
+        return "ClickSend"
+    if env_setting("TWILIO_ACCOUNT_SID") and env_setting("TWILIO_AUTH_TOKEN") and env_setting("TWILIO_FROM_NUMBER"):
+        return "Twilio"
+    return None
+
+
 def build_sms_channel(recipients: list[str], audience: str = "customer") -> AlertChannel | None:
     """Return an SMS channel for `recipients` based on configured env, or None
     if no SMS provider is set. ClickSend is preferred when its credentials are

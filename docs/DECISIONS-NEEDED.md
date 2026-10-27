@@ -9,9 +9,9 @@ product should do, and each was skipped rather than guessed at.
 
 **Open today (2026-10-26):** 6 (needs the lawyer; #47), 7's vendor (#63),
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
-21b/21e/21h/21i, 26d, 26e and 26b's two further tripwires, 27's open
-facts and approval (the privacy policy), and 28 (the Play reviewer's
-sign-in). Everything else
+21b/21e/21h/21i, 26d, 26e and 26b's two further tripwires, 27's legal
+review (the privacy policy is published on the owner's answers), and 28
+(the Play reviewer's sign-in). Everything else
 below is answered and built, and deployed where there is a server to deploy
 to - the app waits on the store accounts (section 21, "Not built yet"); the
 sections stay as the record.
@@ -48,7 +48,7 @@ sections stay as the record.
 | 24 | The ops dashboard carries the Minas identity, dark like the portal (reverses the dashboard half of decision 2 on #82) | the dashboard redesign PR | **ANSWERED by the owner 2026-10-24** — brand colours and logo on every dashboard page on the portal's dark ground; the anti-impersonation intent moves to an operations marking (the Operations lockup, the operator's name, the h1, the /admin path); see section 24. **Deployed 2026-10-24 (v1.15.0)** |
 | 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25. **Deployed 2026-10-24 (v1.16.0)** |
 | 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR; the notice-pages PR | **PARTLY ANSWERED** — 26a: a contact move revokes the old address's scoped access (decided in session; **deployed 2026-10-25, v1.17.0**); 26b: a refused password-changed, two-factor-off or alert-email-changed notice pages Minas at CRITICAL, whatever a connected Telegram chat took (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); 26c: the reset link by email only (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); open: 26d (a "no login yet" email), 26e (connecting a Telegram chat tells the member nothing) and 26b's two further tripwires; see section 26 |
-| 27 | The privacy policy at `/privacy` (Google Play needs it in the listing and in the app) | the Play production release | **PARTLY ANSWERED 2026-10-26** — drafted on the site from the owner's answers (contact, "Minas AI", Anthropic named, keys and contacts kept until the customer asks, erasure fixed by 6b); eight facts open for the owner and the lawyer, then approval; see section 27 |
+| 27 | The privacy policy at `/privacy` (Google Play needs it in the listing and in the app) | ~~the Play production release~~ | **ANSWERED 2026-10-27** — Minas Academy of Toronto, publishing as Minas AI; 30 days to answer; 18 and over; SMS not sent; logs until the next deploy; backups 28 days; providers' business data-processing terms and the Privacy Commissioner of Canada, pending the lawyer; approved for publication; see section 27 |
 | 28 | How Google's reviewer signs in past two-factor | the Play production release | **OPEN** — the owner decides after internal testing (2026-10-26); recommended: a review login that opens only a demo account, its second factor a fixed code scoped to that login; see section 28 |
 
 ---
@@ -2694,7 +2694,7 @@ docs/threat-model.md (the portal's reset request), CHANGELOG.md
 
 ---
 
-## 27. The privacy policy at /privacy — **PARTLY ANSWERED 2026-10-26: drafted on the site; eight facts and the approval are the owner's and the lawyer's**
+## 27. The privacy policy at /privacy — **ANSWERED 2026-10-27: the eight facts filled in and approved for publication by the owner; the lawyer's review of the transfer terms and the complaints authority to follow**
 
 > **Owner, 2026-10-26**, publishing the Android app: Google Play's User
 > Data policy wants a privacy policy's address in the store listing and in
@@ -2744,6 +2744,29 @@ flag while any "[To confirm" mark is left.
 - **8.** The owner: daily backups, kept 28 days. There had been none.
   Built as `scripts/host/backup.sh` and `minas-backup.timer`, so a
   deletion reaches the backups within 28 days.
+
+**The rest, answered 2026-10-27.** The owner: **1.** Minas Academy,
+Toronto, Canada, a mostly remote company; the page says it publishes on
+Google Play as Minas AI, the name Google wants the policy to carry.
+**4.** 30 days. **6.** 18 and over: the owner first said 15, then 18 "since the exchanges use 18". **7.** The proposed wording stands:
+server logs are deleted when the service is next updated, and never grow
+beyond 100 MB. For the lawyer's two, the owner said "use your
+initiative for now": **3.** Amazon Web Services, Resend and Anthropic
+handle the data for Minas under their business data-processing terms
+(AWS's DPA is part of its Service Terms; Resend's DPA takes effect with
+its terms; Anthropic's DPA is part of its Commercial Terms), each with
+the European Commission's standard contractual clauses, and Anthropic
+does not train on it. **5.** The Office of the Privacy Commissioner of
+Canada, or the authority where the member lives. The SMS sentence is now
+read from the credentials the sender would use (`sms_provider_name`), so
+it names the provider by itself the day one is configured; adding one is
+a change to who handles the data, so members are emailed first (the
+policy's own promise). **Approved for publication** by the owner,
+`PRIVACY_APPROVED = True`, dated 27 October 2026. Still to come: the
+lawyer's review of 3 and 5; and Minas staff's use of Anthropic's tools
+must be under Anthropic's commercial terms (a Team, Enterprise or API
+plan), or the sentence "Anthropic does not train its models on it" is
+not true for that use.
 
 **Commitments to confirm as written** (not marked, but the owner's
 promises): members are told by email before a change to what is collected

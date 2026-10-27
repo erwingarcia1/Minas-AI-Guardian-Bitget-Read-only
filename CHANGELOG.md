@@ -58,6 +58,27 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
 
 ### Changed
 
+- **The privacy policy is complete and approved for publication (decision
+  27, 2026-10-27).** The owner's answers replace the eight marks:
+  - the company is Minas Academy, of Toronto, Canada, publishing on
+    Google Play as Minas AI;
+  - requests are answered within 30 days;
+  - members are 18 and over, as the exchanges require;
+  - server logs are deleted at each update, 100 MB at most;
+  - backups are kept 28 days.
+
+  For the lawyer's two items, pending the lawyer's review:
+  - the providers' business data-processing terms, with standard
+    contractual clauses, and that Anthropic does not train on the data;
+  - complaints to the Office of the Privacy Commissioner of Canada.
+
+  The SMS sentence is read from the credentials the sender would use
+  (`sms_provider_name`, held to `build_sms_channel` by a test), so it
+  names the provider by itself the day one is configured. The "Draft for
+  review." notice is gone (`PRIVACY_APPROVED = True`). The erasure
+  confirmation, the delete-my-data panel and the "deleted" page say
+  backups are deleted within 28 days and logs at the next update.
+
 - **An erasure leaves nothing that names the person, anywhere (decision
   6b, 2026-10-26).** The confirmation promised "nothing that identifies
   you", and it was not true: the tombstone's `data_erased` entry kept the

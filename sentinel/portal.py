@@ -2328,13 +2328,18 @@ RETENTION_REVIEWED = False
 
 # The privacy policy (decision 27). Google Play wants its address in the
 # store listing and in the app; the owner asked for it on the site, for the
-# owner and the lawyer to approve before it ships (2026-10-26). Until then
-# every fact still open reads "[To confirm: ...]" and the page says it is a
-# draft; flipping PRIVACY_APPROVED requires that no such mark is left
-# (tests/test_privacy_page.py). Escaped when rendered.
-PRIVACY_APPROVED = False
-PRIVACY_DATED = "Draft of 26 October 2026"
+# owner and the lawyer to approve before it ships (2026-10-26). A fact still
+# open reads "[To confirm: ...]" and the page says it is a draft while
+# PRIVACY_APPROVED is False; the flag cannot be set while any such mark is
+# left (tests/test_privacy_page.py). The owner answered the last facts on
+# 2026-10-27 and approved it for publication, the lawyer's review to follow.
+# Escaped when rendered.
+PRIVACY_APPROVED = True
+PRIVACY_DATED = "Last updated 27 October 2026"
 PRIVACY_CONTACT = "support@minastech.ca"
+# How long the daily backup keeps a copy: scripts/host/backup.sh's default,
+# held equal to it by tests/test_privacy_page.py (the owner, 2026-10-27).
+BACKUP_KEEP_DAYS = 28
 
 # The landing page (decision 25), as data: the app's welcome screen carries
 # these sentences verbatim (tests/test_mobile_app.py pins them), like the
@@ -2472,10 +2477,13 @@ def privacy_sections(rules=None) -> list[tuple[str, str, list[str]]]:
     Every statement is one the code makes true, drawn from the data
     inventory of 2026-10-26: what the tables hold, what leaves the server
     and to whom. Numbers come from the code or the configuration, never
-    typed in, and the one address comes from the setting (#88). What the
-    code cannot answer - the legal entity, the governing law, how long logs
-    and backups are kept - is marked "[To confirm: ...]" for the owner and
-    the lawyer, never guessed."""
+    typed in; the one address comes from the setting (#88), and the SMS
+    provider from the credentials the sender would use. What the code
+    cannot answer came from the owner (2026-10-27): the entity, the answer
+    time, the minimum age, the backup period. The data-processing terms and
+    the complaints authority are the providers' published business terms
+    and the Canadian regulator, pending the lawyer's review."""
+    from sentinel.alerts.sms import sms_provider_name
     from sentinel.api import REFRESH_TTL_SECONDS
 
     host = portal_host()
@@ -2483,12 +2491,18 @@ def privacy_sections(rules=None) -> list[tuple[str, str, list[str]]]:
     enabled = (rules.get("triage", "enabled", default=False) if rules is not None
                else default_for("triage", "enabled"))
     triage = "on" if enabled else "off"
+    provider = sms_provider_name()
+    sms = (f"SMS alerts go through {provider}, which receives your phone number and the alert's text."
+           if provider else
+           "SMS alerts are not being sent yet. Before they are, this policy will name the provider "
+           "that will receive your phone number and the alert's text.")
     return [
         ("who", "Who we are", [
             "Minas AI Guardian is a read-only monitoring service for crypto exchange accounts, run by "
-            "Minas AI (“Minas”, “we”). [To confirm: Minas AI's registered legal name and postal "
-            "address.]",
-            f"Questions about this policy or about your data: {PRIVACY_CONTACT}.",
+            "Minas Academy (“Minas”, “we”), of Toronto, Canada, which publishes it on Google Play as "
+            "Minas AI.",
+            "We work mostly remotely, so the way to reach us is by email: questions about this policy "
+            f"or about your data go to {PRIVACY_CONTACT}.",
         ]),
         ("what", "What we hold, and why", [
             "Your exchange API key. A read-only key you give us so that the Guardian can read your "
@@ -2502,9 +2516,7 @@ def privacy_sections(rules=None) -> list[tuple[str, str, list[str]]]:
             "How to reach you. The email address, phone number and Telegram chat you give us for "
             "alerts, and the same for an emergency contact if you name one. An emergency contact is "
             "told once that they have been named, and after that hears from us only about an alert "
-            "that went unanswered. When SMS alerts are on, your phone number and the alert's text go "
-            "to the SMS provider. [To confirm: whether SMS alerts are being sent, and the provider's "
-            "name.]",
+            "that went unanswered. " + sms,
             "Your sign-in. Your email address; your password, stored only as a scrypt hash, never as "
             "the password itself; your two-factor secret, encrypted, and your recovery codes, hashed; "
             "your settings (time zone, quiet hours, alert channels, digest schedule); and when you last "
@@ -2517,8 +2529,8 @@ def privacy_sections(rules=None) -> list[tuple[str, str, list[str]]]:
             "app keeps one sign-in token in the phone's secure storage (the iOS Keychain or the Android "
             "Keystore). It contains no analytics, advertising or tracking code, and it talks only to "
             f"{server}.",
-            "Server logs. Our servers log each request, with its IP address, to run the service and "
-            "investigate problems.",
+            "Server logs. Our servers log requests and errors, with IP addresses, to run the service "
+            "and investigate problems.",
             "We do not sell your data, use it for advertising, or build profiles of you.",
         ]),
         ("cookies", "Cookies", [
@@ -2541,10 +2553,12 @@ def privacy_sections(rules=None) -> list[tuple[str, str, list[str]]]:
             "Your exchange (Bitget, Bybit, OKX or Binance) receives the Guardian's read requests, made "
             "with your key. It already holds your account; we send it nothing else about you.",
             "Minas staff can see your accounts' records, to run the service and to answer you.",
+            "Amazon Web Services, Resend and Anthropic handle your data only for Minas, under their "
+            "data-processing terms for business customers, which include the European Commission's "
+            "standard contractual clauses for international transfers. Anthropic does not train its "
+            "models on it.",
             "Your data is stored in Japan, and the services above may handle it in other countries, "
-            "including the United States. [To confirm: the data-processing terms in place with Amazon "
-            "Web Services, Resend and Anthropic, and the safeguards the governing law requires for "
-            "these transfers.]",
+            "including the United States, where their own laws apply to it.",
         ]),
         ("rights", "Your choices", [
             "See it and take a copy. Everything we hold about your accounts is on the portal, and "
@@ -2556,20 +2570,23 @@ def privacy_sections(rules=None) -> list[tuple[str, str, list[str]]]:
             "two-factor code, if it is on); you can also ask us by email. What stays is one entry "
             "recording that a deletion happened, with the date and the number of records removed. "
             "Where your details appear in somebody else's account history, for example as their "
-            "emergency contact, they are replaced with [erased]. Backups made before the deletion and "
-            "our server logs are not edited. The phone app cannot delete: use the portal or write to "
-            "us.",
+            "emergency contact, they are replaced with [erased]. Backups are not edited: each is "
+            f"deleted {BACKUP_KEEP_DAYS} days after it was made, so a deletion reaches them within "
+            f"{BACKUP_KEEP_DAYS} days. Server logs are not edited either; they are deleted when the "
+            "service is next updated. The phone app cannot delete: use the portal or write to us.",
             "Stop monitoring. Write to us; an account's main contact can also request a pause in "
             "the portal, which waits 24 hours and can be cancelled until then. Stopping does not "
             "delete anything: your key, your "
             "contacts and your history stay until you delete your data or ask us to.",
-            "We answer every request. [To confirm: the time within which we answer.]",
-            "If you are unhappy with how we handle your data, tell us first. [To confirm: the "
-            "data-protection authority you can complain to under the governing law.]",
+            "We answer every request within 30 days.",
+            "If you are unhappy with how we handle your data, tell us first. You can also complain to "
+            "the Office of the Privacy Commissioner of Canada (priv.gc.ca), or to the data-protection "
+            "authority where you live.",
         ]),
-        ("children", "Children", [
-            "Minas AI Guardian is for adults managing their own exchange accounts. [To confirm: the "
-            "minimum age.]",
+        ("age", "Age", [
+            "Minas AI Guardian is for people aged 18 and over, as the exchanges it reads require of "
+            "their own account holders. We do not knowingly hold data about "
+            "anyone younger; if you believe we do, write to us and we will delete it.",
         ]),
         ("changes", "Changes to this policy", [
             "When this policy changes, the date at the top changes. Before a change to what we collect "
@@ -2585,9 +2602,9 @@ def privacy_retention(rules=None) -> list[tuple[str, str]]:
     return retention_summary(rules) + [
         ("Your sign-in, its settings and the phones signed in to the app",
          "until you delete your data or ask us to"),
-        ("Server logs", "[To confirm: how long server logs are kept.]"),
-        ("Backups", "[To confirm: how long backups are kept.] A backup is not edited when data is "
-         "deleted, so it holds a copy until it is itself deleted"),
+        ("Server logs", "until the service is next updated, and never more than 100 MB"),
+        ("Backups", f"{BACKUP_KEEP_DAYS} days — a backup is taken daily and is not edited when data "
+         f"is deleted, so a deletion reaches the backups within {BACKUP_KEEP_DAYS} days"),
     ]
 
 
@@ -3673,8 +3690,8 @@ def _erasure_section(db: Database, email: str) -> str:
         "and the number of records removed - nothing that identifies you. Where your details appear "
         "in the history of somebody else's account, that history keeps its entries, with [erased] "
         "in place of your email address, phone number and Telegram identity. Backups made before "
-        "today and our server logs are not edited, and still hold a copy. Monitoring of those "
-        "accounts stops.</p>"
+        f"today are not edited, and are deleted within {BACKUP_KEEP_DAYS} days; server logs, when "
+        "the service is next updated. Monitoring of those accounts stops.</p>"
         + (f'<p class="muted">On <strong>{secondary}</strong> you are the second contact: you will be '
            "removed as a contact; that account belongs to someone else.</p>" if secondary else "")
         + '<p style="margin-top:var(--space-3)"><a class="btn btn--secondary btn--sm" href="/export.json">'
@@ -3694,8 +3711,9 @@ def _render_erased(email: str) -> str:
         '<section class="panel"><h2>Your data has been deleted</h2>'
         f'<p>Everything Minas AI Guardian held for <strong>{html.escape(email)}</strong> has been removed, '
         "and a confirmation has been sent to that address. One entry remains in our records stating that "
-        "a deletion happened at your request. Backups made before today and our server logs are not "
-        "edited, and still hold a copy. Monitoring of your accounts has stopped.</p>"
+        "a deletion happened at your request. Backups made before today are not edited, and are "
+        f"deleted within {BACKUP_KEEP_DAYS} days; server logs, when the service is next updated. "
+        "Monitoring of your accounts has stopped.</p>"
         "<p>Thank you for using Minas AI Guardian.</p></section>",
         None, title="Data deleted — Member portal", shell=True)
 
