@@ -3403,5 +3403,136 @@
    "tests/test_privacy_page.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "decision 17: an invitation opens an account its address is not a contact on",
+  "file": "sentinel/invitations.py",
+  "old": "\"AND (lower(alert_email) = ? OR lower(alert_email_secondary) = ?)\",",
+  "new": "\"AND (lower(alert_email) = ? OR lower(alert_email_secondary) = ? OR 1)\",",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17: five wrong codes do not retire the invitation",
+  "file": "sentinel/invitations.py",
+  "old": "\"WHERE id = ? AND attempts >= ? AND retired_at IS NULL\",",
+  "new": "\"WHERE id = ? AND attempts > ? AND retired_at IS NULL\",",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17: a malformed code counts as a guess against the member",
+  "file": "sentinel/invitations.py",
+  "old": "    if not normalize_code(code):\n        return None\n    if hmac.compare_digest",
+  "new": "    if False:\n        return None\n    if hmac.compare_digest",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17: a second invitation leaves the first one open",
+  "file": "sentinel/invitations.py",
+  "old": "            \"WHERE email = ? AND used_at IS NULL AND retired_at IS NULL\", (now.isoformat(), email))",
+  "new": "            \"WHERE email = ? AND used_at IS NULL AND retired_at IS NULL AND 0\", (now.isoformat(), email))",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17: completing grants an account the address has since left",
+  "file": "sentinel/invitations.py",
+  "old": "                   if _eligible_account(cur, email, int(a))]",
+  "new": "                   if True]",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17: an address that has a login is invited anyway",
+  "file": "sentinel/invitations.py",
+  "old": "        if cur.fetchone() is not None:\n            raise InvitationRefused(\"this address already has a login - it can sign in",
+  "new": "        if cur.fetchone() is not None and False:\n            raise InvitationRefused(\"this address already has a login - it can sign in",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17 / 10: the login an invitation makes is unscoped",
+  "file": "sentinel/invitations.py",
+  "old": "\"VALUES (?, ?, ?, ?, 1)\", (email, row[\"password_hash\"], now, now))",
+  "new": "\"VALUES (?, ?, ?, ?, 0)\", (email, row[\"password_hash\"], now, now))",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17 / 26c: the invitation code may go to a connected Telegram chat",
+  "file": "sentinel/invitations.py",
+  "old": "            _PlainNotice(message, email_only=True), \"your Minas AI Guardian login\", [invitation.email], [],",
+  "new": "            _PlainNotice(message, email_only=False), \"your Minas AI Guardian login\", [invitation.email], [],",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17: the welcome flow makes the login without a working two-factor code",
+  "file": "sentinel/portal.py",
+  "old": "            at = verify_pending(db, cipher, TWOFACTOR_MEMBER, address, code) if cipher is not None else None\n            if at is None:",
+  "new": "            at = verify_pending(db, cipher, TWOFACTOR_MEMBER, address, code) if cipher is not None else None\n            if False:",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17: adding a customer sends no invitation",
+  "file": "sentinel/dashboard.py",
+  "old": "                    invitation_html = invite_contact(db, g(\"email\"), result.account_id, operator)",
+  "new": "                    invitation_html = \"\"",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17: an open invitation is pruned by its age, not its expiry",
+  "file": "sentinel/retention.py",
+  "old": "    \"member_invitations\": (\"expires_at\", \"password_resets_days\"),",
+  "new": "    \"member_invitations\": (\"created_at\", \"password_resets_days\"),",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17 / 6: erasure leaves the person's invitations behind",
+  "file": "sentinel/erasure.py",
+  "old": "                 (\"api_devices\", \"email\"), (\"member_invitations\", \"email\"))",
+  "new": "                 (\"api_devices\", \"email\"))",
+  "tests": [
+   "tests/test_erasure.py",
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17: an invitation accepts a password under the minimum",
+  "file": "sentinel/portal.py",
+  "old": "            too_short = len(password) < MIN_PASSWORD_LENGTH",
+  "new": "            too_short = False",
+  "tests": [
+   "tests/test_invitations.py"
+  ],
+  "expect": "killed"
  }
 ]

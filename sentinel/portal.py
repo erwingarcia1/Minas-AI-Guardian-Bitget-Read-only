@@ -30,6 +30,17 @@ from sentinel.dashboard import (
 from sentinel.db import Database
 from sentinel.edge import EdgeHandler, portal_host, portal_url, trusted_proxies_from_env
 from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
+from sentinel.invitations import (
+    InvitationRefused,
+    check_code,
+    complete_invitation,
+    expiry_phrase,
+    make_step_token,
+    send_login_created_email,
+    step_invitation,
+    store_password,
+    verify_step_token,
+)
 from sentinel.naming import display_label
 from sentinel.outbox import answering, later
 from sentinel.passwords import DUMMY_HASH as _DUMMY_HASH
@@ -319,10 +330,11 @@ def member_accounts(db: Database, email: str) -> list:
 # existed and passed for six weeks while /key, /erase and /pause grew
 # underneath it.
 
-# Routes with NO session to judge: sign-in and its recovery. Not a role
-# decision at all - there is nobody yet to be primary or secondary - so they
-# are a bucket of their own, not a line in the allowlist.
-PRE_AUTH = frozenset({"/login", "/login-code", "/forgot", "/reset"})
+# Routes with NO session to judge: sign-in, its recovery, and accepting an
+# invitation (decision 17, 2026-10-28). Not a role decision at all - there is
+# nobody yet to be primary or secondary - so they are a bucket of their own,
+# not a line in the allowlist.
+PRE_AUTH = frozenset({"/login", "/login-code", "/forgot", "/reset", "/welcome"})
 
 # What a signed-in NON-PRIMARY contact may reach: leave, harden their own
 # login with a second factor, and acknowledge an alert - the one
@@ -1328,6 +1340,8 @@ def _render_login(error: str | None = None, host: str | None = None) -> str:
         f"email. {where}</span></div>"
         '<button type="submit" class="btn btn--primary btn--block">Sign in</button>'
         "</form>"
+        '<p class="muted" style="margin-top:var(--space-4)">First time here? '
+        f'<a href="/welcome">{html.escape(WELCOME_ACTION)}</a> with the code Minas emailed you.</p>'
         '<div class="phish" style="margin-top:1.5rem;padding-top:1.25rem;border-top:1px solid var(--border)">'
         + _ICON_SHIELD
         + '<p><strong style="color:var(--text)">Minas will never email you a link asking '
@@ -1347,8 +1361,9 @@ def _render_landing(rules=None, *, host: str | None = None, ended: bool = False)
     the limits section reads LIMITS_* exactly as /limits does, and the
     app's welcome screen carries the LANDING_* constants verbatim
     (tests/test_mobile_app.py pins them), so the three places a member can
-    read what the product is cannot disagree. Nothing to sign up for
-    (decision 17): Minas sets monitoring up with the member.
+    read what the product is cannot disagree. No open signup (decision
+    17): Minas sets monitoring up with the member and emails an invitation,
+    which the second button accepts.
 
     `ended` is the handler's: a session cookie was presented and rejected -
     expired, retired by a password change, forged, its member gone - and
@@ -1386,6 +1401,7 @@ def _render_landing(rules=None, *, host: str | None = None, ended: bool = False)
         f'<h1 id="landing-title">{html.escape(LANDING_STATEMENT)}</h1>'
         f'<p class="lead">{html.escape(LANDING_LEAD)}</p></div>'
         '<div class="primary-row"><a class="btn btn--primary" href="/login">Sign in</a>'
+        f'<a class="btn btn--secondary" href="/welcome">{html.escape(WELCOME_ACTION)}</a>'
         f'<p class="muted">{html.escape(LANDING_SETUP)}</p></div>'
         '<section class="panel" aria-labelledby="how-title"><h2 id="how-title">How it works</h2>'
         f'<ol class="steps">{steps}</ol></section>'
@@ -2354,11 +2370,19 @@ LANDING_LEAD = (
     "Minas can read your account and never trade, withdraw or move anything, so a "
     "compromise of Minas itself cannot cost you money."
 )
-# No self-serve signup (decision 17).
-LANDING_SETUP = "Minas sets monitoring up with you. There is nothing to sign up for here."
+# Sign-up is for Minas members, by invitation (decision 17, the owner
+# 2026-10-28): an admin adds the key during onboarding, and the member makes
+# their own login from the emailed code.
+LANDING_SETUP = (
+    "Guardian is for Minas members. Minas sets monitoring up with you, then emails you an "
+    f"invitation code to create your sign-in. A member without one? Write to {PRIVACY_CONTACT}."
+)
+# The button that starts it, on the landing page and the sign-in page, and
+# in the app.
+WELCOME_ACTION = "Accept an invitation"
 # (title, text) per "How it works" step.
 LANDING_STEPS = (
-    ("You connect a read-only API key.",
+    ("You make a read-only API key, and Minas connects it.",
      "Minas checks with the exchange that the key cannot trade or withdraw, and refuses "
      "any key that can."),
     ("The Guardian keeps reading.",
@@ -3556,6 +3580,131 @@ def _key_instructions_panel(exchange: str) -> str:
     )
 
 
+def _recovery_codes_panel(codes: list) -> str:
+    """The one time recovery codes can be shown: they are stored hashed."""
+    return (
+        '<section class="panel"><h2>Save your recovery codes</h2>'
+        '<p class="muted">Each code works <strong>once</strong> and lets you sign '
+        "in if you lose your phone. They are stored hashed, so this is the only time they "
+        "can be shown — write them down or put them in a password manager now.</p>"
+        '<p class="mono" style="margin-top:var(--space-4)">'
+        + "<br>".join(html.escape(c) for c in codes)
+        + "</p></section>"
+    )
+
+
+def _twofactor_setup_panel(secret: str, email: str, *, intro: str, action: str, button: str,
+                           hidden: str = "", title: str = "Set up two-factor") -> str:
+    """The secret as a QR code, as text and as its otpauth link, and the
+    form that confirms it - on the Security page and in the invitation's
+    last step. `hidden` carries the step's own fields."""
+    uri = _twofactor_uri(secret, email)
+    return (
+        f'<section class="panel"><h2>{html.escape(title)}</h2>'
+        f'<p class="muted">{html.escape(intro)}</p>'
+        f'<div class="qr">{qr.svg(uri, label="QR code of the secret below, for your authenticator app to scan")}</div>'
+        '<p class="muted">Reading this on the phone that has the app? '
+        "Open it straight in the app, or copy the secret below into it instead of scanning.</p>"
+        # The otpauth link itself, tappable: a phone cannot scan its own
+        # screen, and a member who came from the app's "Accept an
+        # invitation" is reading this on that phone. A link to the
+        # authenticator, not a request: nothing loads.
+        f'<p style="margin-top:var(--space-3)"><a class="btn btn--secondary" href="{html.escape(uri)}">'
+        "Open in your authenticator app</a></p>"
+        f'<p class="mono" id="totp-secret" style="margin-top:var(--space-3)">{html.escape(secret)}</p>'
+        f'<p class="mono">{html.escape(uri)}</p>'
+        f'<form class="form" method="post" action="{action}" style="margin-top:var(--space-4)">'
+        + hidden
+        + '<div class="field"><label for="c2fa">Code from your app</label>'
+        '<input class="input" type="text" id="c2fa" name="code" required inputmode="numeric" autofocus></div>'
+        f'<button class="btn btn--primary" type="submit">{html.escape(button)}</button>'
+        "</form></section>"
+    )
+
+
+# --- accepting an invitation (decision 17, 2026-10-28) ------------------------
+
+WELCOME_TITLE = "Accept your invitation"
+
+# One answer for an unknown address, a wrong code, an expired one and a
+# retired one: which it was would tell a stranger whether an address is a
+# Minas customer.
+WELCOME_NO_MATCH = (
+    "That email address and code don't match an open invitation. Check the code in the email "
+    "from Minas: it works once, until it expires, and stops working after five wrong tries. "
+    "If it has, ask Minas for a new one."
+)
+WELCOME_STEP_EXPIRED = "That step took too long. Enter your email address and code again."
+
+
+def _render_welcome(*, step: str = "code", token: str = "", email: str = "", secret: str | None = None,
+                    codes: list | None = None, error: str | None = None) -> str:
+    """Accepting an invitation, one step per page: the emailed code, a
+    password, two-factor, then the recovery codes - and only at the last
+    step does a login exist. `token` is the signed proof of the code that
+    carries a member from one step to the next."""
+    notice = ""
+    if error:
+        notice = ('<div class="notice notice--danger" role="alert">' + _ICON_DANGER
+                  + f'<div><p class="notice__title">{html.escape(error)}</p></div></div>'
+                  '<div style="height:var(--space-4)"></div>')
+    hidden = (f'<input type="hidden" name="step" value="{html.escape(step)}">'
+              f'<input type="hidden" name="token" value="{html.escape(token)}">')
+    if step == "password":
+        heading = "Choose a password"
+        inner = (
+            '<p class="muted">For ' + html.escape(email) + ". You will also set up two-factor "
+            "sign-in next, so have your authenticator app ready.</p>"
+            '<form class="form" method="post" action="/welcome" style="margin-top:var(--space-4)">' + hidden
+            + '<div class="field"><label for="wp">Password</label>'
+            '<input class="input" type="password" id="wp" name="password" required '
+            f'autocomplete="new-password" minlength="{MIN_PASSWORD_LENGTH}">'
+            f'<span class="hint">At least {MIN_PASSWORD_LENGTH} characters.</span></div>'
+            '<button class="btn btn--primary btn--block" type="submit">Continue</button></form>'
+        )
+    elif step == "twofactor":
+        heading = "Set up two-factor sign-in"
+        inner = _twofactor_setup_panel(
+            secret or "", email,
+            intro=("Scan this with your authenticator app, such as Google Authenticator, then enter "
+                   "the code it shows. Your login is created when the code works."),
+            action="/welcome", button="Create my login", hidden=hidden, title="Your authenticator app")
+    elif step == "done":
+        heading = "Your login is ready"
+        inner = (
+            _recovery_codes_panel(codes or [])
+            + '<p style="margin-top:var(--space-4)"><a class="btn btn--primary btn--block" href="/">'
+            "Continue to your accounts</a></p>"
+        )
+    else:
+        heading = WELCOME_TITLE
+        inner = (
+            '<p class="muted">Minas emailed you an invitation code when your monitoring was set '
+            f"up. It works once and expires {expiry_phrase()} after it was sent.</p>"
+            '<form class="form" method="post" action="/welcome" style="margin-top:var(--space-4)">'
+            '<input type="hidden" name="step" value="code">'
+            '<div class="field"><label for="we">Email address</label>'
+            '<input class="input" type="email" id="we" name="email" required autocomplete="username" '
+            f'inputmode="email" value="{html.escape(email)}"></div>'
+            '<div class="field"><label for="wc">Invitation code</label>'
+            '<input class="input" type="text" id="wc" name="code" required autocomplete="one-time-code" '
+            'autocapitalize="characters" spellcheck="false">'
+            '<span class="hint">Like 7KQM-3XRP-9WTD. Never share it: Minas will never ask you for it.'
+            "</span></div>"
+            '<button class="btn btn--primary btn--block" type="submit">Continue</button></form>'
+        )
+    # Signed in by the last step: no way "back" to a sign-in they are past.
+    back = "" if step == "done" else (
+        '<p class="hint" style="margin-top:var(--space-4)"><a href="/login">‹ Back to sign in</a></p>')
+    return _page(
+        '<section class="auth-card" aria-labelledby="welcome-title">' + _auth_brand()
+        + f'<h1 id="welcome-title">{html.escape(heading)}</h1>'
+        '<div style="height:var(--space-4)"></div>' + notice + inner + back
+        + "</section>",
+        title=f"{heading} — Minas AI Guardian", shell=True,
+    )
+
+
 def _render_security(db: Database, email: str, *, secret: str | None = None,
                      codes: list | None = None, error: str | None = None,
                      notice: str | None = None) -> str:
@@ -3577,33 +3726,14 @@ def _render_security(db: Database, email: str, *, secret: str | None = None,
                   + f'<div><p class="notice__title">{html.escape(notice)}</p></div></div>')
 
     if codes:
-        body = (
-            '<section class="panel"><h2>Save your recovery codes</h2>'
-            '<p class="muted">Each code works <strong>once</strong> and lets you sign '
-            "in if you lose your phone. They are stored hashed, so this is the only time they "
-            "can be shown — write them down or put them in a password manager now.</p>"
-            '<p class="mono" style="margin-top:var(--space-4)">'
-            + "<br>".join(html.escape(c) for c in codes)
-            + "</p></section>"
-        )
+        body = _recovery_codes_panel(codes)
     elif secret:
-        uri = _twofactor_uri(secret, email)
-        body = (
-            '<section class="panel"><h2>Set up two-factor</h2>'
-            '<p class="muted">Scan this with your authenticator app, then enter '
-            "a code to switch it on. Two-factor is not active until you do — if the code never "
-            "works, nothing has changed and you can still sign in.</p>"
-            f'<div class="qr">{qr.svg(uri, label="QR code of the secret below, for your authenticator app to scan")}</div>'
-            '<p class="muted">Reading this on the phone that has the app? '
-            "Copy the secret below into the app instead of scanning.</p>"
-            f'<p class="mono" id="totp-secret" style="margin-top:var(--space-3)">{html.escape(secret)}</p>'
-            f'<p class="mono">{html.escape(uri)}</p>'
-            '<form class="form" method="post" action="/security/2fa/confirm" style="margin-top:var(--space-4)">'
-            '<div class="field"><label for="c2fa">Code from your app</label>'
-            '<input class="input" type="text" id="c2fa" name="code" required inputmode="numeric" autofocus></div>'
-            '<button class="btn btn--primary" type="submit">Turn on two-factor</button>'
-            "</form></section>"
-        )
+        body = _twofactor_setup_panel(
+            secret, email,
+            intro=("Scan this with your authenticator app, then enter "
+                   "a code to switch it on. Two-factor is not active until you do — if the code never "
+                   "works, nothing has changed and you can still sign in."),
+            action="/security/2fa/confirm", button="Turn on two-factor")
     elif is_enabled(db, _MEMBER, email):
         left = remaining_recovery_codes(db, _MEMBER, email)
         body = (
@@ -3931,6 +4061,11 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
     # Built second: tests/test_login_lockout.py's spy reads the first one
     # built as the sign-in limiter.
     reset_throttle = LoginThrottle()
+    # Accepting an invitation has its own budget too: a member mistyping a
+    # code must not spend their sign-in's, nor a stranger guessing codes
+    # spend a member's. Behind it, five wrong codes retire the invitation
+    # itself, in the database (sentinel/invitations.py).
+    invite_throttle = LoginThrottle()
     trusted = trusted_proxies_from_env("portal")
 
     def _throttle_pair(ip: str, identity: str) -> str:
@@ -4157,6 +4292,12 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             # that browser was answered "Not found" for both.
             if path == "/forgot":
                 self._send(_render_forgot().encode())
+                return
+            # Accepting an invitation (decision 17): public like /forgot, and
+            # the same with a session - a member may open it in a browser
+            # that is signed in as somebody else.
+            if path == "/welcome":
+                self._send(_render_welcome().encode())
                 return
             # The privacy policy (decision 27) is public: the store listing,
             # the app and the sign-in page link to it, and it is the same
@@ -4700,6 +4841,139 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             # door: the member has a password to type now.
             self._redirect("/login")
 
+        def _welcome(self, form):
+            """Accept an invitation (decision 17, 2026-10-28), one step per
+            POST: `code` proves the mailbox, `password` holds the chosen
+            password on the invitation, `twofactor` confirms an
+            authenticator and only then makes the login - and signs the
+            member in, because they have just proven the mailbox, chosen the
+            password and shown the second factor."""
+            step = (form.get("step", ["code"])[0] or "code").strip()
+            if step == "password":
+                self._welcome_password(form)
+            elif step == "twofactor":
+                self._welcome_twofactor(form)
+            else:
+                self._welcome_code(form)
+
+        def _welcome_code(self, form):
+            # Padded like /forgot: a wrong code writes (the invitation's
+            # count), an unknown address does not, and a stopwatch must not
+            # tell the two apart.
+            deadline = time.monotonic() + _RESET_RESPONSE_FLOOR_SECONDS
+            address = normalize_email(form.get("email", [""])[0] or "")
+            code = form.get("code", [""])[0] or ""
+            ip = self._client_ip()
+            pair = _throttle_pair(ip, address)
+            if invite_throttle.blocked(pair) or invite_throttle.blocked(ip):
+                logger.warning("invitation check throttled for %s from %s", address or "<empty>", ip)
+                self._pad_to(deadline)
+                self._send(_render_welcome(email=address, error="Too many attempts — try again later.").encode(),
+                           429)
+                return
+            invitation_id = check_code(db, address, code)
+            if invitation_id is None:
+                invite_throttle.record_failure(pair)
+                invite_throttle.record_failure(ip)
+                logger.info("invitation code not accepted for %s from %s", address or "<empty>", ip)
+                self._pad_to(deadline)
+                self._send(_render_welcome(email=address, error=WELCOME_NO_MATCH).encode(), 400)
+                return
+            invite_throttle.reset(pair)
+            logger.info("invitation %d: code accepted for %s from %s", invitation_id, address, ip)
+            self._pad_to(deadline)
+            self._send(_render_welcome(step="password", token=make_step_token(secret, invitation_id, address),
+                                       email=address).encode())
+
+        def _welcome_step(self, form):
+            """(invitation id, address) when the step token is good and its
+            invitation can still be accepted; otherwise the first step has
+            been sent again and None comes back."""
+            parsed = verify_step_token(secret, form.get("token", [""])[0] or "")
+            if parsed is not None and step_invitation(db, *parsed) is not None:
+                return parsed
+            self._send(_render_welcome(email=parsed[1] if parsed else "",
+                                       error=WELCOME_STEP_EXPIRED).encode(), 400)
+            return None
+
+        def _welcome_password(self, form):
+            parsed = self._welcome_step(form)
+            if parsed is None:
+                return
+            invitation_id, address = parsed
+            token = make_step_token(secret, invitation_id, address)
+            password = form.get("password", [""])[0] or ""
+            too_short = len(password) < MIN_PASSWORD_LENGTH
+            if too_short:
+                self._send(_render_welcome(step="password", token=token, email=address,
+                                           error=f"Use at least {MIN_PASSWORD_LENGTH} characters.").encode())
+                return
+            if cipher is None:
+                self._send(_render_welcome(step="password", token=token, email=address, error=(
+                    "Two-factor sign-in cannot be set up on this server right now. Contact Minas.")).encode(),
+                           503)
+                return
+            from sentinel.twofactor import begin_enrolment
+
+            store_password(db, invitation_id, password)
+            try:
+                totp_secret, _uri = begin_enrolment(db, cipher, TWOFACTOR_MEMBER, address)
+            except ValueError:
+                # A confirmed second factor for an address with no login is
+                # a state nothing should leave behind; a person sorts it out.
+                logger.error("invitation %d: %s already has two-factor but no login", invitation_id, address)
+                self._send(_render_welcome(error="This invitation cannot be finished here. Contact Minas.")
+                           .encode(), 409)
+                return
+            self._send(_render_welcome(step="twofactor", token=token, email=address,
+                                       secret=totp_secret).encode())
+
+        def _welcome_twofactor(self, form):
+            from sentinel.twofactor import confirm_enrolment, pending_secret, verify_pending
+
+            parsed = self._welcome_step(form)
+            if parsed is None:
+                return
+            invitation_id, address = parsed
+            token = make_step_token(secret, invitation_id, address)
+            code = (form.get("code", [""])[0] or "").strip()
+            at = verify_pending(db, cipher, TWOFACTOR_MEMBER, address, code) if cipher is not None else None
+            if at is None:
+                ip = self._client_ip()
+                invite_throttle.record_failure(_throttle_pair(ip, address))
+                invite_throttle.record_failure(ip)
+                again = pending_secret(db, cipher, TWOFACTOR_MEMBER, address) if cipher is not None else None
+                self._send(_render_welcome(step="twofactor", token=token, email=address, secret=again, error=(
+                    "That code was not accepted. Check that your phone sets its time automatically, "
+                    "then enter the newest code.")).encode(), 400)
+                return
+            try:
+                complete_invitation(db, invitation_id, address)
+            except InvitationRefused as exc:
+                self._send(_render_welcome(email=address, error=str(exc).capitalize() + ".").encode(), 409)
+                return
+            # The login exists now, so the enabled-two-factor entry lands on
+            # the accounts it opens. Judged at the instant the code was.
+            codes = confirm_enrolment(db, cipher, TWOFACTOR_MEMBER, address, code, at=at)
+            later(send_login_created_email, db, address)
+            if not codes:
+                logger.error("invitation %d: login made for %s but two-factor did not confirm",
+                             invitation_id, address)
+                self._send(self._login_page(error=(
+                    "Your login is ready, but two-factor did not switch on. Sign in, then set it up "
+                    "on the Security page.")).encode())
+                return
+            with db.cursor() as cur:
+                cur.execute("SELECT session_epoch FROM portal_members WHERE email = ?", (address,))
+                row = cur.fetchone()
+            session = make_session_token(secret, address, epoch=row["session_epoch"] if row else 1)
+            logger.info("invitation %d accepted by %s from %s", invitation_id, address, self._client_ip())
+            self._send(_render_welcome(step="done", email=address, codes=codes).encode(), extra_headers=[(
+                "Set-Cookie",
+                f"{SESSION_COOKIE}={session}; Max-Age={SESSION_TTL_SECONDS}; Path=/; HttpOnly; "
+                f"Secure; SameSite=Lax",
+            )])
+
         def _acknowledge(self, form):
             """The portal's only member-facing write (G-22, #26).
 
@@ -4892,6 +5166,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 "/login-code": self._login_code,
                 "/forgot": self._forgot,
                 "/reset": self._reset,
+                "/welcome": self._welcome,
                 "/logout": self._logout,
                 "/security/2fa/start": lambda form: self._twofactor(path, form),
                 "/security/2fa/confirm": lambda form: self._twofactor(path, form),

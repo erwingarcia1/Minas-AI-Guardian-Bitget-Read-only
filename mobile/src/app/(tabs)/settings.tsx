@@ -124,6 +124,15 @@ export default function Security() {
         </Link>
         {/* The portal's footer link (decision 27), opened in the browser. */}
         <Button label="Privacy policy" variant="secondary" onPress={() => Linking.openURL(`${API_URL}/privacy`)} />
+        {/* Google Play's account-deletion rule: an app that leads to
+            account creation (the invitation) offers deletion in the app. It
+            opens the policy's steps - deleting is on the portal's Security
+            page, with the password and code, or by email to Minas. */}
+        <Button
+          label="Delete my account and data"
+          variant="secondary"
+          onPress={() => Linking.openURL(`${API_URL}/privacy#privacy-rights`)}
+        />
         <Body muted>Alert channels, quiet hours, Telegram and your data are on the member portal.</Body>
       </Section>
 

@@ -192,10 +192,11 @@ def test_the_allowlist_is_own_login_plumbing_and_acknowledging_only():
 
 
 def test_pre_auth_is_exactly_the_routes_with_no_session_to_judge():
-    """Sign-in and its recovery. These are not role decisions - nobody is
-    primary or secondary before a session exists - and a role bucket that
-    contained them would conflate two ideas."""
-    assert {"/login", "/login-code", "/forgot", "/reset"} == PRE_AUTH
+    """Sign-in, its recovery, and accepting an invitation (decision 17,
+    2026-10-28). These are not role decisions - nobody is primary or
+    secondary before a session exists - and a role bucket that contained
+    them would conflate two ideas."""
+    assert {"/login", "/login-code", "/forgot", "/reset", "/welcome"} == PRE_AUTH
     src = inspect.getsource(portal_module.serve_portal)
     for path in PRE_AUTH:
         assert path in src

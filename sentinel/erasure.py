@@ -58,7 +58,7 @@ ACCOUNT_CHILDREN = ("events", "known_addresses", "seen_withdrawals", "balance_sn
 MEMBER_TABLES = (("portal_members", "email"), ("member_account_grants", "email"),
                  ("held_alerts", "email"), ("deliveries", "recipient"),
                  ("telegram_links", "member_email"), ("password_resets", "email"),
-                 ("api_devices", "email"))
+                 ("api_devices", "email"), ("member_invitations", "email"))
 
 # What a redacted detail reads as, and who an erasure the person asked for
 # themselves is recorded against: their address is exactly what went.

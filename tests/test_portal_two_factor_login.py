@@ -323,7 +323,10 @@ def test_the_enrolment_page_draws_the_uri_as_a_qr_code_above_the_secret(portal, 
     assert qr.svg(uri, label=label) in setup
     assert setup.index(qr.svg(uri, label=label)) < setup.index('id="totp-secret"'), "the QR code sits above the secret"
     assert "Scan this with your authenticator app, then enter a code to switch it on." in setup
-    assert "Reading this on the phone that has the app? Copy the secret below into the app instead of scanning." in setup
+    assert ("Reading this on the phone that has the app? Open it straight in the app, or copy the secret "
+            "below into it instead of scanning.") in setup
+    # ...and the link that opens it there is the URI shown, tappable.
+    assert f'<a class="btn btn--secondary" href="{html.escape(uri)}">Open in your authenticator app</a>' in setup
 
 
 def test_a_wrong_enrolment_code_leaves_two_factor_off(portal, db, cipher):

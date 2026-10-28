@@ -70,6 +70,10 @@ RULE_ADVICE: dict[str, str | None] = {
     # it carries. Never a runbook.
     "password_reset_requested": NO_ADVICE,
     "password_changed": NO_ADVICE,
+    # Decision 17 (2026-10-28): the invitation code, and the notice that a
+    # login was made from it.
+    "member_invitation": NO_ADVICE,
+    "member_login_created": NO_ADVICE,
     "app_signed_in": NO_ADVICE,  # decision 21c: a phone signed in to this login
     "alert_destination_changed": NO_ADVICE,
     "secondary_contact_added": NO_ADVICE,
@@ -416,6 +420,8 @@ _GENERIC_HEADLINE = "Unusual activity was detected on this account"
 _NOTICE_SUBJECTS = {
     "password_reset_requested": "Reset your Minas AI Guardian password",
     "password_changed": "Your Minas AI Guardian password was changed",
+    "member_invitation": "Your invitation to Minas AI Guardian",
+    "member_login_created": "Your Minas AI Guardian login was created",
     "alert_destination_changed": "Your Minas AI Guardian alerts are going somewhere new",
     "escalation_burst_collapsed": "Several alerts on your account remain unacknowledged",
 }

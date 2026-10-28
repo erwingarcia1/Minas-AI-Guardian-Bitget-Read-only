@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 import copy
 import getpass
+import html
 import json
 import logging
 import os
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -242,6 +244,19 @@ def cmd_onboard(args: argparse.Namespace) -> int:
         mark_drill_account(db, result.account_id, True)
         print(f"'{result.label}' is the dedicated DRILL account: scheduled drills run against it and "
               "nothing else. Give it Minas's own contacts, never a customer's.")
+    elif not getattr(args, "no_invite", False):
+        # Decision 17 (the owner, 2026-10-28): onboarding sends the primary
+        # contact their invitation, as the dashboard's "+ Add customer" does.
+        # A drill account has Minas's own contacts and gets none.
+        from sentinel.dashboard import invite_contact
+        from sentinel.portal import member_exists
+
+        if member_exists(db, args.alert_email):
+            print(f"{args.alert_email} already has a login: grant it this account from the dashboard "
+                  "if they should see it.")
+        else:
+            sentence = invite_contact(db, args.alert_email, result.account_id, actor)
+            print(html.unescape(re.sub(r"<[^>]+>", "", sentence)))
 
     # No operator alerter on this path, and deliberately none: the person who
     # ran this command is standing in front of the output, and paging somebody
@@ -1381,6 +1396,9 @@ def main() -> None:
     onboard_parser.add_argument("--drill", action="store_true",
                                 help="This is the dedicated fire-drill account (#37): scheduled drills run "
                                      "against it and nothing else")
+    onboard_parser.add_argument("--no-invite", action="store_true",
+                                help="Do not email the primary contact an invitation to make their login "
+                                     "(decision 17); the dashboard can send one later")
     onboard_parser.set_defaults(func=cmd_onboard)
 
     version_parser = sub.add_parser(

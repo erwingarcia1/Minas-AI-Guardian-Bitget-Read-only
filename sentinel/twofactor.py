@@ -93,18 +93,24 @@ def begin_enrolment(db: Database, cipher, kind: str, subject: str) -> tuple[str,
     return secret, provisioning_uri(secret, subject)
 
 
-def confirm_enrolment(db: Database, cipher, kind: str, subject: str, code: str) -> list[str] | None:
+def confirm_enrolment(db: Database, cipher, kind: str, subject: str, code: str, *,
+                      at: float | None = None) -> list[str] | None:
     """Turn 2FA on, but only against a working code. Returns the recovery codes.
 
     None means the code did not verify and nothing changed - which is the
     point. Confirming without checking would enable 2FA against a secret the
-    customer may never have successfully scanned."""
+    customer may never have successfully scanned.
+
+    `at` judges the code at an instant the caller already used - an
+    invitation checks the code with `verify_pending`, makes the login, then
+    confirms here at the same instant, so the two checks cannot straddle a
+    30-second step and disagree."""
     subject = subject.strip().lower()
     row = _enrolment(db, kind, subject)
     if row is None:
         return None
     secret = cipher.decrypt(row["encrypted_secret"])
-    step = verify_code(secret, code, at=_clock(),
+    step = verify_code(secret, code, at=_clock() if at is None else at,
                        last_used_step=row["last_used_step"])
     if step is None:
         return None
@@ -162,6 +168,18 @@ def pending_secret(db: Database, cipher, kind: str, subject: str) -> str | None:
     if row is None or row["confirmed"]:
         return None
     return cipher.decrypt(row["encrypted_secret"])
+
+
+def verify_pending(db: Database, cipher, kind: str, subject: str, code: str) -> float | None:
+    """Would `code` confirm this UNCONFIRMED enrolment now? The instant it
+    was judged at when it would, None when not; writes nothing. For a caller
+    that must do something else between the check and the confirmation, and
+    then confirms at the returned instant - see `confirm_enrolment`'s `at`."""
+    secret = pending_secret(db, cipher, kind, subject)
+    if secret is None:
+        return None
+    at = _clock()
+    return at if verify_code(secret, code, at=at, last_used_step=None) is not None else None
 
 
 def is_enabled(db: Database, kind: str, subject: str) -> bool:

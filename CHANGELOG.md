@@ -16,7 +16,48 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Added
+
+- **Members make their own login from an invitation (decision 17; the
+  owner, 2026-10-28: sign-up is for Minas members, and an exchange key is
+  added only by an admin, during onboarding).** Until now a login came only
+  from a password an operator generated and handed over by hand, and only 4
+  of about 14 accounts ever got one. Now:
+  - **"+ Add customer"** (and `sentinel onboard`, unless `--no-invite`)
+    emails the primary contact an invitation code. The account page's
+    portal card offers "Send invitation" for any contact without a login,
+    the emergency contact included, says where the last invitation stands,
+    and keeps "Generate a portal password instead" as the fallback.
+  - **`/welcome`**, from "Accept an invitation" on the landing and sign-in
+    pages and in the app: the email address and the code, then a password,
+    then two-factor (required, the owner's choice). Only when a working
+    two-factor code is in does the login exist; it opens the invited
+    accounts that still list the address (decision 10, 26a), signs the
+    member in, and shows the recovery codes. A "login created" email goes
+    to the address.
+  - **The code** is twelve characters of Crockford base32 (60 bits), typed,
+    never a link (decision 16), stored hashed, good for three days, and
+    retired after five wrong tries; the web check gives one answer for an
+    unknown address and a wrong code, padded to the reset's floor, on a
+    limiter of its own. A second invitation retires the first and carries
+    its accounts.
+  - Erasure deletes a person's invitations; retention keeps them on the
+    reset tokens' window, counted from expiry so an open one is never
+    pruned.
+  `sentinel/invitations.py`; `tests/test_invitations.py`.
+
 ### Changed
+
+- **The landing page says how to get in (both surfaces, decision 25).**
+  "There is nothing to sign up for here" becomes: Guardian is for Minas
+  members, set up by Minas, with the invitation code by email, and the
+  address to write to without one. Step 1 reads "You make a read-only API
+  key, and Minas connects it." The app's welcome and sign-in screens open
+  `/welcome` in the browser for now; its Settings gain "Delete my account
+  and data", which Google Play asks of an app that leads to account
+  creation. The two-factor step, on the web and on the Security page, has
+  a tappable "Open in your authenticator app" link for a phone that cannot
+  scan its own screen.
 
 - **v1.19.0 is deployed (2026-10-27, finished by 16:29 UTC):** the
   privacy policy is live at https://guardian.minastrade.com/privacy,

@@ -61,6 +61,8 @@ ADMIN_EVENT_TYPES = (
     "secondary_contact_updated",
     "sms_alerts_changed",
     "member_portal_password_generated",
+    "member_invitation_sent",  # decision 17: an admin invited this contact
+    "member_invitation_accepted",  # ...and the login was made from it
     "member_password_changed",
     "member_two_factor_enabled",
     "member_two_factor_disabled",
@@ -87,6 +89,8 @@ ADMIN_EVENT_LABELS = {
     "secondary_contact_updated": "Emergency contact changed",
     "sms_alerts_changed": "SMS alert preference changed",
     "member_portal_password_generated": "Portal password issued by Minas",
+    "member_invitation_sent": "Invitation to sign in sent by Minas",
+    "member_invitation_accepted": "Invitation accepted: login created",
     "member_password_changed": "Portal password changed",
     "member_two_factor_enabled": "Two-factor turned on",
     "member_two_factor_disabled": "Two-factor turned off",

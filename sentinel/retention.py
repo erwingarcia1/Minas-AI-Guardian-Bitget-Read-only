@@ -69,6 +69,12 @@ PRUNABLE: dict[str, tuple[str, str]] = {
     # `created_at` cannot delete a live token: the shortest expressible window
     # is a day (0 means keep forever) and the longest token life is an hour.
     "password_resets": ("created_at", "password_resets_days"),
+    # Invitations (decision 17, 2026-10-28) are the reset token's shape: a
+    # code, and a record that somebody was invited and accepted, kept on the
+    # same forensic window. Unlike a reset token the code lives days, longer
+    # than the shortest window the setting allows, so the window runs from
+    # `expires_at`: an invitation that can still be accepted is never pruned.
+    "member_invitations": ("expires_at", "password_resets_days"),
     # "That was me" (#28). A customer's judgement about one alert, on the same
     # window as the alert it judges - a mark that outlived its alert would show
     # in the operator's pattern view with nothing behind it, and a mark deleted

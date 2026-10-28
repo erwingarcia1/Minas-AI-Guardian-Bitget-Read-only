@@ -73,12 +73,12 @@ plain HTTP for `localhost` only.
 
 | Screen | API |
 |---|---|
-| Welcome: what the Guardian is, and the way to sign in | none |
+| Welcome: what the Guardian is, the way to sign in, and "Accept an invitation", which opens the portal's `/welcome` in the browser (decision 17) | none |
 | Sign in: email, password and two-factor code | `POST /api/v1/session` |
 | Accounts: the incident needing attention, any pending pause, and "Am I being watched?" in the portal's exact words | `GET /api/v1/accounts` |
 | Alerts: newest first, with older ones on request | `GET /api/v1/alerts` |
 | Incident: evidence, timeline, balances, what to do next, acknowledge | `GET /api/v1/alerts/{id}`, `POST .../acknowledge` |
-| Security: two-factor state, signed-in phones, sign out | `GET /api/v1/security`, `DELETE /api/v1/devices/{id}`, `DELETE /api/v1/session` |
+| Security: two-factor state, signed-in phones, sign out; the privacy policy and "Delete my account and data" open the portal's pages | `GET /api/v1/security`, `DELETE /api/v1/devices/{id}`, `DELETE /api/v1/session` |
 | Who has touched your accounts | `GET /api/v1/activity` |
 | What the Guardian can and cannot do | `GET /api/v1/limits` |
 

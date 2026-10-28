@@ -132,8 +132,12 @@ def test_the_root_without_a_cookie_is_the_landing_page(portal_at, db):
     assert "<title>Minas AI Guardian — Member portal</title>" in body
     assert message.get("Set-Cookie") is None, "no cookie was presented, so none is cleared"
     assert LANDING_ENDED_TITLE not in body
-    # No sign-up (decision 17), and nothing only a signed-in page shows.
-    assert "sign up" not in body.lower().replace("nothing to sign up for", "")
+    # No open sign-up (decision 17): the way in for a member without a login
+    # is the invitation Minas emailed (2026-10-28) - and nothing only a
+    # signed-in page shows.
+    assert '<a class="btn btn--secondary" href="/welcome">Accept an invitation</a>' in body
+    assert _markup(body).count('class="btn btn--primary"') == 1, "one gold button per screen"
+    assert "sign up" not in body.lower()
     for only_signed_in in ('class="subnav"', "Signed in as", "Sign out", "My accounts", "alice"):
         assert only_signed_in not in body, only_signed_in
 

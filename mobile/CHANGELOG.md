@@ -7,6 +7,18 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
 
 ### Added
 
+- **"Accept an invitation" on the welcome and sign-in screens (decision
+  17, 2026-10-28).** Minas now emails a member an invitation code when it
+  sets their monitoring up, and the member makes their own login from it.
+  For now the button opens the portal's `/welcome` in the browser, where
+  the member chooses a password and sets up two-factor; then they sign in
+  here. The welcome screen's sentence is the portal's new `LANDING_SETUP`
+  and step 1 its new title, word for word (`tests/test_mobile_app.py`).
+
+- **Settings → "Delete my account and data".** It opens the privacy
+  policy's deletion steps. Google Play asks an app that leads to account
+  creation to offer deletion in the app, and the invitation does.
+
 - **A "Privacy policy" link on the welcome, sign-in and Settings
   screens (decision 27).** It opens the portal's `/privacy` page in the
   browser, so there is one copy of the words; Google Play wants the policy

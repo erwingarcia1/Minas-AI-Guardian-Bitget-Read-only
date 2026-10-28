@@ -197,8 +197,10 @@ primitives above and nothing new. In order: the top bar with a plain
 member); a `page-head` hero — eyebrow "Read-only monitoring for crypto
 exchange accounts", the one-sentence statement as the `h1`
 (`id="landing-title"`), a lead on the read-only key; the `primary-row`
-with the screen's one gold button, "Sign in", and the muted sentence that
-there is nothing to sign up for; "How it works" as three numbered `steps`
+with the screen's one gold button, "Sign in", a secondary "Accept an
+invitation" to `/welcome`, and the muted sentence that Guardian is for
+Minas members, set up by Minas, with the invitation code by email
+(decision 17, 2026-10-28); "How it works" as three numbered `steps`
 (the polling cadence in step 2 is rendered from the configuration, never
 typed); the `callout-danger` "cannot stop an attack" block; the limits
 section (`id="limits"`: the limits page's two `feature-list`s, text only);

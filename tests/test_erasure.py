@@ -280,6 +280,10 @@ def _alice_everywhere(db):
                     (ALICE, ALICE_DEVICE))
         cur.execute("INSERT INTO snoozes (account_id, dedup_key, rule, requested_by, created_at, expires_at) "
                     "VALUES (?, 'k', 'r', ?, '2026-01-01', '2026-01-02')", (b, ALICE))
+        # The invitation her login was made from (decision 17, 2026-10-28).
+        cur.execute("INSERT INTO member_invitations (email, code_hash, account_ids_json, created_at, created_by, "
+                    "expires_at, used_at) VALUES (?, 'h', ?, '2026-01-01', 'erwin', '2026-01-04', '2026-01-02')",
+                    (ALICE, json.dumps([a])))
         cur.execute("INSERT INTO expected_activity (alert_id, account_id, rule, dedup_key, note, marked_by, "
                     "created_at) VALUES (?, ?, 'r', 'k', ?, ?, '2026-01-01')",
                     (alert_b, b, f"{ALICE} says this was her", ALICE))

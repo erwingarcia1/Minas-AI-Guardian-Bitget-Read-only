@@ -7,8 +7,9 @@ import { colors, space, type } from '@/theme';
 import { Body, Button, Card, Eyebrow, Notice, Screen, Section, Title } from '@/ui';
 
 // The portal's landing page, on a phone (decision 25): what the Guardian is,
-// how it works, what it cannot do, and the one way in. Nothing here needs a
-// sign-in, and nothing here asks the server for anything.
+// how it works, what it cannot do, and the two ways in - signing in, and
+// accepting the invitation Minas emails a member (decision 17, 2026-10-28).
+// Nothing here needs a sign-in, and nothing here asks the server for anything.
 //
 // The sentences are the portal's own (sentinel/portal.py: LANDING_STATEMENT,
 // LANDING_LEAD, LANDING_SETUP, LANDING_STEPS, LIMITS_HEADLINE, LIMITS_DOES and
@@ -21,9 +22,10 @@ const STATEMENT =
   'Minas AI Guardian watches your exchange accounts around the clock and tells you within minutes when money starts leaving.';
 const LEAD =
   'Read-only monitoring for Bitget, Bybit, OKX and Binance accounts. The key you give Minas can read your account and never trade, withdraw or move anything, so a compromise of Minas itself cannot cost you money.';
-const SETUP = 'Minas sets monitoring up with you. There is nothing to sign up for here.';
+const SETUP =
+  'Guardian is for Minas members. Minas sets monitoring up with you, then emails you an invitation code to create your sign-in. A member without one? Write to support@minastech.ca.';
 const STEPS: readonly (readonly [string, string])[] = [
-  ['You connect a read-only API key.', 'Minas checks with the exchange that the key cannot trade or withdraw, and refuses any key that can.'],
+  ['You make a read-only API key, and Minas connects it.', 'Minas checks with the exchange that the key cannot trade or withdraw, and refuses any key that can.'],
   ['The Guardian keeps reading.', 'Your balances, recent movements, API permissions and allowlists, all day, compared with what it has seen before.'],
   ['When something looks wrong, you are told.', 'On the channels you have set up, with what to do next. A second contact is told too, and Minas escalates if nobody acknowledges.'],
 ];
@@ -77,6 +79,14 @@ export default function Landing() {
 
       <View style={styles.group}>
         <Button label="Sign in" onPress={() => router.push('/sign-in')} />
+        {/* The portal's /welcome, opened in the browser until the app has
+            the steps of its own: one gold button per screen, so this one is
+            secondary, as on the portal's landing page. */}
+        <Button
+          label="Accept an invitation"
+          variant="secondary"
+          onPress={() => Linking.openURL(`${API_URL}/welcome`)}
+        />
         <Body muted>{SETUP}</Body>
       </View>
 

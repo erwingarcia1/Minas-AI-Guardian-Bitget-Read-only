@@ -112,6 +112,12 @@ export default function SignIn() {
             <Text style={styles.link}>Forgot password? Reset it on the member portal rather than retrying.</Text>
           </Pressable>
 
+          {/* The portal's sign-in page says the same (decision 17): a member
+              with no login yet makes one from Minas's emailed code. */}
+          <Pressable accessibilityRole="link" onPress={() => Linking.openURL(`${API_URL}/welcome`)} hitSlop={8}>
+            <Text style={styles.link}>First time here? Accept an invitation with the code Minas emailed you.</Text>
+          </Pressable>
+
           <Body muted style={styles.phish}>
             Minas will never email you a link asking for your password or API key. Sign in only here, or on the portal
             address you were given.
