@@ -7,11 +7,12 @@ autonomous backlog work — see `docs/AUTONOMOUS-LOG.md` for the sessions.
 Nothing here is blocked on engineering. Every item is a choice about what the
 product should do, and each was skipped rather than guessed at.
 
-**Open today (2026-10-26):** 6 (needs the lawyer; #47), 7's vendor (#63),
+**Open today (2026-10-28):** 6 (needs the lawyer; #47), 7's vendor (#63),
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
-21b/21e/21h/21i, 26d, 26e and 26b's two further tripwires, 27's legal
-review (the privacy policy is published on the owner's answers), and 28
-(the Play reviewer's sign-in). Everything else
+17's stage 2 (asking for access: how membership is checked, and a mail
+sender apart from the alerts'), 21b/21e/21h/21i, 26d, 26e and 26b's two
+further tripwires, 27's legal review (the privacy policy is published on
+the owner's answers), and 28 (the Play reviewer's sign-in). Everything else
 below is answered and built, and deployed where there is a server to deploy
 to - the app waits on the store accounts (section 21, "Not built yet"); the
 sections stay as the record.
@@ -38,7 +39,7 @@ sections stay as the record.
 | 14 | Exchange key-creation instructions: screenshots or text | ~~#8~~ | **ANSWERED 2026-08-21** — text-only, dated and interface-named; see section 14 |
 | 15 | Member self-serve pause | ~~#10~~ (reworded) | **ANSWERED 2026-08-23** — 24-hour cancellable countdown, never immediate; built, v1.10.0; see section 15 |
 | 16 | Deep incident links in alert emails | ~~#20~~ (reworded) | **ANSWERED 2026-08-23** — no links; non-clickable reference + portal lands on the incident; built, v1.10.0; see section 16 |
-| 17 | Self-serve signup | ~~#6~~ (closed not-planned 2026-08-27; waitlist is the recorded fallback) | **ANSWERED 2026-08-23** — no; behind billing + legal, waitlist as fallback; see section 17 |
+| 17 | Self-serve signup | ~~#6~~ (closed not-planned 2026-08-27; waitlist is the recorded fallback) | **REVISED by the owner 2026-10-28** — sign-up is for Minas members, by invitation; an exchange key is added only by an admin, during onboarding; stage 1 (invitations: the member makes their own login) built; stage 2 (asking for access) open; see section 17 |
 | 18 | Sibling-alert definition width + production backfill | ~~#99~~ (built conservatively) | **OPEN — owner reconsidering 2026-08-27**; nothing dependent to be built |
 | 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | ~~#87~~, ~~#82~~ | **ANSWERED 2026-08-27** — mandatory; host-access recovery, attributed and logged; see section 19. *From 2026-10-23 the host access is SSH with the key pair at the Elastic IP (22e)* |
 | 20 | The member portal is published to the internet on Tailscale Funnel | ~~#88~~ (closed 2026-10-24; evidence in its closing comment) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in full 2026-10-23 by 22: no Tailscale, removed in one go* |
@@ -920,7 +921,65 @@ reference, not an internal identifier). Both halves are gap — small ones.
 
 ---
 
-## 17. Self-serve signup (#6) — **ANSWERED 2026-08-23: NO — ordered behind billing and legal**
+## 17. Self-serve signup (#6) — **ANSWERED 2026-08-23: NO — ordered behind billing and legal; REVISED by the owner 2026-10-28: sign-up for Minas members, by invitation, keys only by admins; stage 1 built**
+
+> **The owner's words (2026-10-28):** "the whole process of someone
+> signing up is flawed. someone should be able to sign up on the web or
+> mobile if they don't have an account. what do you think?" Then, after
+> the review below: "the signup is for minas members. also, adding keys
+> should only be done by admins during an onboarding process. now go ahead
+> with stage 1." The four stage 1 choices, the same day: two-factor is
+> **required** to finish an invitation; members **keep** replacing their
+> own key for the same exchange account (`/key`); "+ Add customer" sends
+> the invitation **automatically**; "Generate portal password" **stays**
+> as the fallback.
+>
+> **What the review found** (five read-only investigations, three designs -
+> open self-serve, approval-gated, capped - and an adversarial critic for
+> each, 2026-10-28). The owner was right on the facts: nobody could even
+> ask to join (the landing and the app said "There is nothing to sign up
+> for here" and gave no address); a login came only from a password an
+> operator generated and handed over by an unnamed channel, and only 4 of
+> about 14 accounts ever got one; an exchange key was typed at a staff
+> keyboard; and the app could not be started without two-factor set up on
+> the web. Open self-serve was not safe on this setup: the alerts share one
+> email quota (Resend's free plan, 100 a day; production ran out in
+> September and customers' CRITICAL email was refused for twelve hours),
+> the host carries roughly 15-40 accounts as built, every key is bound to
+> one egress IP, an abandoned account pages Minas hourly, three failing
+> accounts make a "host" incident that holds tamper alerts, and there are
+> no Terms of Service; once the app leads to account creation, Google and
+> Apple want deletion in the app.
+>
+> **The stages.** **1 (built):** invitations - an admin's onboarding
+> emails a code and the member makes their own login, password and
+> two-factor, on the web (`/welcome`) and, by way of the browser for now,
+> from the app; the landing says how to get in; the app's Settings offer
+> deletion. Native acceptance in the app, and two-factor set up in the app
+> for members who have a password, are the next pull request; the
+> onboarding fixes (an account that cannot be left half-seeded, the
+> "lock this key to Minas's address" step in the key instructions, and a
+> warning to the admin when a key is not locked) the one after.
+> **2 (open, the owner's):** a Minas member without an invitation asks for
+> one on the web or in the app, Minas checks membership and approves in
+> `/admin`, and the invitation follows. It needs: how membership is checked
+> (`accounts.license` is free text with no documented meaning), a mail
+> sender apart from the alerts' (a public form mails addresses anyone
+> types), limits that survive a restart, and a privacy-policy line for
+> people who are not members yet. **3 (not planned):** automatic approval,
+> only once billing (decision 11), Terms and measured capacity exist.
+>
+> **Found along the way, not built** (each needs its own go-ahead): an
+> emergency contact who is primary nowhere sees "Delete my data" but is
+> refused (`PRIMARY_ONLY`), though the policy says they can use it; the
+> erasure tombstone keeps the exchange account number (`exchange_uid`),
+> though the policy says only a dated count stays; the Bitget read-only
+> gate accepts any unknown permission name ending in "r" (fine with an
+> admin in the loop, not for strangers); OKX's API agreement, as researched,
+> bars giving API credentials to a third party OKX has not approved - a
+> question for the lawyer that already applies to today's OKX members.
+
+The rest of this section is the 2026-08-23 decision as it was recorded.
 
 **The decision.** No public registration. Strangers handing over exchange
 credentials with nobody at Minas in the loop, while billing (#43/#44)

@@ -167,4 +167,6 @@ def test_the_button_stays_plain_when_it_opens_only_this_account(db):
     card = _portal_access_card(db, here, "solo@example.com")
 
     assert "not just this one" not in _text(card).lower()
-    assert "Generate portal password" in card
+    # No login yet: the invitation is the button (decision 17), and the
+    # generated password its plainly-labelled fallback.
+    assert "Send invitation" in card and "Generate a portal password instead" in card

@@ -40,11 +40,11 @@ Minas AI Guardian watches your exchange accounts around the clock and tells you 
 
 Read-only monitoring for Bitget, Bybit, OKX and Binance accounts. The key you give Minas can read your account and never trade, withdraw or move anything, so a compromise of Minas itself cannot cost you money.
 
-This app is for Minas AI Guardian members. Minas sets monitoring up with you. There is nothing to sign up for here.
+Guardian is for Minas members. Minas sets monitoring up with you, then emails you an invitation code to create your sign-in. A member without one? Write to support@minastech.ca.
 
 HOW IT WORKS
 
-You connect a read-only API key. Minas checks with the exchange that the key cannot trade or withdraw, and refuses any key that can.
+You make a read-only API key, and Minas connects it. Minas checks with the exchange that the key cannot trade or withdraw, and refuses any key that can.
 
 The Guardian keeps reading. Your balances, recent movements, API permissions and allowlists, all day, compared with what it has seen before.
 
@@ -114,8 +114,8 @@ The app sends data to one place, the Minas server.
 |---|---|---|
 | Does your app collect or share any of the required user data types? | Yes | The sign-in sends the email address and the phone's name |
 | Is all of the user data collected by your app encrypted in transit? | Yes | The app talks only to the server over HTTPS |
-| Do you provide a way for users to request that their data is deleted? | Yes | The portal's Security → Delete my data, or an email to support@minastech.ca. The app itself cannot delete, so the web link below is the way |
-| Account creation (if the form asks) | The app does not let users create an account | Minas creates every account. The app only signs in, and directs nobody to a sign-up: "There is nothing to sign up for here" |
+| Do you provide a way for users to request that their data is deleted? | Yes | The portal's Security → Delete my data, or an email to support@minastech.ca. In the app, Settings → "Delete my account and data" opens the policy's deletion steps (the link below) |
+| Account creation (if the form asks) | Yes: by invitation only | Decision 17 (2026-10-28): Minas onboards every member and emails an invitation code; the member makes their login from it. The app's "Accept an invitation" opens the website's /welcome, which counts as directing users to account creation, so the app offers deletion too (Settings → "Delete my account and data") |
 | Delete-account link (if the form asks) | https://guardian.minastrade.com/privacy#privacy-rights | The privacy policy's "Your choices" section names Minas AI and says how to delete. Google wants the deletion part reachable directly, hence the anchor |
 
 ### Data types

@@ -531,6 +531,10 @@ _ROW_FACTORIES = {
     "password_resets": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO password_resets (email, token_hash, created_at, expires_at) "
         "VALUES ('a@b.test', 'h', ?, ?)", (ts, ts)),
+    # Old by its expiry, the column the window runs from.
+    "member_invitations": lambda cur, acct, alert, ts: cur.execute(
+        "INSERT INTO member_invitations (email, code_hash, account_ids_json, created_at, expires_at) "
+        "VALUES ('a@b.test', 'h', '[]', ?, ?)", (ts, ts)),
     "expected_activity": lambda cur, acct, alert, ts: cur.execute(
         "INSERT INTO expected_activity (alert_id, account_id, rule, dedup_key, marked_by, created_at) "
         "VALUES (?, ?, 'r', 'd', 'customer', ?)", (alert, acct, ts)),

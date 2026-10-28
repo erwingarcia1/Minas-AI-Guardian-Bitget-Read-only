@@ -29,7 +29,7 @@ Find the row for what you changed. Everything in the same row changes together.
 | Member sees | Portal (web, `sentinel/portal.py`) | App (`mobile/src/app/`) | Carried by |
 |---|---|---|---|
 | Landing: what the Guardian is, how to sign in | `GET /` without a session: `_render_landing`, `LANDING_STATEMENT`, `LANDING_LEAD`, `LANDING_SETUP`, `LANDING_STEPS`, `LANDING_ENDED_TITLE` | `landing.tsx` (route `/landing`) | copies of the constants; `tests/test_mobile_app.py::test_the_apps_landing_says_what_the_portals_does` pins them |
-| Sign-in, code, forgot, reset | `/login`, `/login-code`, `/forgot`, `/reset`: `_render_login`, `_render_code_prompt`, `_render_forgot`, `_render_reset_form` | `sign-in.tsx` + `mobile/src/auth/session.tsx`, `tokens.ts` (mechanics fixed by decision 21c) | `POST /api/v1/session`, `/session/refresh`, `DELETE /session` |
+| Sign-in, code, forgot, reset, accepting an invitation | `/login`, `/login-code`, `/forgot`, `/reset`, `/welcome`: `_render_login`, `_render_code_prompt`, `_render_forgot`, `_render_reset_form`, `_render_welcome` (decision 17, 2026-10-28) | `sign-in.tsx` + `mobile/src/auth/session.tsx`, `tokens.ts` (mechanics fixed by decision 21c); `landing.tsx` and `sign-in.tsx` open `/welcome` in the browser | `POST /api/v1/session`, `/session/refresh`, `DELETE /session` |
 | Home and "Am I being watched?" | `/` and `/status`: `_render_home`, `_render_status` | `(tabs)/index.tsx` | `GET /api/v1/accounts` |
 | Alert history | `/alerts`: `_render_alert_history` | `(tabs)/alerts.tsx` | `GET /api/v1/alerts` |
 | Incident: evidence, what to do next, acknowledge | `/incident`: `_render_incident`, advice from `sentinel/alerts/base.py` (`advice_steps`, `advice_lead`, `advice_note`) | `alert/[id].tsx` | `GET /api/v1/alerts/{id}` (its `advice` object), `POST /api/v1/alerts/{id}/acknowledge` |
@@ -94,8 +94,10 @@ constants and queries), `api/openapi.yaml` is the contract, and
   own sheet (`tests/test_surface_styles.py`).
 - The dashboard shares the portal's ground and brand constants and nothing
   else; its operations marking tells it apart (decision 24).
-- Self-serve signup does not exist (decision 17). The landing says Minas sets
-  monitoring up with the member.
+- There is no open signup (decision 17; the owner, 2026-10-28: sign-up is
+  for Minas members, and an exchange key is added only by an admin during
+  onboarding). A login comes from the invitation code Minas emails; the
+  landing says so, and "Accept an invitation" is on both surfaces.
 
 ## 4. Run the guards, by surface
 

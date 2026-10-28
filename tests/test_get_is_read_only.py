@@ -31,7 +31,7 @@ GET_ROUTES = {
     "/activity": "/activity", "/export.json": "/export.json", "/alerts.csv": "/alerts.csv",
     "/incident": "/incident?id={alert}", "/security": "/security", "/key": "/key?id={account}",
     "/account": "/account?id={account}", "/forgot": "/forgot", "/reset": "/reset?token=not-a-token",
-    "/privacy": "/privacy",
+    "/privacy": "/privacy", "/welcome": "/welcome",
     "/favicon.ico": "/favicon.ico", "/brand/mark.png": "/brand/mark.png", "/brand/icon.png": "/brand/icon.png",
     "/brand/apple-touch-icon.png": "/brand/apple-touch-icon.png",
 }

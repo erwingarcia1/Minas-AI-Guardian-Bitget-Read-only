@@ -8624,3 +8624,54 @@ address. App changes since versionCode 2: the three privacy links and
 the activity screen's exception, nothing else. The `mobile-v1.0.0` tag
 waits for the build that reaches production. The record is the branch
 `app-build-1-0-0-3`.
+
+# 2026-10-28 · Sign-up for Minas members: the review, the owner's answers, and invitations (decision 17, stage 1)
+
+**The owner's words:** "the whole process of someone signing up is
+flawed. someone should be able to sign up on the web or mobile if they
+don't have an account. what do you think?" The question reopened
+decision 17 (2026-08-23: no public signup, behind billing and legal,
+waitlist as the middle step).
+
+**The review.** A workflow of eleven read-only agents (owner's ultracode
+opt-in): five investigations (onboarding today, the decision history, the
+abuse surface of a public endpoint, the stores', exchanges' and Canadian
+rules, the app and the API), three designs (open self-serve, an approval
+gate, a capped starter tier) and an adversarial critic for each; all three
+came back "viable with changes". The owner was right on the facts: nobody
+could ask to join, a login came only from a password an operator generated
+and handed over (4 of about 14 accounts ever got one), keys were typed at a
+staff keyboard, and the app could not be started without two-factor set up
+on the web. Open self-serve was not safe here: one email quota shared with
+the alerts (it ran out in September), a host sized for 15-40 accounts, one
+egress IP, an hourly operator page per abandoned account, fleet logic a
+self-registered pair could use to hold a victim's tamper alert, no Terms,
+and the stores' in-app deletion rule. Recorded in decision 17, with what
+was found along the way and not built (the emergency contact's refused
+"Delete my data", the tombstone's kept exchange_uid, the Bitget suffix
+rule, OKX's API agreement for the lawyer).
+
+**The owner's answers:** "the signup is for minas members. also, adding
+keys should only be done by admins during an onboarding process. now go
+ahead with stage 1." Then the four stage 1 choices, all as recommended:
+two-factor required to finish, /key stays, the invitation is automatic on
+"+ Add customer", the generated password stays as the fallback.
+
+**Built (branch `member-invitations`):** `sentinel/invitations.py` and
+`/welcome` - the emailed code, a password, two-factor, and only then the
+login, scoped to the invited accounts that still list the address; the
+dashboard's "Send invitation" and the automatic one on onboarding (and
+`sentinel onboard`, unless `--no-invite`); the landing copy on both
+surfaces and the Play listing; "Accept an invitation" in the app (to the
+browser for now) and "Delete my account and data" in its Settings; a
+tappable otpauth link on the two-factor step. Thirteen design-guard
+probes. One existing probe stopped landing when the welcome handler
+repeated the reset's `if len(password) < MIN_PASSWORD_LENGTH:` line; the
+new line was reworded and given a probe of its own.
+
+**Next in stage 1:** accepting an invitation in the app itself, and
+two-factor set up in the app for a member who has a password; then the
+onboarding fixes (an account that cannot be left half-seeded, the IP-lock
+step in the key instructions, a warning when a key is not locked).
+**Stage 2, the owner's:** asking for an invitation - how membership is
+checked, and a mail sender apart from the alerts'.

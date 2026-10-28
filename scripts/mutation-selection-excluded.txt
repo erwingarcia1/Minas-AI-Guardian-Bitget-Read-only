@@ -35,6 +35,7 @@ tests/test_fd_leak.py: imports dashboard, outbox, portal - nothing under the mut
 tests/test_get_is_read_only.py: imports sentinel, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_git_hooks.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_incident_page.py: imports portal - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_invitations.py: imports alerts.contact only to spy on the argument ContactRouter.send is given (the invitation's email-only flag); what it exercises is invitations, portal and dashboard, none mutated - the router's own behaviour is the selected tests/test_contact_router.py's
 tests/test_issue_status_audit.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_key_instructions.py: imports exchange, keyinstructions, keyreplacement, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_key_permission_summary.py: imports baseline, portal - nothing under the mutated paths (alerts/, detectors/, config.py)

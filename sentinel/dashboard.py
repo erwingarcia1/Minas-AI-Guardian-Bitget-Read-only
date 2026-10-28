@@ -863,6 +863,8 @@ def _portal_access_row(db: Database, account_id: int, email: str | None, contact
 
     exists = member_exists(db, email)
     status = "login active" if exists else "no login yet"
+    if not exists:
+        status += " · " + _invitation_status(db, email)
     label = "Reset portal password" if exists else "Generate portal password"
 
     # #61 (decision 10): scope is explicit. A NEW credential issued here
@@ -909,16 +911,73 @@ def _portal_access_row(db: Database, account_id: int, email: str | None, contact
                 + " — not included; grant those from their own pages if they should be.</span></div>"
             )
 
+    hidden = (f'<input type="hidden" name="account_id" value="{account_id}">'
+              f'<input type="hidden" name="contact" value="{contact}">')
+    if exists:
+        issue = (
+            f'<form method="post" action="{_url("/portal-access")}" style="padding:0 22px 14px">' + hidden
+            + f'<button class="submit" type="submit">{label}</button> '
+            '<span class="hint">shown once — hand it to them securely</span></form>'
+        )
+    else:
+        # Decision 17 (2026-10-28): the invitation is the way in - the member
+        # chooses their own password and two-factor from an emailed code. The
+        # generated password stays as the fallback, for a mailbox that cannot
+        # be trusted or a member who cannot receive email.
+        issue = (
+            f'<form method="post" action="{_url("/portal-invite")}" style="padding:0 22px 8px">' + hidden
+            + '<button class="submit" type="submit">Send invitation</button> '
+            '<span class="hint">emails a code; they choose their own password and set up '
+            "two-factor</span></form>"
+            f'<form method="post" action="{_url("/portal-access")}" style="padding:0 22px 14px">' + hidden
+            + '<button class="ackbtn" type="submit">Generate a portal password instead</button> '
+            '<span class="hint">the fallback: opens this account only; shown once — hand it to them '
+            "securely</span></form>"
+        )
     return (
         f'<div class="det"><span class="desc">{title} — <b>{html.escape(email)}</b> · {status}</span></div>'
-        + scope +
-        f'<form method="post" action="{_url("/portal-access")}" style="padding:0 22px 14px">'
-        f'<input type="hidden" name="account_id" value="{account_id}">'
-        f'<input type="hidden" name="contact" value="{contact}">'
-        f'<button class="submit" type="submit">{label}</button> '
-        '<span class="hint">shown once — hand it to them securely</span></form>'
-        + grant_control
+        + scope + issue + grant_control
     )
+
+
+def _invitation_status(db: Database, email: str) -> str:
+    """Where this address's newest invitation stands, in a few words."""
+    from sentinel.invitations import invitation_state, latest_invitation
+
+    row = latest_invitation(db, email)
+    state = invitation_state(row)
+    if state == "open":
+        return (f"invitation sent {html.escape(row['created_at'][:16].replace('T', ' '))} UTC, "
+                f"open until {html.escape(row['expires_at'][:16].replace('T', ' '))} UTC")
+    return {
+        "none": "no invitation sent yet",
+        "expired": "the last invitation expired unused",
+        "retired": "the last invitation was replaced or stopped after wrong codes",
+        "accepted": "the last invitation was accepted",
+    }[state]
+
+
+def invite_contact(db: Database, email: str, account_id: int, actor: str | None) -> str:
+    """Issue and email an invitation, and say in one banner-ready sentence
+    (HTML) what happened - the operator who pressed the button is the one
+    who has to know when it did not go."""
+    from sentinel.invitations import InvitationRefused, expiry_phrase, issue_invitation, send_invitation_email
+
+    shown = html.escape(email.strip().lower())
+    try:
+        invitation = issue_invitation(db, email, account_id, actor=actor)
+    except InvitationRefused as exc:
+        return f"No invitation sent to <b>{shown}</b>: {html.escape(str(exc))}."
+    status = send_invitation_email(db, invitation)
+    if status == "accepted":
+        return (f"✓ Invitation emailed to <b>{shown}</b>. The code works once, for {expiry_phrase()}; "
+                "they choose their own password and set up two-factor.")
+    if status is None:
+        return (f"✕ The invitation for <b>{shown}</b> was made but NOT sent: no email channel is "
+                "configured on this server. Generate a portal password instead, or fix the email "
+                "settings and send a new invitation.")
+    return (f"✕ The email provider did not accept the invitation for <b>{shown}</b>, so it is not on "
+            "its way. Check the email service, then send a new invitation.")
 
 
 def _portal_access_card(db: Database, account_id: int, email: str | None,
@@ -1253,11 +1312,14 @@ def _render_add_form(values: dict | None = None, error: str | None = None, ok: s
     return _page(nav, body, refresh=False, operator=operator)
 
 
-def _render_result(label: str, exchange: str, account_id: int, *, operator: str | None = None) -> str:
+def _render_result(label: str, exchange: str, account_id: int, *, operator: str | None = None,
+                   invitation_html: str = "") -> str:
     ok = (
         f"✓ Verified read-only and added <code>{html.escape(label)}</code> "
         f"({html.escape(exchange)}) as account id {account_id}. It will begin polling within a minute."
     )
+    if invitation_html:
+        ok += "<br>" + invitation_html  # built by invite_contact, escaped there
     return _render_add_form(ok=ok, operator=operator)
 
 
@@ -1651,6 +1713,9 @@ def serve_dashboard(
             if post_path == "/portal-grant":
                 self._portal_grant()
                 return
+            if post_path == "/portal-invite":
+                self._portal_invite()
+                return
             if post_path == "/triage":
                 self._triage()
                 return
@@ -1705,8 +1770,19 @@ def serve_dashboard(
                     telegram_handle_secondary=g("telegram_secondary") or None,
                     license=g("license") or None,
                 )
+                # Decision 17 (the owner, 2026-10-28): adding a customer sends
+                # the primary contact their invitation. An address that already
+                # has a login keeps it - this account is granted to it from the
+                # account's page, as before.
+                from sentinel.portal import member_exists
+
+                if member_exists(db, g("email")):
+                    invitation_html = (f"<b>{html.escape(g('email').lower())}</b> already has a login: grant "
+                                       "it this account from the account's page if they should see it.")
+                else:
+                    invitation_html = invite_contact(db, g("email"), result.account_id, operator)
                 self._send(_render_result(label, g("exchange") or "bitget", result.account_id,
-                                          operator=operator).encode())
+                                          operator=operator, invitation_html=invitation_html).encode())
             except OnboardingRejected as exc:
                 self._send(_render_add_form(values, error=str(exc), operator=operator).encode(), 200)
             except ValueError as exc:
@@ -1882,6 +1958,38 @@ def serve_dashboard(
             verb = "now opens" if action == "grant" else "no longer opens"
             notice = (f'<div class="banner ok">✓ <b>{html.escape(email)}</b> {verb} this account.'
                       + ("" if changed else " (no change)") + "</div>")
+            self._send(_render_account(db, aid, notice_html=notice, operator=actor).encode())
+
+        def _portal_invite(self):
+            """Email a contact an invitation (decision 17, 2026-10-28): the
+            way a member gets a login now. Same-origin gated like every POST
+            here, attributed to the operator, refused for an address that
+            already has a login."""
+            length = int(self.headers.get("Content-Length", 0))
+            if length <= 0 or length > 4 * 1024:
+                self._send(b"bad request", 400)
+                return
+            form = parse_qs(self.rfile.read(length).decode("utf-8"))
+            try:
+                aid = int(form.get("account_id", ["0"])[0])
+            except ValueError:
+                aid = 0
+            contact = (form.get("contact", ["primary"])[0] or "primary").strip()
+            if contact not in PORTAL_CONTACTS:
+                self._send(b"unknown contact", 400)
+                return
+            column, title = PORTAL_CONTACTS[contact]
+            with db.cursor() as cur:
+                cur.execute(f"SELECT {column} AS contact_email FROM accounts WHERE id = ?", (aid,))
+                row = cur.fetchone()
+            email = ((row["contact_email"] if row else None) or "").strip()
+            if not email:
+                self._send(f"account not found or has no {title.lower()} email".encode(), 404)
+                return
+            actor = self._operator()
+            sentence = invite_contact(db, email, aid, actor)
+            kind = "err" if sentence.startswith(("✕", "No ")) else "ok"
+            notice = f'<div class="banner {kind}">{sentence}</div>'
             self._send(_render_account(db, aid, notice_html=notice, operator=actor).encode())
 
         def _login(self):

@@ -95,13 +95,18 @@ contract, `design/portal/DESIGN-SYSTEM.md` is the fuller design rationale.
 - **The frame**: `.topbar` (brand + signed-in meta) over a horizontally
   scrollable `.subnav` with the current page underlined in gold
   (`aria-current="page"`); `.footer`; `.skip-link`; auth pages use the
-  centered `.auth-card` shell. **The landing page** (decision 25) is the
+  centered `.auth-card` shell - `/welcome` too, where an invited member
+  types the emailed code, chooses a password and sets up two-factor, one
+  step per page, and only the last step makes the login (decision 17,
+  2026-10-28). **The landing page** (decision 25) is the
   public front door, `GET /` without a session, in the same frame: the
   `.topbar` with a "Sign in" link to `/login` as its meta and no subnav
   (there is no member); a `.page-head` hero (eyebrow, `<h1
   id="landing-title">`, lead) with the screen's one gold primary in
-  `.primary-row` ("Sign in", to `/login`) and the no-signup sentence
-  beside it; the three `.steps` of "How it works"; the `.callout-danger`;
+  `.primary-row` ("Sign in", to `/login`), a secondary "Accept an
+  invitation" to `/welcome` and the sentence that Guardian is for Minas
+  members, set up by Minas, with the invitation code by email (decision
+  17, 2026-10-28) beside them; the three `.steps` of "How it works"; the `.callout-danger`;
   the limits section (`id="limits"`, two `.feature-list`s); and the
   `.phish` block naming the one address as text. When the visitor arrived
   with a session that had ended, a `.notice--info` ("You were signed

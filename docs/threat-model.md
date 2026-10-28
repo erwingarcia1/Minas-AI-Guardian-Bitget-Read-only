@@ -99,9 +99,12 @@ opens a browser, neither of which is called - and it is handed the
 
 ### A6. Sentinel-as-oracle (abuse of our own service)
 Someone onboards a victim's stolen read-only key with us to surveil them.
-- Control: onboarding is operator-mediated today (no self-serve API);
-  KYC-matching the key owner to the customer is a business-process control to
-  formalize before self-serve onboarding exists.
+- Control: onboarding is operator-mediated (no self-serve API), and stays
+  so by the owner's ruling of 2026-10-28: an exchange key is added only by
+  an admin, during onboarding (decision 17). What became self-serve is the
+  member's LOGIN - made from an invitation code the onboarding emails - not
+  the key. KYC-matching the key owner to the customer is a business-process
+  control to formalize before any self-serve key entry exists.
 
 ## Deliberate design properties (defense summary)
 
@@ -140,7 +143,17 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
   own, keyed as sign-in is (five per address from one source, and five
   per source, in fifteen minutes): a member's failed sign-ins cannot
   swallow their reset email, and reset requests cannot lock out the
-  password they set (tests/test_login_lockout.py holds both). The reset
+  password they set (tests/test_login_lockout.py holds both). Accepting
+  an invitation (`/welcome`, decision 17, 2026-10-28) is the fifth route
+  with no session: the code check gives one answer after the same floor
+  for an unknown address and a wrong code, on a limiter of its own, and
+  five wrong codes retire the invitation in the database whatever the
+  source; the code has 60 bits and is stored hashed; no login exists until
+  the code, the password and a working two-factor code are all in, and the
+  login opens only the invited accounts that still list the address. A
+  code intercepted in the mailbox is a login, as a reset link is: the
+  "login created" email to the address is the tripwire, not yet paged when
+  refused (the owner was not asked; TRIPWIRE_NOTICE_RULES). The reset
   link goes by email only - no Telegram copy and no text (decision 26c,
   2026-10-25): a notice otherwise follows its address to every channel
   the address has, and a copy in a Telegram chat the member connected
