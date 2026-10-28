@@ -9,7 +9,9 @@ Guardian**.
 
 ## [Unreleased]
 
-_Pending customer/ops items (not code): read-only Bybit key (previous had
+_Pending customer/ops items (not code): `SENTINEL_EGRESS_IPS=57.181.51.14`
+in the host's `.env` once this release is deployed (docs/deployment.md
+"The Elastic IP is load-bearing"); read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, ClickSend or Twilio credentials,
 terminate the retired us-east-1 instance, the machine's removal in the
 Tailscale admin console. The #81 restart timer turned out to be installed
@@ -62,6 +64,24 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   web's own limiter. `tests/test_api_invitations.py`,
   `mobile/src/__tests__/accept-invitation.test.tsx`; the app's copies of
   the portal's sentences pinned by `tests/test_mobile_app.py`.
+
+- **Onboarding cannot be left half-done, and a key is checked for Minas's
+  IP lock (decision 17's stage 1).** The balance, the deposit and
+  withdrawal history and the key's account info were read after the
+  account row was committed, and a failure there left an active,
+  half-seeded account with no `customer_added` entry behind a form that
+  said onboarding had failed. Now the account and every row its seed wrote
+  are taken back, and the form says nothing was added. The address every
+  exchange call leaves from is a setting, `SENTINEL_EGRESS_IPS`: the key
+  instructions (on the member's `/key` page) tell the customer to restrict
+  the key to it - every exchange offers an IP restriction, under its own
+  label - and "+ Add customer" and `sentinel onboard` warn the admin when
+  a key is open to every address (Bybit lets such a key lapse after 90
+  days), open to others besides Minas's, or, on Binance, restricted to
+  addresses Binance does not name. The check warns and never refuses: the
+  exchanges' unrestricted shapes are read from the clients, not from a
+  live key on each. `sentinel/egress.py`; `tests/test_onboarding_ip_lock.py`;
+  six probes.
 
 ### Changed
 

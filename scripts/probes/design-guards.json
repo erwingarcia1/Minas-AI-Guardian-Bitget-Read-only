@@ -3565,5 +3565,65 @@
    "tests/test_api_invitations.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "stage 1: a seed the exchange breaks leaves the half-seeded account behind",
+  "file": "sentinel/onboarding.py",
+  "old": "    except Exception:\n        _forget_unseeded(db, account_id)\n        raise",
+  "new": "    except Exception:\n        raise",
+  "tests": [
+   "tests/test_onboarding_ip_lock.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "stage 1: a failed seed's known addresses are left behind",
+  "file": "sentinel/onboarding.py",
+  "old": "_SEEDED_TABLES = (\"poll_state\", \"balance_snapshots\", \"known_addresses\", \"seen_withdrawals\",",
+  "new": "_SEEDED_TABLES = (\"poll_state\", \"balance_snapshots\", \"seen_withdrawals\",",
+  "tests": [
+   "tests/test_onboarding_ip_lock.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "stage 1: an open key is added with no warning to the admin",
+  "file": "sentinel/dashboard.py",
+  "old": "               if ip_lock != \"locked\" and ip_lock_note else \"\")",
+  "new": "               if False else \"\")",
+  "tests": [
+   "tests/test_onboarding_ip_lock.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "stage 1: a key open to every address reads as restricted elsewhere",
+  "file": "sentinel/egress.py",
+  "old": "    listed = _addresses(ips)\n    if not listed:",
+  "new": "    listed = _addresses(ips)\n    if False:",
+  "tests": [
+   "tests/test_onboarding_ip_lock.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "stage 1: a key open to other addresses besides Minas's reads as locked",
+  "file": "sentinel/egress.py",
+  "old": "    if others:\n        return ALSO_ELSEWHERE",
+  "new": "    if False:\n        return ALSO_ELSEWHERE",
+  "tests": [
+   "tests/test_onboarding_ip_lock.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "stage 1: the key instructions' IP step never names the address",
+  "file": "sentinel/keyinstructions.py",
+  "old": "    return {**entry, \"steps\": [step.replace(\"{egress}\", where) for step in entry[\"steps\"]]}",
+  "new": "    return {**entry, \"steps\": list(entry[\"steps\"])}",
+  "tests": [
+   "tests/test_onboarding_ip_lock.py"
+  ],
+  "expect": "killed"
  }
 ]

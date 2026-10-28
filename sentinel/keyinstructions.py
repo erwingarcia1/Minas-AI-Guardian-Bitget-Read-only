@@ -14,8 +14,18 @@ Steps deliberately describe what to choose, not pixel positions - the
 names of permissions are the durable part of an exchange UI, and they are
 also exactly what our verifier checks, so the instructions and the
 rejection reasons speak the same words.
+
+The IP step (2026-10-28, decision 17's stage 1) was added to every set
+without re-walking each interface, so it names no field: every one of the
+four offers an IP restriction on a key, under its own label. Its address
+is `{egress}`, filled from SENTINEL_EGRESS_IPS by `instructions_for` - the
+number is typed nowhere in copy (sentinel/egress.py).
 """
 from __future__ import annotations
+
+# Every set's IP step. `{egress}` is filled in by `instructions_for`.
+IP_STEP = ("Restrict the key to an IP address - the exchange may call it an IP whitelist or IP "
+           "binding - and enter Minas's address, {egress}, as the only one.")
 
 # exchange -> the instruction set. `fix` is the one-line answer to "my key
 # was rejected - which permission do I change": it names the same tokens
@@ -30,6 +40,7 @@ KEY_INSTRUCTIONS: dict[str, dict] = {
             "Set a passphrase and keep it — Bitget keys need it, and we will ask for it.",
             "Under permissions, tick Read-only only. Leave every trade and "
             "withdrawal permission unticked.",
+            IP_STEP,
             "Complete Bitget's verification, then copy the API key, the secret, "
             "and your passphrase into the form here.",
         ],
@@ -44,6 +55,7 @@ KEY_INSTRUCTIONS: dict[str, dict] = {
             "Choose Create New Key, then System-generated API Keys.",
             "Under permissions, choose Read-Only. Do not grant trade, transfer, "
             "or withdrawal permissions.",
+            IP_STEP,
             "No passphrase exists on Bybit — leave that field empty here.",
             "Complete Bybit's verification, then copy the API key and secret "
             "into the form here.",
@@ -59,6 +71,7 @@ KEY_INSTRUCTIONS: dict[str, dict] = {
             "Choose Create API key.",
             "Set a passphrase and keep it — OKX keys need it, and we will ask for it.",
             "Under permissions, tick Read only. Leave Trade and Withdraw unticked.",
+            IP_STEP,
             "Complete OKX's verification, then copy the API key, the secret, and "
             "your passphrase into the form here.",
         ],
@@ -74,6 +87,7 @@ KEY_INSTRUCTIONS: dict[str, dict] = {
             "Choose Create API, name the key, and complete verification.",
             "Leave the permissions at their default: Enable Reading ONLY. Do not "
             "enable spot trading, margin, futures, transfers, or withdrawals.",
+            IP_STEP,
             "No passphrase exists on Binance — leave that field empty here.",
             "Copy the API key and secret into the form here.",
         ],
@@ -85,14 +99,21 @@ KEY_INSTRUCTIONS: dict[str, dict] = {
 
 def instructions_for(exchange: str) -> dict:
     """The instruction set for this exchange, or a fallback that says
-    plainly there are none - never a silent empty page."""
-    return KEY_INSTRUCTIONS.get((exchange or "").lower(), {
-        "written": None,
-        "interface": None,
-        "steps": ["We have not written steps for this exchange yet — contact "
-                  "the Minas team and we will walk you through it."],
-        "fix": "Create the key with read/view permission only.",
-    })
+    plainly there are none - never a silent empty page. The IP step names
+    Minas's address from the setting, read now."""
+    from sentinel.egress import egress_phrase
+
+    entry = KEY_INSTRUCTIONS.get((exchange or "").lower())
+    if entry is None:
+        return {
+            "written": None,
+            "interface": None,
+            "steps": ["We have not written steps for this exchange yet — contact "
+                      "the Minas team and we will walk you through it."],
+            "fix": "Create the key with read/view permission only.",
+        }
+    where = egress_phrase()
+    return {**entry, "steps": [step.replace("{egress}", where) for step in entry["steps"]]}
 
 
 def provenance_line(entry: dict) -> str:

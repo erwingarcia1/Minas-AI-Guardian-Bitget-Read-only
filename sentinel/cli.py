@@ -238,6 +238,8 @@ def cmd_onboard(args: argparse.Namespace) -> int:
         return 1
 
     print(f"Onboarded '{result.label}' ({exchange}) as account id {result.account_id}")
+    if result.ip_lock != "locked":
+        print(f"WARNING: {result.ip_lock_note}", file=sys.stderr)
     if getattr(args, "drill", False):
         from sentinel.drill import mark_drill_account
 

@@ -54,6 +54,7 @@ tests/test_no_prevention_claims.py: imports portal - nothing under the mutated p
 tests/test_okx_binance_onboarding.py: imports exchange, onboarding - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_onboard_attribution.py: imports cli, operators - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_onboarding.py: imports exchange, onboarding - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_onboarding_ip_lock.py: imports dashboard, egress, keyinstructions, onboarding - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_operator_identity.py: imports sentinel, cli, dashboard, db, events, onboarding, operators, portal, totp, twofactor - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_operator_two_factor.py: imports cli, dashboard, db, operators, totp, twofactor - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_password_reset.py: imports net, outbox, portal - nothing under the mutated paths (alerts/, detectors/, config.py)

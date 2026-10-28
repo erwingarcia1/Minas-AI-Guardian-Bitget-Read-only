@@ -708,12 +708,16 @@ customer is coupled to it, which is why the address appears in this
 document at all. So:
 
 - **Every new key's allowlist must carry `57.181.51.14`** before the
-  account is onboarded, or its first check is refused. Whoever onboards
-  customer ten reads this line; nothing else in the product knows the
-  address (the poller keeps the exchange's own words for a refused key in
-  `poll_state.last_auth_error`, and a Bitget refusal names the requesting
-  address - that is how a wrong allowlist is diagnosed, not how the address
-  is chosen).
+  account is onboarded. Since 2026-10-28 the product knows the address
+  too, from `SENTINEL_EGRESS_IPS` in the host's `.env` (set it to
+  `57.181.51.14`, then restart the service): the key instructions tell the
+  customer to restrict the key to it, and "+ Add customer" and `sentinel
+  onboard` warn when a key is open to every address, or open to others
+  besides ours (sentinel/egress.py). The check warns and never refuses.
+  Unset, the steps say "the address Minas gives you" and the check says it
+  was not made. The poller still keeps the exchange's own words for a
+  refused key in `poll_state.last_auth_error`, and a Bitget refusal names
+  the requesting address - that is how a wrong allowlist is diagnosed.
 - **Releasing, re-associating or replacing the address unmonitors every
   allowlisted account at once** - nine accounts as of 2026-09-22 (seven
   Bitget, two Bybit). This is not a hypothetical: on 2026-09-21 at 19:10 UTC

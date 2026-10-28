@@ -55,6 +55,49 @@ class OnboardingRejected(Exception):
 class OnboardingResult:
     account_id: int
     label: str
+    # Whether the key is restricted to Minas's address (sentinel/egress.py):
+    # one word, and the sentence the admin is shown. A warning, never a
+    # refusal - see that module.
+    ip_lock: str = "unchecked"
+    ip_lock_note: str = ""
+
+
+# What a seed writes, and so what a failed seed takes back. Every table here
+# holds rows about one account and nothing else; `events` is not among them,
+# because nothing writes an event before the seed has finished, and the
+# event log is append-only.
+_SEEDED_TABLES = ("poll_state", "balance_snapshots", "known_addresses", "seen_withdrawals", "traded_pairs",
+                  "seen_transfers", "transfer_routes", "permission_snapshots")
+
+
+def _forget_unseeded(db: Database, account_id: int) -> None:
+    """Take back an account whose history could not be read (2026-10-28).
+
+    The balance, the deposit and withdrawal history and the key's own
+    account info are not optional: without them the first poll alerts on
+    history that predates monitoring. They used to raise straight out of
+    the seed and leave an active, half-seeded account with no
+    `customer_added` entry behind a form that said onboarding had failed.
+    Now nothing is left: the admin adds the account again."""
+    with db.cursor() as cur:
+        for table in _SEEDED_TABLES:
+            cur.execute(f"DELETE FROM {table} WHERE account_id = ?", (account_id,))
+        cur.execute("DELETE FROM accounts WHERE id = ?", (account_id,))
+
+
+def _ip_lock(db: Database, account_id: int, exchange: str) -> tuple[str, str]:
+    """The key's IP lock, from the permission snapshot the seed just took."""
+    import json
+
+    from sentinel.egress import key_ip_lock
+
+    with db.cursor() as cur:
+        cur.execute("SELECT authorities, ip_whitelist FROM permission_snapshots WHERE account_id = ? "
+                    "ORDER BY id DESC LIMIT 1", (account_id,))
+        row = cur.fetchone()
+    if row is None:
+        return "unchecked", "The exchange did not report this key's IP restriction."
+    return key_ip_lock(exchange, json.loads(row["authorities"] or "null"), json.loads(row["ip_whitelist"] or "null"))
 
 
 def _bitget_read_only(authorities: object) -> tuple[bool, str]:
@@ -328,7 +371,11 @@ def onboard_account(
     # nothing distinguished it from an account that started complete (#58,
     # group C). Recorded as an event so it is attached to the account forever,
     # not only to whatever log file was open at onboarding.
-    gaps = seed_baseline(db, account_id, client)
+    try:
+        gaps = seed_baseline(db, account_id, client)
+    except Exception:
+        _forget_unseeded(db, account_id)
+        raise
     for gap in gaps:
         append_event(
             db, account_id, "baseline_seed_incomplete", "HIGH", gap, actor=actor,
@@ -367,4 +414,5 @@ def onboard_account(
 
         notify_secondary_contact_added(db, label, alert_email_secondary)
 
-    return OnboardingResult(account_id=account_id, label=label)
+    ip_lock, ip_lock_note = _ip_lock(db, account_id, exchange)
+    return OnboardingResult(account_id=account_id, label=label, ip_lock=ip_lock, ip_lock_note=ip_lock_note)

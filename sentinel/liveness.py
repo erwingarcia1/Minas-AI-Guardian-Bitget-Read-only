@@ -356,6 +356,9 @@ NOT_A_SWITCH: dict[str, str] = {
                                            "holds the two equal; unset trusts no proxy"),
     "SENTINEL_DASHBOARD_BASE_PATH": ("a URL path, not a mechanism: compose pins /admin, where Caddy forwards; "
                                      "blank serves the root"),
+    "SENTINEL_EGRESS_IPS": ("an address the key instructions name and onboarding compares a key's allowlist "
+                            "with, not a mechanism: unset, the steps send the customer to Minas for it and "
+                            "the onboarding check says it was not made"),
     "ANTHROPIC_API_KEY": "triage narrative (triage.enabled false by design): additive, never load-bearing",
     "triage.enabled": "additive AI narrative, deliberately off; not a mechanism a customer relies on",
 }
