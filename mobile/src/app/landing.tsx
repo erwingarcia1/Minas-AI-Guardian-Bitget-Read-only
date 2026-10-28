@@ -79,14 +79,10 @@ export default function Landing() {
 
       <View style={styles.group}>
         <Button label="Sign in" onPress={() => router.push('/sign-in')} />
-        {/* The portal's /welcome, opened in the browser until the app has
-            the steps of its own: one gold button per screen, so this one is
-            secondary, as on the portal's landing page. */}
-        <Button
-          label="Accept an invitation"
-          variant="secondary"
-          onPress={() => Linking.openURL(`${API_URL}/welcome`)}
-        />
+        {/* The portal's /welcome, as a screen of the app's own: one gold
+            button per screen, so this one is secondary, as on the portal's
+            landing page. */}
+        <Button label="Accept an invitation" variant="secondary" onPress={() => router.push('/accept-invitation')} />
         <Body muted>{SETUP}</Body>
       </View>
 

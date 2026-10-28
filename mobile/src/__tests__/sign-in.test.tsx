@@ -51,7 +51,7 @@ test("signing in lands on the accounts, in the portal's words, sending what was 
 
 test.each([
   [401, 'invalid_credentials', 'That email, password or code was not accepted.', 'Not signed in.'],
-  [403, 'two_factor_required', "Turn on two-factor sign-in on the portal's Security page, then sign in here.",
+  [403, 'two_factor_required', "Two-factor sign-in is not on for this login yet. Set it up here, or on the portal's Security page.",
     'Two-factor sign-in is needed first.'],
   [429, 'too_many_attempts', 'Too many attempts. Try again later.', 'Not signed in.'],
 ])('a refused sign-in (%i %s) shows the server\'s own sentence and stores nothing', async (status, error, message, title) => {

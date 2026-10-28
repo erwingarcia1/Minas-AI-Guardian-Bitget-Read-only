@@ -31,14 +31,16 @@ from sentinel.db import Database
 from sentinel.edge import EdgeHandler, portal_host, portal_url, trusted_proxies_from_env
 from sentinel.expected import mark_expected, marked_alert_ids, marks_for_alert
 from sentinel.invitations import (
+    CODE_NOT_ACCEPTED,
+    CodeNotAccepted,
     InvitationRefused,
+    begin_two_factor,
     check_code,
-    complete_invitation,
     expiry_phrase,
+    finish_invitation,
     make_step_token,
     send_login_created_email,
     step_invitation,
-    store_password,
     verify_step_token,
 )
 from sentinel.naming import display_label
@@ -3580,13 +3582,20 @@ def _key_instructions_panel(exchange: str) -> str:
     )
 
 
+# Beside the recovery codes, on the web and in the app (tests/test_mobile_app.py
+# pins the app's copy).
+RECOVERY_CODES_NOTE = (
+    "Each code works once and lets you sign in if you lose your phone. They are stored hashed, so this "
+    "is the only time they can be shown — write them down or put them in a password manager now."
+)
+
+
 def _recovery_codes_panel(codes: list) -> str:
     """The one time recovery codes can be shown: they are stored hashed."""
+    note = html.escape(RECOVERY_CODES_NOTE).replace("works once", "works <strong>once</strong>", 1)
     return (
         '<section class="panel"><h2>Save your recovery codes</h2>'
-        '<p class="muted">Each code works <strong>once</strong> and lets you sign '
-        "in if you lose your phone. They are stored hashed, so this is the only time they "
-        "can be shown — write them down or put them in a password manager now.</p>"
+        f'<p class="muted">{note}</p>'
         '<p class="mono" style="margin-top:var(--space-4)">'
         + "<br>".join(html.escape(c) for c in codes)
         + "</p></section>"
@@ -3625,6 +3634,13 @@ def _twofactor_setup_panel(secret: str, email: str, *, intro: str, action: str, 
 # --- accepting an invitation (decision 17, 2026-10-28) ------------------------
 
 WELCOME_TITLE = "Accept your invitation"
+# The first step's lead and the code's hint, on the web and in the app
+# (pinned there by tests/test_mobile_app.py). The web adds how long the code
+# lasts, from INVITATION_TTL_SECONDS; the app cannot read that before a
+# sign-in, so it leaves the number out - as its landing screen does the
+# polling numbers.
+WELCOME_LEAD = "Minas emailed you an invitation code when your monitoring was set up. It works once."
+WELCOME_CODE_HINT = "Like 7KQM-3XRP-9WTD. Never share it: Minas will never ask you for it."
 
 # One answer for an unknown address, a wrong code, an expired one and a
 # retired one: which it was would tell a stranger whether an address is a
@@ -3679,8 +3695,7 @@ def _render_welcome(*, step: str = "code", token: str = "", email: str = "", sec
     else:
         heading = WELCOME_TITLE
         inner = (
-            '<p class="muted">Minas emailed you an invitation code when your monitoring was set '
-            f"up. It works once and expires {expiry_phrase()} after it was sent.</p>"
+            f'<p class="muted">{html.escape(WELCOME_LEAD)} It expires {expiry_phrase()} after it was sent.</p>'
             '<form class="form" method="post" action="/welcome" style="margin-top:var(--space-4)">'
             '<input type="hidden" name="step" value="code">'
             '<div class="field"><label for="we">Email address</label>'
@@ -3689,8 +3704,7 @@ def _render_welcome(*, step: str = "code", token: str = "", email: str = "", sec
             '<div class="field"><label for="wc">Invitation code</label>'
             '<input class="input" type="text" id="wc" name="code" required autocomplete="one-time-code" '
             'autocapitalize="characters" spellcheck="false">'
-            '<span class="hint">Like 7KQM-3XRP-9WTD. Never share it: Minas will never ask you for it.'
-            "</span></div>"
+            f'<span class="hint">{html.escape(WELCOME_CODE_HINT)}</span></div>'
             '<button class="btn btn--primary btn--block" type="submit">Continue</button></form>'
         )
     # Signed in by the last step: no way "back" to a sign-in they are past.
@@ -4109,7 +4123,7 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
     # shared.
     from sentinel.api import MAX_BODY_BYTES, Api
 
-    api = Api(db, secret, throttle, _throttle_pair, cipher=cipher, rules=rules)
+    api = Api(db, secret, throttle, _throttle_pair, cipher=cipher, rules=rules, invite_throttle=invite_throttle)
 
     def _is_api(path: str) -> bool:
         return path == "/api" or path.startswith("/api/")
@@ -4913,23 +4927,16 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                     "Two-factor sign-in cannot be set up on this server right now. Contact Minas.")).encode(),
                            503)
                 return
-            from sentinel.twofactor import begin_enrolment
-
-            store_password(db, invitation_id, password)
             try:
-                totp_secret, _uri = begin_enrolment(db, cipher, TWOFACTOR_MEMBER, address)
-            except ValueError:
-                # A confirmed second factor for an address with no login is
-                # a state nothing should leave behind; a person sorts it out.
-                logger.error("invitation %d: %s already has two-factor but no login", invitation_id, address)
-                self._send(_render_welcome(error="This invitation cannot be finished here. Contact Minas.")
-                           .encode(), 409)
+                totp_secret, _uri = begin_two_factor(db, cipher, invitation_id, address, password)
+            except InvitationRefused as exc:
+                self._send(_render_welcome(error=str(exc).capitalize() + ".").encode(), 409)
                 return
             self._send(_render_welcome(step="twofactor", token=token, email=address,
                                        secret=totp_secret).encode())
 
         def _welcome_twofactor(self, form):
-            from sentinel.twofactor import confirm_enrolment, pending_secret, verify_pending
+            from sentinel.twofactor import pending_secret
 
             parsed = self._welcome_step(form)
             if parsed is None:
@@ -4937,28 +4944,23 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
             invitation_id, address = parsed
             token = make_step_token(secret, invitation_id, address)
             code = (form.get("code", [""])[0] or "").strip()
-            at = verify_pending(db, cipher, TWOFACTOR_MEMBER, address, code) if cipher is not None else None
-            if at is None:
+            try:
+                if cipher is None:
+                    raise CodeNotAccepted()
+                codes = finish_invitation(db, cipher, invitation_id, address, code)
+            except CodeNotAccepted:
                 ip = self._client_ip()
                 invite_throttle.record_failure(_throttle_pair(ip, address))
                 invite_throttle.record_failure(ip)
                 again = pending_secret(db, cipher, TWOFACTOR_MEMBER, address) if cipher is not None else None
-                self._send(_render_welcome(step="twofactor", token=token, email=address, secret=again, error=(
-                    "That code was not accepted. Check that your phone sets its time automatically, "
-                    "then enter the newest code.")).encode(), 400)
+                self._send(_render_welcome(step="twofactor", token=token, email=address, secret=again,
+                                           error=CODE_NOT_ACCEPTED).encode(), 400)
                 return
-            try:
-                complete_invitation(db, invitation_id, address)
             except InvitationRefused as exc:
                 self._send(_render_welcome(email=address, error=str(exc).capitalize() + ".").encode(), 409)
                 return
-            # The login exists now, so the enabled-two-factor entry lands on
-            # the accounts it opens. Judged at the instant the code was.
-            codes = confirm_enrolment(db, cipher, TWOFACTOR_MEMBER, address, code, at=at)
             later(send_login_created_email, db, address)
             if not codes:
-                logger.error("invitation %d: login made for %s but two-factor did not confirm",
-                             invitation_id, address)
                 self._send(self._login_page(error=(
                     "Your login is ready, but two-factor did not switch on. Sign in, then set it up "
                     "on the Security page.")).encode())

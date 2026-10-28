@@ -7,13 +7,21 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
 
 ### Added
 
-- **"Accept an invitation" on the welcome and sign-in screens (decision
-  17, 2026-10-28).** Minas now emails a member an invitation code when it
-  sets their monitoring up, and the member makes their own login from it.
-  For now the button opens the portal's `/welcome` in the browser, where
-  the member chooses a password and sets up two-factor; then they sign in
-  here. The welcome screen's sentence is the portal's new `LANDING_SETUP`
-  and step 1 its new title, word for word (`tests/test_mobile_app.py`).
+- **"Accept your invitation" (decision 17, 2026-10-28).** Minas now emails
+  a member an invitation code when it sets their monitoring up, and the
+  member makes their own login from it here: the code, a password, then
+  two-factor ("Open in your authenticator app" opens the otpauth link,
+  and the secret is shown to type in), then the recovery codes - and only
+  once they have been seen is the phone signed in. The welcome and
+  sign-in screens lead to it. The welcome screen's sentence is the
+  portal's new `LANDING_SETUP` and step 1 its new title, word for word,
+  and the invitation's fixed sentences are the portal's /welcome's
+  (`tests/test_mobile_app.py`).
+
+- **Two-factor set up on the phone (decision 21c).** A login with a
+  password and no second factor used to be told to turn it on in the
+  portal. The sign-in screen now offers "Set up two-factor here", with the
+  email and password already typed, then signs the phone in.
 
 - **Settings → "Delete my account and data".** It opens the privacy
   policy's deletion steps. Google Play asks an app that leads to account
