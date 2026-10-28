@@ -11,6 +11,7 @@ tests/test_account_status_writers.py: imports onboarding - nothing under the mut
 tests/test_add_customer.py: imports dashboard, onboarding - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_api_acknowledge.py: imports api, outbox, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_api_contract.py: imports api, expected, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_api_invitations.py: imports api, invitations, outbox, portal, totp, twofactor - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_api_reads.py: imports api, events, expected, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_api_routes.py: imports api, passwords, portal, totp - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_api_session.py: imports api, erasure, outbox, portal, totp - nothing under the mutated paths (alerts/, detectors/, config.py)

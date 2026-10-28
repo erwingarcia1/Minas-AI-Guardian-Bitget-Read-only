@@ -18,8 +18,10 @@ import yaml
 from sentinel import api as api_module
 from sentinel.api import PRE_AUTH, ROUTES
 from sentinel.expected import mark_expected
+from sentinel.invitations import issue_invitation
 from sentinel.pause import request_pause
 from sentinel.portal import serve_portal, set_member_password
+from sentinel.totp import totp_at
 from tests.conftest import PINNED_TOTP_NOW
 from tests.helpers.api_client import PASSWORD, ApiClient, add_account, add_alert, enrolled_member
 
@@ -246,6 +248,32 @@ def test_every_answer_the_server_gives_is_the_contracts(server, db, cipher, monk
     assert call("DELETE", device, path=f"/api/v1/devices/{second['device_id']}", token=token)[0] == 204
     assert call("DELETE", device, path="/api/v1/devices/999999", token=token)[0] == 404
     assert call("DELETE", session, token=token)[0] == 204
+
+    # Decision 17 (2026-10-28): accepting an invitation, step by step...
+    carol = "carol@example.com"
+    invitation = issue_invitation(db, carol, add_account(db, carol, "carol-1"), actor="erwin")
+    code_route, password_route, finish_route = (
+        "/api/v1/invitation/code", "/api/v1/invitation/password", "/api/v1/invitation/two-factor")
+    assert call("POST", code_route, body={"email": carol, "code": "0000-0000-0000"})[0] == 400
+    status, step = call("POST", code_route, body={"email": carol, "code": invitation.code})
+    assert status == 200
+    assert call("POST", password_route, body={"step_token": "made-up", "password": PASSWORD})[0] == 400
+    status, setup = call("POST", password_route, body={"step_token": step["step_token"], "password": PASSWORD})
+    assert status == 200
+    assert call("POST", finish_route, body={"step_token": setup["step_token"], "code": "000000"})[0] == 400
+    status, done = call("POST", finish_route, body={"step_token": setup["step_token"],
+                                                    "code": totp_at(setup["secret"], PINNED_TOTP_NOW)})
+    assert status == 200 and done["recovery_codes"]
+    # ...and two-factor before a first app sign-in, for Bob, who has a password.
+    start, confirm = "/api/v1/two-factor/start", "/api/v1/two-factor/confirm"
+    assert call("POST", start, body={"email": BOB, "password": "wrong-wrong-wrong"})[0] == 401
+    status, started = call("POST", start, body={"email": BOB, "password": PASSWORD})
+    assert status == 200
+    assert call("POST", confirm, body={"email": BOB, "password": PASSWORD, "code": "000000"})[0] == 400
+    status, confirmed = call("POST", confirm, body={"email": BOB, "password": PASSWORD,
+                                                    "code": totp_at(started["secret"], PINNED_TOTP_NOW)})
+    assert status == 200 and confirmed["recovery_codes"]
+    assert call("POST", start, body={"email": BOB, "password": PASSWORD})[0] == 409
 
     for _ in range(5):
         server.request("POST", session, {"email": ALICE, "password": "wrong-wrong-wrong", "code": "1"})

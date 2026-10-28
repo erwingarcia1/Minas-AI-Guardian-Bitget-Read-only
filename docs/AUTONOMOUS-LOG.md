@@ -8675,3 +8675,20 @@ onboarding fixes (an account that cannot be left half-seeded, the IP-lock
 step in the key instructions, a warning when a key is not locked).
 **Stage 2, the owner's:** asking for an invitation - how membership is
 checked, and a mail sender apart from the alerts'.
+
+**Later (2026-10-28): stage 1's second part, the app (branch
+`app-invitations`, on `member-invitations`).** The invitation's steps moved
+into `sentinel/invitations.py` (`begin_two_factor`, `finish_invitation`)
+so the web and the API run the same code, and the probe that guarded the
+portal's two-factor check moved with it. Five routes with no session:
+`POST /api/v1/invitation/{code,password,two-factor}` on the web's
+invitation limiter (shared, so the two surfaces are one budget) and
+`POST /api/v1/two-factor/{start,confirm}` on the sign-in's, for a login
+with a password and no second factor - the dead end 21c left. The app:
+"Accept your invitation" (the code, a password, two-factor with the
+otpauth link and the secret shown, then the recovery codes, then signed
+in), and "Set up two-factor here" on the sign-in screen after a
+`two_factor_required`; the portal's fixed sentences are named constants
+the app copies, pinned by `tests/test_mobile_app.py`. The API's
+`two_factor_required` message now points at the app's own setup. Three
+more probes. Next: the onboarding fixes.

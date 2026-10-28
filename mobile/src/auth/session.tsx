@@ -16,6 +16,10 @@ type Session = {
    * so the sign-in screen can say so. */
   ended: boolean;
   signIn: (email: string, password: string, code: string) => Promise<SignInResult>;
+  /** Start the sign-in an answer carries - accepting an invitation, or
+   * turning two-factor on - once its recovery codes have been shown. False
+   * when the answer is not a token pair. */
+  adopt: (answer: unknown) => Promise<boolean>;
   signOut: () => Promise<void>;
 };
 
@@ -76,11 +80,21 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const adopt = useCallback(async (answer: unknown): Promise<boolean> => {
+    // Stored only now, after the codes: storing the pair announces the
+    // sign-in, and the layout then takes every signed-out screen away -
+    // the recovery codes with them.
+    const tokens = parseTokens(answer);
+    if (tokens === null) return false;
+    await storeTokens(tokens);
+    return true;
+  }, []);
+
   const signOut = useCallback(() => endSession(), []);
 
   const value = useMemo(
-    () => ({ state, ended: ending === 'ended', signIn, signOut }),
-    [state, ending, signIn, signOut],
+    () => ({ state, ended: ending === 'ended', signIn, adopt, signOut }),
+    [state, ending, signIn, adopt, signOut],
   );
   return <SessionContext.Provider value={value}>{children}</SessionContext.Provider>;
 }

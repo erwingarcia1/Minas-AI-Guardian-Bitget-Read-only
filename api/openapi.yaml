@@ -71,6 +71,118 @@ paths:
         "400": {$ref: "#/components/responses/Error"}
         "401": {$ref: "#/components/responses/Error"}
         "500": {$ref: "#/components/responses/Error"}
+  /api/v1/invitation/code:
+    post:
+      operationId: checkInvitationCode
+      summary: Accepting an invitation, step 1 - the emailed code
+      description: >-
+        Decision 17 (2026-10-28): Minas emails a member an invitation code
+        when it sets their monitoring up. One answer, after one floor of
+        time, for an unknown address and a wrong code; five wrong codes
+        retire the invitation. The step token carries the proof to the next
+        step for fifteen minutes.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InvitationCodeRequest"}
+      responses:
+        "200":
+          description: The code was right.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InvitationStep"}
+        "400": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
+  /api/v1/invitation/password:
+    post:
+      operationId: chooseInvitationPassword
+      summary: Accepting an invitation, step 2 - the password, and the two-factor secret
+      description: >-
+        Holds the password (hashed) on the invitation and starts a two-factor
+        enrolment. Not a login yet: nothing signs in with it.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InvitationPasswordRequest"}
+      responses:
+        "200":
+          description: The secret to put in the authenticator app.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/InvitationTwoFactor"}
+        "400": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/v1/invitation/two-factor:
+    post:
+      operationId: finishInvitation
+      summary: Accepting an invitation, step 3 - a working two-factor code makes the login
+      description: >-
+        Only now does the login exist. It opens the invited accounts that
+        still list the address, this device is signed in, and the recovery
+        codes come back once - the app shows them before it stores the
+        tokens.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/InvitationTwoFactorRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/SignedInWithRecoveryCodes"}
+        "400": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/v1/two-factor/start:
+    post:
+      operationId: startTwoFactor
+      summary: Two-factor for a login that has a password and no second factor yet
+      description: >-
+        Authorised by the email and password, as the portal's Security page
+        is after a password sign-in. Counted on the sign-in's limiter.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TwoFactorStartRequest"}
+      responses:
+        "200":
+          description: The secret to put in the authenticator app.
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/TwoFactorSecret"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
+  /api/v1/two-factor/confirm:
+    post:
+      operationId: confirmTwoFactor
+      summary: Turn two-factor on with a working code, and sign this device in
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/TwoFactorConfirmRequest"}
+      responses:
+        "200": {$ref: "#/components/responses/SignedInWithRecoveryCodes"}
+        "400": {$ref: "#/components/responses/Error"}
+        "401": {$ref: "#/components/responses/Error"}
+        "409": {$ref: "#/components/responses/Error"}
+        "429": {$ref: "#/components/responses/Error"}
+        "500": {$ref: "#/components/responses/Error"}
+        "503": {$ref: "#/components/responses/Error"}
   /api/v1/devices/{id}:
     delete:
       operationId: revokeDevice
@@ -205,6 +317,11 @@ components:
       content:
         application/json:
           schema: {$ref: "#/components/schemas/Tokens"}
+    SignedInWithRecoveryCodes:
+      description: Signed in, with the recovery codes - shown once, and never again.
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/SignedInWithRecoveryCodes"}
     Error:
       description: An error, with a code the app can act on and a sentence a person can read.
       content:
@@ -219,7 +336,9 @@ components:
         error:
           type: string
           enum: [invalid_json, invalid_request, invalid_credentials, two_factor_required, too_many_attempts,
-                 invalid_refresh_token, unauthorized, not_found, method_not_allowed, invalid_filter, internal_error]
+                 invalid_refresh_token, unauthorized, not_found, method_not_allowed, invalid_filter, internal_error,
+                 invitation_not_accepted, step_expired, password_too_short, invitation_refused,
+                 code_not_accepted, two_factor_unavailable, two_factor_already_on, two_factor_not_on]
         message: {type: string}
     SignInRequest:
       type: object
@@ -248,6 +367,76 @@ components:
     Severity:
       type: string
       enum: [CRITICAL, HIGH, MEDIUM, LOW]
+    InvitationCodeRequest:
+      type: object
+      required: [email, code]
+      properties:
+        email: {type: string}
+        code: {type: string, description: 'The code from Minas''s email, as typed: case, spaces and dashes do not matter.'}
+    InvitationStep:
+      type: object
+      additionalProperties: false
+      required: [step_token, email]
+      properties:
+        step_token: {type: string, description: 'Proof of the code, for the next step; fifteen minutes.'}
+        email: {type: string}
+    InvitationPasswordRequest:
+      type: object
+      required: [step_token, password]
+      properties:
+        step_token: {type: string}
+        password: {type: string}
+    InvitationTwoFactor:
+      type: object
+      additionalProperties: false
+      required: [step_token, secret, otpauth_uri]
+      properties:
+        step_token: {type: string}
+        secret: {type: string, description: 'The TOTP secret, base32, to type into an authenticator app.'}
+        otpauth_uri: {type: string, description: 'The same secret as an otpauth:// link an authenticator app opens.'}
+    InvitationTwoFactorRequest:
+      type: object
+      required: [step_token, code]
+      properties:
+        step_token: {type: string}
+        code: {type: string, description: 'The six-digit code the authenticator shows.'}
+        device_name: {type: string, description: 'Shown on the member''s device list and in the sign-in email.'}
+    TwoFactorStartRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: {type: string}
+        password: {type: string}
+    TwoFactorSecret:
+      type: object
+      additionalProperties: false
+      required: [secret, otpauth_uri]
+      properties:
+        secret: {type: string, description: 'The TOTP secret, base32, to type into an authenticator app.'}
+        otpauth_uri: {type: string, description: 'The same secret as an otpauth:// link an authenticator app opens.'}
+    TwoFactorConfirmRequest:
+      type: object
+      required: [email, password, code]
+      properties:
+        email: {type: string}
+        password: {type: string}
+        code: {type: string, description: 'The six-digit code the authenticator shows.'}
+        device_name: {type: string, description: 'Shown on the member''s device list and in the sign-in email.'}
+    SignedInWithRecoveryCodes:
+      type: object
+      additionalProperties: false
+      required: [token_type, access_token, expires_in, refresh_token, refresh_expires_in, device_id, recovery_codes]
+      properties:
+        token_type: {type: string, enum: [Bearer]}
+        access_token: {type: string}
+        expires_in: {type: integer, description: 'Seconds the access token is valid.'}
+        refresh_token: {type: string}
+        refresh_expires_in: {type: integer, description: 'Seconds the refresh token is valid unused.'}
+        device_id: {type: integer}
+        recovery_codes:
+          type: array
+          items: {type: string}
+          description: 'Each works once, to sign in without the authenticator. Stored hashed: this is the only time they exist.'
     Accounts:
       type: object
       additionalProperties: false

@@ -110,6 +110,9 @@ function Navigator() {
             turns dangerouslySingular into that getId, so the second push
             finds the form there and one Back returns to the welcome screen. */}
         <Stack.Screen name="sign-in" options={{ title: 'Sign in' }} dangerouslySingular />
+        {/* Decision 17 (2026-10-28): the invitation Minas emails, accepted
+            here - the code, a password and two-factor make the login. */}
+        <Stack.Screen name="accept-invitation" options={{ title: 'Accept your invitation' }} dangerouslySingular />
       </Stack.Protected>
     </Stack>
   );

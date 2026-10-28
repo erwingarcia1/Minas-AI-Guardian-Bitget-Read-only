@@ -46,6 +46,23 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
     pruned.
   `sentinel/invitations.py`; `tests/test_invitations.py`.
 
+- **Accepting an invitation, and two-factor setup, in the app (decision
+  17, stage 1; decision 21c).** The app's "Accept your invitation" is the
+  portal's `/welcome` on the phone, on the same functions
+  (`begin_two_factor`, `finish_invitation`) and in the portal's words: the
+  code, a password, two-factor - the otpauth link opens the authenticator,
+  since a phone cannot scan its own screen - then the recovery codes, and
+  only after them is the phone signed in. A login with a password and no
+  second factor no longer dead-ends at "turn it on on the portal": the
+  sign-in screen offers "Set up two-factor here", authorised by the email
+  and password and counted on the sign-in's limiter, never replacing
+  two-factor that is on. Five routes with no session -
+  `POST /api/v1/invitation/{code,password,two-factor}` and
+  `POST /api/v1/two-factor/{start,confirm}` - the invitation ones on the
+  web's own limiter. `tests/test_api_invitations.py`,
+  `mobile/src/__tests__/accept-invitation.test.tsx`; the app's copies of
+  the portal's sentences pinned by `tests/test_mobile_app.py`.
+
 ### Changed
 
 - **The landing page says how to get in (both surfaces, decision 25).**
