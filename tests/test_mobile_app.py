@@ -117,6 +117,22 @@ def test_the_app_links_to_the_portals_privacy_policy():
         assert "Linking.openURL(`${API_URL}/privacy`)" in source, screen
 
 
+def test_the_apps_invitation_says_what_the_portals_welcome_says():
+    """Decision 17 (2026-10-28) and 25: accepting an invitation in the app
+    is the portal's /welcome on a phone, in the portal's words. The app
+    carries copies of the fixed sentences, as its landing screen does."""
+    screen = (MOBILE / "src" / "app" / "accept-invitation.tsx").read_text()
+    for sentence in (portal.WELCOME_TITLE, portal.WELCOME_LEAD, portal.WELCOME_CODE_HINT,
+                     f"At least {portal.MIN_PASSWORD_LENGTH} characters."):
+        assert f"'{sentence}'" in screen, sentence
+    two_factor = (MOBILE / "src" / "auth" / "two-factor.tsx").read_text()
+    assert f"'{portal.RECOVERY_CODES_NOTE}'" in two_factor
+    # The welcome and sign-in screens lead to the app's own screen now.
+    for name in ("landing.tsx", "sign-in.tsx"):
+        source = (MOBILE / "src" / "app" / name).read_text()
+        assert "router.push('/accept-invitation')" in source and "${API_URL}/welcome" not in source, name
+
+
 def test_the_apps_landing_says_what_the_portals_does():
     """Decision 25: the app opens on the portal's landing page, in the
     portal's words. The sentences live in sentinel/portal.py; the app

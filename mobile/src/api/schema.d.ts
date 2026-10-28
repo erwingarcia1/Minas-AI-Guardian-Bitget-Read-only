@@ -42,6 +42,103 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/invitation/code": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accepting an invitation, step 1 - the emailed code
+         * @description Decision 17 (2026-10-28): Minas emails a member an invitation code when it sets their monitoring up. One answer, after one floor of time, for an unknown address and a wrong code; five wrong codes retire the invitation. The step token carries the proof to the next step for fifteen minutes.
+         */
+        post: operations["checkInvitationCode"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitation/password": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accepting an invitation, step 2 - the password, and the two-factor secret
+         * @description Holds the password (hashed) on the invitation and starts a two-factor enrolment. Not a login yet: nothing signs in with it.
+         */
+        post: operations["chooseInvitationPassword"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/invitation/two-factor": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Accepting an invitation, step 3 - a working two-factor code makes the login
+         * @description Only now does the login exist. It opens the invited accounts that still list the address, this device is signed in, and the recovery codes come back once - the app shows them before it stores the tokens.
+         */
+        post: operations["finishInvitation"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/two-factor/start": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Two-factor for a login that has a password and no second factor yet
+         * @description Authorised by the email and password, as the portal's Security page is after a password sign-in. Counted on the sign-in's limiter.
+         */
+        post: operations["startTwoFactor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/two-factor/confirm": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Turn two-factor on with a working code, and sign this device in */
+        post: operations["confirmTwoFactor"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/devices/{id}": {
         parameters: {
             query?: never;
@@ -184,7 +281,7 @@ export interface components {
     schemas: {
         Error: {
             /** @enum {string} */
-            error: "invalid_json" | "invalid_request" | "invalid_credentials" | "two_factor_required" | "too_many_attempts" | "invalid_refresh_token" | "unauthorized" | "not_found" | "method_not_allowed" | "invalid_filter" | "internal_error";
+            error: "invalid_json" | "invalid_request" | "invalid_credentials" | "two_factor_required" | "too_many_attempts" | "invalid_refresh_token" | "unauthorized" | "not_found" | "method_not_allowed" | "invalid_filter" | "internal_error" | "invitation_not_accepted" | "step_expired" | "password_too_short" | "invitation_refused" | "code_not_accepted" | "two_factor_unavailable" | "two_factor_already_on" | "two_factor_not_on";
             message: string;
         };
         SignInRequest: {
@@ -211,6 +308,65 @@ export interface components {
         };
         /** @enum {string} */
         Severity: "CRITICAL" | "HIGH" | "MEDIUM" | "LOW";
+        InvitationCodeRequest: {
+            email: string;
+            /** @description The code from Minas's email, as typed: case, spaces and dashes do not matter. */
+            code: string;
+        };
+        InvitationStep: {
+            /** @description Proof of the code, for the next step; fifteen minutes. */
+            step_token: string;
+            email: string;
+        };
+        InvitationPasswordRequest: {
+            step_token: string;
+            password: string;
+        };
+        InvitationTwoFactor: {
+            step_token: string;
+            /** @description The TOTP secret, base32, to type into an authenticator app. */
+            secret: string;
+            /** @description The same secret as an otpauth:// link an authenticator app opens. */
+            otpauth_uri: string;
+        };
+        InvitationTwoFactorRequest: {
+            step_token: string;
+            /** @description The six-digit code the authenticator shows. */
+            code: string;
+            /** @description Shown on the member's device list and in the sign-in email. */
+            device_name?: string;
+        };
+        TwoFactorStartRequest: {
+            email: string;
+            password: string;
+        };
+        TwoFactorSecret: {
+            /** @description The TOTP secret, base32, to type into an authenticator app. */
+            secret: string;
+            /** @description The same secret as an otpauth:// link an authenticator app opens. */
+            otpauth_uri: string;
+        };
+        TwoFactorConfirmRequest: {
+            email: string;
+            password: string;
+            /** @description The six-digit code the authenticator shows. */
+            code: string;
+            /** @description Shown on the member's device list and in the sign-in email. */
+            device_name?: string;
+        };
+        SignedInWithRecoveryCodes: {
+            /** @enum {string} */
+            token_type: "Bearer";
+            access_token: string;
+            /** @description Seconds the access token is valid. */
+            expires_in: number;
+            refresh_token: string;
+            /** @description Seconds the refresh token is valid unused. */
+            refresh_expires_in: number;
+            device_id: number;
+            /** @description Each works once, to sign in without the authenticator. Stored hashed: this is the only time they exist. */
+            recovery_codes: string[];
+        };
         Accounts: {
             /** @enum {string} */
             overall: "watching" | "degraded" | "not_watching";
@@ -399,6 +555,15 @@ export interface components {
                 "application/json": components["schemas"]["Tokens"];
             };
         };
+        /** @description Signed in, with the recovery codes - shown once, and never again. */
+        SignedInWithRecoveryCodes: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["SignedInWithRecoveryCodes"];
+            };
+        };
         /** @description An error, with a code the app can act on and a sentence a person can read. */
         Error: {
             headers: {
@@ -485,6 +650,133 @@ export interface operations {
             400: components["responses"]["Error"];
             401: components["responses"]["Error"];
             500: components["responses"]["Error"];
+        };
+    };
+    checkInvitationCode: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationCodeRequest"];
+            };
+        };
+        responses: {
+            /** @description The code was right. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationStep"];
+                };
+            };
+            400: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+        };
+    };
+    chooseInvitationPassword: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationPasswordRequest"];
+            };
+        };
+        responses: {
+            /** @description The secret to put in the authenticator app. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvitationTwoFactor"];
+                };
+            };
+            400: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    finishInvitation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InvitationTwoFactorRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["SignedInWithRecoveryCodes"];
+            400: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    startTwoFactor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorStartRequest"];
+            };
+        };
+        responses: {
+            /** @description The secret to put in the authenticator app. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TwoFactorSecret"];
+                };
+            };
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            503: components["responses"]["Error"];
+        };
+    };
+    confirmTwoFactor: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["TwoFactorConfirmRequest"];
+            };
+        };
+        responses: {
+            200: components["responses"]["SignedInWithRecoveryCodes"];
+            400: components["responses"]["Error"];
+            401: components["responses"]["Error"];
+            409: components["responses"]["Error"];
+            429: components["responses"]["Error"];
+            500: components["responses"]["Error"];
+            503: components["responses"]["Error"];
         };
     };
     revokeDevice: {

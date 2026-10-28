@@ -73,6 +73,16 @@ class InvitationRefused(ValueError):
     words an operator (issuing) or the member (completing) can act on."""
 
 
+class CodeNotAccepted(Exception):
+    """The two-factor code did not verify. Nothing was made."""
+
+
+# What the member is told when their two-factor code was not accepted, on
+# the web and in the app.
+CODE_NOT_ACCEPTED = ("That code was not accepted. Check that your phone sets its time automatically, "
+                     "then enter the newest code.")
+
+
 @dataclass(frozen=True)
 class Invitation:
     id: int
@@ -314,6 +324,43 @@ def complete_invitation(db: Database, invitation_id: int, email: str) -> list[in
     logger.info("invitation %d accepted: login created for %s, opens %d account(s)",
                 invitation_id, email, len(granted))
     return granted
+
+
+def begin_two_factor(db: Database, cipher, invitation_id: int, email: str, password: str) -> tuple[str, str]:
+    """The password step, shared by the web and the app: hold the chosen
+    password on the invitation and start an unconfirmed two-factor
+    enrolment. Returns (secret, otpauth URI). The caller has checked the
+    step token and the password's length."""
+    from sentinel.twofactor import MEMBER, begin_enrolment
+
+    store_password(db, invitation_id, password)
+    try:
+        return begin_enrolment(db, cipher, MEMBER, email)
+    except ValueError as exc:
+        # A confirmed second factor for an address with no login is a state
+        # nothing should leave behind; a person sorts it out.
+        logger.error("invitation %d: %s already has two-factor but no login", invitation_id, email)
+        raise InvitationRefused("this invitation cannot be finished here - contact Minas") from exc
+
+
+def finish_invitation(db: Database, cipher, invitation_id: int, email: str, code: str) -> list[str] | None:
+    """The last step, shared by the web and the app: check the two-factor
+    code, make the login, then confirm two-factor at the instant the code
+    was checked - so the entry it writes lands on the accounts the new login
+    opens. Returns the recovery codes; None in the case that should not
+    happen, a login made whose second factor then did not confirm.
+
+    Raises CodeNotAccepted (nothing made) or InvitationRefused."""
+    from sentinel.twofactor import MEMBER, confirm_enrolment, verify_pending
+
+    at = verify_pending(db, cipher, MEMBER, email, code)
+    if at is None:
+        raise CodeNotAccepted()
+    complete_invitation(db, invitation_id, email)
+    codes = confirm_enrolment(db, cipher, MEMBER, email, code, at=at)
+    if not codes:
+        logger.error("invitation %d: login made for %s but two-factor did not confirm", invitation_id, email)
+    return codes
 
 
 def latest_invitation(db: Database, email: str):

@@ -3485,12 +3485,13 @@
   "expect": "killed"
  },
  {
-  "name": "decision 17: the welcome flow makes the login without a working two-factor code",
-  "file": "sentinel/portal.py",
-  "old": "            at = verify_pending(db, cipher, TWOFACTOR_MEMBER, address, code) if cipher is not None else None\n            if at is None:",
-  "new": "            at = verify_pending(db, cipher, TWOFACTOR_MEMBER, address, code) if cipher is not None else None\n            if False:",
+  "name": "decision 17: an invitation makes the login without a working two-factor code",
+  "file": "sentinel/invitations.py",
+  "old": "    if at is None:\n        raise CodeNotAccepted()",
+  "new": "    if False:\n        raise CodeNotAccepted()",
   "tests": [
-   "tests/test_invitations.py"
+   "tests/test_invitations.py",
+   "tests/test_api_invitations.py"
   ],
   "expect": "killed"
  },
@@ -3532,6 +3533,36 @@
   "new": "            too_short = False",
   "tests": [
    "tests/test_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17 / 21c: the app's two-factor setup takes any password",
+  "file": "sentinel/api.py",
+  "old": "        if not (email and password and check_member_login(self.db, email, password)):\n            self.throttle.record_failure(pair)\n            self.throttle.record_failure(ip)\n            logger.warning(\"api two-factor setup refused",
+  "new": "        if not (email and password):\n            self.throttle.record_failure(pair)\n            self.throttle.record_failure(ip)\n            logger.warning(\"api two-factor setup refused",
+  "tests": [
+   "tests/test_api_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17 / 21c: the app's two-factor setup replaces two-factor that is on",
+  "file": "sentinel/api.py",
+  "old": "        if member_login_requires_code(self.db, email):\n            # Only reachable with the right password.\n            return error(409, \"two_factor_already_on\"",
+  "new": "        if False:\n            # Only reachable with the right password.\n            return error(409, \"two_factor_already_on\"",
+  "tests": [
+   "tests/test_api_invitations.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 17: the app's invitation check has a limiter of its own, apart from the web's",
+  "file": "sentinel/portal.py",
+  "old": "    api = Api(db, secret, throttle, _throttle_pair, cipher=cipher, rules=rules, invite_throttle=invite_throttle)",
+  "new": "    api = Api(db, secret, throttle, _throttle_pair, cipher=cipher, rules=rules)",
+  "tests": [
+   "tests/test_api_invitations.py"
   ],
   "expect": "killed"
  }

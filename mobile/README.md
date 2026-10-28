@@ -73,8 +73,9 @@ plain HTTP for `localhost` only.
 
 | Screen | API |
 |---|---|
-| Welcome: what the Guardian is, the way to sign in, and "Accept an invitation", which opens the portal's `/welcome` in the browser (decision 17) | none |
-| Sign in: email, password and two-factor code | `POST /api/v1/session` |
+| Welcome: what the Guardian is, the way to sign in, and "Accept an invitation" (decision 17) | none |
+| Accept your invitation: the emailed code, a password, two-factor, the recovery codes | `POST /api/v1/invitation/code`, `.../password`, `.../two-factor` |
+| Sign in: email, password and two-factor code; "Set up two-factor here" for a login without it | `POST /api/v1/session`, `POST /api/v1/two-factor/start`, `.../confirm` |
 | Accounts: the incident needing attention, any pending pause, and "Am I being watched?" in the portal's exact words | `GET /api/v1/accounts` |
 | Alerts: newest first, with older ones on request | `GET /api/v1/alerts` |
 | Incident: evidence, timeline, balances, what to do next, acknowledge | `GET /api/v1/alerts/{id}`, `POST .../acknowledge` |

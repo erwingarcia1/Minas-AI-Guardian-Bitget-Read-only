@@ -115,7 +115,7 @@ The app sends data to one place, the Minas server.
 | Does your app collect or share any of the required user data types? | Yes | The sign-in sends the email address and the phone's name |
 | Is all of the user data collected by your app encrypted in transit? | Yes | The app talks only to the server over HTTPS |
 | Do you provide a way for users to request that their data is deleted? | Yes | The portal's Security → Delete my data, or an email to support@minastech.ca. In the app, Settings → "Delete my account and data" opens the policy's deletion steps (the link below) |
-| Account creation (if the form asks) | Yes: by invitation only | Decision 17 (2026-10-28): Minas onboards every member and emails an invitation code; the member makes their login from it. The app's "Accept an invitation" opens the website's /welcome, which counts as directing users to account creation, so the app offers deletion too (Settings → "Delete my account and data") |
+| Account creation (if the form asks) | Yes: by invitation only | Decision 17 (2026-10-28): Minas onboards every member and emails an invitation code; the member makes their login from it. The app's "Accept an invitation" makes the login in the app (the code, a password, two-factor), so the app offers deletion too (Settings → "Delete my account and data"). Nobody can create an account without Minas's emailed code |
 | Delete-account link (if the form asks) | https://guardian.minastrade.com/privacy#privacy-rights | The privacy policy's "Your choices" section names Minas AI and says how to delete. Google wants the deletion part reachable directly, hence the anchor |
 
 ### Data types

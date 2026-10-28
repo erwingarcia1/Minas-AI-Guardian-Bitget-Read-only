@@ -953,10 +953,11 @@ reference, not an internal identifier). Both halves are gap — small ones.
 >
 > **The stages.** **1 (built):** invitations - an admin's onboarding
 > emails a code and the member makes their own login, password and
-> two-factor, on the web (`/welcome`) and, by way of the browser for now,
-> from the app; the landing says how to get in; the app's Settings offer
-> deletion. Native acceptance in the app, and two-factor set up in the app
-> for members who have a password, are the next pull request; the
+> two-factor, on the web (`/welcome`) or in the app ("Accept your
+> invitation", on the same functions, by `POST /api/v1/invitation/*`); a
+> member who has a password and no second factor sets one up from the
+> app's sign-in screen (`POST /api/v1/two-factor/*`, decision 21c); the
+> landing says how to get in; the app's Settings offer deletion. The
 > onboarding fixes (an account that cannot be left half-seeded, the
 > "lock this key to Minas's address" step in the key instructions, and a
 > warning to the admin when a key is not locked) the one after.
@@ -1274,6 +1275,13 @@ its own. Accepted as recommended:
   2026-09-08 measurement. A 30-day session on a phone raises the stakes,
   so TOTP enrolment is required for app sign-in. The web keeps its
   current rule until decision 20's question is answered.
+  **Since 2026-10-28** (decision 17's stage 1) the requirement no longer
+  sends a member to the web: the app's sign-in screen offers "Set up
+  two-factor here", authorised by the email and password - what the
+  portal's Security page asks after a password sign-in, so it gives a
+  password nothing the web does not - counted on the sign-in's limiter,
+  and refused when two-factor is already on. An invitation accepted in the
+  app makes the login with two-factor on and signs the phone in.
 
 ### 21d. What the first API version does — **ANSWERED 2026-10-22: as recommended**
 

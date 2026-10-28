@@ -52,6 +52,16 @@ ALERTS_PAGE_DEFAULT = 50
 ALERTS_PAGE_MAX = 200
 
 INTERNAL_ERROR_MESSAGE = "Something went wrong on Minas's side. Try again in a moment."
+TWO_FACTOR_UNAVAILABLE = "Two-factor sign-in cannot be set up on this server right now. Contact Minas."
+TWO_FACTOR_ALREADY_ON = "Two-factor is already on for this login. Sign in with a code from your authenticator app."
+TWO_FACTOR_NOT_ON = ("Your login is ready, but two-factor did not switch on. Sign in on the member portal and "
+                     "set it up on the Security page.")
+
+
+def _pad_to(deadline: float) -> None:
+    remaining = deadline - time.monotonic()
+    if remaining > 0:
+        time.sleep(remaining)
 
 # Why a sign-in ended, in the words the activity page shows the member.
 REVOKE_REASONS = {
@@ -70,10 +80,17 @@ REVOKE_REASONS = {
 # There is no PRIMARY_ONLY bucket yet: v1 changes nothing a primary contact
 # alone may change (21d). v2's routes bring it, with the portal's gate.
 
-# No session to judge yet: signing in, and trading a refresh token.
+# No session to judge yet: signing in, trading a refresh token, accepting an
+# invitation (decision 17, 2026-10-28) and setting up the two-factor a first
+# sign-in needs.
 PRE_AUTH = frozenset({
     ("POST", "/api/v1/session"),
     ("POST", "/api/v1/session/refresh"),
+    ("POST", "/api/v1/invitation/code"),
+    ("POST", "/api/v1/invitation/password"),
+    ("POST", "/api/v1/invitation/two-factor"),
+    ("POST", "/api/v1/two-factor/start"),
+    ("POST", "/api/v1/two-factor/confirm"),
 })
 
 # What any signed-in contact may read, primary or not (#25: a non-primary
@@ -406,18 +423,32 @@ def _string(data: dict, key: str) -> str:
 
 class Api:
     """One instance per portal server, sharing its signing secret, its login
-    throttle and its credential cipher."""
+    throttle, its invitation throttle and its credential cipher."""
 
-    def __init__(self, db: Database, secret: bytes, throttle, throttle_pair, cipher=None, rules=None):
+    def __init__(self, db: Database, secret: bytes, throttle, throttle_pair, cipher=None, rules=None,
+                 invite_throttle=None):
+        from sentinel.passwords import LoginThrottle
+
         self.db = db
         self.key = access_key(secret)
+        # The portal's own secret, for an invitation's step tokens: the
+        # same proof on both surfaces (sentinel/invitations.py).
+        self.secret = secret
         self.throttle = throttle
         self.throttle_pair = throttle_pair
+        # The web's invitation limiter, shared like the sign-in's: a guesser
+        # cannot double the budget by alternating the website and the API.
+        self.invite_throttle = invite_throttle if invite_throttle is not None else LoginThrottle()
         self.cipher = cipher
         self.rules = rules
         self.handlers = {
             ("POST", "/api/v1/session"): self._sign_in,
             ("POST", "/api/v1/session/refresh"): self._refresh,
+            ("POST", "/api/v1/invitation/code"): self._invitation_code,
+            ("POST", "/api/v1/invitation/password"): self._invitation_password,
+            ("POST", "/api/v1/invitation/two-factor"): self._invitation_two_factor,
+            ("POST", "/api/v1/two-factor/start"): self._two_factor_start,
+            ("POST", "/api/v1/two-factor/confirm"): self._two_factor_confirm,
             ("DELETE", "/api/v1/session"): self._sign_out,
             ("DELETE", "/api/v1/devices/{id}"): self._revoke,
             ("POST", "/api/v1/alerts/{id}/acknowledge"): self._acknowledge,
@@ -493,7 +524,8 @@ class Api:
             # anything the web sign-in would not.
             logger.info("api sign-in refused for %s from %s: two-factor is off", email, ip)
             return error(403, "two_factor_required",
-                         "Turn on two-factor sign-in on the portal's Security page, then sign in here.")
+                         "Two-factor sign-in is not on for this login yet. Set it up here, or on the portal's "
+                         "Security page.")
 
         if self.cipher is None or not check_second_factor(self.db, self.cipher, MEMBER, email, code):
             # The same answer as a wrong password: the app has all three
@@ -505,6 +537,12 @@ class Api:
             return error(401, "invalid_credentials", "That email, password or code was not accepted.")
 
         self.throttle.reset(pair)
+        return Response(200, self._begin_device(email, data, ip))
+
+    def _begin_device(self, email: str, data: dict, ip: str) -> dict:
+        """Sign this phone in: a device row, its token pair, the activity
+        entry and the new-device email. Every route that ends in a sign-in
+        ends here."""
         with self.db.cursor() as cur:
             cur.execute("SELECT session_epoch FROM portal_members WHERE email = ?", (email,))
             epoch = cur.fetchone()["session_epoch"]
@@ -517,7 +555,172 @@ class Api:
         # spent the member's code past the app's deadline, and the app said
         # it could not reach Minas.
         later(_new_device_notice, self.db, email, name)
-        return Response(200, self._tokens(device_id, refresh))
+        return self._tokens(device_id, refresh)
+
+    # -- accepting an invitation (decision 17, 2026-10-28) ------------------
+    #
+    # The web's /welcome, step for step, on the same functions
+    # (sentinel/invitations.py) and in the portal's words: the code, a
+    # password, then two-factor - and only then the login, and this phone
+    # signed in to it.
+
+    def _invitation_code(self, request: Request, _device) -> Response:
+        from sentinel.invitations import check_code, make_step_token
+        from sentinel.portal import _RESET_RESPONSE_FLOOR_SECONDS, WELCOME_NO_MATCH, normalize_email
+
+        # Padded like the web's: a wrong code writes, an unknown address
+        # does not, and a stopwatch must not tell them apart.
+        deadline = time.monotonic() + _RESET_RESPONSE_FLOOR_SECONDS
+        data = request.json()
+        if data is None:
+            return error(400, "invalid_json", "The request body must be a JSON object.")
+        email = normalize_email(_string(data, "email"))
+        ip = request.client_ip
+        pair = self.throttle_pair(ip, email)
+        if self.invite_throttle.blocked(pair) or self.invite_throttle.blocked(ip):
+            logger.warning("api invitation check throttled for %s from %s", email or "<empty>", ip)
+            _pad_to(deadline)
+            return error(429, "too_many_attempts", "Too many attempts. Try again later.")
+        invitation_id = check_code(self.db, email, _string(data, "code"))
+        if invitation_id is None:
+            self.invite_throttle.record_failure(pair)
+            self.invite_throttle.record_failure(ip)
+            logger.info("api invitation code not accepted for %s from %s", email or "<empty>", ip)
+            _pad_to(deadline)
+            return error(400, "invitation_not_accepted", WELCOME_NO_MATCH)
+        self.invite_throttle.reset(pair)
+        _pad_to(deadline)
+        return Response(200, {"step_token": make_step_token(self.secret, invitation_id, email), "email": email})
+
+    def _invitation_step(self, data: dict) -> tuple[int, str] | None:
+        """(invitation id, address) when the step token is good and its
+        invitation can still be accepted."""
+        from sentinel.invitations import step_invitation, verify_step_token
+
+        parsed = verify_step_token(self.secret, _string(data, "step_token"))
+        if parsed is None or step_invitation(self.db, *parsed) is None:
+            return None
+        return parsed
+
+    def _invitation_password(self, request: Request, _device) -> Response:
+        from sentinel.invitations import InvitationRefused, begin_two_factor, make_step_token
+        from sentinel.portal import MIN_PASSWORD_LENGTH, WELCOME_STEP_EXPIRED
+
+        data = request.json()
+        if data is None:
+            return error(400, "invalid_json", "The request body must be a JSON object.")
+        parsed = self._invitation_step(data)
+        if parsed is None:
+            return error(400, "step_expired", WELCOME_STEP_EXPIRED)
+        invitation_id, email = parsed
+        password = _string(data, "password")
+        if len(password) < MIN_PASSWORD_LENGTH:
+            return error(400, "password_too_short", f"Use at least {MIN_PASSWORD_LENGTH} characters.")
+        if self.cipher is None:
+            return error(503, "two_factor_unavailable", TWO_FACTOR_UNAVAILABLE)
+        try:
+            secret, uri = begin_two_factor(self.db, self.cipher, invitation_id, email, password)
+        except InvitationRefused as exc:
+            return error(409, "invitation_refused", str(exc).capitalize() + ".")
+        return Response(200, {"step_token": make_step_token(self.secret, invitation_id, email),
+                              "secret": secret, "otpauth_uri": uri})
+
+    def _invitation_two_factor(self, request: Request, _device) -> Response:
+        from sentinel.invitations import (
+            CODE_NOT_ACCEPTED,
+            CodeNotAccepted,
+            InvitationRefused,
+            finish_invitation,
+            send_login_created_email,
+        )
+        from sentinel.portal import WELCOME_STEP_EXPIRED
+
+        data = request.json()
+        if data is None:
+            return error(400, "invalid_json", "The request body must be a JSON object.")
+        parsed = self._invitation_step(data)
+        if parsed is None:
+            return error(400, "step_expired", WELCOME_STEP_EXPIRED)
+        invitation_id, email = parsed
+        if self.cipher is None:
+            return error(503, "two_factor_unavailable", TWO_FACTOR_UNAVAILABLE)
+        ip = request.client_ip
+        try:
+            codes = finish_invitation(self.db, self.cipher, invitation_id, email, _string(data, "code").strip())
+        except CodeNotAccepted:
+            self.invite_throttle.record_failure(self.throttle_pair(ip, email))
+            self.invite_throttle.record_failure(ip)
+            return error(400, "code_not_accepted", CODE_NOT_ACCEPTED)
+        except InvitationRefused as exc:
+            return error(409, "invitation_refused", str(exc).capitalize() + ".")
+        later(send_login_created_email, self.db, email)
+        if not codes:
+            return error(409, "two_factor_not_on", TWO_FACTOR_NOT_ON)
+        logger.info("api invitation %d accepted by %s from %s", invitation_id, email, ip)
+        return Response(200, {**self._begin_device(email, data, ip), "recovery_codes": codes})
+
+    # -- two-factor before a first app sign-in --------------------------------
+    #
+    # 21c makes two-factor the condition for signing in here, and until now
+    # the only place to turn it on was the portal's Security page. These do
+    # it on the phone, authorised by the email and password - exactly what
+    # the web asks before its Security page - so they give a password nothing
+    # the web does not already give it. Counted on the sign-in's limiter.
+
+    def _two_factor_member(self, request: Request) -> tuple[str, dict] | Response:
+        """(address, body) for a right email and password whose login has
+        two-factor off; otherwise the answer to send."""
+        from sentinel.portal import check_member_login, member_login_requires_code, normalize_email
+
+        data = request.json()
+        if data is None:
+            return error(400, "invalid_json", "The request body must be a JSON object.")
+        email = normalize_email(_string(data, "email"))
+        password = _string(data, "password")
+        ip = request.client_ip
+        pair = self.throttle_pair(ip, email)
+        if self.throttle.blocked(pair) or self.throttle.blocked(ip):
+            logger.warning("api two-factor setup throttled for %s from %s", email or "<empty>", ip)
+            return error(429, "too_many_attempts", "Too many attempts. Try again later.")
+        if not (email and password and check_member_login(self.db, email, password)):
+            self.throttle.record_failure(pair)
+            self.throttle.record_failure(ip)
+            logger.warning("api two-factor setup refused for %s from %s", email or "<empty>", ip)
+            return error(401, "invalid_credentials", "That email or password was not accepted.")
+        if member_login_requires_code(self.db, email):
+            # Only reachable with the right password.
+            return error(409, "two_factor_already_on", TWO_FACTOR_ALREADY_ON)
+        if self.cipher is None:
+            return error(503, "two_factor_unavailable", TWO_FACTOR_UNAVAILABLE)
+        return email, data
+
+    def _two_factor_start(self, request: Request, _device) -> Response:
+        from sentinel.twofactor import MEMBER, begin_enrolment
+
+        member = self._two_factor_member(request)
+        if isinstance(member, Response):
+            return member
+        email, _data = member
+        secret, uri = begin_enrolment(self.db, self.cipher, MEMBER, email)
+        logger.info("api two-factor setup started for %s from %s", email, request.client_ip)
+        return Response(200, {"secret": secret, "otpauth_uri": uri})
+
+    def _two_factor_confirm(self, request: Request, _device) -> Response:
+        from sentinel.invitations import CODE_NOT_ACCEPTED
+        from sentinel.twofactor import MEMBER, confirm_enrolment
+
+        member = self._two_factor_member(request)
+        if isinstance(member, Response):
+            return member
+        email, data = member
+        ip = request.client_ip
+        codes = confirm_enrolment(self.db, self.cipher, MEMBER, email, _string(data, "code").strip())
+        if not codes:
+            self.throttle.record_failure(self.throttle_pair(ip, email))
+            self.throttle.record_failure(ip)
+            return error(400, "code_not_accepted", CODE_NOT_ACCEPTED)
+        self.throttle.reset(self.throttle_pair(ip, email))
+        return Response(200, {**self._begin_device(email, data, ip), "recovery_codes": codes})
 
     def _refresh(self, request: Request, _device) -> Response:
         data = request.json()

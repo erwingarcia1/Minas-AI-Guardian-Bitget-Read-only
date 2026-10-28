@@ -150,8 +150,14 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
   five wrong codes retire the invitation in the database whatever the
   source; the code has 60 bits and is stored hashed; no login exists until
   the code, the password and a working two-factor code are all in, and the
-  login opens only the invited accounts that still list the address. A
-  code intercepted in the mailbox is a login, as a reset link is: the
+  login opens only the invited accounts that still list the address. The
+  app's `POST /api/v1/invitation/*` routes run the same functions on the
+  same limiter, so alternating the website and the API buys a guesser
+  nothing; `POST /api/v1/two-factor/*` sets up a second factor for a
+  login without one on the email and password alone - what the portal's
+  Security page asks - on the sign-in's limiter, and never replaces one
+  that is on. A code intercepted in the mailbox is a login, as a reset
+  link is: the
   "login created" email to the address is the tripwire, not yet paged when
   refused (the owner was not asked; TRIPWIRE_NOTICE_RULES). The reset
   link goes by email only - no Telegram copy and no text (decision 26c,
