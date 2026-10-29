@@ -39,7 +39,7 @@ sections stay as the record.
 | 14 | Exchange key-creation instructions: screenshots or text | ~~#8~~ | **ANSWERED 2026-08-21** — text-only, dated and interface-named; see section 14 |
 | 15 | Member self-serve pause | ~~#10~~ (reworded) | **ANSWERED 2026-08-23** — 24-hour cancellable countdown, never immediate; built, v1.10.0; see section 15 |
 | 16 | Deep incident links in alert emails | ~~#20~~ (reworded) | **ANSWERED 2026-08-23** — no links; non-clickable reference + portal lands on the incident; built, v1.10.0; see section 16 |
-| 17 | Self-serve signup | ~~#6~~ (closed not-planned 2026-08-27; waitlist is the recorded fallback) | **REVISED by the owner 2026-10-28** — sign-up is for Minas members, by invitation; an exchange key is added only by an admin, during onboarding; stage 1 (invitations: the member makes their own login) built; stage 2 (asking for access) open; see section 17 |
+| 17 | Self-serve signup | ~~#6~~ (closed not-planned 2026-08-27; waitlist is the recorded fallback) | **REVISED by the owner 2026-10-28** — sign-up is for Minas members, by invitation; an exchange key is added only by an admin, during onboarding; stage 1 (invitations: the member makes their own login) **deployed 2026-10-29 (v1.20.0)**; stage 2 (asking for access) open; see section 17 |
 | 18 | Sibling-alert definition width + production backfill | ~~#99~~ (built conservatively) | **OPEN — owner reconsidering 2026-08-27**; nothing dependent to be built |
 | 19 | Dashboard 2FA: mandatory or opt-in, and last-operator recovery | ~~#87~~, ~~#82~~ | **ANSWERED 2026-08-27** — mandatory; host-access recovery, attributed and logged; see section 19. *From 2026-10-23 the host access is SSH with the key pair at the Elastic IP (22e)* |
 | 20 | The member portal is published to the internet on Tailscale Funnel | ~~#88~~ (closed 2026-10-24; evidence in its closing comment) | **ANSWERED by the owner, August 2026; recorded 2026-09-23** — Funnel for the portal only; dashboard and metrics stay Serve; see section 20. *Superseded in full 2026-10-23 by 22: no Tailscale, removed in one go* |
@@ -921,7 +921,7 @@ reference, not an internal identifier). Both halves are gap — small ones.
 
 ---
 
-## 17. Self-serve signup (#6) — **ANSWERED 2026-08-23: NO — ordered behind billing and legal; REVISED by the owner 2026-10-28: sign-up for Minas members, by invitation, keys only by admins; stage 1 built**
+## 17. Self-serve signup (#6) — **ANSWERED 2026-08-23: NO — ordered behind billing and legal; REVISED by the owner 2026-10-28: sign-up for Minas members, by invitation, keys only by admins; stage 1 deployed 2026-10-29 (v1.20.0)**
 
 > **The owner's words (2026-10-28):** "the whole process of someone
 > signing up is flawed. someone should be able to sign up on the web or
@@ -1399,9 +1399,11 @@ owner's call.
 > Developer Program account is not ready yet.
 >
 > **Update 2026-10-27:** decision 27 is answered and `/privacy` has been
-> live since v1.19.0. The production candidate is 1.0.0 (versionCode 3,
-> EAS build `7b999234`, from `b6e8b6a`), which carries the privacy links
-> on the welcome, sign-in and Settings screens. Production now waits on
+> live since v1.19.0. The production candidate is 1.0.0 (versionCode 4,
+> EAS build `bee9feb4`, from `2685f31`, 2026-10-29), which carries the
+> privacy links, accepting an invitation and setting up two-factor in the
+> app (decision 17's stage 1, served since v1.20.0); versionCode 3 (EAS
+> build `7b999234`, from `b6e8b6a`) was the build before. Production now waits on
 > decision 28 and on Play Console's App content: the privacy address, the
 > Data safety form, the content rating and the screenshots.
 

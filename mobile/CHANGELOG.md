@@ -61,7 +61,12 @@ stores, on its own schedule, under `mobile-vX.Y.Z` tags.
   USE_FINGERPRINT and AndroidX's own
   `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`; `android.permission.DUMP`
   appears only as the guard on AndroidX's `ProfileInstallReceiver`, not
-  as a request.
+  as a request. versionCode 4 (EAS build `bee9feb4`, from `2685f31`,
+  2026-10-29) replaces it as the candidate: it adds "Accept your
+  invitation", "Set up two-factor here" and "Delete my account and data",
+  with the same five requested permissions; its screens call routes the
+  server has served since v1.20.0, so it goes to the testers after that
+  deploy.
 
 - **Android no longer asks for storage or "display over other apps".**
   Expo's template requests READ/WRITE_EXTERNAL_STORAGE and
