@@ -85,6 +85,16 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
 
 ### Changed
 
+- **Releases no longer wait for the slow gates (the owner, 2026-10-29).**
+  `scripts/release.sh` runs the fast gates (`health-check.sh --fast`) and
+  nothing else. The design-guard probes and the mutation floor still run
+  weekly in CI and file an issue when they find something, but a red
+  weekly run no longer refuses a cut, and an unproven one no longer makes
+  the release run them locally. `scripts/scheduled-gates-cover.sh`, which
+  existed only for that decision, is removed with its tests. On that day
+  the slow gates held the v1.20.0 cut twice, both times for faults in their
+  own tooling (#155, #156).
+
 - **The landing page says how to get in (both surfaces, decision 25).**
   "There is nothing to sign up for here" becomes: Guardian is for Minas
   members, set up by Minas, with the invitation code by email, and the

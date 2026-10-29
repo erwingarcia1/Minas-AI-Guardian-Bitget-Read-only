@@ -8743,3 +8743,14 @@ passed). Fixed by capping pytest below 9.2 in the dev extra, a refusal in
 equal (branch `pytest-cap`). mutmut 3.8.1 exists; upgrading it is the
 deliberate change the September pin requires (population and ledger
 re-judged), not a side effect of this fix.
+
+**Later (2026-10-29, 21:30 UTC): the slow gates stop blocking releases.**
+The owner, after the second red gate run: "what the heck with the slow
+gates nonsense? remove them!!" Asked how far - stop them blocking, or
+delete them - the owner chose "stop them blocking". `scripts/release.sh`
+now runs `health-check.sh --fast` only; `scripts/scheduled-gates-cover.sh`
+and its tests are gone; CONTRIBUTING says so. The weekly job, the probes,
+the mutation gate and the survivor ledger stay, and file issues. #158 (the
+pytest cap) was merged first, so the weekly run should go green again.
+Branch `releases-skip-slow-gates`; v1.20.0 is cut as soon as it is on
+`main`.

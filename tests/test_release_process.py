@@ -374,14 +374,13 @@ def test_deploy_gate_exports_nothing_when_it_refuses(repo: Path):
     assert "export GIT_SHA" not in result.stdout
 
 
-# --- #93: the slow gates skip ONLY on proven scheduled-CI coverage ------------
+# --- the slow gates never block a release (the owner, 2026-10-29) ------------
 #
-# release.sh consults scripts/scheduled-gates-cover.sh: exit 0 means fast
-# gates only, exit 3 means the scheduled gates FAILED on this code and the
-# release refuses outright, anything else - including the script being
-# absent or crashing - means the full local health-check, exactly as before.
-# The dispatch itself is what these prove; the predicate's own logic is
-# proven in tests/test_scheduled_gates_cover.py.
+# release.sh runs `health-check.sh --fast` and nothing else: the design-guard
+# probes and the mutation floor run weekly in CI and file issues, and a red
+# weekly run no longer refuses a cut. (Before 2026-10-29, #93 consulted
+# scripts/scheduled-gates-cover.sh, refused on a red covering run and ran the
+# full local health-check when coverage could not be proven.)
 
 def _recording_health_check(repo: Path) -> Path:
     """A health-check stub that records how it was invoked. The record lives
@@ -393,15 +392,8 @@ def _recording_health_check(repo: Path) -> Path:
     return args_file
 
 
-def _cover_stub(repo: Path, exit_code: int) -> None:
-    cover = repo / "scripts" / "scheduled-gates-cover.sh"
-    cover.write_text(f"#!/usr/bin/env bash\nexit {exit_code}\n")
-    cover.chmod(0o755)
-
-
-def test_proven_coverage_runs_only_the_fast_gates(repo):
+def test_a_release_runs_only_the_fast_gates(repo):
     args_file = _recording_health_check(repo)
-    _cover_stub(repo, 0)
     _git(repo, "add", "-A")
     _git(repo, "commit", "-qm", "stubs")
 
@@ -411,30 +403,11 @@ def test_proven_coverage_runs_only_the_fast_gates(repo):
     assert args_file.read_text().strip() == "--fast"
 
 
-def test_unproven_coverage_runs_the_full_gates(repo):
-    args_file = _recording_health_check(repo)
-    _cover_stub(repo, 1)
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-qm", "stubs")
-
-    result = _run(repo, "release.sh", "1.1.0")
-
-    assert result.returncode == 0, result.stderr
-    assert args_file.read_text().strip() == ""  # no --fast: everything, locally
-
-
-def test_a_missing_cover_script_runs_the_full_gates(repo):
-    """Fail closed even against this feature's own absence: an old checkout
-    or a broken copy must degrade to the pre-#93 behaviour."""
-    args_file = _recording_health_check(repo)
-    (repo / "scripts" / "scheduled-gates-cover.sh").unlink(missing_ok=True)
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-qm", "stubs")
-
-    result = _run(repo, "release.sh", "1.1.0")
-
-    assert result.returncode == 0, result.stderr
-    assert args_file.read_text().strip() == ""
+def test_a_red_weekly_run_does_not_refuse_the_cut(repo):
+    """Nothing in release.sh asks the weekly run anything: the predicate
+    that refused a cut on a red covering run is gone with the script."""
+    assert "scheduled-gates-cover" not in (ROOT / "scripts" / "release.sh").read_text()
+    assert not (ROOT / "scripts" / "scheduled-gates-cover.sh").exists()
 
 
 # --- #94: the cut publishes the GitHub Release, and fails CLOSED --------------
@@ -570,21 +543,6 @@ def test_an_existing_release_is_skipped_not_an_error(repo):
     assert "release view v1.1.0" in log
     assert "release create" not in log, "an existing Release must not be re-created"
     assert "nothing to do" in result.stdout
-
-
-def test_red_scheduled_gates_refuse_the_release_before_any_health_check(repo):
-    args_file = _recording_health_check(repo)
-    _cover_stub(repo, 3)
-    _git(repo, "add", "-A")
-    _git(repo, "commit", "-qm", "stubs")
-
-    result = _run(repo, "release.sh", "1.1.0")
-
-    assert result.returncode != 0
-    assert "FAILED on code this release contains" in result.stderr
-    assert not args_file.exists(), "the health check ran despite a known-red tree"
-    # And nothing was written: a refusal leaves the tree as it found it.
-    assert "1.1.0" not in (repo / "pyproject.toml").read_text()
 
 
 def test_lifted_upgrade_sentences_carry_no_unbalanced_bold(repo):
