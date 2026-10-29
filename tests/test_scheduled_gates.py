@@ -319,6 +319,22 @@ def test_the_mutation_instrument_is_one_pinned_version_everywhere():
     assert "pip install mutmut==$MUTMUT_VERSION" in script
 
 
+def test_the_test_runner_the_instrument_drives_is_capped_where_it_is_installed():
+    """#156: pytest 9.2.0 removed the `item._nodeid` mutmut 3.8.0's harness
+    reads, CI installed it through the unbounded dev extra, and the mutation
+    gate ran no mutants twice. The cap pyproject.toml's dev extra sets and
+    the one the gate refuses to run without must be one number."""
+    import tomllib
+
+    script = MUTATION_TOOL.read_text()
+    cap = re.search(r"^PYTEST_BELOW=(\S+)$", script, re.M)
+    assert cap, "mutation-check.sh no longer declares the pytest it can drive"
+    dev = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["optional-dependencies"]["dev"]
+    [pytest] = [d for d in dev if d.startswith("pytest") and not d.startswith("pytest-")]
+    assert f"<{cap.group(1)}" in pytest, f"pyproject.toml pins {pytest!r}, the gate needs pytest<{cap.group(1)}"
+    assert "exit 2" in script.split("PYTEST_BELOW=", 1)[1].split("\n\n", 1)[0], "the gate must refuse, not warn"
+
+
 def test_the_scheduled_job_may_file_the_issues_it_exists_to_file():
     """From 2026-09-14 the report step failed every week with "Resource not
     accessible by integration (repository.issues)": the default token could

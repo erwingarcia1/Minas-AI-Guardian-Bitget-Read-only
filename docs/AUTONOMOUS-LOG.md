@@ -8731,3 +8731,15 @@ dropped before and after each probe), with a test that fails without it.
 `mutants/` with the same cache key, it scored 700/716 = 97% with every
 survivor on the ledger. Its log is a temp file lost with the runner, so
 the gate now prints the log's tail; the cause will show on the next run.
+
+**Later (2026-10-29, 20:41 UTC): #157 merged and the gates re-run on
+`8464f73` (run 40951277021).** The probes passed, 372/372, with the
+bytecode fix. The mutation gate again ran no mutants, and its new log
+tail named the cause: `AttributeError: 'Function' object has no attribute
+'_nodeid'` from mutmut 3.8.0's harness. CI had installed pytest 9.2.0
+(released days before; local was 9.1.1, which is why every local gate
+passed). Fixed by capping pytest below 9.2 in the dev extra, a refusal in
+`scripts/mutation-check.sh` that names the cap, and a test holding the two
+equal (branch `pytest-cap`). mutmut 3.8.1 exists; upgrading it is the
+deliberate change the September pin requires (population and ledger
+re-judged), not a side effect of this fix.

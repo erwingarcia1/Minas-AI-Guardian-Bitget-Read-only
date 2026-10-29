@@ -122,6 +122,15 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   now prints the tail of its log instead of naming a temp file that dies
   with the CI runner.
 
+- **The mutation gate scores again (#156).** The log it now prints showed
+  the cause: pytest 9.2.0 removed the `item._nodeid` that mutmut 3.8.0's
+  harness reads, CI installed it through the unbounded dev extra, and the
+  baseline errored on its first test, so no mutant was scored. The dev
+  extra caps pytest below 9.2, the gate refuses a pytest it cannot drive
+  and says why, and `tests/test_scheduled_gates.py` holds the two caps
+  equal - the same pinning the mutmut version got in September, one
+  dependency over.
+
 ## [1.19.0] — 2026-10-27
 
 ### Added

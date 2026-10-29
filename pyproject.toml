@@ -20,7 +20,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=8.0",
+    # Capped for the mutation gate (#156): mutmut 3.8.0's harness reads
+    # pytest's item._nodeid, which pytest 9.2 removed, so its baseline run
+    # errors on the first test and no mutant is ever scored. The cap moves
+    # with MUTMUT_VERSION, never on its own (scripts/mutation-check.sh;
+    # tests/test_scheduled_gates.py keeps the two numbers equal).
+    "pytest>=8.0,<9.2",
     "pytest-cov>=5.0",
     "ruff>=0.6",
     "pip-audit>=2.7",
