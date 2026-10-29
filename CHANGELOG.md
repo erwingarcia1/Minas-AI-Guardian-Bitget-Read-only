@@ -106,6 +106,22 @@ on the host already (disabled in the 2026-09-28 pause, re-enabled
   readings are in docs/DEPLOYMENTS.md; decisions 6b and 27 carry the deployed status. No
   code in this entry.
 
+### Fixed
+
+- **A design-guard probe can no longer run against an earlier probe's
+  bytecode (#155).** Python reuses a module's `.pyc` while the source's
+  size and whole-second modification time match, so two probes on one
+  file that change its size by the same amount, patched within one second,
+  ran the second against the first's code. On 2026-10-29 that reported "#32
+  ATTACK sign in with an unconfirmed enrolment" as `survived`: it shares a
+  24-byte shrink with an `expect: survived` probe, and a CI worker ran them
+  back to back. `scripts/mutation-probe.py` now deletes the patched file's
+  cached bytecode before its tests and after its restore, in both modes;
+  `tests/test_mutation_probe_workers.py` plants a stale `.pyc` and fails
+  without the fix. And when the mutation gate runs no mutants (#156), it
+  now prints the tail of its log instead of naming a temp file that dies
+  with the CI runner.
+
 ## [1.19.0] — 2026-10-27
 
 ### Added

@@ -987,6 +987,12 @@ means the equivalence claim has stopped being true.
 selected — a mutant that never ran shrinks the denominator and raises the score
 by not existing.
 
+**Bytecode is dropped around every probe** (#155). Python reuses a `.pyc`
+while the source's size and whole-second mtime match, so two equal-size
+patches of one file inside one second ran the second probe against the
+first's code - a false `survived`. The tool deletes the patched file's
+cached bytecode before its tests and after its restore.
+
 **One probe run at a time.** The probes patch files in the working tree, so two
 runs at once corrupt it — and they do it silently. Each run copies a file aside
 before mutating it, so if the second run takes its backup while the first has a

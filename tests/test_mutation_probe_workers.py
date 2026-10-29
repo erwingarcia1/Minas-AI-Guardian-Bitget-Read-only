@@ -69,6 +69,40 @@ def test_the_copy_is_the_tree_without_the_things_that_must_not_be_shared(tool):
     assert not any("__pycache__" in f for f in files)
 
 
+def test_a_probe_never_runs_against_stale_bytecode(tool, tmp_path, monkeypatch):
+    """#155: Python reuses a .pyc while the source's size and whole-second
+    mtime match, so two same-size patches of one file inside one second ran
+    the second probe against the first's bytecode. A planted .pyc for the
+    patched file must be gone before its tests run, and again after the
+    restore, whatever the clock does."""
+    import importlib.util as util
+
+    root = tmp_path / "worker"
+    root.mkdir()
+    tool._copy_tree(tool._tree_files(), root)
+    target = root / "sentinel" / "twofactor.py"
+    cached = Path(util.cache_from_source(str(target)))
+    cached.parent.mkdir(parents=True, exist_ok=True)
+    seen = {}
+
+    class Done:
+        returncode = 1
+
+    def fake_run(*args, **kwargs):
+        seen["stale at test time"] = cached.exists()
+        return Done()
+
+    cached.write_bytes(b"stale bytecode from the previous probe")
+    monkeypatch.setattr(tool.subprocess, "run", fake_run)
+    probe = {"name": "p", "file": "sentinel/twofactor.py",
+             "old": "    if row is None or not row[\"confirmed\"]:\n        return False",
+             "new": "    if row is None:\n        return False", "tests": ["tests/test_twofactor.py"]}
+    name, outcome, _ = tool._run_probe(root, 1, probe)
+    assert outcome == "killed"
+    assert seen == {"stale at test time": False}
+    assert not cached.exists(), "the restored file's bytecode is rebuilt from the restored source"
+
+
 def test_a_worker_proves_its_import_resolves_inside_its_copy(tool, tmp_path):
     root = tmp_path / "worker"
     root.mkdir()

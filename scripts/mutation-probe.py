@@ -172,6 +172,27 @@ def _resolve_workers(spec: str) -> int:
     return workers
 
 
+def _drop_bytecode(path: Path) -> None:
+    """Delete the cached bytecode for `path`, so the next test run compiles
+    the source as it is on disk now.
+
+    Python reuses a module's `.pyc` while the source's size and modification
+    time - in WHOLE seconds - still match the ones it was compiled from. Two
+    probes on one file whose mutations change its size by the same amount,
+    patched within the same second, therefore run the second against the
+    first one's bytecode. That is how "#32 ATTACK sign in with an
+    unconfirmed enrolment" reported `survived` in the run of 2026-10-29
+    (#155): it shares its 24-byte shrink with "#32 recovery codes are cleared
+    on confirm", an `expect: survived` probe, and a worker ran them back to
+    back. Measured on the file actually patched, before its tests and after
+    its restore, in both modes."""
+    import importlib.util
+
+    cached = Path(importlib.util.cache_from_source(str(path)))
+    for stale in cached.parent.glob(f"{path.stem}.*.pyc"):
+        stale.unlink(missing_ok=True)
+
+
 def _apply(path: Path, old: str, new: str) -> str:
     """Returns the original text. Raises if the mutation would be a no-op."""
     original = path.read_text()
@@ -221,6 +242,7 @@ def _run_probe(root: Path, index: int, probe: dict) -> tuple[str, str, str]:
         original = _apply(path, probe["old"], probe["new"])
     except (ValueError, KeyError, OSError) as exc:
         return name, "did-not-land", f"  DID NOT LAND  {name}: {exc}"
+    _drop_bytecode(path)
     try:
         completed = subprocess.run(
             [*_pytest(), *probe["tests"]], cwd=root, env=_worker_env(root),
@@ -231,6 +253,7 @@ def _run_probe(root: Path, index: int, probe: dict) -> tuple[str, str, str]:
         outcome = "timeout"
     finally:
         path.write_text(original)
+        _drop_bytecode(path)
     ok = outcome == expect
     return name, outcome, f"  {'ok   ' if ok else 'FAIL '} {outcome:9} (want {expect:9}) {name}"
 
@@ -347,6 +370,7 @@ def main(argv: list[str]) -> int:
                 results.append((name, "did-not-land"))
                 continue
 
+            _drop_bytecode(path)
             try:
                 completed = subprocess.run(
                     [*_pytest(), *probe["tests"]], cwd=REPO,
@@ -358,6 +382,7 @@ def main(argv: list[str]) -> int:
             finally:
                 shutil.copy2(backup, path)
                 _in_flight.pop(path, None)
+                _drop_bytecode(path)
 
             ok = outcome == expect
             failures += 0 if ok else 1

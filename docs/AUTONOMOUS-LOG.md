@@ -8713,3 +8713,21 @@ after the release: `SENTINEL_EGRESS_IPS=57.181.51.14` in the host's
 `.env`, a new app build, Play Console's account-creation answer, and
 invitations to the members without a login. Stage 2 (asking for an
 invitation) is the owner's to decide.
+
+**Later (2026-10-29): the slow gates on `2685f31` went red before the
+v1.20.0 cut (run 40894634252; #155, #156).** The owner asked for the
+release, the `.env` line and a new app build; the build started (EAS
+`bee9feb4`, versionCode 4) and the dispatched gates failed, so the cut
+stopped. **#155:** "#32 ATTACK sign in with an unconfirmed enrolment"
+survived in CI and was killed in every local run (in place and in
+workers, six times). Its mutation shrinks `sentinel/twofactor.py` by 24
+bytes, exactly as the `expect: survived` "#32 recovery codes are cleared on
+confirm" does, and a worker ran the two about a second apart: Python
+reused the first probe's `.pyc` (size and whole-second mtime matched).
+The 22 probes stage 1 added changed which worker runs what, which is how a
+latent race surfaced. Fixed in `scripts/mutation-probe.py` (bytecode
+dropped before and after each probe), with a test that fails without it.
+**#156:** the mutation gate ran no mutants in CI; locally, from a fresh
+`mutants/` with the same cache key, it scored 700/716 = 97% with every
+survivor on the ledger. Its log is a temp file lost with the runner, so
+the gate now prints the log's tail; the cause will show on the next run.

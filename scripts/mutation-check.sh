@@ -418,6 +418,11 @@ if [ "$TOTAL" -eq 0 ]; then
   echo "Usually the baseline suite fails inside mutants/, so stats collection" >&2
   echo "aborts before any mutant is tested. Run the selection there by hand:" >&2
   echo "  (cd mutants && ../.venv/bin/python -m pytest -x -q tests/)" >&2
+  # The log is a temp file, and in CI it dies with the runner: the run of
+  # 2026-10-29 (#156) said only "Check /tmp/tmp.uSEBjDgDiR". Its tail is the
+  # cause, so it goes where the run's own output is kept.
+  echo "--- the last 60 lines of $LOG ---" >&2
+  tr '\r' '\n' < "$LOG" | tail -60 >&2
   exit 2
 fi
 
