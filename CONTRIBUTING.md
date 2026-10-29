@@ -289,27 +289,20 @@ The division of labour:
   execution-tested in `tests/test_scheduled_gates.py`.
 - **this script** — everything, locally, when a change touches probe-covered
   code or detection behaviour; `--fast` otherwise.
-- **release.sh** — demands the slow gates be green for the exact tree
-  being tagged, but no longer insists on running them itself (#93): when
-  the most recent scheduled CI run sits on an ancestor of HEAD with no
-  gate-relevant path changed since and is green, the release runs the fast
-  gates only. Every unprovable case — gh missing or unauthenticated,
-  GitHub down, no covering run, gate-relevant changes since — falls back
-  to the full local run; a covering run that is RED refuses the release
-  outright. The predicate (`scripts/scheduled-gates-cover.sh`) may only
-  make a release cheaper, never weaker.
+- **release.sh** — runs the fast gates (`health-check.sh --fast`) and
+  nothing else. The slow gates never block a release (the owner,
+  2026-10-29): they run weekly in CI and file an issue when they find
+  something, and that issue is work like any other, not a lock on the
+  next cut. (From #93 to 2026-10-29 a release consulted
+  `scripts/scheduled-gates-cover.sh`, refused on a red covering run and
+  ran the full local health-check when coverage could not be proven; on
+  2026-10-29 that held the v1.20.0 cut twice for faults in the gates' own
+  tooling, #155 and #156.)
 
-  **#93 alone is NOT sufficient for a safe release — #93 plus the survivor
-  ledger is.** The predicate proves the slow gates *ran* on this code and
-  were green; it does not prove the ratchet *noticed* anything. A scheduled
-  run is green when the score merely clears the floor, and the floor has two
-  points of headroom by design — so a decision can stop being pinned, the
-  weekly run stays green, and #93 covers the release. What closes that is
-  `scripts/mutation-known-survivors.txt`: a survivor not in the ledger fails
-  the gate whatever the score, so the scheduled run that #93 trusts is red
-  for exactly the case the floor lets through. Remove the ledger and #93
-  becomes a proof that the gates ran, not that they held. Do not remove it
-  thinking it duplicates the floor; it covers what the floor cannot.
+  The survivor ledger (`scripts/mutation-known-survivors.txt`) still
+  matters to the weekly run: a survivor not in it fails the gate whatever
+  the score, which is what makes a green weekly run mean the ratchet
+  noticed, not only that it ran.
 
 The freshness gate closes the quiet failure of that arrangement: a cron that
 silently stops firing reads as permanently green, so
