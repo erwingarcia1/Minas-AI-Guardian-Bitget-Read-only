@@ -160,6 +160,21 @@ if [ "$installed" != "$MUTMUT_VERSION" ]; then
   exit 2
 fi
 
+# And the test runner it drives (#156, 2026-10-29). mutmut 3.8.0's harness
+# reads pytest's item._nodeid; pytest 9.2.0 removed it, CI installed the
+# newest pytest the dev extras allowed, and the baseline errored on its
+# first test - "no mutants ran", twice, with the cause in a temp file. The
+# same accident as the mutmut one above, one dependency over: the cap is
+# pyproject.toml's dev extra, this refusal names it, and it moves with
+# MUTMUT_VERSION.
+PYTEST_BELOW=9.2
+if ! "$PY" -c "import importlib.metadata as m, sys; v = tuple(int(p) for p in m.version('pytest').split('.')[:2]); sys.exit(v >= tuple(int(p) for p in '$PYTEST_BELOW'.split('.')))" 2>/dev/null; then
+  echo "pytest $("$PY" -c "import importlib.metadata as m; print(m.version('pytest'))" 2>/dev/null) is installed;" \
+       "mutmut $MUTMUT_VERSION's harness needs pytest below $PYTEST_BELOW." >&2
+  echo "pip install 'pytest<$PYTEST_BELOW' - or raise MUTMUT_VERSION and this cap together." >&2
+  exit 2
+fi
+
 # The test selection is deliberately narrow: mutation testing runs it once per
 # mutant, so the full 70-second suite would make this unusable. These are the
 # tests that exercise detectors and alerting.
