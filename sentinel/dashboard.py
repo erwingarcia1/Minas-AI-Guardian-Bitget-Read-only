@@ -1313,14 +1313,18 @@ def _render_add_form(values: dict | None = None, error: str | None = None, ok: s
 
 
 def _render_result(label: str, exchange: str, account_id: int, *, operator: str | None = None,
-                   invitation_html: str = "") -> str:
+                   invitation_html: str = "", ip_lock: str = "locked", ip_lock_note: str = "") -> str:
     ok = (
         f"✓ Verified read-only and added <code>{html.escape(label)}</code> "
         f"({html.escape(exchange)}) as account id {account_id}. It will begin polling within a minute."
     )
     if invitation_html:
         ok += "<br>" + invitation_html  # built by invite_contact, escaped there
-    return _render_add_form(ok=ok, operator=operator)
+    # A key not locked to Minas's address is added - the check warns, never
+    # refuses (sentinel/egress.py) - and the admin is told on the spot.
+    warning = (f'<div class="banner err">⚠ {html.escape(ip_lock_note)}</div>'
+               if ip_lock != "locked" and ip_lock_note else "")
+    return warning + _render_add_form(ok=ok, operator=operator)
 
 
 def serve_dashboard(
@@ -1782,7 +1786,8 @@ def serve_dashboard(
                 else:
                     invitation_html = invite_contact(db, g("email"), result.account_id, operator)
                 self._send(_render_result(label, g("exchange") or "bitget", result.account_id,
-                                          operator=operator, invitation_html=invitation_html).encode())
+                                          operator=operator, invitation_html=invitation_html,
+                                          ip_lock=result.ip_lock, ip_lock_note=result.ip_lock_note).encode())
             except OnboardingRejected as exc:
                 self._send(_render_add_form(values, error=str(exc), operator=operator).encode(), 200)
             except ValueError as exc:
@@ -1790,7 +1795,8 @@ def serve_dashboard(
             except Exception:  # noqa: BLE001 - never leak an exchange error verbatim (may echo creds)
                 logger.exception("add-customer onboarding failed")
                 self._send(_render_add_form(
-                    values, error="Onboarding failed unexpectedly - check the service logs (secrets redacted).",
+                    values, error=("Onboarding failed unexpectedly - check the service logs (secrets redacted). "
+                                   "Nothing was added: the account can be added again."),
                     operator=operator,
                 ).encode(), 500)
 

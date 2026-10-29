@@ -8692,3 +8692,24 @@ in), and "Set up two-factor here" on the sign-in screen after a
 the app copies, pinned by `tests/test_mobile_app.py`. The API's
 `two_factor_required` message now points at the app's own setup. Three
 more probes. Next: the onboarding fixes.
+
+**Later (2026-10-29): stage 1's last part, onboarding (branch
+`onboarding-fixes`).** #151 and #153 were merged; #152 (the same app
+commit, stacked on #151's branch) had merged into `member-invitations`
+instead of `main` with no CI, and #153 carried it to `main` - PRs here are
+based on `main` from now on. Onboarding takes back an account whose
+history read fails (`_forget_unseeded`: the seeded tables and the account
+row; `events` untouched, append-only, and nothing writes one before the
+seed ends). `sentinel/egress.py` reads `SENTINEL_EGRESS_IPS` and judges a
+key's stored allowlist as locked, open, also elsewhere, elsewhere or
+unchecked (Binance reports only `ipRestrict`); the key instructions carry
+an IP step whose address is filled from the setting; the add form and the
+CLI warn. Six probes. The rebase onto #153 conflicted only in the probe
+file (both appended); the first resolution script stopped on an
+over-strict check while the `git add` after it still ran, so the commit
+briefly held conflict markers - rewritten from both sides' JSON and
+amended before anything was pushed. **Stage 1 is done.** For the owner
+after the release: `SENTINEL_EGRESS_IPS=57.181.51.14` in the host's
+`.env`, a new app build, Play Console's account-creation answer, and
+invitations to the members without a login. Stage 2 (asking for an
+invitation) is the owner's to decide.

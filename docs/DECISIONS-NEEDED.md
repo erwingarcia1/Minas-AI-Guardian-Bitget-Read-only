@@ -957,10 +957,12 @@ reference, not an internal identifier). Both halves are gap — small ones.
 > invitation", on the same functions, by `POST /api/v1/invitation/*`); a
 > member who has a password and no second factor sets one up from the
 > app's sign-in screen (`POST /api/v1/two-factor/*`, decision 21c); the
-> landing says how to get in; the app's Settings offer deletion. The
-> onboarding fixes (an account that cannot be left half-seeded, the
-> "lock this key to Minas's address" step in the key instructions, and a
-> warning to the admin when a key is not locked) the one after.
+> landing says how to get in; the app's Settings offer deletion; and
+> onboarding is fixed - an exchange that fails while an account's history
+> is read takes the account back instead of leaving it half-seeded, the
+> key instructions tell the customer to lock the key to Minas's address
+> (`SENTINEL_EGRESS_IPS`), and "+ Add customer" and `sentinel onboard`
+> warn - never refuse - when a key is not locked to it.
 > **2 (open, the owner's):** a Minas member without an invitation asks for
 > one on the web or in the app, Minas checks membership and approves in
 > `/admin`, and the invitation follows. It needs: how membership is checked
