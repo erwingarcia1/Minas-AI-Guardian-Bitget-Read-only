@@ -9,14 +9,21 @@ Guardian**.
 
 ## [Unreleased]
 
-_Pending customer/ops items (not code): `SENTINEL_EGRESS_IPS=57.181.51.14`
-in the host's `.env` once this release is deployed (docs/deployment.md
-"The Elastic IP is load-bearing"); read-only Bybit key (previous had
+_Pending customer/ops items (not code): read-only Bybit key (previous had
 Contract-Trade scope), OKX + Binance keys, ClickSend or Twilio credentials,
 terminate the retired us-east-1 instance, the machine's removal in the
 Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
+
+### Changed
+
+- **v1.20.0 is deployed (2026-10-29, by 22:41 UTC):** members make their
+  own login from an invitation, on the web (`/welcome`) and through the
+  app's API, the landing says how to get in, and onboarding can no longer
+  be left half-done; `SENTINEL_EGRESS_IPS=57.181.51.14` is set on the host
+  and read by the container. The readings are in docs/DEPLOYMENTS.md;
+  decision 17 carries the deployed status. No code in this entry.
 
 ## [1.20.0] — 2026-10-29
 

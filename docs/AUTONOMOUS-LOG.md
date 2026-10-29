@@ -8754,3 +8754,19 @@ the mutation gate and the survivor ledger stay, and file issues. #158 (the
 pytest cap) was merged first, so the weekly run should go green again.
 Branch `releases-skip-slow-gates`; v1.20.0 is cut as soon as it is on
 `main`.
+
+**Later (2026-10-29, 22:03 to 22:41 UTC): v1.20.0 cut and deployed.** #159
+merged (`41d914c`); CI on it green at 22:11; `scripts/release.sh 1.20.0`
+ran the fast gates only (the suite 628 s), release commit `b3a37f0`, the
+tag and the GitHub Release (22:23:16), CI on the release commit green (run
+40965456383). The owner had added `SENTINEL_EGRESS_IPS=57.181.51.14` to
+the host's `.env` earlier; the deploy (1.19.0 at `a3082b5` before, the
+gate OK, the live config valid, `sentinel` recreated alone, healthy, the
+version asserted) picked it up - `printenv` in the container read it. The
+outside checks at 22:41 read as expected: `/welcome`, the landing's new
+sentence and button, the sign-in page's link, the five new API routes
+answering 405 to a GET (no POST was sent). App build 4 (EAS `bee9feb4`,
+versionCode 4, from `2685f31`) was built and read earlier the same day
+(the five permissions; the bundle names the invitation and two-factor
+routes, no LAN address) and goes to the testers now that the server
+serves its routes. The record is the branch `deploy-record-1-20-0`.

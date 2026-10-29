@@ -21,6 +21,104 @@ Newest entry first.
 
 ---
 
+## 2026-10-29 · v1.20.0 (current, from v1.19.0): members make their own login from an invitation, on the web and in the app; onboarding that cannot be left half-done
+
+Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
+the output pasted into the session and read there. Cut the same day from
+`main` at `41d914c` (the merge of #159, 22:03) by `scripts/release.sh
+1.20.0`, run in the main checkout on `main` after CI on `41d914c` was green
+(22:11). The first attempt to cut, at `2685f31` after #154, stopped on the
+slow gates the release then required: a dispatched run went red twice
+(runs 40894634252 and 40951277021), once for a stale-bytecode race in the
+probe runner (#155, fixed by #157) and once because pytest 9.2.0 broke the
+pinned mutmut (#156, fixed by #158). The owner then ruled that the slow
+gates never block a release (#159), so this cut ran the fast gates only -
+ruff, the suite (628 s), the coverage floor, pip-audit, the issue-status
+audit, "scheduled gates ran (8d)" and release objects, with the
+design-guard probes and the mutation floor skipped under `--fast`; release
+commit `b3a37f0`, annotated tag `v1.20.0`, the GitHub Release published
+(22:23:16), CI on the release commit green (run 40965456383, 22:23 to
+22:29). Times are UTC.
+
+**Before the deploy** the owner added `SENTINEL_EGRESS_IPS=57.181.51.14` to
+the host's `.env` (the grep before it found none; `tail` showed it on its
+own line after `SENTINEL_PORTAL_URL`), so the switchover's recreate picked
+it up.
+
+**The deploy:** `sudo /opt/minas-guardian/scripts/deploy.sh v1.20.0` -
+preflight clean; tags fetched; running before: 1.19.0 at `a3082b5`;
+checkout `b3a37f0`, detached; `deploy-gate: OK - HEAD is v1.20.0
+(b3a37f0)`; the image built in 44 s from a 1.33 MB context, `pip install
+".[triage]"` 25 s; the live `config/rules.yaml` validated against the new
+image ("valid — every setting is recognised and in range"); the switchover
+recreated `minas-guardian-sentinel-1` and left `caddy` running; healthy;
+the version assertion:
+
+```
+Minas AI Guardian 1.20.0
+  commit   b3a37f0d586e2e85df99bd58f4ec6bb0bc06e7b2
+  tag      v1.20.0
+  source   build-arg
+deploy: OK — v1.20.0 is live and verified
+```
+
+and the setting, from inside the container:
+
+```
+sudo docker compose -f /opt/minas-guardian/docker-compose.yml exec -T sentinel printenv SENTINEL_EGRESS_IPS
+57.181.51.14
+```
+
+**The readings afterwards** (from outside, by the session, 22:41; no POST
+was sent - the new API routes were read with GET, which writes nothing):
+
+```
+curl /welcome                                                   -> 200; "Accept your invitation"; the form (action="/welcome", name="code");
+                                                                   "It expires 3 days after it was sent." (from INVITATION_TTL_SECONDS)
+curl /welcome (headers)                                         -> cache-control: no-store; strict-transport-security: max-age=31536000;
+                                                                   x-frame-options: DENY; content-security-policy: frame-ancestors 'none'
+curl / | grep -c 'Guardian is for Minas members'                -> 1   (LANDING_SETUP)
+curl / | grep -c 'href="/welcome">Accept an invitation<'        -> 1   (the secondary button)
+curl / | grep -c 'You make a read-only API key, and Minas connects it.' -> 1
+curl / | grep -c 'nothing to sign up'                           -> 0
+curl /login | grep -c 'href="/welcome">Accept an invitation<'   -> 1
+GET /api/v1/invitation/{code,password,two-factor}               -> 405, Allow: POST (each route exists)
+GET /api/v1/two-factor/{start,confirm}                          -> 405, Allow: POST
+GET /api/v1/no-such-route                                       -> 404
+curl /privacy                                                   -> 200
+curl -o /dev/null -w '%{http_code} %{redirect_url}' /healthz    -> 303 https://guardian.minastrade.com/
+curl /api/v1/limits                                             -> 401 (the app API)
+curl /admin                                                     -> 401 (the dashboard's sign-in)
+curl http://guardian.minastrade.com/                            -> 308
+```
+
+Not read from outside, because each needs an invitation, an operator
+session or a member: an invitation sent from the dashboard and accepted,
+the login it makes, the IP-lock warning on "+ Add customer", and the app's
+own screens (app build 4, not yet rolled out). The tests and the
+design-guard probes are their evidence (CHANGELOG `[1.20.0]`).
+
+**What shipped** (CHANGELOG `[1.20.0]`): decision 17's stage 1 -
+invitations (`/welcome`, the dashboard's "Send invitation", the automatic
+one on "+ Add customer" and `sentinel onboard`), accepting one and setting
+up two-factor in the app (`/api/v1/invitation/*`, `/api/v1/two-factor/*`),
+the landing copy on both surfaces, "Delete my account and data" in the
+app; onboarding that takes back a half-seeded account, the IP step in the
+key instructions and the IP-lock warning (`SENTINEL_EGRESS_IPS`); the
+probe runner's bytecode fix and the pytest cap; releases no longer waiting
+for the slow gates; the v1.19.0 deploy record.
+
+**Still outside this entry:** app build 4's rollout to the testers (Play
+Console, internal testing); Play Console's account-creation answer;
+invitations to the members who have no login; decision 17's stage 2;
+decisions 26d, 26e, 26b's two further tripwires and 28; the lawyer's
+review of decision 27's items 3 and 5; the pending keys and the SMS
+provider (CHANGELOG's pending list); the stale "# PAUSED 2026-09-28"
+comment above root's active digest line in crontab; the Tailscale
+admin-console removal of the machine.
+
+---
+
 ## 2026-10-27 · v1.19.0 (current, from v1.18.0): an erasure that names no one, the privacy policy at /privacy, the daily backup
 
 Deployed by the owner over SSH with the EC2 key pair at `57.181.51.14`,
