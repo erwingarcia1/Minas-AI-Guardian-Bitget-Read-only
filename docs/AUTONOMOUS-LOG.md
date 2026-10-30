@@ -8770,3 +8770,21 @@ versionCode 4, from `2685f31`) was built and read earlier the same day
 (the five permissions; the bundle names the invitation and two-factor
 routes, no LAN address) and goes to the testers now that the server
 serves its routes. The record is the branch `deploy-record-1-20-0`.
+
+**Later (2026-10-30): decision 28, option D, built.** The owner: "let's go
+with D." `sentinel/review.py`: one store review login, a fixed six-digit
+code accepted by `POST /api/v1/session` only while the login opens nothing
+but the demo account (checked at every sign-in), refused by the website,
+by `/forgot` and by `/api/v1/two-factor/*`; the demo account (`accounts.is_demo`,
+disabled, no key, no contacts, two sample alerts already escalated, named
+"Demo account (sample data)"); `sentinel review-login create|rotate|disable|status`
+behind the `--as` gate; the dashboard's "Store review login" card;
+`set_account_status` refuses to switch the demo on; `/api/v1/security`
+reports two-factor on for the login (the app's Settings would otherwise
+say in red that the phone cannot sign in again). Twenty-three tests in
+tests/test_review_login.py, nine design-guard probes, all killed (one
+first survived: the HIGH sample is older than the escalator's stale bound,
+so it would have gone to Minas as a backlog page the old test never
+looked for; the test now holds both paths). No app change: the server
+sends the name and reason. Branch `review-login`. The owner's: the
+release, the deploy, the command on the host and the App access form.

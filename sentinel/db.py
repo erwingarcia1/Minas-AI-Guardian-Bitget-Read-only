@@ -183,6 +183,10 @@ class Database:
             "ALTER TABLE accounts ADD COLUMN alert_email TEXT",
             "ALTER TABLE accounts ADD COLUMN alert_phone TEXT",
             "ALTER TABLE accounts ADD COLUMN is_drill INTEGER NOT NULL DEFAULT 0",
+            # Decision 28 (2026-10-30): the invented account the store
+            # reviewer's login opens - never polled, never messaged
+            # (sentinel/review.py).
+            "ALTER TABLE accounts ADD COLUMN is_demo INTEGER NOT NULL DEFAULT 0",
             "ALTER TABLE accounts ADD COLUMN erased_at TEXT",
             "ALTER TABLE accounts ADD COLUMN customer_name TEXT",
             # #8: the member's own name for a connection - display only, never a key
@@ -227,6 +231,9 @@ class Database:
             # #21: the member's proof-of-life digest choice. Text rather than
             # a foreign table for three values; writers validate.
             "ALTER TABLE portal_members ADD COLUMN digest_frequency TEXT NOT NULL DEFAULT 'daily'",
+            # Decision 28: set on the one store-review login only - the
+            # SHA-256 of its fixed second-factor code (sentinel/review.py).
+            "ALTER TABLE portal_members ADD COLUMN review_code_hash TEXT",
         )
         for ddl in migrations:
             # Re-adding an existing column raises, and that IS the ordinary

@@ -661,7 +661,8 @@ def _render(db: Database, rules=None, qs=None, *, operator: str | None = None) -
         '<section><div class="card"><div class="card-head"><h2>Recent alerts</h2>'
         '<span class="count">latest 50</span></div><table><thead><tr><th>Time</th><th>Account</th>'
         f"<th>Severity</th><th>Rule</th><th>Ack</th></tr></thead><tbody>{alert_rows}</tbody></table></div></section>"
-        + _sms_failures_section(db) + _email_failures_section(db) + _drills_section(db) + _operator_pages_section(db)
+        + _sms_failures_section(db) + _email_failures_section(db) + _drills_section(db) + _review_login_section(db)
+        + _operator_pages_section(db)
         + _expected_activity_section(db)
     )
     return _page(nav, body, operator=operator)
@@ -782,6 +783,25 @@ def _drills_section(db: Database) -> str:
         '<span class="count">the alert path, tested · latest 10</span></div>'
         '<table><thead><tr><th>Time</th><th>Kind</th><th>Account</th><th>Result</th><th>Latency</th>'
         f"<th>Reached</th><th>Detail</th></tr></thead><tbody>{rows}</tbody></table></div></section>"
+    )
+
+
+def _review_login_section(db: Database) -> str:
+    """Decision 28: the store reviewer's login, in plain sight - its every
+    app sign-in counted, the last one dated, its phones still signed in.
+    Nothing when there is no review login."""
+    from sentinel.review import review_sign_ins
+
+    info = review_sign_ins(db)
+    if info is None:
+        return ""
+    return (
+        '<section><div class="card"><div class="card-head"><h2>Store review login</h2>'
+        '<span class="count">fixed code · opens the demo account only</span></div>'
+        f'<div class="det"><span class="desc"><b>{html.escape(info["email"])}</b> · '
+        f'{info["sign_ins"]} app sign-in(s) · last {_ts(info["last"]) if info["last"] else "never"} · '
+        f'{info["phones"]} phone(s) signed in now. <code>sentinel review-login rotate</code> replaces the '
+        "password and code; <code>disable</code> removes it.</span></div></div></section>"
     )
 
 

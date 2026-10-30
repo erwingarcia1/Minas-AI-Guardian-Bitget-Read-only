@@ -16,6 +16,38 @@ Tailscale admin console. The #81 restart timer turned out to be installed
 on the host already (disabled in the 2026-09-28 pause, re-enabled
 2026-10-24)._
 
+### Added
+
+- **A sign-in for Google's app reviewer (decision 28, option D, the owner
+  2026-10-30).** Google reviews the app before production and needs
+  sign-in details it can reuse with no live code; the app requires
+  two-factor for every real login. `sentinel review-login create
+  <address> --as <operator>` makes ONE review login and a demo account
+  for it, and prints the password and a fixed six-digit code once (they
+  are stored only hashed, and go into Play Console's App access form,
+  never into this public repository). The demo account is invented: no
+  exchange key, so it is never polled (`status = 'disabled'`, and
+  `set_account_status` refuses to switch it on); no contact address, so
+  no alert, escalation, digest or note goes anywhere; two sample alerts,
+  already escalated, so the escalator neither escalates them nor reports
+  them to Minas as a backlog; and it is named "Demo account (sample
+  data)", with its own reason, on every screen that shows it. The fixed
+  code works only in the app's sign-in, only for that login, and only
+  while the login opens the demo account and nothing else - checked at
+  every sign-in. The website refuses the login ("This login signs in only
+  in the app."), it gets no reset link, and it cannot set up two-factor
+  of its own; it is not the demo's primary contact, so it may only read
+  and acknowledge. Every sign-in is an activity entry and a new-device
+  email to the login's own address, and the ops dashboard shows a "Store
+  review login" card with the count, the last sign-in and the phones
+  still signed in; `rotate` replaces the password and code and signs every
+  phone out, `disable` removes the login and keeps the demo. App: no
+  change - the server sends the demo's name and reason, and the app shows
+  them as it shows any account (`sentinel/review.py`,
+  tests/test_review_login.py, nine design-guard probes). The app's Settings
+  show two-factor as on for this login: its second factor is the fixed
+  code, and "Off" would say the phone cannot sign in again.
+
 ### Changed
 
 - **v1.20.0 is deployed (2026-10-29, by 22:41 UTC):** members make their
