@@ -153,7 +153,7 @@ What the app does not collect, though you might expect it to:
 |---|---|---|
 | Privacy policy | https://guardian.minastrade.com/privacy | Approved 2026-10-27; live since v1.19.0, deployed the same day |
 | Ads | No, the app does not contain ads | |
-| App access | Open (decision 28) | Google's reviewer needs a login that gets past two-factor without a live code. The owner decides this after internal testing |
+| App access | "All or some functionality is restricted", with the review login's instructions (decision 28, option D, 2026-10-30) | Once the release carrying it is deployed, on the host: `sudo docker compose -f /opt/minas-guardian/docker-compose.yml exec -T sentinel sentinel review-login create <address> --as <operator>`, with an address Minas owns that is on no account and that someone reads (every sign-in emails it). It prints the password and a six-digit code once. In the form: the address as the username, the password, and "Enter this code where the app asks for the 6-digit code from your authenticator app: <code>". The login opens only "Demo account (sample data)". After the review, or if the details may have leaked: `sentinel review-login rotate` (new password and code, every phone signed out) or `disable`; the dashboard's "Store review login" card shows each sign-in |
 | Content rating | Answer the questionnaire honestly | No violence, sexual content, profanity, gambling or user-to-user contact. Expect the lowest rating. The app shows financial account data, not trading or gambling |
 | Target audience | 18 and over | The policy's minimum age (decision 27), the same as the four exchanges require of their own account holders |
 | News app | No | |

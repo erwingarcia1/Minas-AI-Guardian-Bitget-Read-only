@@ -74,6 +74,7 @@ tests/test_release_objects.py: imports no sentinel module - nothing under the mu
 tests/test_release_process.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_restart_on_unhealthy.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_retention_boundary_report.py: imports db - nothing under the mutated paths (alerts/, detectors/, config.py)
+tests/test_review_login.py: imports alerts.escalation for one test (decision 28's demo samples never escalate), and api, cli, dashboard, onboarding, portal, review - it pins the review login, not the escalator, whose own mutants are the selection's escalation tests' to kill
 tests/test_scheduled_gates.py: imports no sentinel module - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_secondary_contact_portal.py: imports dashboard, portal - nothing under the mutated paths (alerts/, detectors/, config.py)
 tests/test_set_contact.py: imports cli, events, operators, portal - nothing under the mutated paths (alerts/, detectors/, config.py)

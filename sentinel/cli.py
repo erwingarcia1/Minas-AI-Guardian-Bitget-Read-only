@@ -648,7 +648,7 @@ def cmd_account_status(args: argparse.Namespace) -> int:
     status = "disabled" if args.action == "disable" else "active"
     try:
         changed = set_account_status(db, args.label, status, actor)
-    except LookupError as exc:
+    except (LookupError, ValueError) as exc:
         print(str(exc), file=sys.stderr)
         return 1
     verb = "disabled" if status == "disabled" else "enabled"
@@ -818,6 +818,58 @@ def cmd_liveness(args: argparse.Namespace) -> int:
         page_id = page_verdict(db, rules, verdicts)
         print(f"operator page #{page_id}" if page_id else "operator page suppressed by cooldown (already paged this interval)")
     return 1 if bad else 0
+
+
+def cmd_review_login(args: argparse.Namespace) -> int:
+    """Decision 28: the one login the store reviewer gets. The password and
+    the code are printed once and stored hashed; they go into Play Console's
+    App access form, never into the repository."""
+    from sentinel.operators import is_active_operator, list_operators, operator_count
+    from sentinel.review import (
+        ReviewLoginRefused,
+        create_review_login,
+        disable_review_login,
+        review_sign_ins,
+        rotate_review_login,
+    )
+
+    db = Database(_env_raw("SENTINEL_DB_PATH", "./sentinel_data/sentinel.db"))
+    actor = getattr(args, "as_operator", None)
+    # cmd_account's gate: attribution is mandatory once operators exist.
+    if args.review_command != "status" and operator_count(db) > 0:
+        if not actor:
+            names = ", ".join(o["username"] for o in list_operators(db) if o["status"] == "active")
+            print(f"--as <operator> is required: this change is recorded against a name. "
+                  f"Active operators: {names or '(none active)'}", file=sys.stderr)
+            return 2
+        if not is_active_operator(db, actor):
+            print(f"'{actor}' is not an active operator", file=sys.stderr)
+            return 2
+    try:
+        if args.review_command == "create":
+            password, code = create_review_login(db, args.email, actor=actor)
+        elif args.review_command == "rotate":
+            password, code = rotate_review_login(db, actor=actor)
+        elif args.review_command == "disable":
+            print(f"review login {disable_review_login(db, actor=actor)} removed; the demo account stays")
+            return 0
+        else:
+            info = review_sign_ins(db)
+            if info is None:
+                print("no review login")
+                return 0
+            print(f"{info['email']}: {info['sign_ins']} app sign-in(s), last {info['last'] or 'never'}, "
+                  f"{info['phones']} phone(s) signed in now")
+            return 0
+    except ReviewLoginRefused as exc:
+        print(f"REFUSED: {exc}", file=sys.stderr)
+        return 1
+    print("The store review login - shown ONCE, stored only hashed. Put these in Play Console ->")
+    print("App content -> App access, and nowhere else (the repository is public):")
+    print(f"  password: {password}")
+    print(f"  code:     {code}   (enter it where the app asks for the authenticator code)")
+    print("It signs in only in the app, and opens only the demo account.")
+    return 0
 
 
 def cmd_operator(args: argparse.Namespace) -> int:
@@ -1452,6 +1504,20 @@ def main() -> None:
                               help="Who is doing this - required; the reset is recorded against the name")
     operator_sub.add_parser("list", help="List operator accounts")
     operator_parser.set_defaults(func=cmd_operator)
+
+    review_parser = sub.add_parser(
+        "review-login", help="The store reviewer's login (decision 28): a fixed code, the demo account only")
+    review_sub = review_parser.add_subparsers(dest="review_command", required=True)
+    create_review = review_sub.add_parser("create", help="Make the login and the demo account; prints the "
+                                                         "password and the code once")
+    create_review.add_argument("email", help="an address Minas owns, on no account")
+    review_sub.add_parser("rotate", help="A new password and code; every phone signed out")
+    review_sub.add_parser("disable", help="Remove the login (the demo account stays)")
+    review_sub.add_parser("status", help="The login, its sign-ins and its phones")
+    for sp in review_sub.choices.values():
+        sp.add_argument("--as", dest="as_operator", metavar="OPERATOR", required=False,
+                        help="Who is doing this, for the record")
+    review_parser.set_defaults(func=cmd_review_login)
 
     erase_parser = sub.add_parser("erase", help="Erase a member's data on request (#46): immediate, gap recorded, customer told")
     erase_parser.add_argument("email")

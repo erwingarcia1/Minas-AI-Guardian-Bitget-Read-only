@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS accounts (
     -- it and nothing else; a customer never sees a simulated theft on their
     -- own account unless they ask for one.
     is_drill INTEGER NOT NULL DEFAULT 0,
+    -- Decision 28: the store reviewer's invented account (sentinel/review.py).
+    is_demo INTEGER NOT NULL DEFAULT 0,
     -- #46 (decision 6 interim): set when this row became a tombstone - data
     -- erased at the customer's request; the row stays so the gap has somewhere
     -- to be recorded. Never polled, never listed to customers.
@@ -336,7 +338,10 @@ CREATE TABLE IF NOT EXISTS portal_members (
     -- exactly the rows in member_account_grants. 0 is the legacy rule: every
     -- account the address is a contact on. A legacy login is materialised
     -- into grants the first time its scope is touched, never silently.
-    scoped INTEGER NOT NULL DEFAULT 0
+    scoped INTEGER NOT NULL DEFAULT 0,
+    -- Decision 28: the SHA-256 of the store review login's fixed second-factor
+    -- code, on that one login only (sentinel/review.py).
+    review_code_hash TEXT
 );
 
 -- Invitations (decision 17, owner 2026-10-28: sign-up is for Minas members;

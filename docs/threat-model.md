@@ -130,6 +130,20 @@ Someone onboards a victim's stolen read-only key with us to surveil them.
   acceptable at pilot scale, not at 1,000 accounts with staff turnover.
   Revisit before scale.
 - SQLite file readable by host root until Postgres + disk encryption.
+- One login signs in to the app with a password and a FIXED code
+  (decision 28, 2026-10-30): the store reviewer's, whose details sit in
+  Google's Play Console. Whoever holds them gets a phone sign-in that
+  lasts weeks - but onto a demo account of invented data and nothing else:
+  the code is refused the moment the login opens any other account
+  (checked at every sign-in), the website refuses the login, it gets no
+  reset link and no two-factor of its own, and it is not the demo's
+  primary, so it can acknowledge a sample alert and change nothing. The
+  password and code are stored hashed and printed once. Each sign-in emails
+  the login's own address and shows on the dashboard; `sentinel
+  review-login rotate` or `disable` ends it. Residual: the details are as
+  safe as Google's console, and a leak shows invented data - the reason
+  for the box. An operator who grants the login a real account turns the
+  code off; nothing makes the code work on real data.
 - The member portal is internet-reachable at
   `https://guardian.minastrade.com`, through Caddy on the host (decision
   22b): its login is exposed to credential stuffing, mitigated by the login

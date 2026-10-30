@@ -273,10 +273,14 @@ def set_account_status(db: Database, label: str, status: str, actor: str | None)
         raise ValueError(f"unknown account status {status!r} (one of: {', '.join(sorted(ACCOUNT_STATUSES))})")
     now = datetime.now(timezone.utc).isoformat()
     with db.cursor() as cur:
-        cur.execute("SELECT id, status FROM accounts WHERE label = ?", (label,))
+        cur.execute("SELECT id, status, is_demo FROM accounts WHERE label = ?", (label,))
         row = cur.fetchone()
         if row is None:
             raise LookupError(f"no account labelled {label!r}")
+        if row["is_demo"] and status != "disabled":
+            # Decision 28: the store reviewer's demo account has no key; the
+            # engine would poll nothing and page Minas about the blindness.
+            raise ValueError(f"{label!r} is the demo account, which is never monitored (decision 28)")
         if row["status"] == status:
             return False
         cur.execute("UPDATE accounts SET status = ?, updated_at = ? WHERE id = ?",

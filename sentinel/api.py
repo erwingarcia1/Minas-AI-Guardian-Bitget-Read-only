@@ -519,6 +519,22 @@ class Api:
             logger.warning("api sign-in failed for %s from %s", email or "<empty>", ip)
             return error(401, "invalid_credentials", "That email, password or code was not accepted.")
 
+        from sentinel.review import check_review_code, is_review_login
+
+        if is_review_login(self.db, email):
+            # Decision 28: the store reviewer's login, whose second factor is
+            # a fixed code - accepted only while the login opens nothing but
+            # the demo account (sentinel/review.py). Otherwise the same
+            # answer as any wrong code.
+            if not check_review_code(self.db, email, code):
+                self.throttle.record_failure(pair)
+                self.throttle.record_failure(ip)
+                logger.warning("api sign-in by the review login %s refused from %s", email, ip)
+                return error(401, "invalid_credentials", "That email, password or code was not accepted.")
+            self.throttle.reset(pair)
+            logger.warning("api sign-in by the store review login %s from %s", email, ip)
+            return Response(200, self._begin_device(email, data, ip))
+
         if not member_login_requires_code(self.db, email):
             # Only reachable with the right password, so it tells nobody
             # anything the web sign-in would not.
@@ -689,6 +705,12 @@ class Api:
             return error(401, "invalid_credentials", "That email or password was not accepted.")
         if member_login_requires_code(self.db, email):
             # Only reachable with the right password.
+            return error(409, "two_factor_already_on", TWO_FACTOR_ALREADY_ON)
+        from sentinel.review import is_review_login
+
+        if is_review_login(self.db, email):
+            # Decision 28: the review login's second factor is its fixed
+            # code, and it gets no other.
             return error(409, "two_factor_already_on", TWO_FACTOR_ALREADY_ON)
         if self.cipher is None:
             return error(503, "two_factor_unavailable", TWO_FACTOR_UNAVAILABLE)
@@ -937,11 +959,15 @@ class Api:
         })
 
     def _security(self, _request: Request, device) -> Response:
+        from sentinel.review import is_review_login
         from sentinel.twofactor import MEMBER, is_enabled, remaining_recovery_codes
 
         email = device["email"]
         return Response(200, {
-            "two_factor_enabled": is_enabled(self.db, MEMBER, email),
+            # Decision 28: the review login's second factor is its fixed
+            # code. "Off" would tell the reviewer, in red, that this phone
+            # cannot sign in again - false for that login.
+            "two_factor_enabled": is_enabled(self.db, MEMBER, email) or is_review_login(self.db, email),
             "recovery_codes_left": remaining_recovery_codes(self.db, MEMBER, email),
             "devices": [{
                 "id": int(d["id"]),

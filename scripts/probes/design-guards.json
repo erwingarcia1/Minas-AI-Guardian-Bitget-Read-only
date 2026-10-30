@@ -3625,5 +3625,95 @@
    "tests/test_onboarding_ip_lock.py"
   ],
   "expect": "killed"
+ },
+ {
+  "name": "decision 28: the review code still works once the login opens a real account",
+  "file": "sentinel/review.py",
+  "old": "    if not opens_only_the_demo(db, email):\n        logger.error(",
+  "new": "    if False:\n        logger.error(",
+  "tests": [
+   "tests/test_review_login.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 28: the app takes any code from the review login",
+  "file": "sentinel/api.py",
+  "old": "            if not check_review_code(self.db, email, code):",
+  "new": "            if False:",
+  "tests": [
+   "tests/test_review_login.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 28: the review login gets a password-only web session",
+  "file": "sentinel/portal.py",
+  "old": "                if is_review_login(db, email):\n                    # Decision 28: the store reviewer's login signs in to the",
+  "new": "                if False:\n                    # Decision 28: the store reviewer's login signs in to the",
+  "tests": [
+   "tests/test_review_login.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 28: the review login is sent a reset link",
+  "file": "sentinel/portal.py",
+  "old": "    if is_review_login(db, email):\n        # Decision 28: the review login's password changes by `sentinel",
+  "new": "    if False:\n        # Decision 28: the review login's password changes by `sentinel",
+  "tests": [
+   "tests/test_review_login.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 28: the review login sets up two-factor of its own",
+  "file": "sentinel/api.py",
+  "old": "        if is_review_login(self.db, email):\n            # Decision 28: the review login's second factor is its fixed",
+  "new": "        if False:\n            # Decision 28: the review login's second factor is its fixed",
+  "tests": [
+   "tests/test_review_login.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 28: the demo's sample alerts are not escalated, so the escalator pages them",
+  "file": "sentinel/review.py",
+  "old": "                 acknowledged_at, \"the demo member\" if acknowledged_at else None, sent_at))",
+  "new": "                 acknowledged_at, \"the demo member\" if acknowledged_at else None, None))",
+  "tests": [
+   "tests/test_review_login.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 28: the demo account is active, so the engine polls it",
+  "file": "sentinel/review.py",
+  "old": "\"VALUES (?, 'bitget', 'independent', '', '', '', ?, ?, NULL, 'disabled', 1, ?, ?)\",",
+  "new": "\"VALUES (?, 'bitget', 'independent', '', '', '', ?, ?, NULL, 'active', 1, ?, ?)\",",
+  "tests": [
+   "tests/test_review_login.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 28: an operator can switch the demo account on, and the engine polls an empty key",
+  "file": "sentinel/onboarding.py",
+  "old": "        if row[\"is_demo\"] and status != \"disabled\":",
+  "new": "        if False:",
+  "tests": [
+   "tests/test_review_login.py"
+  ],
+  "expect": "killed"
+ },
+ {
+  "name": "decision 28: the reviewer's Settings say two-factor is off, so the phone cannot sign in again",
+  "file": "sentinel/api.py",
+  "old": "            \"two_factor_enabled\": is_enabled(self.db, MEMBER, email) or is_review_login(self.db, email),",
+  "new": "            \"two_factor_enabled\": is_enabled(self.db, MEMBER, email),",
+  "tests": [
+   "tests/test_review_login.py"
+  ],
+  "expect": "killed"
  }
 ]

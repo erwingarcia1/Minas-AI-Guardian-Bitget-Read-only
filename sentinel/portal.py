@@ -520,6 +520,12 @@ def create_reset_token(db: Database, email: str, ttl_seconds: int = RESET_TOKEN_
 
     if not email or not member_exists(db, email):
         return None
+    from sentinel.review import is_review_login
+
+    if is_review_login(db, email):
+        # Decision 28: the review login's password changes by `sentinel
+        # review-login rotate`, never by a link to whatever mailbox it names.
+        return None
 
     with db.cursor() as cur:
         cur.execute(
@@ -1987,6 +1993,12 @@ def member_status(db: Database, email: str, rules=None, now: datetime | None = N
             reason = _STATUS_REASON.get(
                 r["status"], f"this account is {r['status']}, so it is not being checked"
             )
+            if r["is_demo"]:
+                # Decision 28: the store reviewer's invented account says
+                # what it is on every screen that names an account's state.
+                from sentinel.review import DEMO_REASON
+
+                reason = DEMO_REASON
             cause = {"disabled": "paused", "tamper_suspected": "tamper_suspected"}.get(
                 str(r["status"]), "not_active")
         elif auth_failing and int(r["id"]) in refused_by_host:
@@ -5290,6 +5302,15 @@ def serve_portal(db: Database, port: int, host: str = "127.0.0.1",
                 return
             if email and password and check_member_login(db, email, password):
                 throttle.reset(_throttle_pair(ip, email))
+                from sentinel.review import is_review_login
+
+                if is_review_login(db, email):
+                    # Decision 28: the store reviewer's login signs in to the
+                    # app only - a password-only web session is exactly what
+                    # its fixed code must never become.
+                    logger.warning("portal sign-in by the review login %s refused from %s", email, ip)
+                    self._send(self._login_page(error="This login signs in only in the app.").encode(), 403)
+                    return
                 if member_login_requires_code(db, email):
                     # No cookie. A correct password buys a pending token and
                     # nothing else - if a session were issued here the second

@@ -7,12 +7,12 @@ autonomous backlog work — see `docs/AUTONOMOUS-LOG.md` for the sessions.
 Nothing here is blocked on engineering. Every item is a choice about what the
 product should do, and each was skipped rather than guessed at.
 
-**Open today (2026-10-28):** 6 (needs the lawyer; #47), 7's vendor (#63),
+**Open today (2026-10-30):** 6 (needs the lawyer; #47), 7's vendor (#63),
 8's dropdown durations (after real usage), 11 and 18 (owner reconsidering),
 17's stage 2 (asking for access: how membership is checked, and a mail
 sender apart from the alerts'), 21b/21e/21h/21i, 26d, 26e and 26b's two
-further tripwires, 27's legal review (the privacy policy is published on
-the owner's answers), and 28 (the Play reviewer's sign-in). Everything else
+further tripwires, and 27's legal review (the privacy policy is published
+on the owner's answers). Everything else
 below is answered and built, and deployed where there is a server to deploy
 to - the app waits on the store accounts (section 21, "Not built yet"); the
 sections stay as the record.
@@ -50,7 +50,7 @@ sections stay as the record.
 | 25 | The portal's front door is a landing page; the sign-in moves to `/login`; an ended session lands there | the landing-page PR | **ANSWERED by the owner 2026-10-24** — what the Guardian is, how it works and what it cannot do before any sign-in, on the web and in the app; the one address named on it; every path without a session sent there (303); a `ui-parity` skill and hook so a UI change lands on every surface; see section 25. **Deployed 2026-10-24 (v1.16.0)** |
 | 26 | A contact move and the old address's portal login; what a refused notice pages; where a reset link goes | the reset and email-signals PR; the notice-pages PR | **PARTLY ANSWERED** — 26a: a contact move revokes the old address's scoped access (decided in session; **deployed 2026-10-25, v1.17.0**); 26b: a refused password-changed, two-factor-off or alert-email-changed notice pages Minas at CRITICAL, whatever a connected Telegram chat took (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); 26c: the reset link by email only (**answered by the owner 2026-10-25; deployed 2026-10-26, v1.18.0**); open: 26d (a "no login yet" email), 26e (connecting a Telegram chat tells the member nothing) and 26b's two further tripwires; see section 26 |
 | 27 | The privacy policy at `/privacy` (Google Play needs it in the listing and in the app) | ~~the Play production release~~ | **ANSWERED 2026-10-27** — Minas Academy of Toronto, publishing as Minas AI; 30 days to answer; 18 and over; SMS not sent; logs until the next deploy; backups 28 days; providers' business data-processing terms and the Privacy Commissioner of Canada, pending the lawyer; approved for publication; **deployed 2026-10-27 (v1.19.0)**; see section 27 |
-| 28 | How Google's reviewer signs in past two-factor | the Play production release | **OPEN** — the owner decides after internal testing (2026-10-26); recommended: a review login that opens only a demo account, its second factor a fixed code scoped to that login; see section 28 |
+| 28 | How Google's reviewer signs in past two-factor | the Play production release | **ANSWERED 2026-10-30: D** — a review login that opens only a demo account, its second factor a fixed code scoped to that login; built, not yet released; see section 28 |
 
 ---
 
@@ -2874,7 +2874,37 @@ production").
 
 ---
 
-## 28. How Google's reviewer signs in past two-factor — **OPEN: the owner decides after internal testing (2026-10-26)**
+## 28. How Google's reviewer signs in past two-factor — **ANSWERED 2026-10-30: D, built**
+
+**Answered.** The owner, 2026-10-30: "let's go with D." The design agreed
+with the owner, and built in `sentinel/review.py`:
+
+- **The demo account cannot pass as real.** No exchange key, never polled
+  (`status = 'disabled'`; `set_account_status` refuses to switch it on);
+  no contact address, so it sends no email, page or digest; its sample
+  alerts are already escalated, so the escalator skips them; it counts
+  toward no fleet check (those select active accounts). It is named "Demo
+  account (sample data)" on every screen, and its reason says so.
+- **The fixed code is boxed in.** It works for the app's sign-in only,
+  for that one login only, and only while the login opens nothing but the
+  demo account (checked at every sign-in). The login cannot sign in on
+  the website, get a reset link or set up two-factor of its own; it is
+  not the demo's primary contact, so it reads and acknowledges and
+  changes nothing.
+- **The credentials never touch the repository.** `sentinel review-login
+  create <address> --as <operator>` creates the login and prints the
+  password and the code once; the owner types them into Play Console's
+  App access form (`mobile/store/google-play.md`).
+- **Every sign-in is visible and revocable.** Each is an activity entry
+  and a new-device email to the login's own address, and the ops
+  dashboard's "Store review login" card counts them; `sentinel
+  review-login rotate` replaces the password and code and signs every
+  phone out, `disable` removes the login.
+
+Still to do, the owner's: the release that carries it and its deploy;
+then the command on the host, and the App access form.
+
+The question as it was put:
 
 **Why it is asked.** Google reviews an app before production, and its
 App access form wants sign-in details the reviewer can use more than once,
