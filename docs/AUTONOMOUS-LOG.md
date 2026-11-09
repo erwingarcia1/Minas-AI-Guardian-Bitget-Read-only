@@ -1,5 +1,10 @@
 # Autonomous work log
 
+> **2026-11-09: the project is shut down** for lack of funds. The owner
+> chose to switch the server off the same day and delete every member
+> record; the teardown is the owner's, in the AWS console. Read the last
+> entry, "The project is shut down", before doing anything.
+
 > ## Run summary — 2026-08-25 (SMS body → #97 → #20 → #99 → #96)
 >
 > **Shipped on main, every commit CI-green by run id:** the customer SMS
@@ -8770,3 +8775,69 @@ versionCode 4, from `2685f31`) was built and read earlier the same day
 (the five permissions; the bundle names the invitation and two-factor
 routes, no LAN address) and goes to the testers now that the server
 serves its routes. The record is the branch `deploy-record-1-20-0`.
+
+# 2026-11-09 · The project is shut down
+
+**The owner's words:** "i need to take this project and the ec2 server. we
+no longer have the financial capability to continue this project." Read
+as take down, and asked three questions. The owner chose:
+
+- **Switch off today**, members told the same day. Offered: seven days'
+  notice (recommended, since members would otherwise assume they are still
+  watched) and 30 days.
+- **Delete everything, keep no copy.** Offered: one password-encrypted
+  archive with the master key destroyed, kept for the record of which
+  alerts were sent.
+- **The repository private, not archived.**
+
+**What this session did.** Nothing on the server, in AWS or in the
+repository's settings: there is no AWS CLI here, the classifier refuses SSH
+to production, and this clone's GitHub account has write, not admin, on the
+repository. It wrote the teardown checklist for the owner and put the email
+to members in the owner's Gmail as a draft, not sent; the switch-off time
+and the BCC list are the owner's to fill (the addresses are only in the
+production database). The email tells members that monitoring stops, to
+delete the Guardian's read-only key at their exchange and turn on the
+exchange's own protections, that every record about them is deleted, and
+that any message claiming to be the Guardian afterwards is not from Minas.
+
+**The checklist's order, and why.**
+
+1. The email, before anything is switched off.
+2. The `A` record for `guardian.minastrade.com` deleted at the registrar
+   **before** the Elastic IP is released: a released address goes back to
+   AWS's pool, and its next holder would answer at the address members were
+   taught to trust (and could get a certificate for it). `minastrade.com`
+   itself stays registered for the same reason.
+3. The Tokyo instance terminated, with its volume checked gone. The
+   database and the 28 days of backups are all on that one disk, so this is
+   the deletion.
+4. 57.181.51.14 released; snapshots, AMIs, the key pair
+   `Minas-AI-Guardian-Key-Tokyo` and the security group deleted.
+5. The same in **us-east-1**: "terminate the retired us-east-1 instance" is
+   still on the CHANGELOG's pending list, so it may still bill and probably
+   holds the pre-migration copy of the member database.
+6. AWS Billing read by service and region, and a zero-spend budget.
+7. Third parties: the Telegram bot's token revoked and the bot **kept**
+   (a deleted username can be registered by someone else); Twilio and
+   ClickSend keys deleted and any rented number released; the Resend key
+   deleted, and the domain and its DNS records too if nothing else sends
+   through it; the Anthropic key; the uptime monitor's check; the Guardian's
+   keys on the exchange accounts Minas owns (the drill account); Play
+   Console's internal testing stopped; an Apple Developer renewal, if any.
+8. GitHub, from the `erwingarcia1` account: visibility to private, the
+   `minas-guardian-deploy` deploy key removed. Not archiving leaves the
+   weekly scheduled CI running on a private repository (Actions minutes,
+   and an issue filed when the slow gates fail): disabling the CI workflow
+   in the Actions tab stops it and can be undone.
+9. `Minas-AI-Guardian-Key-Tokyo.pem` deleted from this working tree (it is
+   git-ignored, never committed). No copy of the member database was found
+   on this machine.
+
+**Not confirmed done when this was written:** any step of the checklist.
+A later session asks the owner which steps were finished rather than
+assuming, and deploys, releases or restarts nothing unless the owner says
+the project is back. If it comes back, nothing of the old service
+survives: a new instance starts from an empty database (docs/deployment.md,
+"AWS quickstart"), every member is onboarded again with a new exchange key,
+and the new Elastic IP goes on every key's allowlist.
